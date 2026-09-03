@@ -13,3 +13,10 @@ docs/plans/** text eol=lf
 docs/decisions/** text eol=lf
 docs/memory/** text eol=lf
 docs/closure/** text eol=lf
+
+# Go sources and workflow-adjacent config: force LF so gofmt/CI gates stay
+# stable regardless of core.autocrlf on Windows checkouts (001.001.002-ST).
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+.golangci.yml text eol=lf

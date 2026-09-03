@@ -70,7 +70,10 @@ jobs:
             # state, so a code/config change can never silently skip the gate.
             code:
               - '**'
-docs/** .backlogit/** .autoharness/**
+              - '!docs/**'
+              - '!.backlogit/**'
+              - '!.backlog/**'
+              - '!.autoharness/**'
 
   # Expensive test/build gate. Runs only when the fail-closed `changes` job
   # detected a code/config change. Execution is gated SOLELY on the path result
@@ -86,22 +89,184 @@ docs/** .backlogit/** .autoharness/**
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          go-version: '1.21'
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
           cache: true
-      - name: Lint
+      - name: go mod verify
+        run: go mod verify
+      - name: go mod tidy (dirty-check)
+        run: |
+          go mod tidy
+          if ! git diff --exit-code -- go.mod go.sum; then
+            echo "::error::go mod tidy dirtied tracked files - commit the result of 'go mod tidy'"
+            exit 1
+          fi
+      - name: Build (CGO_ENABLED=0)
+        env:
+          CGO_ENABLED: '0'
+        run: go build -mod=readonly ./...
+      - name: Vet
         run: go vet ./...
-      - name: Format check
-        run: 
-      - name: Typecheck
-        run: 
-      - name: Test
-        run: go test ./...
-      - name: Build check
-        run: go vet ./...
+      - name: Test (race)
+        # -race requires cgo; leave CGO_ENABLED at the runner default here and
+        # set CGO_ENABLED=0 only on the build/cross-compile steps above/below.
+        run: go test -race -mod=readonly ./...
+
+  # Format and lint gate (001.002.002-ST). Runs only when `changes` detected a
+  # code/config change, matching `expensive`'s gating rationale above.
+  lint:
+    name: lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Install goimports (pinned)
+        run: go install golang.org/x/tools/cmd/goimports@v0.49.0
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$out"
+            exit 1
+          fi
+      - name: goimports (3-group import order)
+        run: |
+          out="$(goimports -l .)"
+          if [ -n "$out" ]; then
+            echo "::error::goimports found unordered imports:"
+            echo "$out"
+            exit 1
+          fi
+      - name: Install golangci-lint (pinned)
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+      - name: golangci-lint run
+        run: golangci-lint run ./...
+
+  # Static analysis, vulnerability, and secret-scanning gate (001.002.003-ST).
+  # All tool versions are PINNED (invariant I4) - never @latest - so an
+  # upstream release cannot redden unrelated PRs.
+  security:
+    name: security
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Install staticcheck (pinned)
+        run: go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
+      - name: staticcheck
+        run: staticcheck ./...
+      - name: Install govulncheck (pinned)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+      - name: govulncheck
+        run: govulncheck ./...
+      - name: Install gitleaks (pinned, checksum-verified)
+        env:
+          GITLEAKS_VERSION: '8.30.1'
+          GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+        run: |
+          set -euo pipefail
+          curl -sSL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+      - name: gitleaks detect
+        run: gitleaks detect --source . --no-git -v
+
+  # Loads the target matrix from scripts/targets.json (single source of
+  # truth, shared with scripts/build.ps1 - 001.001.004-ST) so the CI matrix
+  # below cannot drift from the local build script's target list.
+  cross-compile-targets:
+    name: load cross-compile targets
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      targets: ${{ steps.load.outputs.targets }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Load targets.json
+        id: load
+        run: |
+          set -euo pipefail
+          targets="$(jq -c '.targets' scripts/targets.json)"
+          echo "targets=${targets}" >> "$GITHUB_OUTPUT"
+
+  # Cross-compile verification matrix (001.002.004-ST): asserts each of the 4
+  # targets builds successfully with CGO_ENABLED=0 from a single ubuntu
+  # runner. The target list is sourced from scripts/targets.json via the
+  # cross-compile-targets job above, never redeclared inline here.
+  cross-compile:
+    name: cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: [changes, cross-compile-targets]
+    if: needs.changes.outputs.code == 'true' && needs.cross-compile-targets.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.cross-compile-targets.outputs.targets) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for bin in cmd/*/; do
+            name=$(basename "$bin")
+            go build -mod=readonly -o "dist/${name}-${GOOS}-${GOARCH}" "./cmd/${name}"
+          done
 
   # Pipeline-topology CI backstop (Gate C, 109.014-T): the server-side
   # re-validation of the P-001 (at-most-one-active-shipment) / P-016 (single
@@ -172,12 +337,12 @@ docs/** .backlogit/** .autoharness/**
   ci-gate:
     name: ci gate
     if: always()
-    needs: [changes, expensive, topology-check]
+    needs: [changes, expensive, lint, security, cross-compile-targets, cross-compile, topology-check]
     runs-on: ubuntu-latest
     steps:
       - name: Verify no required job failed
         run: |
-          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs['topology-check'].result }}"
+          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }}"
           echo "job results: $results"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then

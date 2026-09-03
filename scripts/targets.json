@@ -1,0 +1,8 @@
+{
+  "targets": [
+    { "goos": "linux", "goarch": "amd64" },
+    { "goos": "windows", "goarch": "amd64" },
+    { "goos": "darwin", "goarch": "amd64" },
+    { "goos": "darwin", "goarch": "arm64" }
+  ]
+}
