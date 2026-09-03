@@ -89,6 +89,41 @@ rejects any candidate beginning with a path separator without a volume name,
 so this required negative case (plan acceptance criterion B2.2) is
 rejected uniformly across platforms.
 
+## Review-Gate Remediation (this session, post-implementation)
+
+Independent structured review (Go, Correctness, Security, Architecture,
+Constitution personas, report-only mode) surfaced two same-contract-surface
+defects in `internal/pathsafe`, both remediated before merge:
+
+* **P1 (Correctness/Security/Constitution, convergent finding):**
+  `checkSymlinkEscape` originally gated symlink-escape re-validation on
+  `os.Stat(resolved)` succeeding for the *full* candidate path. Because the
+  dominant real-world use case is creating a *new* file (a non-existent
+  leaf component), a symlinked *intermediate* directory pointing outside the
+  workspace would silently bypass detection: `os.Stat` on the non-existent
+  leaf returns `ENOENT`, taking the "non-existent, accept" branch without
+  ever resolving the symlinked ancestor. Fixed by walking up from the
+  resolved candidate to the nearest *existing* ancestor, resolving that
+  ancestor's symlinks, and re-asserting containment there — regardless of
+  whether the final leaf exists. Locked in by
+  `TestResolveRejectsSymlinkedIntermediateDirEscapingRoot`.
+* **P2 (Correctness):** `isRooted`'s leading-backslash check was
+  unconditional, which would over-reject a legitimate workspace-relative
+  candidate that merely begins with a literal backslash byte on non-Windows
+  platforms (where `\` has no path-separator meaning). Fixed by scoping the
+  backslash branch to `runtime.GOOS == "windows"`; the leading-`/` check
+  remains unconditional (redundant-but-harmless on Unix, essential on
+  Windows). Locked in by
+  `TestNormalizeDoesNotOverRejectLiteralBackslashOnNonWindows`.
+
+Residual P2/P3 findings from the same review round (a docs/lint-config gap
+around `Newf` printf-safety, a `Kind` `Stringer` nicety, `NewRoot` not
+verifying its target is a directory, a dangling-symlink regression-test gap,
+and the plan's Constitution Check table using non-matching principle
+numbers) do not touch the pinned behavioral contract and are captured as
+deferred stash entries under P-021 rather than expanding this shipment's
+scope.
+
 ## Status
 
 This pin is documentary. Re-verify the commit, module map, and test-corpus

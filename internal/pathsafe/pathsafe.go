@@ -86,11 +86,21 @@ func splitPath(cleaned string) []string {
 // IsAbs alone under-rejects. Component-based oracle semantics treat any
 // root/prefix component as a rejection regardless of platform, so this
 // candidate must also be rejected as an absolute-style path.
+//
+// The leading-'/' check applies on every platform (on Unix it is redundant
+// with filepath.IsAbs but harmless; on Windows it closes the gap). The
+// leading-backslash check is scoped to Windows only: on Unix, '\' has no
+// path-separator meaning, so a candidate that merely begins with a literal
+// backslash byte is a legitimate workspace-relative filename there and must
+// not be rejected as rooted.
 func isRooted(candidate string) bool {
 	if candidate == "" {
 		return false
 	}
-	return candidate[0] == '/' || candidate[0] == '\\'
+	if candidate[0] == '/' {
+		return true
+	}
+	return runtime.GOOS == "windows" && candidate[0] == '\\'
 }
 
 // filepathSplitList splits p on the OS path separator without relying on
@@ -180,15 +190,21 @@ func pathHasPrefix(path, p string) bool {
 	return strings.HasPrefix(path, p)
 }
 
-// checkSymlinkEscape implements oracle steps 6-7. If the resolved path
-// exists, it re-resolves symlinks and re-asserts containment; on failure it
-// emits "symlink target escapes workspace". Non-existent paths are accepted
-// after the lexical checks in normalize/Resolve alone (oracle step 7).
+// checkSymlinkEscape implements oracle steps 6-7, extended to close a gap
+// beyond the literal oracle port: it walks up from resolved to the nearest
+// existing ancestor (not just checking resolved itself), re-resolves that
+// ancestor's symlinks, and re-asserts containment. This is required because
+// the dominant real-world use case — creating a new file — has a
+// non-existent leaf component; gating the check on os.Stat(resolved) alone
+// would let a symlinked *intermediate directory* pointing outside the
+// workspace silently pass validation whenever the leaf does not yet exist.
+// On failure it emits "symlink target escapes workspace".
 //
-// os.Stat (not os.Lstat) gates the existence probe, matching the oracle's
-// Path::exists(), which follows symlinks — a broken symlink is therefore
-// treated as non-existent and takes the lexical-only branch (finding GO-14,
-// documented, not silently inherited).
+// os.Stat (not os.Lstat) gates each existence probe, matching the oracle's
+// Path::exists(), which follows symlinks — a broken symlink at the final
+// component is therefore treated as non-existent and, once no existing
+// ancestor remains to check beyond the root itself, takes the lexical-only
+// branch (finding GO-14, documented, not silently inherited).
 //
 // Known limitations (both oracle-parity, see the package doc comment):
 // the TOCTOU window between this check and actual filesystem use, and the
@@ -196,13 +212,23 @@ func pathHasPrefix(path, p string) bool {
 // in-workspace hardlink to an external file on the same volume passes
 // validation (finding SEC-5).
 func checkSymlinkEscape(root Root, resolved string) (string, error) {
-	if _, err := os.Stat(resolved); err != nil {
-		// Non-existent (or otherwise inaccessible): accept after the
-		// lexical checks already performed by normalize/Resolve.
-		return resolved, nil
+	ancestor := resolved
+	for {
+		if _, err := os.Stat(ancestor); err == nil {
+			break
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			// Reached the filesystem root without finding an existing
+			// ancestor. resolved is already asserted to be inside root
+			// (which itself exists), so this is unreachable in practice;
+			// guarded defensively to avoid an infinite loop.
+			return resolved, nil
+		}
+		ancestor = parent
 	}
 
-	real, err := filepath.EvalSymlinks(resolved)
+	real, err := filepath.EvalSymlinks(ancestor)
 	if err != nil {
 		return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
 	}

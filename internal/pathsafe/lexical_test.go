@@ -46,7 +46,26 @@ func TestNormalizeRejectsAbsoluteAndVolumeRelative(t *testing.T) {
 	}
 }
 
-// TestNormalizePreservesSafeInteriorTraversal verifies a/b/../c.txt
+// TestNormalizeDoesNotOverRejectLiteralBackslashOnNonWindows verifies that a
+// relative candidate merely beginning with a literal backslash byte is not
+// rejected as "rooted" on non-Windows platforms, where '\' has no
+// path-separator meaning. This guards the isRooted GOOS-gating fix: only the
+// leading-'/' check applies unconditionally; the leading-'\' check is scoped
+// to runtime.GOOS == "windows".
+func TestNormalizeDoesNotOverRejectLiteralBackslashOnNonWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("backslash is a path separator on windows; this case is windows-drive-relative there, not a literal filename byte")
+	}
+
+	components, err := normalize(`\odd-filename.txt`)
+	if err != nil {
+		t.Fatalf(`normalize("\odd-filename.txt") returned unexpected error: %v`, err)
+	}
+	if len(components) != 1 || components[0] != `\odd-filename.txt` {
+		t.Fatalf(`normalize("\odd-filename.txt") = %v, want a single literal component`, components)
+	}
+}
+
 // normalizes to a/c.txt and ./src/main.go normalizes to src/main.go
 // (finding GO-13, proving Clean equivalence).
 func TestNormalizePreservesSafeInteriorTraversal(t *testing.T) {

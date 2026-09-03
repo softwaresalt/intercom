@@ -84,7 +84,41 @@ func TestResolveAllowsSymlinkInsideRoot(t *testing.T) {
 	}
 }
 
-// TestResolveAllowsNonExistentRelativePath verifies a non-existent relative
+// TestResolveRejectsSymlinkedIntermediateDirEscapingRoot verifies the
+// checkSymlinkEscape ancestor-walk fix: a symlinked *intermediate* directory
+// pointing outside the root, combined with a non-existent leaf component (the
+// dominant new-file-write shape), is still rejected with
+// "symlink target escapes workspace" rather than silently falling into the
+// non-existent-leaf accept branch.
+func TestResolveRejectsSymlinkedIntermediateDirEscapingRoot(t *testing.T) {
+	if err := canSymlink(t); err != nil {
+		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
+	}
+
+	outsideDir := t.TempDir()
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	linkDir := filepath.Join(root.Path(), "link-dir")
+	if err := os.Symlink(outsideDir, linkDir); err != nil {
+		t.Fatalf("failed to create escaping directory symlink: %v", err)
+	}
+
+	// The leaf file does not exist yet under the symlinked directory — this
+	// is the shape that a naive os.Stat(resolved)-only check would miss.
+	_, err = root.Resolve("link-dir/new-file.txt")
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", "link-dir/new-file.txt", symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", "link-dir/new-file.txt", err.Error(), symlinkEscapeMsg)
+	}
+}
+
 // path under the root resolves successfully (oracle step 7).
 func TestResolveAllowsNonExistentRelativePath(t *testing.T) {
 	rootDir := t.TempDir()
