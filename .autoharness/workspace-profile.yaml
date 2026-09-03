@@ -1,0 +1,354 @@
+# .autoharness/workspace-profile.yaml
+schema_version: "1.0.0"
+generated_at: "2026-09-03T03:56:38Z"
+workspace_path: "C:\\Source\\GitHub\\intercom-go"
+
+languages:
+  primary: "Go"
+  version: "1.21+"
+  secondary:
+    - "PowerShell"
+
+frameworks:
+  list:
+    - "charmbracelet/bubbletea"
+    - "charmbracelet/lipgloss"
+    - "gorilla/websocket"
+    - "coder/acp-go-sdk"
+  mcp_sdk: null
+  mcp_transport: null
+
+primary_stack_pack: "api-service"
+stack_packs:
+  - "api-service"
+  - "cli-tool"
+
+build:
+  tool: "go"
+  command: "go build ./..."
+  check_command: "go vet ./..."
+
+test:
+  runner: "go test"
+  command: "go test ./..."
+  directory: "inline (_test.go)"
+
+lint:
+  tool: "go vet"
+  command: "go vet ./..."
+
+format:
+  tool: "gofmt"
+  command: "gofmt -l -w ."
+
+ci:
+  platform: "GitHub Actions"
+  pipeline_steps: []
+  quality_gates: []
+  required_check_name: "ci gate"
+  linux_only: true
+  path_filter_mode: "fail_closed_changes_job"
+  docs_only_paths:
+    - "docs/**"
+    - ".backlogit/**"
+    - ".autoharness/**"
+
+local_gating:
+  pre_push_enabled: true
+  pre_push_gates:
+    - "format"
+    - "lint"
+    - "test"
+    - "build"
+
+structure:
+  source_layout: "planned Go layout (cmd/ entrypoint + internal/ packages); no source committed yet"
+  test_layout: "inline _test.go alongside sources (Go convention)"
+  doc_layout: "docs/ (decisions/, design-docs/)"
+
+runtime_surfaces:
+  cli: true
+  web_ui: false
+  public_api: true
+  background_jobs: false
+  browser_tooling: []
+  deployment_manifests: []
+
+runtime_validation:
+  validator_manifest:
+    surfaces:
+      - surface: "cli"
+        adapter_hint: "command"
+        probe_hints:
+          - id: "cli-smoke"
+            kind: "command"
+            target: "go run ./cmd/... (TUI cold-start / --help smoke)"
+            command: "go run ./cmd/... --help"
+            url: null
+            route: null
+            expected_signal: "process starts and prints usage without panic"
+            required: true
+            evidence_types:
+              - "stdout"
+              - "exit-code"
+        manual_checkpoints:
+          - id: "tui-render"
+            label: "TUI renders and accepts local input"
+            reason: "Bubble Tea TUI renders and accepts local key input without breaking terminal scrollback"
+            required_for_release: true
+            evidence_types:
+              - "operator-note"
+              - "screenshot"
+      - surface: "api"
+        adapter_hint: "http"
+        probe_hints:
+          - id: "ws-upgrade"
+            kind: "http-request"
+            target: "WebSocket upgrade on dynamically allocated WS port (e.g. 8081)"
+            command: null
+            url: "ws://127.0.0.1:8081/"
+            route: "/"
+            expected_signal: "101 Switching Protocols"
+            required: true
+            evidence_types:
+              - "status-code"
+              - "response-body"
+          - id: "ws-keepalive"
+            kind: "http-request"
+            target: "ping/pong keep-alive holds the connection open during idle"
+            command: null
+            url: "ws://127.0.0.1:8081/"
+            route: "/"
+            expected_signal: "pong received within keep-alive interval"
+            required: false
+            evidence_types:
+              - "log-line"
+        manual_checkpoints:
+          - id: "devtunnel-connect"
+            label: "Dev Tunnel remote connect"
+            reason: "Dev Tunnel registration succeeds and an authenticated remote client can connect"
+            required_for_release: true
+            evidence_types:
+              - "operator-note"
+              - "external-confirmation"
+          - id: "tool-approval-routing"
+            label: "Tool-approval first-responder routing"
+            reason: "Tool-approval routing (first-responder lock) resolves across local TUI and remote client"
+            required_for_release: true
+            evidence_types:
+              - "operator-note"
+              - "audit-log"
+  validation_expectations:
+    required: true
+    surfaces_expected:
+      - "cli"
+      - "api"
+    minimum_verdict: "PASS_WITH_FOLLOW_UP"
+    preserve_invariants:
+      - "SessionState hydration replays full history to late-joining clients"
+      - "ActiveToolCall lock prevents duplicate tool approvals"
+    release_blockers:
+      - "WebSocket server fails to accept authenticated upgrades"
+      - "TUI panic on polymorphic ACP payload decode"
+  releasability:
+    required: true
+    status_when_satisfied: "READY_WITH_CONDITIONS"
+    required_evidence:
+      - kind: "healthy-signal"
+        required: true
+        description: "CLI/TUI smoke evidence (cold-start + --help without panic)"
+      - kind: "healthy-signal"
+        required: true
+        description: "WebSocket connect + hydrate + tool-approval evidence"
+
+conventions:
+  code_style:
+    formatter: "gofmt"
+    editorconfig: false
+    markdownlint: true
+    markdownlint_config: null
+  git:
+    default_branch: "main"
+    branch_naming: "not enforced (recommend feature branches, e.g. chore/autoharness-install-<date>)"
+    commit_style: "not enforced"
+    pr_template: false
+    issue_templates: false
+    submodules:
+      - "references -> https://github.com/ogulcancelik/herdr.git"
+  documentation:
+    readme: true
+    adrs: "docs/decisions/"
+    design_docs: "docs/design-docs/"
+    changelog: false
+
+tools:
+  markdownlint: true
+  markdownlint_config: null
+
+harness_recommendations:
+  preset: "full"
+  capability_packs:
+    - "agent-engram"
+    - "graphtor-docs"
+    - "backlogit"
+    - "browser-verification"
+    - "continuous-learning"
+    - "strict-safety"
+    - "release-observability"
+    - "adversarial-review"
+  install_layers:
+    - "foundation"
+    - "instructions"
+    - "workflow"
+    - "review"
+    - "runtime"
+    - "backlog"
+    - "knowledge"
+    - "overlays"
+  recommendation_reasons:
+    preset:
+      - "Operator explicitly requested a full capability-pack install."
+      - "Backend service with concurrent TUI + networked WebSocket surfaces and remote-operator approval flow warrants the full pipeline, review, runtime, and knowledge layers."
+    capability_packs:
+      - item: "agent-engram"
+        because: "Engram MCP server is configured and an active .engram/ index exists."
+        signals:
+          - ".mcp.json engram server (stdio)"
+          - ".engram/config.toml, .engram/registry.yaml, .engram/code-graph/"
+          - ".github/copilot-instructions.md contains <!-- engram:start --> markers"
+      - item: "graphtor-docs"
+        because: "graphtor-docs MCP server is configured with a materialized local index and binary."
+        signals:
+          - ".mcp.json graphtor-docs server"
+          - ".graphtor/config/sources.yaml"
+          - ".graphtor/bin/graphtor-docs.exe"
+      - item: "backlogit"
+        because: "backlogit is the detected backlog tool with MCP + CLI available and advanced features enabled."
+        signals:
+          - ".backlogit/config.yaml"
+          - ".mcp.json backlogit server"
+          - "backlogit CLI on PATH"
+      - item: "browser-verification"
+        because: "Requested as part of full install; no browser tooling detected yet, so the pack is composed but inert until a browser runner is added."
+        signals:
+          - "operator requested full capability-pack set"
+      - item: "continuous-learning"
+        because: "Requested as part of full install; adds observe/learn/evolve knowledge loop."
+        signals:
+          - "operator requested full capability-pack set"
+      - item: "strict-safety"
+        because: "Networked WebSocket API surface with OAuth/identity-gated Dev Tunnel access and remote tool-approval routing are high-blast-radius, security-sensitive surfaces."
+        signals:
+          - "runtime_surfaces.public_api == true (gorilla/websocket server)"
+          - "design mandates identity gating (--allow-anonymous false, GitHub OAuth token validation)"
+      - item: "release-observability"
+        because: "Requested as part of full install; service is spawned per-workspace with slog telemetry and Dev Tunnel registration that benefit from monitoring/rollback framing."
+        signals:
+          - "operator requested full capability-pack set"
+          - "design references structured slog telemetry"
+      - item: "adversarial-review"
+        because: "Requested as part of full install; concurrency (goroutine/channel hub) and polymorphic protocol decoding warrant adversarial review personas."
+        signals:
+          - "operator requested full capability-pack set"
+          - "channel-based Hub concurrency and JSON-RPC union-type decoding"
+    install_layers:
+      - item: "foundation"
+        because: "Constitution + AGENTS.md baseline for every install."
+      - item: "instructions"
+        because: "Go, commit, markdown, git, PR, and style instruction files."
+      - item: "workflow"
+        because: "Stage/Ship pipeline agents and core skills for the full preset."
+      - item: "review"
+        because: "Review orchestrators and personas (full preset + adversarial-review pack)."
+      - item: "runtime"
+        because: "CLI + WebSocket API runtime surfaces require runtime-verification and operational-closure."
+      - item: "backlog"
+        because: "backlogit is the detected backlog tool and drives queue/archive workflows."
+      - item: "knowledge"
+        because: "compound docs + continuous-learning knowledge loop."
+      - item: "overlays"
+        because: "strict-safety and release-observability overlays woven into pipeline and review."
+
+agent_intercom:
+  detected: false
+  config_paths: []
+  instruction_markers: []
+  recommended: false
+  # Note: operator directed that agent-intercom is decommissioned and must be omitted,
+  # even though the product being built is itself a remote-operator multiplexer.
+
+agent_engram:
+  detected: true
+  mcp_configured: true
+  config_paths:
+    - ".mcp.json"
+    - ".engram/config.toml"
+    - ".engram/registry.yaml"
+  instruction_markers:
+    - "<!-- engram:start -->"
+    - "<!-- engram:end -->"
+  recommended: true
+
+graphtor_docs:
+  detected: true
+  mcp_configured: true
+  config_paths:
+    - ".mcp.json"
+  sources_path: ".graphtor/config/sources.yaml"
+  binary_path: ".graphtor/bin/graphtor-docs.exe"
+  embed_model_dir: ""
+  instruction_markers: []
+  recommended: true
+
+agent_native:
+  detected: false
+  mcp_sdk_present: false
+  mcp_transport: null
+  agent_tooling_markers:
+    - "design describes agent/remote tool-approval parity (local TUI vs iOS client) but no MCP SDK or tool handlers are implemented yet"
+  user_agent_parity_required: false
+  recommended_reviewer: false
+
+existing_harness:
+  has_harness: false
+  artifacts:
+    - path: ".github/copilot-instructions.md"
+      description: "Engram MCP integration guidance (not an autoharness pipeline artifact); will be preserved and merged."
+
+backlog_tool:
+  detected: true
+  tool_name: "backlogit"
+  directory: ".backlogit"
+  tool_type: "both"
+  mcp_registered: true
+  cli_available: true
+  config_path: ".backlogit/config.yaml"
+  registry_path: null
+  status_values:
+    - "queued"
+    - "active"
+    - "blocked"
+    - "review"
+    - "done"
+    - "accepted"
+    - "rejected"
+    - "archived"
+  features:
+    sql_query: true
+    milestones: false
+    documents: true
+    telemetry: true
+    checkpoints: true
+
+vscode:
+  detected: true
+  user_settings_path: "C:\\Users\\dewilliams\\AppData\\Roaming\\Code\\User\\settings.json"
+  has_agent_settings: false
+
+ai_environments:
+  detected:
+    - "vscode"
+    - "copilot-cli"
+  register_default: "copilot-cli"
+
+drift_report: null
