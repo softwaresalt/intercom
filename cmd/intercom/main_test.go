@@ -62,3 +62,24 @@ func TestRootCmd_LogLevelDebugEmitsJSON(t *testing.T) {
 		t.Fatalf("expected JSON log payload to include a msg field: %v", payload)
 	}
 }
+
+// TestRootCmd_LogLevelErrorSuppressesInfo proves --log-level actually
+// filters output (not just that some line appears at debug): the Info-level
+// startup line must not appear when the level is set to error.
+func TestRootCmd_LogLevelErrorSuppressesInfo(t *testing.T) {
+	var buf bytes.Buffer
+	orig := stderr
+	stderr = &buf
+	defer func() { stderr = orig }()
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--log-level=error"})
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	_ = cmd.Execute()
+
+	if strings.TrimSpace(buf.String()) != "" {
+		t.Fatalf("expected no log output at level=error for an Info-level message, got: %s", buf.String())
+	}
+}

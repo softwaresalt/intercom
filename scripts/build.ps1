@@ -41,9 +41,13 @@ if (-not $OutputDir) {
 $resolvedOutputDir = [System.IO.Path]::GetFullPath($OutputDir, (Get-Location).Path)
 $resolvedOutputDir = $resolvedOutputDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
 
+# Compare ordinally (case-sensitive) rather than case-insensitively: this
+# guard is a security/safety boundary (invariant I5), so it must fail closed
+# (refuse) on an ambiguous case mismatch rather than risk a false negative on
+# a case-sensitive filesystem (Linux, or macOS in case-sensitive mode).
 $repoRootWithSep = $repoRoot + [System.IO.Path]::DirectorySeparatorChar
-$isDescendant = $resolvedOutputDir.Equals($repoRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
-    $resolvedOutputDir.StartsWith($repoRootWithSep, [System.StringComparison]::OrdinalIgnoreCase)
+$isDescendant = $resolvedOutputDir.Equals($repoRoot, [System.StringComparison]::Ordinal) -or
+    $resolvedOutputDir.StartsWith($repoRootWithSep, [System.StringComparison]::Ordinal)
 
 if (-not $isDescendant) {
     Write-Error "Refusing to build: resolved output path '$resolvedOutputDir' is not a descendant of the repository root '$repoRoot' (invariant I5)."

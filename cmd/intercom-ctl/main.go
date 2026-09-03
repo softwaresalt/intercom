@@ -19,6 +19,7 @@ var stderr io.Writer = os.Stderr
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
+		newLogger("info").Error("intercom-ctl exited with error", "error", err)
 		os.Exit(1)
 	}
 }

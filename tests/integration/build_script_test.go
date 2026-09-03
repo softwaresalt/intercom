@@ -3,14 +3,22 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
+
+// buildScriptTimeout bounds every build-script invocation in this file so a
+// hung cross-compile toolchain fetch or interactive prompt cannot block the
+// test binary (and therefore CI) indefinitely.
+const buildScriptTimeout = 5 * time.Minute
 
 // repoRoot walks up from this test file's directory to the repository root
 // (identified by the presence of go.mod).
@@ -52,10 +60,17 @@ func targetCount(t *testing.T, root string) int {
 
 func runBuildScript(t *testing.T, root string, outputDir string) ([]byte, error) {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), buildScriptTimeout)
+	defer cancel()
+
 	scriptPath := filepath.Join(root, "scripts", "build.ps1")
-	cmd := exec.Command("pwsh", "-NoProfile", "-File", scriptPath, "-OutputDir", outputDir)
+	cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-File", scriptPath, "-OutputDir", outputDir)
 	cmd.Dir = root
-	return cmd.CombinedOutput()
+	out, err := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("build script exceeded %s timeout; output so far:\n%s", buildScriptTimeout, out)
+	}
+	return out, err
 }
 
 // inRepoTempDir creates a unique, gitignored scratch directory under the
@@ -71,12 +86,27 @@ func inRepoTempDir(t *testing.T, root string) string {
 	if err != nil {
 		t.Fatalf("creating in-repo scratch dir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Cleanup(func() { _ = os.RemoveAll(dir) }) // best-effort cleanup; leftover dirs are gitignored under dist/
 	return dir
 }
 
+func binaryCount(t *testing.T, root string) int {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(root, "cmd"))
+	if err != nil {
+		t.Fatalf("reading cmd/ directory: %v", err)
+	}
+	count := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			count++
+		}
+	}
+	return count
+}
+
 // TestBuildScript_ProducesArtifactsForEveryTarget asserts scripts/build.ps1
-// produces one artifact per binary per target (2 binaries x N targets).
+// produces one artifact per binary per target.
 func TestBuildScript_ProducesArtifactsForEveryTarget(t *testing.T) {
 	if _, err := exec.LookPath("pwsh"); err != nil {
 		t.Skip("pwsh not available on PATH")
@@ -84,6 +114,7 @@ func TestBuildScript_ProducesArtifactsForEveryTarget(t *testing.T) {
 
 	root := repoRoot(t)
 	wantTargets := targetCount(t, root)
+	wantBinaries := binaryCount(t, root)
 	outputDir := inRepoTempDir(t, root)
 
 	out, err := runBuildScript(t, root, outputDir)
@@ -96,9 +127,9 @@ func TestBuildScript_ProducesArtifactsForEveryTarget(t *testing.T) {
 		t.Fatalf("reading output dir: %v", err)
 	}
 
-	wantCount := wantTargets * 2 // 2 binaries per target
+	wantCount := wantTargets * wantBinaries
 	if len(entries) != wantCount {
-		t.Fatalf("expected %d artifacts, got %d: %v", wantCount, len(entries), entries)
+		t.Fatalf("expected %d artifacts (%d binaries x %d targets), got %d: %v", wantCount, wantBinaries, wantTargets, len(entries), entries)
 	}
 }
 
