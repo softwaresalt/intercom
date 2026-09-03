@@ -1,6 +1,7 @@
 package pathsafe
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -140,7 +141,7 @@ func (r Root) Resolve(candidate string) (string, error) {
 		return "", apperr.New(apperr.KindPathViolation, outsideMsg)
 	}
 
-	return joined, nil
+	return checkSymlinkEscape(r, joined)
 }
 
 // hasPathPrefix reports whether path is exactly prefix, or is contained
@@ -177,4 +178,39 @@ func pathHasPrefix(path, p string) bool {
 		return strings.EqualFold(path[:len(p)], p)
 	}
 	return strings.HasPrefix(path, p)
+}
+
+// checkSymlinkEscape implements oracle steps 6-7. If the resolved path
+// exists, it re-resolves symlinks and re-asserts containment; on failure it
+// emits "symlink target escapes workspace". Non-existent paths are accepted
+// after the lexical checks in normalize/Resolve alone (oracle step 7).
+//
+// os.Stat (not os.Lstat) gates the existence probe, matching the oracle's
+// Path::exists(), which follows symlinks — a broken symlink is therefore
+// treated as non-existent and takes the lexical-only branch (finding GO-14,
+// documented, not silently inherited).
+//
+// Known limitations (both oracle-parity, see the package doc comment):
+// the TOCTOU window between this check and actual filesystem use, and the
+// fact that EvalSymlinks does not resolve hardlinks, so a pre-existing
+// in-workspace hardlink to an external file on the same volume passes
+// validation (finding SEC-5).
+func checkSymlinkEscape(root Root, resolved string) (string, error) {
+	if _, err := os.Stat(resolved); err != nil {
+		// Non-existent (or otherwise inaccessible): accept after the
+		// lexical checks already performed by normalize/Resolve.
+		return resolved, nil
+	}
+
+	real, err := filepath.EvalSymlinks(resolved)
+	if err != nil {
+		return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
+	}
+	real = stripUNCPrefix(real)
+
+	if !hasPathPrefix(real, root.path) {
+		return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
+	}
+
+	return resolved, nil
 }
