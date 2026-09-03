@@ -35,3 +35,42 @@ go.work.sum
 dist/
 .env.*
 config.toml
+
+# Ephemeral SQLite databases (always regenerated; never commit)
+backlogit.db
+.backlogit/backlogit.db
+.backlogit/backlogit.db-shm
+.backlogit/backlogit.db-wal
+.backlogit/review/
+.backlogit/runtime/
+.backlogit/.locks/
+.backlogit/.telemetry-checkpoint.json
+.backlogit/logs/
+
+# Directories
+bin/
+logs/
+.vscode/
+.copilot/
+.github/copilot/settings.local.json
+
+# Runtime state (per-consumer checkpoints, not committed)
+.backlogit/runtime/
+.autoharness/staging/
+.autoharness/backups/
+*.exe~
+prompt.md
+
+# Machine-local telemetry harvest checkpoint (changes per machine/run)
+.backlogit/.telemetry-checkpoint.json
+
+# Engram runtime data (keep templates/, registry.yaml, .version)
+.engram/
+!.engram/.version
+!.engram/.workspace-id
+!.engram/config.toml
+!.engram/registry.yaml
+
+# graphtor-docs — managed by graphtor-docs install
+.graphtor/
+
