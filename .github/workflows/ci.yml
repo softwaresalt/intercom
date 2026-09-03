@@ -99,7 +99,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.22.x'
+          go-version: '1.26.x'
           cache: true
       - name: go mod verify
         run: go mod verify
@@ -138,7 +138,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.22.x'
+          go-version: '1.26.x'
           cache: true
       - name: Install goimports (pinned)
         run: go install golang.org/x/tools/cmd/goimports@v0.49.0
@@ -181,7 +181,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.22.x'
+          go-version: '1.26.x'
           cache: true
       - name: Install staticcheck (pinned)
         run: go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
@@ -253,7 +253,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.22.x'
+          go-version: '1.26.x'
           cache: true
       - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
         env:
