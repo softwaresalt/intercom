@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# intercom-go build artifacts and local-only config (001.001.001-ST)
+dist/
+.env.*
+config.toml
