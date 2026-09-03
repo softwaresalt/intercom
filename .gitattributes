@@ -1,0 +1,15 @@
+# autoharness-managed artifacts: pin LF so manifest checksums stay reproducible
+# across checkouts regardless of core.autocrlf. Do not change without re-running
+# `autoharness verify-workspace`.
+.github/** text eol=lf
+AGENTS.md text eol=lf
+.markdownlint.json text eol=lf
+start.ps1 text eol=lf
+start.sh text eol=lf
+scripts/** text eol=lf
+.autoharness/** text eol=lf
+docs/compound/** text eol=lf
+docs/plans/** text eol=lf
+docs/decisions/** text eol=lf
+docs/memory/** text eol=lf
+docs/closure/** text eol=lf

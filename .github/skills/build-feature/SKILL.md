@@ -1,0 +1,160 @@
+---
+description: "Execute a harness loop — iteratively run tests, capture failures, fix code, and repeat until the harness passes or the circuit breaker trips"
+---
+
+## Build Feature
+
+Implement a requested feature by continuously looping against a strict, compiling, but failing test harness until all tests pass.
+
+## When to Use
+
+Invoked by the ship agent when a task has the `harness-ready` label. Not invoked directly by users.
+
+## Inputs
+
+* `task_id`: (Required) The backlog task ID to implement.
+* `harness_cmd`: (Required) The test command to run (e.g., `go test ./...`).
+
+## Output
+
+* All harness tests passing
+* Code changes committed
+* Task marked complete in backlog
+
+## Required Protocol
+
+When the `agent-intercom` capability pack is installed, follow
+`.github/instructions/agent-intercom.instructions.md` throughout the loop: establish heartbeat /
+ping visibility up front, broadcast meaningful attempt transitions, and route any destructive
+actions through the intercom approval path rather than improvising local-only approval.
+
+When the `agent-engram` capability pack is installed, follow
+`.github/instructions/agent-engram.instructions.md` throughout the loop: prefer indexed symbol and
+impact lookup while diagnosing failures, verify the workspace is bound before trusting engram
+results, and refresh stale indexes before concluding the code graph is wrong.
+
+### The Harness Loop (5-Attempt Circuit Breaker)
+
+**Before entering the loop**: Read coding standards once — constitution Principle I
+and `go.instructions.md`. These apply to all fix attempts.
+Do not re-read the full standards on every iteration; only do a targeted re-read
+if working on a file in an unfamiliar module or if the error pattern changes.
+
+This loop is a skill-managed exception to the universal 3-retry circuit breaker
+(per `circuit-breaker.instructions.md`). The 5-attempt limit governs within this
+loop scope. However, if the same error reaches its third counted failure for the
+same operation, the universal circuit breaker applies: stop and escalate.
+Unrelated loop iterations do not advance that per-operation counter.
+Track same-operation counters across the entire loop. A recurrence can match
+any prior attempt in that operation's failure chain, not only the immediately
+previous iteration. Distinct errors advance distinct per-operation counters.
+
+```text
+Attempt 1..5:
+  1. Run harness_cmd → capture stdout/stderr
+  2. If all tests pass → SUCCESS → exit loop
+  3. Parse failure output → identify failing tests and error messages
+  4. Match the failure against all prior same-operation chains → increment that operation's counter on recurrence; otherwise record a distinct per-operation counter
+  5. Fix the code to address the specific failure
+  6. Verify compilation: go vet ./...
+  7. If compilation fails → fix compilation errors first
+  8. Loop back to step 1
+
+After 5 failures → mark task as BLOCKED → exit
+```
+
+### Step-by-Step Detail
+
+#### Step 1: Run the Harness
+
+Execute `harness_cmd` and capture the full output. Record execution time.
+
+**Stall timeouts**:
+
+* Build/test commands: 45 minutes
+* Other commands: 5 minutes
+
+If the command exceeds the timeout, terminate and count it as a failed attempt.
+
+#### Step 2: Evaluate Results
+
+If all tests pass, proceed to quality gates.
+
+#### Step 3: Parse Failures
+
+Extract from the test output:
+
+* Which tests failed
+* The assertion or error message
+* The file and line where the failure occurred
+* The expected vs. actual values (if applicable)
+
+When the `agent-engram` capability pack is installed, use engram-first lookup to inspect symbols,
+callers, and affected regions before expanding into broader file-based searches.
+
+#### Step 4: Re-read Standards
+
+Before writing any fix, re-read the relevant coding standards:
+
+* Constitution Principle I (safety-first language practices)
+* Technology-specific instructions (`go.instructions.md`)
+* Any instruction files matching the files being modified
+
+#### Step 5: Fix the Code
+
+Apply targeted fixes to address the specific test failure. Do NOT:
+
+* Modify the test to make it pass (tests are the specification)
+* Add unrelated changes
+* Refactor code not related to the failure
+* Skip error handling to shortcut a fix
+
+If the root cause is still unclear after repeated attempts, or the task touches a risky subsystem, invoke **safety-modes** in `investigate-first` or `freeze-scope` mode before continuing.
+
+#### Step 6: Verify Compilation
+
+Run `go vet ./...` to confirm the fix compiles. If compilation fails, fix compilation errors before returning to the harness loop.
+
+### Post-Loop Quality Gates
+
+After the harness passes:
+
+1. **Lint**: `go vet ./...`
+2. **Format**: ``
+   * If violations found: `gofmt -w .` and re-check
+3. **Full test suite**: `go test ./...`
+
+### Commit
+
+If all quality gates pass:
+
+1. Stage all changes
+2. Create a conventional commit message referencing the task ID
+3. Report success to the caller
+
+## Behavioral Constraints
+
+* No subagent spawning (leaf executor)
+* Never modify test files (tests are the specification)
+* Maximum 5 attempts before circuit breaker trips (skill-managed exception; see `circuit-breaker.instructions.md`)
+* The third counted failure of the same operation and error triggers the
+  universal circuit breaker.
+* Same-operation counters persist across all prior loop attempts; distinct
+  errors advance distinct per-operation counters
+* Read coding standards once at task start; targeted re-read for unfamiliar modules
+* One file change per tool call; broadcast after each write
+* When the `agent-intercom` capability pack is installed, use intercom broadcasts for attempt milestones and file-write visibility
+
+## Quality Criteria
+
+* All harness tests pass
+* No lint violations
+* No format violations
+* Full test suite passes
+* Changes are scoped to the task requirements
+
+## Model Routing
+
+This skill operates at **Tier 2 (Standard)** — routine build loop execution and quality verification.
+
+Generated by autoharness | Template: build-feature/SKILL.md.tmpl
