@@ -7,6 +7,7 @@ feature: 001-F
 pr: 4
 merge_commit_sha: d85eaeaf4c9ee36e2fbc9e3b3a407ffc8ea2052a
 compaction_status: done
+closure_status: READY
 releasability: READY
 ---
 
@@ -207,3 +208,17 @@ consolidation, not a broad sweep.
 **READY.** No blocking findings, no runtime risk, no deployment/rollback
 complexity beyond a standard `git revert` of the merge commit. Follow-ups are
 all non-blocking, deferred, stash-captured items for a future shipment.
+
+## Closure Evidence Remediation Note (post-hoc, non-substantive)
+
+This artifact was renamed from `2026-09-03-intercom-go-foundation-closure.md`
+to `001-S-001-F-post-merge-closure.md`, and a `closure_status: READY`
+frontmatter field was added alongside the existing `releasability: READY`
+field, to satisfy the installed `pipeline-topology` gate's machine-readable
+predecessor-closure contract (`docs/closure/{shipment_id}-*-post-merge-closure.md`
+with `compaction_status` in `{done, degraded}` and `closure_status` of
+`READY`/`READY_WITH_CONDITIONS`). No underlying closure work changed: the
+shipment reconciliation, merge, CI/review, P-020 compaction, and releasability
+evidence recorded above were already genuinely complete at the time this
+artifact was first written — only the file name and a machine-readable
+frontmatter key were corrected to match the gate's contract.
