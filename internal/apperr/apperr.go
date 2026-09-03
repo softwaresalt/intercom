@@ -5,6 +5,8 @@
 // oracle parity corpus depend on.
 package apperr
 
+import "fmt"
+
 // Kind identifies the taxonomy variant of an *Error. The set of kinds is a
 // frozen, operator-visible contract (Protected Invariant I4): adding,
 // removing, or renaming a rendered prefix is a breaking change requiring a
@@ -105,4 +107,42 @@ func (e *Error) Message() string {
 // contract.
 func (e *Error) Error() string {
 	return e.kind.prefix() + ": " + e.msg
+}
+
+// Unwrap returns only the cause, if any. Is (kind) and Unwrap (cause) are
+// deliberately separate mechanisms: a single Unwrap cannot serve both roles
+// (stash finding P1-j). Unlike the oracle, the cause is retained here so
+// errors.Is/errors.As can traverse it — a recorded improvement that does not
+// alter the display contract.
+func (e *Error) Unwrap() error {
+	return e.cause
+}
+
+// New constructs an *Error of the given kind with the given message.
+func New(kind Kind, msg string) *Error {
+	return &Error{kind: kind, msg: msg}
+}
+
+// Newf constructs an *Error of the given kind with a formatted message.
+//
+// Newf's format string is not checked by go vet's printf analyzer, since
+// custom "…f" functions outside the fmt package are not recognized by that
+// analyzer (finding GO-11). Call sites should be reviewed manually.
+func Newf(kind Kind, format string, args ...any) *Error {
+	return &Error{kind: kind, msg: fmt.Sprintf(format, args...)}
+}
+
+// Wrap constructs an *Error of the given kind whose message is cause.Error(),
+// reproducing the oracle's three From impls (toml::de::Error, sqlx::Error,
+// std::io::Error), which stringify the source. The cause is retained for
+// Unwrap even though it is not rendered by Error().
+//
+// Wrap guards cause == nil and falls back to an empty message rather than
+// panicking on a nil-interface method call (finding GO-3).
+func Wrap(kind Kind, cause error) *Error {
+	msg := ""
+	if cause != nil {
+		msg = cause.Error()
+	}
+	return &Error{kind: kind, msg: msg, cause: cause}
 }
