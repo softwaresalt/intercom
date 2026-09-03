@@ -2,6 +2,8 @@ package pathsafe
 
 import (
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
@@ -104,4 +106,75 @@ func filepathSplitList(p string) []string {
 	}
 	parts = append(parts, p[start:])
 	return parts
+}
+
+// Resolve validates candidate against the root's lexical and containment
+// rules and returns the resolved absolute path.
+//
+// Postcondition: the returned path is absolute, cleaned, and strictly
+// contained within the root (finding GO-15).
+//
+// Empty-candidate guard (required): if normalize() yields zero components,
+// Resolve returns "path outside workspace" rather than falling through.
+// Without this guard, filepath.Clean("") returns ".", the walk skips it,
+// and filepath.Join(root, "") returns root — silently handing the caller
+// the workspace root itself as a writable target (finding CORR-2,
+// empirically confirmed).
+//
+// Deliberate omission: the oracle's absolute-path fast path
+// (src/diff/path_safety.rs — an already-absolute candidate that
+// Path::starts_with(root) skips the walk) is not ported, because normalize
+// rejects all absolute candidates. Callers must pass workspace-relative
+// paths (finding SEC-3).
+func (r Root) Resolve(candidate string) (string, error) {
+	components, err := normalize(candidate)
+	if err != nil {
+		return "", err
+	}
+	if len(components) == 0 {
+		return "", apperr.New(apperr.KindPathViolation, outsideMsg)
+	}
+
+	joined := filepath.Join(append([]string{r.path}, components...)...)
+	if !hasPathPrefix(joined, r.path) {
+		return "", apperr.New(apperr.KindPathViolation, outsideMsg)
+	}
+
+	return joined, nil
+}
+
+// hasPathPrefix reports whether path is exactly prefix, or is contained
+// within prefix as a directory — i.e. path equals prefix, or path begins
+// with prefix followed by a path separator. This is explicitly
+// component-aware (finding GO-6): a raw strings.HasPrefix(path, prefix)
+// check would incorrectly admit a sibling directory named "<prefix>-evil".
+//
+// Case is folded only on Windows (finding GO-7), since a config-supplied
+// root and an EvalSymlinks-canonicalized candidate can differ only in case
+// on that platform.
+func hasPathPrefix(path, prefix string) bool {
+	if pathEqual(path, prefix) {
+		return true
+	}
+	return pathHasPrefix(path, prefix+string(filepath.Separator))
+}
+
+// pathEqual compares two paths for equality, folding case on Windows only.
+func pathEqual(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// pathHasPrefix reports whether path has the literal prefix p, folding case
+// on Windows only.
+func pathHasPrefix(path, p string) bool {
+	if runtime.GOOS == "windows" {
+		if len(path) < len(p) {
+			return false
+		}
+		return strings.EqualFold(path[:len(p)], p)
+	}
+	return strings.HasPrefix(path, p)
 }
