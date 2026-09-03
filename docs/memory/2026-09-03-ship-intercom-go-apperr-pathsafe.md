@@ -106,19 +106,34 @@ report-only mode, against the full diff and the reviewed plan:
 ## Branch / PR State
 
 Branch `feat/002-s-intercom-go-p1-error-taxonomy-and-workspace-path-containment`
-pushed to origin; PR to be opened against `main` with merge-commit strategy
-(P-009). Awaiting CI green and explicit operator merge approval (standard
-sequential mode, not dark mode).
+pushed to origin; **PR #8 opened**
+(`https://github.com/softwaresalt/intercom/pull/8`) against `main`.
+
+* CI: 10/10 checks green (`ci gate`, `detect code changes`,
+  `pipeline-topology (ambient)`, `test`, `lint`, `security`,
+  `load cross-compile targets`, 4/4 `cross-compile` legs).
+* P-018 Copilot-review gate: `NOT_APPLICABLE` (no engagement signal,
+  enforcement `auto`) — not merge-blocking.
+* §1.9 local review readiness: recorded in the PR body at HEAD
+  `a95e7c5bf7bd509f0a4d328fcc2fc5bb473e488e`; `mergeStateStatus: CLEAN`,
+  `mergeable: MERGEABLE`; HEAD has not advanced since the readiness record
+  was written.
+* P-009: repository allows merge-commit strategy (`allow_merge_commit:
+  true`); merge must be executed with `gh pr merge 8 --merge` explicitly
+  (repo also permits squash/rebase, so the strategy must be specified, not
+  assumed from a default).
+* **Stopped at the P-014 operator merge-approval gate** (standard
+  sequential mode, not dark mode) — awaiting explicit operator approval
+  before merge. No auto-merge performed.
 
 ## Next Steps
 
-1. Push branch, open PR, monitor hosted CI to green.
-2. Run §1.9 pre-merge review readiness gate and P-018 Copilot-review gate
-   before presenting as merge-ready.
-3. Present PR readiness summary to operator; wait for explicit merge
-   approval — do not auto-merge.
-4. On approval: merge via merge commit, run post-merge closure (branch
+1. **Awaiting operator merge approval for PR #8** at reviewed HEAD
+   `a95e7c5bf7bd509f0a4d328fcc2fc5bb473e488e`.
+2. On approval: merge via `gh pr merge 8 --merge` (merge commit, P-009),
+   confirm `MERGE_CONFIRMED`, then run post-merge closure (branch
    `post-merge/002-f-intercom-go-p1-error-taxonomy-and-workspace-path-containment`),
    safe-close shipment `002-S`, produce
    `docs/closure/002-S-002-F-post-merge-closure.md`, invoke P-020
-   compaction, restore any parked local state.
+   compaction, restore any parked local state (none currently parked —
+   dirty-state baseline preserved untouched throughout).
