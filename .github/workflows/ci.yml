@@ -205,6 +205,68 @@ jobs:
       - name: gitleaks detect
         run: gitleaks detect --source . --no-git -v
 
+  # Loads the target matrix from scripts/targets.json (single source of
+  # truth, shared with scripts/build.ps1 - 001.001.004-ST) so the CI matrix
+  # below cannot drift from the local build script's target list.
+  cross-compile-targets:
+    name: load cross-compile targets
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      targets: ${{ steps.load.outputs.targets }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Load targets.json
+        id: load
+        run: |
+          set -euo pipefail
+          targets="$(jq -c '.targets' scripts/targets.json)"
+          echo "targets=${targets}" >> "$GITHUB_OUTPUT"
+
+  # Cross-compile verification matrix (001.002.004-ST): asserts each of the 4
+  # targets builds successfully with CGO_ENABLED=0 from a single ubuntu
+  # runner. The target list is sourced from scripts/targets.json via the
+  # cross-compile-targets job above, never redeclared inline here.
+  cross-compile:
+    name: cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: [changes, cross-compile-targets]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.cross-compile-targets.outputs.targets) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for bin in cmd/*/; do
+            name=$(basename "$bin")
+            go build -mod=readonly -o "dist/${name}-${GOOS}-${GOARCH}" "./cmd/${name}"
+          done
+
   # Pipeline-topology CI backstop (Gate C, 109.014-T): the server-side
   # re-validation of the P-001 (at-most-one-active-shipment) / P-016 (single
   # implementation worktree/branch) invariants. Local hooks
@@ -274,12 +336,12 @@ jobs:
   ci-gate:
     name: ci gate
     if: always()
-    needs: [changes, expensive, lint, security, topology-check]
+    needs: [changes, expensive, lint, security, cross-compile-targets, cross-compile, topology-check]
     runs-on: ubuntu-latest
     steps:
       - name: Verify no required job failed
         run: |
-          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['topology-check'].result }}"
+          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }}"
           echo "job results: $results"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
