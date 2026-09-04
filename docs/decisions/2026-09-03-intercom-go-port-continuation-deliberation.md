@@ -29,7 +29,32 @@ tags:
   - "acp"
   - "mcp-retirement"
   - "staging"
+superseded_by: "docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md"
+governing: false
+status: superseded
 ---
+
+> [!IMPORTANT]
+> **SUPERSEDED / NON-GOVERNING — 2026-09-04.**
+> This artifact is retained as **historical evidence only**. It is no longer
+> authoritative for intercom-go's architecture, operator surface, transport,
+> configuration schema, or credentials.
+>
+> It was written under assumptions that an explicit operator architecture
+> correction has since retired: Slack as the operator surface, an
+> application-owned ACP broker / `coder/acp-go-sdk` / headless Copilot CLI
+> lifecycle, an iOS remote client, and the Rust `softwaresalt/agent-intercom`
+> repository as a **behavioral oracle**.
+>
+> The governing architecture is
+> [`docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md`](2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md)
+> and the governing design is
+> [`docs/design-docs/intercom-go-backend-architecture.md`](../design-docs/intercom-go-backend-architecture.md)
+> (revision 2).
+>
+> **Do not plan, implement, or review against this document.** The Rust
+> repository is now *historical reference only*, not a behavioral oracle.
+
 
 # intercom-go Port Continuation — Oracle Correction, MCP Retirement, and the Next Bounded Slice
 
