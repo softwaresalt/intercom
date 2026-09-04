@@ -1,0 +1,59 @@
+# Example configuration for intercom-go.
+#
+# This file is a synthetic, loadable example — every value here is a
+# placeholder for local experimentation or documentation purposes. It is
+# not intended to be copied verbatim into a production deployment without
+# review.
+#
+# default_workspace_root is set to "." so this example validates against
+# whatever directory it is loaded from (the repository root during the
+# bidirectional drift test in internal/config/example_test.go) without
+# requiring per-environment templating.
+#
+# See docs/config-reference.md for the full key reference, defaults, and
+# validation rules.
+
+default_workspace_root = "."
+max_concurrent_sessions = 3
+host_cli = "claude"
+host_cli_args = ["--dangerously-skip-permissions"]
+http_port = 3000
+ipc_name = "agent-intercom"
+retention_days = 30
+slack_detail_level = "standard"
+
+[commands]
+review = "review the changes and report findings"
+
+[slack]
+channel_id = "C0123456789"
+
+[slack.markdown_upload_extensions]
+".md" = "text/markdown"
+
+[timeouts]
+approval_seconds = 3600
+prompt_seconds = 1800
+wait_seconds = 0
+
+[stall]
+enabled = true
+inactivity_threshold_seconds = 300
+escalation_threshold_seconds = 120
+max_retries = 3
+default_nudge_message = "Continue working on the current task. Pick up where you left off."
+
+[database]
+path = "data/agent-intercom.db"
+
+[acp]
+max_sessions = 5
+startup_timeout_seconds = 30
+max_msg_rate = 10
+http_port = 3001
+
+[[workspace]]
+workspace_id = "example-workspace"
+channel_id = "C0123456789"
+label = "Example workspace"
+path = "."
