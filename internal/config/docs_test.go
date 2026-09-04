@@ -1,7 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -66,5 +69,75 @@ func TestConfigReferenceCoversValidationMessages(t *testing.T) {
 		if !strings.Contains(doc, msg) {
 			t.Errorf("docs/config-reference.md is missing validation message %q", msg)
 		}
+	}
+}
+
+// TestConfigReferenceCoversEverySchemaKeyPath mechanically enforces
+// schema-to-docs coupling: it walks Config's toml struct tags with the
+// same collectTOMLKeyPaths helper example_test.go already uses to check
+// config.toml.example, and asserts every resulting dotted key path appears
+// backtick-quoted in docs/config-reference.md. Without this, a schema
+// field could be added or removed without the reference doc's key tables
+// being caught out of date by any test — only the hand-maintained
+// fieldNames/messages lists above would need updating, and nothing forces
+// that update to happen.
+func TestConfigReferenceCoversEverySchemaKeyPath(t *testing.T) {
+	data, err := os.ReadFile(configReferencePath(t))
+	if err != nil {
+		t.Fatalf("failed to read docs/config-reference.md: %v", err)
+	}
+	doc := string(data)
+
+	all := collectTOMLKeyPaths(reflect.TypeOf(Config{}), "")
+	allSet := make(map[string]struct{}, len(all))
+	for _, p := range all {
+		allSet[p] = struct{}{}
+	}
+
+	// Only leaf paths are checked against a literal backtick-quoted dotted
+	// form: a struct- or slice-of-struct-typed section (e.g. "copilot",
+	// "workspace") is rendered in docs/config-reference.md as a TOML table
+	// header ("## `[copilot]`", "## `[[workspace]]`"), not as a bare
+	// backtick-quoted identifier, so it is intentionally excluded here
+	// rather than producing a false-positive gap. A map-typed field (e.g.
+	// "commands") is rendered the same way, with a synthetic
+	// "commands.<name>" placeholder key rather than the bare field name, so
+	// it is exempted identically.
+	mapFields := make(map[string]struct{})
+	configType := reflect.TypeOf(Config{})
+	for i := range configType.NumField() {
+		field := configType.Field(i)
+		tag := field.Tag.Get("toml")
+		if tag != "" && tag != "-" && field.Type.Kind() == reflect.Map {
+			mapFields[tag] = struct{}{}
+		}
+	}
+
+	var leaves []string
+	for _, p := range all {
+		if _, isMap := mapFields[p]; isMap {
+			continue
+		}
+		isPrefixOfAnother := false
+		for other := range allSet {
+			if other != p && strings.HasPrefix(other, p+".") {
+				isPrefixOfAnother = true
+				break
+			}
+		}
+		if !isPrefixOfAnother {
+			leaves = append(leaves, p)
+		}
+	}
+	sort.Strings(leaves)
+
+	var missing []string
+	for _, path := range leaves {
+		if !strings.Contains(doc, fmt.Sprintf("`%s`", path)) {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) != 0 {
+		t.Errorf("docs/config-reference.md is missing backtick-quoted key path(s): %v", missing)
 	}
 }

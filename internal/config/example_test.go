@@ -34,12 +34,24 @@ func TestExampleConfigLoadsWithZeroUnknownKeys(t *testing.T) {
 	}
 }
 
-func TestExampleConfigMatchesDefaultsOutsideDocumentedExemptions(t *testing.T) {
-	exemptions := []string{
-		"default_workspace_root",
-		"commands",
-		"workspace",
+// exampleValueAgreementExemptions enumerates the top-level toml keys that
+// are legitimately illustrative rather than default-equal: an empty root
+// path only validates against the package test working directory, and the
+// two collection fields exist purely to demonstrate shape. Every other
+// top-level field must match Default() exactly, checked generically below
+// so a future field addition is covered without a corresponding hand-written
+// comparison (U-D2 acceptance criterion: the assertion must fail if
+// database.path reverts to agent-intercom.db).
+func exampleValueAgreementExemptions() map[string]struct{} {
+	return map[string]struct{}{
+		"default_workspace_root": {},
+		"commands":               {},
+		"workspace":              {},
 	}
+}
+
+func TestExampleConfigMatchesDefaultsOutsideDocumentedExemptions(t *testing.T) {
+	exemptions := exampleValueAgreementExemptions()
 
 	got, _, err := Load(exampleConfigPath(t))
 	if err != nil {
@@ -47,32 +59,26 @@ func TestExampleConfigMatchesDefaultsOutsideDocumentedExemptions(t *testing.T) {
 	}
 	want := Default()
 
-	if got.MaxConcurrentSessions != want.MaxConcurrentSessions {
-		t.Errorf("config.toml.example max_concurrent_sessions = %v, want default %v", got.MaxConcurrentSessions, want.MaxConcurrentSessions)
-	}
-	if got.Copilot != want.Copilot {
-		t.Errorf("config.toml.example [copilot] = %+v, want default %+v", got.Copilot, want.Copilot)
-	}
-	if got.HTTPPort != want.HTTPPort {
-		t.Errorf("config.toml.example http_port = %v, want default %v", got.HTTPPort, want.HTTPPort)
-	}
-	if got.RetentionDays != want.RetentionDays {
-		t.Errorf("config.toml.example retention_days = %v, want default %v", got.RetentionDays, want.RetentionDays)
-	}
-	if got.OperatorDetailLevel != want.OperatorDetailLevel {
-		t.Errorf("config.toml.example operator_detail_level = %v, want default %v", got.OperatorDetailLevel, want.OperatorDetailLevel)
-	}
-	if got.Timeouts != want.Timeouts {
-		t.Errorf("config.toml.example [timeouts] = %+v, want default %+v", got.Timeouts, want.Timeouts)
-	}
-	if got.Stall != want.Stall {
-		t.Errorf("config.toml.example [stall] = %+v, want default %+v", got.Stall, want.Stall)
-	}
-	if got.Database != want.Database {
-		t.Errorf("config.toml.example [database] = %+v, want default %+v", got.Database, want.Database)
-	}
+	gotVal := reflect.ValueOf(got).Elem()
+	wantVal := reflect.ValueOf(want).Elem()
+	typ := gotVal.Type()
 
-	_ = exemptions
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		tag := field.Tag.Get("toml")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if _, exempt := exemptions[tag]; exempt {
+			continue
+		}
+
+		gotField := gotVal.Field(i).Interface()
+		wantField := wantVal.Field(i).Interface()
+		if !reflect.DeepEqual(gotField, wantField) {
+			t.Errorf("config.toml.example %s = %+v, want default %+v", tag, gotField, wantField)
+		}
+	}
 }
 
 func TestExampleConfigCoversEveryStructField(t *testing.T) {
