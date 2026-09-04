@@ -21,10 +21,6 @@ func exampleConfigPath(t *testing.T) string {
 	return path
 }
 
-// TestExampleConfigLoadsWithZeroUnknownKeys covers unit E1's acceptance
-// criterion (i): a test loads config.toml.example and asserts err == nil
-// and len(Report.UnknownKeys) == 0 — catching example keys absent from
-// the struct.
 func TestExampleConfigLoadsWithZeroUnknownKeys(t *testing.T) {
 	cfg, report, err := Load(exampleConfigPath(t))
 	if err != nil {
@@ -38,12 +34,47 @@ func TestExampleConfigLoadsWithZeroUnknownKeys(t *testing.T) {
 	}
 }
 
-// TestExampleConfigCoversEveryStructField covers unit E1's acceptance
-// criterion (ii): a reflection-based test walks every toml-tagged field
-// in the Config hierarchy and asserts each key path appears in the
-// example, catching struct fields absent from the example — the
-// direction a one-directional drift test (checking only for unknown
-// keys) would miss (attempt-1 P1-e finding).
+func TestExampleConfigMatchesDefaultsOutsideDocumentedExemptions(t *testing.T) {
+	exemptions := []string{
+		"default_workspace_root",
+		"commands",
+		"workspace",
+	}
+
+	got, _, err := Load(exampleConfigPath(t))
+	if err != nil {
+		t.Fatalf("Load(config.toml.example) returned unexpected error: %v", err)
+	}
+	want := Default()
+
+	if got.MaxConcurrentSessions != want.MaxConcurrentSessions {
+		t.Errorf("config.toml.example max_concurrent_sessions = %v, want default %v", got.MaxConcurrentSessions, want.MaxConcurrentSessions)
+	}
+	if got.Copilot != want.Copilot {
+		t.Errorf("config.toml.example [copilot] = %+v, want default %+v", got.Copilot, want.Copilot)
+	}
+	if got.HTTPPort != want.HTTPPort {
+		t.Errorf("config.toml.example http_port = %v, want default %v", got.HTTPPort, want.HTTPPort)
+	}
+	if got.RetentionDays != want.RetentionDays {
+		t.Errorf("config.toml.example retention_days = %v, want default %v", got.RetentionDays, want.RetentionDays)
+	}
+	if got.OperatorDetailLevel != want.OperatorDetailLevel {
+		t.Errorf("config.toml.example operator_detail_level = %v, want default %v", got.OperatorDetailLevel, want.OperatorDetailLevel)
+	}
+	if got.Timeouts != want.Timeouts {
+		t.Errorf("config.toml.example [timeouts] = %+v, want default %+v", got.Timeouts, want.Timeouts)
+	}
+	if got.Stall != want.Stall {
+		t.Errorf("config.toml.example [stall] = %+v, want default %+v", got.Stall, want.Stall)
+	}
+	if got.Database != want.Database {
+		t.Errorf("config.toml.example [database] = %+v, want default %+v", got.Database, want.Database)
+	}
+
+	_ = exemptions
+}
+
 func TestExampleConfigCoversEveryStructField(t *testing.T) {
 	expected := collectTOMLKeyPaths(reflect.TypeOf(Config{}), "")
 	sort.Strings(expected)
