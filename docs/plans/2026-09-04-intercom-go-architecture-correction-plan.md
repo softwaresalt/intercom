@@ -164,47 +164,74 @@ keyed on `workspace_id`, preserving the existing fallback to
 not delete the struct field).
 *Sequenced FIRST* so U-B1's field deletion has no surviving consumer.
 
-**U-B1 — Remove the retired schema surface and its validation** *(atomic)*
+**U-B1 — Remove the retired schema surface and its validation** *(split into
+two commits: U-B1a then U-B1b)*
+
+> **Split rationale (attempt-3 scope finding).** Compile-integrity requires a
+> deleted field and its consumers to die together — but it does **not** require
+> the *additive* `[copilot]` work to ride along. Deleting first and adding
+> second leaves a compiling tree at both boundaries and keeps each commit
+> inside the 2-hour rule. The atomicity that matters is
+> delete-field-with-its-consumers, which U-B1a preserves.
+
+**U-B1a — Delete the retired schema and its validation**
 *Files:* `internal/config/config.go`, `internal/config/validate.go`,
 `internal/config/default.go`, `internal/config/load.go`.
-*Change (all in one commit, because the tree cannot compile otherwise):*
-* delete `SlackConfig`, the `Slack` field, `WorkspaceMapping.ChannelID`;
-* delete `ACPConfig`/`ACP` **and all four of its defaults**; add
-  `CopilotConfig{ CLIPath string \`toml:"cli_path"\` }` on `[copilot]`.
-  **`startup_timeout_seconds` is deliberately NOT added in C1** — it would be
-  an unconsumed key (no SDK in this slice, per R1), it would add a sixth
-  defaults pin site to the plan's highest-risk coupling, and because an
-  explicitly written `0` overrides a default, it would ship a
-  zero-`Client.Start`-deadline hazard with no rule guarding it. It lands in
-  **C2** with its first real consumer and its own validation;
+*Change (one commit — the tree cannot compile otherwise):*
+
+* delete `SlackConfig`, the `Slack` field, and `WorkspaceMapping.ChannelID`;
+* delete `ACPConfig`/`ACP` **and all four of its defaults**;
 * delete `HostCLI` and `HostCLIArgs`; delete `IPCName` and its default;
 * rename `SlackDetailLevel` → `OperatorDetailLevel` and the TOML key to
   `operator_detail_level`, preserving the iota-zero property (I3) and updating
   the `UnmarshalText` error message;
-* **validation:** delete rule 4 (`channel_id` presence) and rule 8
-  (`channel_id` uniqueness) including `validateChannelUniqueness`; **eliminate**
-  rule 6 entirely (not relax it); implement the **single rule-5 `cli_path`
-  contract** exactly per design §6.2's predicate —
-  `"" → valid` (return early, **no PATH advisory**, do not fall through to
-  `exec.LookPath("")`); `filepath.IsAbs → valid iff exists`;
-  **contains `/` or `\` and not absolute → ERROR (relative)**; otherwise bare
-  name → advisory only, never fatal. Both separators are tested regardless of
-  `GOOS`, following the existing `containsDotDotSegment` precedent, because
-  `config.toml` is portable text. Renumber the contract to the **7** rules
-  enumerated by name in the governing decision, preserving the fixed-order
-  property (I2);
-* **`load.go` doc comments:** remove "its own 10 rules", the "rule 6 required"
-  claim, and the `Slack.MarkdownUploadExtensions` reference in
-  `mapFieldPaths`/`findCaseFoldCollision`.
+* **validation:** delete rule 4 (`channel_id` presence), rule 8 (`channel_id`
+  uniqueness, including `validateChannelUniqueness`), and **eliminate rule 6
+  entirely** — not relax it. `validateHostCLI` is removed wholesale here; its
+  surviving absolute-path existence semantics are re-established on
+  `cli_path` in U-B1b.
+
 *Verifiable exit:* `go build ./...` green; no `Slack`/`ACP`/`HostCLI`/
 `IPCName`/`ChannelID` identifier in non-test package code; no stale rule-count,
 rule-6, **defaults-count**, channel-routing, or Slack-secret claim in **any**
-doc comment. Specifically: `config.go`'s package doc must lose "the 17 non-zero
-defaults", "workspace-to-channel routing", and the `app_token`/`bot_token`/
-`team_id` enumeration; `default.go`'s doc comment must lose "the oracle's 17
-non-zero defaults"; `Report`'s comment must lose "the `host_cli` PATH
-advisory"; `load.go` must lose "its own 10 rules", the rule-6-required claim,
+doc comment. Specifically: `config.go`'s package doc loses "the 17 non-zero
+defaults", "workspace-to-channel routing", and the
+`app_token`/`bot_token`/`team_id` enumeration; `default.go`'s doc comment loses
+"the oracle's 17 non-zero defaults"; `Report`'s comment loses "the `host_cli`
+PATH advisory"; `load.go` loses "its own 10 rules", the rule-6-required claim,
 and the `Slack.MarkdownUploadExtensions` reference.
+
+**U-B1b — Add `[copilot].cli_path` and the rule-5 contract**
+*Files:* `internal/config/config.go`, `internal/config/validate.go`.
+*Change:*
+
+* add `CopilotConfig{ CLIPath string }` bound to `cli_path` on a `[copilot]`
+  section. **`startup_timeout_seconds` is deliberately NOT added in C1** — it
+  would be an unconsumed key (no SDK in this slice, per R1), it would add a
+  sixth defaults pin site to the plan's highest-risk coupling, and because an
+  explicitly written `0` overrides a default it would ship a
+  zero-`Client.Start`-deadline hazard with no rule guarding it. It lands in
+  **C2** with its first real consumer and its own validation;
+* implement the **single rule-5 `cli_path` contract** exactly per design
+  §6.2's predicate:
+
+```text
+cli_path == ""                              -> valid, return early, NO PATH advisory
+                                               (must NOT fall through to exec.LookPath(""))
+filepath.IsAbs(cli_path)                    -> valid iff the file exists, else ERROR
+matches ^[A-Za-z]: and not absolute         -> ERROR (Windows drive-relative, e.g. "C:copilot")
+contains '/' or '\' (and not absolute)      -> ERROR (relative path)
+otherwise (no separator, no drive prefix)   -> bare name: PATH advisory only, never fatal
+```
+
+  Both separators are tested regardless of `GOOS`, following the existing
+  `containsDotDotSegment` precedent, because `config.toml` is portable text;
+* renumber the contract to the **7** rules enumerated by name in the governing
+  decision, preserving the fixed-order property (I2).
+
+*Verifiable exit:* `go build ./...` green; the contract enumerates exactly the
+7 named rules in fixed order; the relative-path and drive-relative controls
+live **inside** rule 5 and do not appear as an eighth rule.
 
 **U-B2 — Re-found the package test surface** *(tests domain)*
 *Files:* `internal/config/{workspace,hostcli→copilotcli,paths,decode_semantics,load,decode,detail,validate}_test.go`.
@@ -383,13 +410,14 @@ stash `BEDD2E70`, without which "required" conveys assurance it does not have.
 U-A1  (go 1.24 floor)            [independent; deferrable]
 
 U-B0  (remove channel routing)
-   └─► U-B1 (schema + validation, ATOMIC)
-          └─► U-B2 (test surface re-founded)
-                 └─► U-D1 (defaults + count-pinned tables)
-                        ├─► U-D2 (example)
-                        └─► U-D3 (reference doc)
-                               └─► U-E1a (gate script)
-                                      └─► U-E1b (CI wiring, non-blocking)
+   └─► U-B1a (delete retired schema + validation)
+          └─► U-B1b (add [copilot].cli_path + rule 5)
+                 └─► U-B2 (test surface re-founded)
+                        └─► U-D1 (defaults + count-pinned tables)
+                               ├─► U-D2 (example)
+                               └─► U-D3 (reference doc)
+                                      └─► U-E1a (gate script)
+                                             └─► U-E1b (CI wiring, non-blocking)
 ```
 
 Strictly linear apart from U-A1 and the U-D2/U-D3 pair. No cycles.
@@ -883,5 +911,6 @@ were factual errors that would have produced a non-compiling tree.
 
 
 <!-- plan-review-attempt: 3 -->
+
 
 
