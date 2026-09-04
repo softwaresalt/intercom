@@ -20,6 +20,7 @@ const MaxConfigBytes = 1 << 20 // 1 MiB
 type Config struct {
 	DefaultWorkspaceRoot  string              `toml:"default_workspace_root"`
 	MaxConcurrentSessions uint32              `toml:"max_concurrent_sessions"`
+	Copilot               CopilotConfig       `toml:"copilot"`
 	Commands              map[string]string   `toml:"commands"`
 	HTTPPort              uint16              `toml:"http_port"`
 	Timeouts              TimeoutConfig       `toml:"timeouts"`
@@ -28,6 +29,11 @@ type Config struct {
 	Database              DatabaseConfig      `toml:"database"`
 	OperatorDetailLevel   OperatorDetailLevel `toml:"operator_detail_level"`
 	Workspaces            []WorkspaceMapping  `toml:"workspace"`
+}
+
+// CopilotConfig is the [copilot] section.
+type CopilotConfig struct {
+	CLIPath string `toml:"cli_path"`
 }
 
 // TimeoutConfig is the [timeouts] section.

@@ -2,6 +2,10 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
@@ -45,7 +49,12 @@ func (c *Config) Validate() (Report, error) {
 		return report, err
 	}
 
-	// Rule 5: each non-empty [[workspace]].path must canonicalize
+	// Rule 5: copilot.cli_path must be well-formed.
+	if err := validateCLIPath(c.Copilot.CLIPath, &report); err != nil {
+		return report, err
+	}
+
+	// Rule 6: each non-empty [[workspace]].path must canonicalize
 	// (divergence V7 — the oracle passes this straight into a subprocess
 	// current_dir() unvalidated; P2 treats each mapping path as an
 	// explicitly authorized workspace root, closing a containment gap a
@@ -62,7 +71,7 @@ func (c *Config) Validate() (Report, error) {
 		canonicalWorkspacePaths[i] = wsRoot.Path()
 	}
 
-	// Rule 6: database.path must not contain a '..' segment (divergence
+	// Rule 7: database.path must not contain a '..' segment (divergence
 	// V8 — the oracle leaves it unrestricted while a later phase creates
 	// parent directories there, an arbitrary-write primitive otherwise).
 	// Absolute paths remain permitted as an explicit, visible operator
@@ -113,6 +122,46 @@ func containsDotDotSegment(path string) bool {
 		}
 	}
 	return false
+}
+
+// validateCLIPath implements validation rule 5. Empty is valid and returns
+// early with no advisory. An absolute path must exist. A Windows drive-
+// relative path and any other non-absolute path containing a separator are
+// rejected. A bare name is permitted, but if exec.LookPath cannot resolve
+// it a single non-fatal advisory is appended to report.Warnings.
+func validateCLIPath(cliPath string, report *Report) error {
+	if cliPath == "" {
+		return nil
+	}
+
+	if filepath.IsAbs(cliPath) {
+		if _, err := os.Stat(cliPath); err != nil {
+			return apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' does not exist", cliPath)
+		}
+		return nil
+	}
+
+	if hasWindowsDrivePrefix(cliPath) {
+		return apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must not be drive-relative; use an absolute path, a bare name, or empty", cliPath)
+	}
+
+	if strings.ContainsAny(cliPath, `/\`) {
+		return apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must not be relative; use an absolute path, a bare name, or empty", cliPath)
+	}
+
+	if _, err := exec.LookPath(cliPath); err != nil {
+		report.Warnings = append(report.Warnings, fmt.Sprintf("copilot.cli_path '%s' was not resolvable via PATH", cliPath))
+	}
+
+	return nil
+}
+
+func hasWindowsDrivePrefix(path string) bool {
+	if len(path) < 2 || path[1] != ':' {
+		return false
+	}
+	b := path[0]
+	return ('A' <= b && b <= 'Z') || ('a' <= b && b <= 'z')
 }
 
 // validateMappingFields implements validation rules 3-4: each
