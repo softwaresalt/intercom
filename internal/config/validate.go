@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 	"github.com/softwaresalt/intercom-go/internal/pathsafe"
@@ -57,10 +58,59 @@ func (c *Config) Validate() (Report, error) {
 		return report, err
 	}
 
-	// Deferred commit: every rule implemented so far has passed.
+	// Rule 9: each non-empty [[workspace]].path must canonicalize
+	// (divergence V7 — the oracle passes this straight into a subprocess
+	// current_dir() unvalidated; P2 treats each mapping path as an
+	// explicitly authorized workspace root, closing a containment gap a
+	// later phase would otherwise inherit).
+	canonicalWorkspacePaths := make([]string, len(c.Workspaces))
+	for i, m := range c.Workspaces {
+		if m.Path == "" {
+			continue
+		}
+		wsRoot, err := pathsafe.NewRoot(m.Path)
+		if err != nil {
+			return report, apperr.Newf(apperr.KindConfig, "workspace path invalid for workspace_id '%s': %s", m.WorkspaceID, err.Error())
+		}
+		canonicalWorkspacePaths[i] = wsRoot.Path()
+	}
+
+	// Rule 10: database.path must not contain a '..' segment (divergence
+	// V8 — the oracle leaves it unrestricted while a later phase creates
+	// parent directories there, an arbitrary-write primitive otherwise).
+	// Absolute paths remain permitted as an explicit, visible operator
+	// privilege.
+	if containsDotDotSegment(c.Database.Path) {
+		return report, apperr.New(apperr.KindConfig, "database.path must not contain '..' segments")
+	}
+
+	// Deferred commit: every rule has passed.
 	c.DefaultWorkspaceRoot = root.Path()
+	for i, p := range canonicalWorkspacePaths {
+		if p != "" {
+			c.Workspaces[i].Path = p
+		}
+	}
 
 	return report, nil
+}
+
+// containsDotDotSegment reports whether path contains a literal ".."
+// path-separator-delimited segment, checked against the original
+// (uncleaned) string so a traversal component cannot be hidden by
+// filepath.Clean's collapsing behavior. Both '/' and '\\' are treated as
+// separators regardless of GOOS, since a config file is portable text
+// that may be authored on a different platform than the one that loads
+// it.
+func containsDotDotSegment(path string) bool {
+	for _, part := range strings.FieldsFunc(path, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		if part == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // validateHostCLI implements Validation Contract rules 6-7: host_cli must
