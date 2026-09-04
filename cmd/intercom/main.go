@@ -8,6 +8,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/softwaresalt/intercom-go/internal/config"
 )
 
 // errNotImplemented is returned by RunE until server behavior is implemented.
@@ -42,7 +44,7 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&configPath, "config", "", "path to the intercom config file")
+	cmd.Flags().StringVar(&configPath, "config", config.DefaultConfigPath, "path to the intercom config file")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
 
 	return cmd

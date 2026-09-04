@@ -3,13 +3,15 @@ package config
 import "testing"
 
 // newValidBaseConfig returns a Default()-based config with a valid
-// canonicalizable DefaultWorkspaceRoot, suitable as a base for mapping-
-// stage tests that must reach rules 3-5/8 without failing rule 1/2a/2b
-// first.
+// canonicalizable DefaultWorkspaceRoot and a non-empty HostCLI (a bare
+// name, so rule 7's absolute-path-exists check never applies), suitable
+// as a base for mapping-stage and channel-uniqueness tests that must
+// reach rules 3-5/8 without failing rule 1/2a/2b/6 first.
 func newValidBaseConfig(t *testing.T) *Config {
 	t.Helper()
 	cfg := Default()
 	cfg.DefaultWorkspaceRoot = t.TempDir()
+	cfg.HostCLI = "intercom-host-cli-placeholder"
 	return cfg
 }
 
