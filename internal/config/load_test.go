@@ -123,3 +123,45 @@ func TestLoadDelegatesToDecodeOnSuccess(t *testing.T) {
 func escapeTOMLString(s string) string {
 	return strings.ReplaceAll(s, `\`, `\\`)
 }
+
+// TestDecodeDoesNotRejectCaseVariantMapEntriesAsCollisions is a
+// regression for a review finding: findCaseFoldCollision must not treat
+// two differently-cased entries inside a map-typed field (Commands,
+// Slack.MarkdownUploadExtensions) as an ambiguous struct-field collision.
+// Unlike a struct field, a map's runtime keys are literal, case-sensitive
+// data assigned directly into the map — "build" and "Build" are two
+// distinct, unambiguous named commands, not a decode collision.
+func TestDecodeDoesNotRejectCaseVariantMapEntriesAsCollisions(t *testing.T) {
+	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n" +
+		"[commands]\nbuild = \"go build ./...\"\nBuild = \"make build\"\n"
+
+	cfg, _, err := Decode(data)
+	if err != nil {
+		t.Fatalf("Decode returned unexpected error for distinct case-variant map keys: %v", err)
+	}
+	if got, want := len(cfg.Commands), 2; got != want {
+		t.Errorf("len(Commands) = %d, want %d (both entries preserved)", got, want)
+	}
+	if cfg.Commands["build"] != "go build ./..." || cfg.Commands["Build"] != "make build" {
+		t.Errorf("Commands = %v, want both distinct keys preserved verbatim", cfg.Commands)
+	}
+}
+
+// TestDecodeRequiredKeyPrecheckPrecedesValidate locks the documented
+// order-of-checks caveat in Decode's doc comment: a config that both
+// omits default_workspace_root and violates Validate's rule 1
+// (max_concurrent_sessions == 0) returns Decode's own required-key
+// message, not Validate's rule-1 message, because the required-key
+// pre-check (Decode step 4) runs and returns before Validate is ever
+// invoked (Decision R8).
+func TestDecodeRequiredKeyPrecheckPrecedesValidate(t *testing.T) {
+	data := "max_concurrent_sessions = 0\nhost_cli = \"claude\"\n"
+
+	_, _, err := Decode(data)
+	if err == nil {
+		t.Fatal("Decode returned nil error for a config omitting default_workspace_root")
+	}
+	if got, want := err.Error(), "config: default_workspace_root must be set"; got != want {
+		t.Errorf("Decode error = %q, want %q (required-key pre-check precedes Validate)", got, want)
+	}
+}

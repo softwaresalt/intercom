@@ -6,9 +6,11 @@
 # review.
 #
 # default_workspace_root is set to "." so this example validates against
-# whatever directory it is loaded from (the repository root during the
-# bidirectional drift test in internal/config/example_test.go) without
-# requiring per-environment templating.
+# the current working directory of whatever process loads it (the
+# internal/config package directory when run via `go test` from
+# internal/config/example_test.go, since Go sets the test process's
+# working directory to the package directory) without requiring
+# per-environment templating.
 #
 # See docs/config-reference.md for the full key reference, defaults, and
 # validation rules.

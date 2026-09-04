@@ -21,7 +21,7 @@ covering every key in this reference.
 |---|---|---|---|
 | `default_workspace_root` | string | *(required)* | Canonicalized through `pathsafe.NewRoot`; must exist. |
 | `max_concurrent_sessions` | integer | `3` | Must be greater than zero. |
-| `host_cli` | string | *(required)* | The host CLI binary to spawn. Resolved against `PATH` at spawn time if not absolute. |
+| `host_cli` | string | *(required)* | The host CLI binary to spawn in a later phase. A non-absolute value is checked as a non-fatal, load-time advisory (`exec.LookPath`) — resolution against `PATH` at actual spawn time happens only in that later phase, not in `internal/config`. |
 | `host_cli_args` | array of strings | `[]` | Extra arguments passed to `host_cli`. |
 | `commands` | table of string to string | `{}` | Named command shortcuts. |
 | `http_port` | integer (0–65535) | `3000` | |
@@ -133,6 +133,19 @@ yields the same error.
 A relative or bare (non-absolute) `host_cli` that `exec.LookPath` cannot
 resolve produces a single non-fatal advisory instead of a validation
 failure.
+
+**Order-of-checks caveat.** The rule table above describes `Validate()`'s
+own internal order, which is fixed and unconditional whenever `Validate()`
+is called directly. `Load`/`Decode` (the package's primary entry points)
+additionally perform an earlier, separate check for
+`default_workspace_root` being entirely absent from the document, before
+`Validate()` is ever invoked. A document that both omits
+`default_workspace_root` and violates a `Validate()` rule ordered earlier
+than rule 2 (e.g. rule 1, `max_concurrent_sessions == 0`) therefore still
+reports `default_workspace_root must be set` from `Load`/`Decode`, not the
+rule-1 message — `Validate()`'s fixed-order guarantee holds fully only
+when `Validate()` is called directly. This is a deliberate design
+predating this document (Decision R8) and is locked by a regression test.
 
 ## Recorded divergences from the oracle
 

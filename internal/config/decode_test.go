@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
@@ -105,5 +106,26 @@ func TestDecodeEscapesControlCharactersInUnknownKeys(t *testing.T) {
 	}
 	if !strings.Contains(report.UnknownKeys[0], `\n`) {
 		t.Errorf("UnknownKeys[0] = %q, want an escaped \\n marker", report.UnknownKeys[0])
+	}
+}
+
+// TestSanitizeKeyPathTruncatesOnRuneBoundary is a regression for a review
+// finding: truncating a sanitized key path at a raw byte index can split
+// a multi-byte UTF-8 rune straddling the boundary, producing an invalid
+// UTF-8 string. The truncated result must always be valid UTF-8, no
+// matter where the multi-byte rune falls relative to maxUnknownKeyBytes.
+func TestSanitizeKeyPathTruncatesOnRuneBoundary(t *testing.T) {
+	// "é" is 2 bytes (0xC3 0xA9) in UTF-8. Build a path whose multi-byte
+	// rune straddles the maxUnknownKeyBytes boundary.
+	prefix := strings.Repeat("a", maxUnknownKeyBytes-1)
+	path := prefix + "é" + "trailing"
+
+	got := sanitizeKeyPath(path)
+
+	if !utf8.ValidString(got) {
+		t.Fatalf("sanitizeKeyPath(%d-byte input) = %q, not valid UTF-8", len(path), got)
+	}
+	if len(got) > maxUnknownKeyBytes {
+		t.Errorf("len(sanitizeKeyPath(...)) = %d, want <= %d", len(got), maxUnknownKeyBytes)
 	}
 }

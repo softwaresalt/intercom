@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -40,7 +41,7 @@ func (c *Config) Validate() (Report, error) {
 	// Rule 2b: default_workspace_root must canonicalize (config.rs:543-547).
 	root, err := pathsafe.NewRoot(c.DefaultWorkspaceRoot)
 	if err != nil {
-		return report, apperr.Newf(apperr.KindConfig, "default_workspace_root invalid: %s", err.Error())
+		return report, apperr.Newf(apperr.KindConfig, "default_workspace_root invalid: %s", pathErrorMessage(err))
 	}
 
 	// Rules 3-5: per-entry workspace_id/channel_id/duplicate checks.
@@ -70,7 +71,7 @@ func (c *Config) Validate() (Report, error) {
 		}
 		wsRoot, err := pathsafe.NewRoot(m.Path)
 		if err != nil {
-			return report, apperr.Newf(apperr.KindConfig, "workspace path invalid for workspace_id '%s': %s", m.WorkspaceID, err.Error())
+			return report, apperr.Newf(apperr.KindConfig, "workspace path invalid for workspace_id '%s': %s", m.WorkspaceID, pathErrorMessage(err))
 		}
 		canonicalWorkspacePaths[i] = wsRoot.Path()
 	}
@@ -93,6 +94,21 @@ func (c *Config) Validate() (Report, error) {
 	}
 
 	return report, nil
+}
+
+// pathErrorMessage extracts the underlying message from a
+// pathsafe.NewRoot error, avoiding the redundant nested phrasing that
+// would result from embedding the full apperr.Error.Error() rendering
+// (which already carries its own "path violation: " kind prefix) inside
+// this package's own "{field} invalid: {message}" wrapper. Falls back to
+// err.Error() if err is not an *apperr.Error (defensive; pathsafe.NewRoot
+// always returns one today).
+func pathErrorMessage(err error) string {
+	var appErr *apperr.Error
+	if errors.As(err, &appErr) {
+		return appErr.Message()
+	}
+	return err.Error()
 }
 
 // containsDotDotSegment reports whether path contains a literal ".."
