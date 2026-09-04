@@ -1,6 +1,6 @@
 module github.com/softwaresalt/intercom-go
 
-go 1.22
+go 1.24
 
 // toolchain pinned above the go.mod language floor to remediate GO-2025-3750
 // (Inconsistent handling of O_CREATE|O_EXCL on Unix and Windows in os/syscall,
