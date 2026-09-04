@@ -1,6 +1,11 @@
 package config
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 	"github.com/softwaresalt/intercom-go/internal/pathsafe"
 )
@@ -42,11 +47,12 @@ func (c *Config) Validate() (Report, error) {
 		return report, err
 	}
 
+	// Rules 6-7: host_cli must be set, and if absolute, must exist.
+	if err := validateHostCLI(c.HostCLI, &report); err != nil {
+		return report, err
+	}
+
 	// Rule 8: duplicate channel_id across [[workspace]] entries.
-	//
-	// Ordering note: rules 6-7 (host_cli) sit between rules 5 and 8 in the
-	// fixed Validation Contract order; they are wired in by unit C3, which
-	// splits this call from the one above.
 	if err := validateChannelUniqueness(c.Workspaces); err != nil {
 		return report, err
 	}
@@ -55,6 +61,35 @@ func (c *Config) Validate() (Report, error) {
 	c.DefaultWorkspaceRoot = root.Path()
 
 	return report, nil
+}
+
+// validateHostCLI implements Validation Contract rules 6-7: host_cli must
+// be set (rule 6, divergence V5 — the oracle's message additionally
+// mentions "to use ACP mode", a retired concept), and if it is an
+// absolute path, that path must exist (rule 7). A bare or relative name is
+// resolved at spawn time against PATH, not here; if exec.LookPath cannot
+// resolve it, a single non-fatal advisory is appended to report.Warnings.
+// The oracle's additional "not in a standard install location" warning is
+// deliberately not ported — the set of standard locations is undefined
+// and unverifiable, and the oracle discards the result anyway
+// (main.rs:139 via .ok()).
+func validateHostCLI(hostCLI string, report *Report) error {
+	if hostCLI == "" {
+		return apperr.New(apperr.KindConfig, "host_cli must be set")
+	}
+
+	if filepath.IsAbs(hostCLI) {
+		if _, err := os.Stat(hostCLI); err != nil {
+			return apperr.Newf(apperr.KindConfig, "host_cli '%s' does not exist", hostCLI)
+		}
+		return nil
+	}
+
+	if _, err := exec.LookPath(hostCLI); err != nil {
+		report.Warnings = append(report.Warnings, fmt.Sprintf("host_cli '%s' was not resolvable via PATH", hostCLI))
+	}
+
+	return nil
 }
 
 // validateMappingFields implements Validation Contract rules 3-5: each

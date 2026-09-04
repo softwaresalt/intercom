@@ -75,6 +75,7 @@ func TestValidateRule2bValidRootCanonicalizesWithoutUNCPrefix(t *testing.T) {
 	dir := t.TempDir()
 	cfg := Default()
 	cfg.DefaultWorkspaceRoot = dir
+	cfg.HostCLI = "intercom-host-cli-placeholder"
 
 	_, err := cfg.Validate()
 	if err != nil {

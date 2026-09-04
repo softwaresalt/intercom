@@ -11,7 +11,7 @@ import (
 // acceptance criterion (i): a minimal valid config yields all 17
 // defaults intact.
 func TestDecodeMinimalConfigKeepsAllDefaultsIntact(t *testing.T) {
-	cfg, _, err := Decode("default_workspace_root = \".\"\n")
+	cfg, _, err := Decode("default_workspace_root = \".\"\nhost_cli = \"claude\"\n")
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestDecodeMinimalConfigKeepsAllDefaultsIntact(t *testing.T) {
 // proving an explicitly-written false beats the non-zero true default
 // (requirement R5).
 func TestDecodeExplicitFalseOverridesTrueDefault(t *testing.T) {
-	data := "default_workspace_root = \".\"\n[stall]\nenabled = false\n"
+	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n[stall]\nenabled = false\n"
 	cfg, _, err := Decode(data)
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
@@ -69,7 +69,7 @@ func TestDecodeExplicitFalseOverridesTrueDefault(t *testing.T) {
 // acceptance criterion (iii): [timeouts]\napproval_seconds = 0 yields 0,
 // proving an explicitly-written zero beats the non-zero default.
 func TestDecodeExplicitZeroOverridesNonZeroDefault(t *testing.T) {
-	data := "default_workspace_root = \".\"\n[timeouts]\napproval_seconds = 0\n"
+	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n[timeouts]\napproval_seconds = 0\n"
 	cfg, _, err := Decode(data)
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
