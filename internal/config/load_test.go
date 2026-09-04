@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -144,6 +145,60 @@ func TestDecodeDoesNotRejectCaseVariantMapEntriesAsCollisions(t *testing.T) {
 	}
 	if cfg.Commands["build"] != "go build ./..." || cfg.Commands["Build"] != "make build" {
 		t.Errorf("Commands = %v, want both distinct keys preserved verbatim", cfg.Commands)
+	}
+}
+
+// TestDecodeDoesNotRejectCaseVariantNestedMapEntriesAsCollisions covers
+// the nested-map-field case (Slack.MarkdownUploadExtensions) that
+// exercises collectMapPaths's reflect.Struct recursion branch, which
+// TestDecodeDoesNotRejectCaseVariantMapEntriesAsCollisions (a top-level
+// map field) does not reach.
+func TestDecodeDoesNotRejectCaseVariantNestedMapEntriesAsCollisions(t *testing.T) {
+	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n" +
+		"[slack.markdown_upload_extensions]\n\".md\" = \"text/markdown\"\n\".MD\" = \"text/uppercase-markdown\"\n"
+
+	cfg, _, err := Decode(data)
+	if err != nil {
+		t.Fatalf("Decode returned unexpected error for distinct case-variant nested map keys: %v", err)
+	}
+	if got, want := len(cfg.Slack.MarkdownUploadExtensions), 2; got != want {
+		t.Errorf("len(Slack.MarkdownUploadExtensions) = %d, want %d (both entries preserved)", got, want)
+	}
+}
+
+// TestDecodeStillRejectsCollisionOnMapFieldsOwnName covers the boundary
+// underMapField must preserve: a case-fold collision on a map field's OWN
+// key name (e.g. "commands" vs "Commands" naming the table itself, not a
+// key inside it) is still a genuine struct-field ambiguity and must still
+// be rejected, distinguishing "the map field itself" (len(k) == len(mp))
+// from "an entry inside the map" (len(k) > len(mp)).
+func TestDecodeStillRejectsCollisionOnMapFieldsOwnName(t *testing.T) {
+	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n" +
+		"[commands]\nbuild = \"go build\"\n\n[Commands]\ntest = \"go test\"\n"
+
+	_, _, err := Decode(data)
+	if err == nil {
+		t.Fatal("Decode returned nil error for a case-fold collision on the map field's own name (commands vs Commands)")
+	}
+}
+
+// TestFilterLeafKeysDoesNotMisclassifyByteWisePrefixWithoutSeparator is a
+// regression locking filterLeafKeys's separator-boundary check: two
+// unrelated top-level keys where one is a literal byte-wise prefix of the
+// other (e.g. "ab" and "abc", with no nesting/separator between them)
+// must both survive as leaves — neither is a true segment-wise ancestor
+// of the other.
+func TestFilterLeafKeysDoesNotMisclassifyByteWisePrefixWithoutSeparator(t *testing.T) {
+	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\nab = 1\nabc = 2\n"
+
+	_, report, err := Decode(data)
+	if err != nil {
+		t.Fatalf("Decode returned unexpected error: %v", err)
+	}
+
+	want := []string{"ab", "abc"}
+	if !slices.Equal(report.UnknownKeys, want) {
+		t.Errorf("UnknownKeys = %v, want %v (both keys survive; neither is a segment-wise ancestor of the other)", report.UnknownKeys, want)
 	}
 }
 
