@@ -7,11 +7,9 @@ import (
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
-// TestDecodeMinimalConfigKeepsAllDefaultsIntact covers unit B3's
-// acceptance criterion (i): a minimal valid config yields all 17
-// defaults intact.
 func TestDecodeMinimalConfigKeepsAllDefaultsIntact(t *testing.T) {
-	cfg, _, err := Decode("default_workspace_root = \".\"\nhost_cli = \"claude\"\n")
+	cfg, _, err := Decode(`default_workspace_root = "."
+`)
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
 	}
@@ -29,29 +27,22 @@ func TestDecodeMinimalConfigKeepsAllDefaultsIntact(t *testing.T) {
 	if cfg.MaxConcurrentSessions != want.MaxConcurrentSessions {
 		t.Errorf("MaxConcurrentSessions = %v, want %v", cfg.MaxConcurrentSessions, want.MaxConcurrentSessions)
 	}
-	if cfg.ACP != want.ACP {
-		t.Errorf("ACP = %+v, want %+v", cfg.ACP, want.ACP)
-	}
 	if cfg.HTTPPort != want.HTTPPort {
 		t.Errorf("HTTPPort = %v, want %v", cfg.HTTPPort, want.HTTPPort)
-	}
-	if cfg.IPCName != want.IPCName {
-		t.Errorf("IPCName = %v, want %v", cfg.IPCName, want.IPCName)
 	}
 	if cfg.Database != want.Database {
 		t.Errorf("Database = %+v, want %+v", cfg.Database, want.Database)
 	}
-	if cfg.SlackDetailLevel != want.SlackDetailLevel {
-		t.Errorf("SlackDetailLevel = %v, want %v", cfg.SlackDetailLevel, want.SlackDetailLevel)
+	if cfg.OperatorDetailLevel != want.OperatorDetailLevel {
+		t.Errorf("OperatorDetailLevel = %v, want %v", cfg.OperatorDetailLevel, want.OperatorDetailLevel)
 	}
 }
 
-// TestDecodeExplicitFalseOverridesTrueDefault covers unit B3's acceptance
-// criterion (ii): [stall]\nenabled = false yields Stall.Enabled == false,
-// proving an explicitly-written false beats the non-zero true default
-// (requirement R5).
 func TestDecodeExplicitFalseOverridesTrueDefault(t *testing.T) {
-	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n[stall]\nenabled = false\n"
+	data := `default_workspace_root = "."
+[stall]
+enabled = false
+`
 	cfg, _, err := Decode(data)
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
@@ -59,17 +50,16 @@ func TestDecodeExplicitFalseOverridesTrueDefault(t *testing.T) {
 	if cfg.Stall.Enabled != false {
 		t.Errorf("Stall.Enabled = %v, want false", cfg.Stall.Enabled)
 	}
-	// The rest of the [stall] section must still default.
 	if cfg.Stall.InactivityThresholdSeconds != 300 {
 		t.Errorf("Stall.InactivityThresholdSeconds = %v, want 300 (default preserved)", cfg.Stall.InactivityThresholdSeconds)
 	}
 }
 
-// TestDecodeExplicitZeroOverridesNonZeroDefault covers unit B3's
-// acceptance criterion (iii): [timeouts]\napproval_seconds = 0 yields 0,
-// proving an explicitly-written zero beats the non-zero default.
 func TestDecodeExplicitZeroOverridesNonZeroDefault(t *testing.T) {
-	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n[timeouts]\napproval_seconds = 0\n"
+	data := `default_workspace_root = "."
+[timeouts]
+approval_seconds = 0
+`
 	cfg, _, err := Decode(data)
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
@@ -77,36 +67,32 @@ func TestDecodeExplicitZeroOverridesNonZeroDefault(t *testing.T) {
 	if cfg.Timeouts.ApprovalSeconds != 0 {
 		t.Errorf("Timeouts.ApprovalSeconds = %v, want 0", cfg.Timeouts.ApprovalSeconds)
 	}
-	// The rest of the [timeouts] section must still default.
 	if cfg.Timeouts.PromptSeconds != 1800 {
 		t.Errorf("Timeouts.PromptSeconds = %v, want 1800 (default preserved)", cfg.Timeouts.PromptSeconds)
 	}
 }
 
-// TestDecodeLoneNonCanonicalSpellingDecodes covers unit B3's acceptance
-// criterion (iv): a lone Host_CLI key (no collision) decodes into
-// HostCLI, documenting divergence V2b — the case-fold collision rejection
-// added in B2 must not over-reject a harmless non-canonical spelling with
-// no colliding variant.
 func TestDecodeLoneNonCanonicalSpellingDecodes(t *testing.T) {
-	data := "default_workspace_root = \".\"\nHost_CLI = \"claude\"\n"
+	data := `default_workspace_root = "."
+Operator_Detail_Level = "verbose"
+`
 	cfg, _, err := Decode(data)
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error for a lone non-canonical spelling: %v", err)
 	}
-	if cfg.HostCLI != "claude" {
-		t.Errorf("HostCLI = %q, want %q", cfg.HostCLI, "claude")
+	if cfg.OperatorDetailLevel != DetailVerbose {
+		t.Errorf("OperatorDetailLevel = %v, want DetailVerbose", cfg.OperatorDetailLevel)
 	}
 }
 
-// TestDecodeRejectsOutOfRangeIntegers covers unit B3's acceptance
-// criterion (v): http_port = -1 and http_port = 70000 each yield a decode
-// error (unsigned types make an out-of-range TOML integer a decode error,
-// not a validation concern).
 func TestDecodeRejectsOutOfRangeIntegers(t *testing.T) {
 	tests := []string{
-		"default_workspace_root = \".\"\nhttp_port = -1\n",
-		"default_workspace_root = \".\"\nhttp_port = 70000\n",
+		`default_workspace_root = "."
+http_port = -1
+`,
+		`default_workspace_root = "."
+http_port = 70000
+`,
 	}
 
 	for _, data := range tests {

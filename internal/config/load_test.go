@@ -11,11 +11,11 @@ import (
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
-// TestDecodeRejectsCaseFoldCollision covers unit B2's acceptance criterion
-// (i): a config defining both host_cli and Host_CLI yields KindConfig
-// (divergence V2).
 func TestDecodeRejectsCaseFoldCollision(t *testing.T) {
-	data := "default_workspace_root = \".\"\nhost_cli = \"foo\"\nHost_CLI = \"bar\"\n"
+	data := `default_workspace_root = "."
+operator_detail_level = "minimal"
+Operator_Detail_Level = "verbose"
+`
 	_, _, err := Decode(data)
 	if err == nil {
 		t.Fatal("Decode returned nil error for a case-fold key collision")
@@ -30,11 +30,9 @@ func TestDecodeRejectsCaseFoldCollision(t *testing.T) {
 	}
 }
 
-// TestDecodeRequiresDefaultWorkspaceRoot covers unit B2's acceptance
-// criterion (ii): a config omitting default_workspace_root yields
-// KindConfig.
 func TestDecodeRequiresDefaultWorkspaceRoot(t *testing.T) {
-	_, _, err := Decode("host_cli = \"foo\"\n")
+	_, _, err := Decode(`operator_detail_level = "standard"
+`)
 	if err == nil {
 		t.Fatal("Decode returned nil error for a config omitting default_workspace_root")
 	}
@@ -48,9 +46,6 @@ func TestDecodeRequiresDefaultWorkspaceRoot(t *testing.T) {
 	}
 }
 
-// TestLoadNonExistentPathYieldsKindConfigWithGuidance covers unit B2's
-// acceptance criterion (iii): Load on a non-existent path yields
-// KindConfig whose message contains the path and operator guidance text.
 func TestLoadNonExistentPathYieldsKindConfigWithGuidance(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "does-not-exist.toml")
 	_, _, err := Load(missing)
@@ -73,9 +68,6 @@ func TestLoadNonExistentPathYieldsKindConfigWithGuidance(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsOversizedFileWithoutDecoding covers unit B2's acceptance
-// criterion (iv): Load on a file of MaxConfigBytes+1 yields KindConfig
-// without decoding (divergence V9).
 func TestLoadRejectsOversizedFileWithoutDecoding(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "oversized.toml")
 	oversized := make([]byte, MaxConfigBytes+1)
@@ -100,12 +92,10 @@ func TestLoadRejectsOversizedFileWithoutDecoding(t *testing.T) {
 	}
 }
 
-// TestLoadDelegatesToDecodeOnSuccess proves Load's happy path reaches
-// Decode: a small, valid config file loads successfully.
 func TestLoadDelegatesToDecodeOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	data := "default_workspace_root = \"" + escapeTOMLString(dir) + "\"\nhost_cli = \"claude\"\n"
+	data := "default_workspace_root = \"" + escapeTOMLString(dir) + "\"\n"
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatalf("failed to write fixture: %v", err)
 	}
@@ -119,22 +109,16 @@ func TestLoadDelegatesToDecodeOnSuccess(t *testing.T) {
 	}
 }
 
-// escapeTOMLString escapes backslashes for embedding a Windows path inside
-// a TOML basic string literal in a test fixture.
 func escapeTOMLString(s string) string {
 	return strings.ReplaceAll(s, `\`, `\\`)
 }
 
-// TestDecodeDoesNotRejectCaseVariantMapEntriesAsCollisions is a
-// regression for a review finding: findCaseFoldCollision must not treat
-// two differently-cased entries inside a map-typed field (Commands,
-// Slack.MarkdownUploadExtensions) as an ambiguous struct-field collision.
-// Unlike a struct field, a map's runtime keys are literal, case-sensitive
-// data assigned directly into the map — "build" and "Build" are two
-// distinct, unambiguous named commands, not a decode collision.
 func TestDecodeDoesNotRejectCaseVariantMapEntriesAsCollisions(t *testing.T) {
-	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n" +
-		"[commands]\nbuild = \"go build ./...\"\nBuild = \"make build\"\n"
+	data := `default_workspace_root = "."
+[commands]
+build = "go build ./..."
+Build = "make build"
+`
 
 	cfg, _, err := Decode(data)
 	if err != nil {
@@ -148,33 +132,35 @@ func TestDecodeDoesNotRejectCaseVariantMapEntriesAsCollisions(t *testing.T) {
 	}
 }
 
-// TestDecodeDoesNotRejectCaseVariantNestedMapEntriesAsCollisions covers
-// the nested-map-field case (Slack.MarkdownUploadExtensions) that
-// exercises collectMapPaths's reflect.Struct recursion branch, which
-// TestDecodeDoesNotRejectCaseVariantMapEntriesAsCollisions (a top-level
-// map field) does not reach.
-func TestDecodeDoesNotRejectCaseVariantNestedMapEntriesAsCollisions(t *testing.T) {
-	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n" +
-		"[slack.markdown_upload_extensions]\n\".md\" = \"text/markdown\"\n\".MD\" = \"text/uppercase-markdown\"\n"
+func TestDecodeRetiredNestedMapCaseFoldCollisionIsFatal(t *testing.T) {
+	data := `default_workspace_root = "."
+[slack.markdown_upload_extensions]
+".md" = "text/markdown"
+".MD" = "text/uppercase-markdown"
+`
 
-	cfg, _, err := Decode(data)
-	if err != nil {
-		t.Fatalf("Decode returned unexpected error for distinct case-variant nested map keys: %v", err)
+	_, _, err := Decode(data)
+	if err == nil {
+		t.Fatal("Decode returned nil error for a legacy slack.markdown_upload_extensions case-fold collision")
 	}
-	if got, want := len(cfg.Slack.MarkdownUploadExtensions), 2; got != want {
-		t.Errorf("len(Slack.MarkdownUploadExtensions) = %d, want %d (both entries preserved)", got, want)
+
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) {
+		t.Fatalf("Decode error is not *apperr.Error: %v", err)
+	}
+	if appErr.Kind() != apperr.KindConfig {
+		t.Errorf("Decode error kind = %v, want KindConfig", appErr.Kind())
 	}
 }
 
-// TestDecodeStillRejectsCollisionOnMapFieldsOwnName covers the boundary
-// underMapField must preserve: a case-fold collision on a map field's OWN
-// key name (e.g. "commands" vs "Commands" naming the table itself, not a
-// key inside it) is still a genuine struct-field ambiguity and must still
-// be rejected, distinguishing "the map field itself" (len(k) == len(mp))
-// from "an entry inside the map" (len(k) > len(mp)).
 func TestDecodeStillRejectsCollisionOnMapFieldsOwnName(t *testing.T) {
-	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\n" +
-		"[commands]\nbuild = \"go build\"\n\n[Commands]\ntest = \"go test\"\n"
+	data := `default_workspace_root = "."
+[commands]
+build = "go build"
+
+[Commands]
+test = "go test"
+`
 
 	_, _, err := Decode(data)
 	if err == nil {
@@ -182,14 +168,11 @@ func TestDecodeStillRejectsCollisionOnMapFieldsOwnName(t *testing.T) {
 	}
 }
 
-// TestFilterLeafKeysDoesNotMisclassifyByteWisePrefixWithoutSeparator is a
-// regression locking filterLeafKeys's separator-boundary check: two
-// unrelated top-level keys where one is a literal byte-wise prefix of the
-// other (e.g. "ab" and "abc", with no nesting/separator between them)
-// must both survive as leaves — neither is a true segment-wise ancestor
-// of the other.
 func TestFilterLeafKeysDoesNotMisclassifyByteWisePrefixWithoutSeparator(t *testing.T) {
-	data := "default_workspace_root = \".\"\nhost_cli = \"claude\"\nab = 1\nabc = 2\n"
+	data := `default_workspace_root = "."
+ab = 1
+abc = 2
+`
 
 	_, report, err := Decode(data)
 	if err != nil {
@@ -202,15 +185,11 @@ func TestFilterLeafKeysDoesNotMisclassifyByteWisePrefixWithoutSeparator(t *testi
 	}
 }
 
-// TestDecodeRequiredKeyPrecheckPrecedesValidate locks the documented
-// order-of-checks caveat in Decode's doc comment: a config that both
-// omits default_workspace_root and violates Validate's rule 1
-// (max_concurrent_sessions == 0) returns Decode's own required-key
-// message, not Validate's rule-1 message, because the required-key
-// pre-check (Decode step 4) runs and returns before Validate is ever
-// invoked (Decision R8).
 func TestDecodeRequiredKeyPrecheckPrecedesValidate(t *testing.T) {
-	data := "max_concurrent_sessions = 0\nhost_cli = \"claude\"\n"
+	data := `max_concurrent_sessions = 0
+[copilot]
+cli_path = "./bin/copilot"
+`
 
 	_, _, err := Decode(data)
 	if err == nil {

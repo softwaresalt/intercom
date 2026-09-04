@@ -5,13 +5,10 @@ import (
 	"testing"
 )
 
-// TestValidateRule9NonExistentWorkspacePathInvalid covers unit C4's
-// acceptance criterion (i): a [[workspace]] with a non-existent path
-// yields "config: workspace path invalid for workspace_id '{id}': …".
-func TestValidateRule9NonExistentWorkspacePathInvalid(t *testing.T) {
+func TestValidateRule6NonExistentWorkspacePathInvalid(t *testing.T) {
 	cfg := newValidBaseConfig(t)
 	cfg.Workspaces = []WorkspaceMapping{
-		{WorkspaceID: "W1", ChannelID: "C1", Path: filepath.Join(t.TempDir(), "does-not-exist")},
+		{WorkspaceID: "W1", Path: filepath.Join(t.TempDir(), "does-not-exist")},
 	}
 
 	_, err := cfg.Validate()
@@ -24,15 +21,10 @@ func TestValidateRule9NonExistentWorkspacePathInvalid(t *testing.T) {
 	}
 }
 
-// TestValidateRule9ValidWorkspacePathCanonicalizes covers unit C4's
-// acceptance criterion (ii): a [[workspace]] whose path is a valid
-// t.TempDir() is rewritten to its canonical form on success.
-func TestValidateRule9ValidWorkspacePathCanonicalizes(t *testing.T) {
+func TestValidateRule6ValidWorkspacePathCanonicalizes(t *testing.T) {
 	wsDir := t.TempDir()
 	cfg := newValidBaseConfig(t)
-	cfg.Workspaces = []WorkspaceMapping{
-		{WorkspaceID: "W1", ChannelID: "C1", Path: wsDir},
-	}
+	cfg.Workspaces = []WorkspaceMapping{{WorkspaceID: "W1", Path: wsDir}}
 
 	_, err := cfg.Validate()
 	if err != nil {
@@ -43,10 +35,7 @@ func TestValidateRule9ValidWorkspacePathCanonicalizes(t *testing.T) {
 	}
 }
 
-// TestValidateRule10DatabasePathRejectsDotDotSegment covers unit C4's
-// acceptance criterion (iii): database.path = "../../etc/db" yields
-// "config: database.path must not contain '..' segments".
-func TestValidateRule10DatabasePathRejectsDotDotSegment(t *testing.T) {
+func TestValidateRule7DatabasePathRejectsDotDotSegment(t *testing.T) {
 	cfg := newValidBaseConfig(t)
 	cfg.Database.Path = "../../etc/db"
 
@@ -59,10 +48,7 @@ func TestValidateRule10DatabasePathRejectsDotDotSegment(t *testing.T) {
 	}
 }
 
-// TestValidateRule10AbsoluteDatabasePathAccepted covers unit C4's
-// acceptance criterion (iv): an absolute database.path is accepted
-// (explicit operator privilege) and left unmodified.
-func TestValidateRule10AbsoluteDatabasePathAccepted(t *testing.T) {
+func TestValidateRule7AbsoluteDatabasePathAccepted(t *testing.T) {
 	cfg := newValidBaseConfig(t)
 	abs := filepath.Join(t.TempDir(), "data", "agent-rc.db")
 	cfg.Database.Path = abs
