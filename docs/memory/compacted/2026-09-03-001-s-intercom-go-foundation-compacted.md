@@ -74,3 +74,24 @@ oracle validation).
   stash `037B1552` and all parity work. Requires operator action.
 * **MCP retirement confirmation**: would drop the `Mcp` error variant and
   `internal/mode` in a future slice.
+
+## Post-merge closure addendum (compacted from
+`docs/archive/memory/2026-09-03-ship-post-merge-closure-001-s.md`)
+
+* PR #5 (`post-merge/001-f-intercom-go-foundation` → `main`) **merged**,
+  merge SHA `87b800d5d3a6457d86fecd12fb7a299f170af718`.
+* Pre-merge remediation: reverted stray commit `0e82e2b` ("Configs") that had
+  landed past the recorded review HEAD on PR #4, introducing 4 machine-local
+  files never in scope; verified tree-identical to the reviewed HEAD before
+  merging.
+* Self-inflicted CI break fixed same-session: cascade close emptied
+  `.backlogit/queue/` (git does not track empty dirs), breaking the
+  `pipeline-topology (ambient)` check; added `.backlogit/queue/.gitkeep`
+  (commit `3f5044b`) as a same-contract-surface fix (P-021 C1).
+* 2 compound learnings captured: external-spec-vs-workspace-instruction
+  precedence; `go test -race` + `CGO_ENABLED=0` fail-closed behavior.
+* Restored parked pre-existing unrelated local dirty state
+  (`.gitignore` additions, `.claude/instructions.md` byte-exact) after
+  extraction from `stash@{0}`; `.backlogit/hooks_queue.jsonl` kept
+  machine-local; `references/herdr` confirmed untouched.
+* Backlog index resynced (`CLOSURE_INDEX_SYNC_OK`).
