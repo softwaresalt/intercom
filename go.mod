@@ -1,13 +1,14 @@
 module github.com/softwaresalt/intercom-go
 
-go 1.22
+go 1.24
 
 // toolchain pinned above the go.mod language floor to remediate GO-2025-3750
 // (Inconsistent handling of O_CREATE|O_EXCL on Unix and Windows in os/syscall,
 // fixed in go1.23.10+). The 1.22.x release line was never patched for this
-// CVE, so govulncheck cannot pass on any 1.22.x toolchain; language
-// compatibility stays at Go 1.22 (workspace floor), only the toolchain used
-// to build/test is pinned newer.
+// CVE, so govulncheck cannot pass on any 1.22.x toolchain. The language floor
+// itself was raised to Go 1.24 (shipment 004-S / U-A1) to satisfy the
+// github.com/github/copilot-sdk/go dependency's declared floor ahead of its
+// phase-C2 adoption; the toolchain pin above remains newer than the floor.
 toolchain go1.26.5
 
 require (

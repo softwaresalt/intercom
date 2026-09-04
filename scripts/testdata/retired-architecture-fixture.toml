@@ -1,0 +1,5 @@
+# Self-test control for scripts/check-retired-architecture.sh.
+# The gate excludes scripts/testdata/ from normal scans, so --self-test
+# scans this fixture explicitly and expects the retired host_cli key to be
+# rejected.
+host_cli = "fixture-only"

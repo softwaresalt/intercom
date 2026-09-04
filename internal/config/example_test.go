@@ -21,10 +21,6 @@ func exampleConfigPath(t *testing.T) string {
 	return path
 }
 
-// TestExampleConfigLoadsWithZeroUnknownKeys covers unit E1's acceptance
-// criterion (i): a test loads config.toml.example and asserts err == nil
-// and len(Report.UnknownKeys) == 0 — catching example keys absent from
-// the struct.
 func TestExampleConfigLoadsWithZeroUnknownKeys(t *testing.T) {
 	cfg, report, err := Load(exampleConfigPath(t))
 	if err != nil {
@@ -38,12 +34,53 @@ func TestExampleConfigLoadsWithZeroUnknownKeys(t *testing.T) {
 	}
 }
 
-// TestExampleConfigCoversEveryStructField covers unit E1's acceptance
-// criterion (ii): a reflection-based test walks every toml-tagged field
-// in the Config hierarchy and asserts each key path appears in the
-// example, catching struct fields absent from the example — the
-// direction a one-directional drift test (checking only for unknown
-// keys) would miss (attempt-1 P1-e finding).
+// exampleValueAgreementExemptions enumerates the top-level toml keys that
+// are legitimately illustrative rather than default-equal: an empty root
+// path only validates against the package test working directory, and the
+// two collection fields exist purely to demonstrate shape. Every other
+// top-level field must match Default() exactly, checked generically below
+// so a future field addition is covered without a corresponding hand-written
+// comparison (U-D2 acceptance criterion: the assertion must fail if
+// database.path reverts to agent-intercom.db).
+func exampleValueAgreementExemptions() map[string]struct{} {
+	return map[string]struct{}{
+		"default_workspace_root": {},
+		"commands":               {},
+		"workspace":              {},
+	}
+}
+
+func TestExampleConfigMatchesDefaultsOutsideDocumentedExemptions(t *testing.T) {
+	exemptions := exampleValueAgreementExemptions()
+
+	got, _, err := Load(exampleConfigPath(t))
+	if err != nil {
+		t.Fatalf("Load(config.toml.example) returned unexpected error: %v", err)
+	}
+	want := Default()
+
+	gotVal := reflect.ValueOf(got).Elem()
+	wantVal := reflect.ValueOf(want).Elem()
+	typ := gotVal.Type()
+
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		tag := field.Tag.Get("toml")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if _, exempt := exemptions[tag]; exempt {
+			continue
+		}
+
+		gotField := gotVal.Field(i).Interface()
+		wantField := wantVal.Field(i).Interface()
+		if !reflect.DeepEqual(gotField, wantField) {
+			t.Errorf("config.toml.example %s = %+v, want default %+v", tag, gotField, wantField)
+		}
+	}
+}
+
 func TestExampleConfigCoversEveryStructField(t *testing.T) {
 	expected := collectTOMLKeyPaths(reflect.TypeOf(Config{}), "")
 	sort.Strings(expected)

@@ -7,13 +7,10 @@ import (
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
-// TestSlackDetailLevelUnmarshalTextAcceptsValidValues covers unit A1's
-// acceptance criterion: UnmarshalText accepts each of the three valid
-// values.
-func TestSlackDetailLevelUnmarshalTextAcceptsValidValues(t *testing.T) {
+func TestOperatorDetailLevelUnmarshalTextAcceptsValidValues(t *testing.T) {
 	tests := []struct {
 		text string
-		want SlackDetailLevel
+		want OperatorDetailLevel
 	}{
 		{"minimal", DetailMinimal},
 		{"standard", DetailStandard},
@@ -21,7 +18,7 @@ func TestSlackDetailLevelUnmarshalTextAcceptsValidValues(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		var d SlackDetailLevel
+		var d OperatorDetailLevel
 		if err := d.UnmarshalText([]byte(tt.text)); err != nil {
 			t.Fatalf("UnmarshalText(%q) returned unexpected error: %v", tt.text, err)
 		}
@@ -31,11 +28,8 @@ func TestSlackDetailLevelUnmarshalTextAcceptsValidValues(t *testing.T) {
 	}
 }
 
-// TestSlackDetailLevelUnmarshalTextRejectsUnknownValue covers unit A1's
-// acceptance criterion: UnmarshalText rejects "loud" with a KindConfig
-// error.
-func TestSlackDetailLevelUnmarshalTextRejectsUnknownValue(t *testing.T) {
-	var d SlackDetailLevel
+func TestOperatorDetailLevelUnmarshalTextRejectsUnknownValue(t *testing.T) {
+	var d OperatorDetailLevel
 	err := d.UnmarshalText([]byte("loud"))
 	if err == nil {
 		t.Fatal("UnmarshalText(\"loud\") returned nil error, want KindConfig error")

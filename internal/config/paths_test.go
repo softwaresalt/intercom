@@ -5,13 +5,10 @@ import (
 	"testing"
 )
 
-// TestValidateRule9NonExistentWorkspacePathInvalid covers unit C4's
-// acceptance criterion (i): a [[workspace]] with a non-existent path
-// yields "config: workspace path invalid for workspace_id '{id}': …".
-func TestValidateRule9NonExistentWorkspacePathInvalid(t *testing.T) {
+func TestValidateRule6NonExistentWorkspacePathInvalid(t *testing.T) {
 	cfg := newValidBaseConfig(t)
 	cfg.Workspaces = []WorkspaceMapping{
-		{WorkspaceID: "W1", ChannelID: "C1", Path: filepath.Join(t.TempDir(), "does-not-exist")},
+		{WorkspaceID: "W1", Path: filepath.Join(t.TempDir(), "does-not-exist")},
 	}
 
 	_, err := cfg.Validate()
@@ -24,15 +21,10 @@ func TestValidateRule9NonExistentWorkspacePathInvalid(t *testing.T) {
 	}
 }
 
-// TestValidateRule9ValidWorkspacePathCanonicalizes covers unit C4's
-// acceptance criterion (ii): a [[workspace]] whose path is a valid
-// t.TempDir() is rewritten to its canonical form on success.
-func TestValidateRule9ValidWorkspacePathCanonicalizes(t *testing.T) {
+func TestValidateRule6ValidWorkspacePathCanonicalizes(t *testing.T) {
 	wsDir := t.TempDir()
 	cfg := newValidBaseConfig(t)
-	cfg.Workspaces = []WorkspaceMapping{
-		{WorkspaceID: "W1", ChannelID: "C1", Path: wsDir},
-	}
+	cfg.Workspaces = []WorkspaceMapping{{WorkspaceID: "W1", Path: wsDir}}
 
 	_, err := cfg.Validate()
 	if err != nil {
@@ -43,10 +35,7 @@ func TestValidateRule9ValidWorkspacePathCanonicalizes(t *testing.T) {
 	}
 }
 
-// TestValidateRule10DatabasePathRejectsDotDotSegment covers unit C4's
-// acceptance criterion (iii): database.path = "../../etc/db" yields
-// "config: database.path must not contain '..' segments".
-func TestValidateRule10DatabasePathRejectsDotDotSegment(t *testing.T) {
+func TestValidateRule7DatabasePathRejectsDotDotSegment(t *testing.T) {
 	cfg := newValidBaseConfig(t)
 	cfg.Database.Path = "../../etc/db"
 
@@ -59,10 +48,7 @@ func TestValidateRule10DatabasePathRejectsDotDotSegment(t *testing.T) {
 	}
 }
 
-// TestValidateRule10AbsoluteDatabasePathAccepted covers unit C4's
-// acceptance criterion (iv): an absolute database.path is accepted
-// (explicit operator privilege) and left unmodified.
-func TestValidateRule10AbsoluteDatabasePathAccepted(t *testing.T) {
+func TestValidateRule7AbsoluteDatabasePathAccepted(t *testing.T) {
 	cfg := newValidBaseConfig(t)
 	abs := filepath.Join(t.TempDir(), "data", "agent-rc.db")
 	cfg.Database.Path = abs
@@ -73,5 +59,29 @@ func TestValidateRule10AbsoluteDatabasePathAccepted(t *testing.T) {
 	}
 	if cfg.Database.Path != abs {
 		t.Errorf("Database.Path = %q, want unchanged %q", cfg.Database.Path, abs)
+	}
+}
+
+// TestValidateRule7FailureLeavesWorkspacePathUncommitted re-founds the
+// deferred-commit invariant (Decision R10, Protected Invariant I6) for the
+// per-entry Workspaces[i].Path commit specifically: rule 6 computes a
+// canonicalized local for a valid workspace entry, and a later rule 7
+// failure must discard that local rather than writing it back to the
+// receiver. TestValidateOnlyMutatesReceiverAfterFullSuccess in
+// validate_test.go covers the same invariant for DefaultWorkspaceRoot only;
+// this test closes the parallel gap for Workspaces[i].Path, whose commit is
+// a separate loop over a separate local slice in Validate().
+func TestValidateRule7FailureLeavesWorkspacePathUncommitted(t *testing.T) {
+	wsDir := t.TempDir()
+	cfg := newValidBaseConfig(t)
+	cfg.Workspaces = []WorkspaceMapping{{WorkspaceID: "W1", Path: wsDir}}
+	cfg.Database.Path = "../../etc/db"
+
+	_, err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate returned nil error for a database.path containing '..' segments")
+	}
+	if cfg.Workspaces[0].Path != wsDir {
+		t.Errorf("Workspaces[0].Path = %q after a rule-7 failure, want unchanged %q (rule 6's canonicalization must not commit)", cfg.Workspaces[0].Path, wsDir)
 	}
 }

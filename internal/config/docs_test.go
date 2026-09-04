@@ -1,7 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -13,11 +16,7 @@ func configReferencePath(t *testing.T) string {
 	return "../../docs/config-reference.md"
 }
 
-// TestConfigReferenceCoversAll17DefaultFieldNames covers unit E2's
-// acceptance criterion: every one of the 17 default field names appears
-// verbatim in docs/config-reference.md, so doc completeness is enforced
-// rather than assumed.
-func TestConfigReferenceCoversAll17DefaultFieldNames(t *testing.T) {
+func TestConfigReferenceCoversDefaultFieldNames(t *testing.T) {
 	data, err := os.ReadFile(configReferencePath(t))
 	if err != nil {
 		t.Fatalf("failed to read docs/config-reference.md: %v", err)
@@ -34,17 +33,9 @@ func TestConfigReferenceCoversAll17DefaultFieldNames(t *testing.T) {
 		"Stall.DefaultNudgeMessage",
 		"RetentionDays",
 		"MaxConcurrentSessions",
-		"ACP.MaxSessions",
-		"ACP.StartupTimeoutSeconds",
-		"ACP.MaxMsgRate",
-		"ACP.HTTPPort",
 		"HTTPPort",
-		"IPCName",
 		"Database.Path",
-		"SlackDetailLevel",
-	}
-	if len(fieldNames) != 17 {
-		t.Fatalf("test table declares %d field names, want 17", len(fieldNames))
+		"OperatorDetailLevel",
 	}
 
 	for _, name := range fieldNames {
@@ -54,39 +45,99 @@ func TestConfigReferenceCoversAll17DefaultFieldNames(t *testing.T) {
 	}
 }
 
-// TestConfigReferenceCoversAll10ValidationMessages covers unit E2's
-// acceptance criterion: all 10 validation message strings appear
-// verbatim in docs/config-reference.md.
-func TestConfigReferenceCoversAll10ValidationMessages(t *testing.T) {
+func TestConfigReferenceCoversValidationMessages(t *testing.T) {
 	data, err := os.ReadFile(configReferencePath(t))
 	if err != nil {
 		t.Fatalf("failed to read docs/config-reference.md: %v", err)
 	}
 	doc := string(data)
 
-	// One entry per Validation Contract rule (rule 2's two sub-conditions,
-	// 2a and 2b, are documented together as "rule 2" but both message
-	// templates are checked individually below).
 	messages := []string{
-		"max_concurrent_sessions must be greater than zero",      // rule 1
-		"default_workspace_root must be set",                     // rule 2a
-		"default_workspace_root invalid:",                        // rule 2b
-		"workspace_id cannot be empty in [[workspace]] entry",    // rule 3
-		"channel_id cannot be empty in [[workspace]] entry",      // rule 4
-		"duplicate workspace_id '{id}' in [[workspace]] entries", // rule 5
-		"host_cli must be set",                                   // rule 6
-		"host_cli '{path}' does not exist",                       // rule 7
-		"duplicate channel_id '{id}' in [[workspace]] entries; ACP routing requires each channel_id to map to exactly one workspace", // rule 8
-		"workspace path invalid for workspace_id '{id}': {err}",                                                                      // rule 9
-		"database.path must not contain '..' segments",                                                                               // rule 10
-	}
-	if len(messages) != 11 {
-		t.Fatalf("test table declares %d messages, want 11 (10 rules; rule 2 has two message templates)", len(messages))
+		"max_concurrent_sessions must be greater than zero",
+		"default_workspace_root must be set",
+		"default_workspace_root invalid:",
+		"workspace_id cannot be empty in [[workspace]] entry",
+		"duplicate workspace_id '{id}' in [[workspace]] entries",
+		"copilot.cli_path '{path}' does not exist",
+		"copilot.cli_path '{path}' must not be drive-relative; use an absolute path, a bare name, or empty",
+		"copilot.cli_path '{path}' must not be relative; use an absolute path, a bare name, or empty",
+		"workspace path invalid for workspace_id '{id}': {err}",
+		"database.path must not contain '..' segments",
 	}
 
 	for _, msg := range messages {
 		if !strings.Contains(doc, msg) {
 			t.Errorf("docs/config-reference.md is missing validation message %q", msg)
 		}
+	}
+}
+
+// TestConfigReferenceCoversEverySchemaKeyPath mechanically enforces
+// schema-to-docs coupling: it walks Config's toml struct tags with the
+// same collectTOMLKeyPaths helper example_test.go already uses to check
+// config.toml.example, and asserts every resulting dotted key path appears
+// backtick-quoted in docs/config-reference.md. Without this, a schema
+// field could be added or removed without the reference doc's key tables
+// being caught out of date by any test — only the hand-maintained
+// fieldNames/messages lists above would need updating, and nothing forces
+// that update to happen.
+func TestConfigReferenceCoversEverySchemaKeyPath(t *testing.T) {
+	data, err := os.ReadFile(configReferencePath(t))
+	if err != nil {
+		t.Fatalf("failed to read docs/config-reference.md: %v", err)
+	}
+	doc := string(data)
+
+	all := collectTOMLKeyPaths(reflect.TypeOf(Config{}), "")
+	allSet := make(map[string]struct{}, len(all))
+	for _, p := range all {
+		allSet[p] = struct{}{}
+	}
+
+	// Only leaf paths are checked against a literal backtick-quoted dotted
+	// form: a struct- or slice-of-struct-typed section (e.g. "copilot",
+	// "workspace") is rendered in docs/config-reference.md as a TOML table
+	// header ("## `[copilot]`", "## `[[workspace]]`"), not as a bare
+	// backtick-quoted identifier, so it is intentionally excluded here
+	// rather than producing a false-positive gap. A map-typed field (e.g.
+	// "commands") is rendered the same way, with a synthetic
+	// "commands.<name>" placeholder key rather than the bare field name, so
+	// it is exempted identically.
+	mapFields := make(map[string]struct{})
+	configType := reflect.TypeOf(Config{})
+	for i := range configType.NumField() {
+		field := configType.Field(i)
+		tag := field.Tag.Get("toml")
+		if tag != "" && tag != "-" && field.Type.Kind() == reflect.Map {
+			mapFields[tag] = struct{}{}
+		}
+	}
+
+	var leaves []string
+	for _, p := range all {
+		if _, isMap := mapFields[p]; isMap {
+			continue
+		}
+		isPrefixOfAnother := false
+		for other := range allSet {
+			if other != p && strings.HasPrefix(other, p+".") {
+				isPrefixOfAnother = true
+				break
+			}
+		}
+		if !isPrefixOfAnother {
+			leaves = append(leaves, p)
+		}
+	}
+	sort.Strings(leaves)
+
+	var missing []string
+	for _, path := range leaves {
+		if !strings.Contains(doc, fmt.Sprintf("`%s`", path)) {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) != 0 {
+		t.Errorf("docs/config-reference.md is missing backtick-quoted key path(s): %v", missing)
 	}
 }

@@ -1,16 +1,14 @@
 ---
 title: "Configuration Reference — intercom-go"
-date: 2026-09-03
+date: 2026-09-04
 status: reference
 ---
 
 # Configuration Reference — intercom-go
 
 This document describes every key in `config.toml`, its default value, and
-the validation rules `internal/config` enforces at load time. It is ported
-from the `agent-intercom` behavioral oracle
-(`softwaresalt/agent-intercom` @ `41df772`, `src/config.rs`), with nine
-recorded, deliberate divergences (V1–V9) documented below.
+the validation rules `internal/config` enforces at load time for the
+corrected C1 architecture.
 
 See `config.toml.example` for a complete, loadable synthetic example
 covering every key in this reference.
@@ -21,23 +19,21 @@ covering every key in this reference.
 |---|---|---|---|
 | `default_workspace_root` | string | *(required)* | Canonicalized through `pathsafe.NewRoot`; must exist. |
 | `max_concurrent_sessions` | integer | `3` | Must be greater than zero. |
-| `host_cli` | string | *(required)* | The host CLI binary to spawn in a later phase. A non-absolute value is checked as a non-fatal, load-time advisory (`exec.LookPath`) — resolution against `PATH` at actual spawn time happens only in that later phase, not in `internal/config`. |
-| `host_cli_args` | array of strings | `[]` | Extra arguments passed to `host_cli`. |
-| `commands` | table of string to string | `{}` | Named command shortcuts. |
-| `http_port` | integer (0–65535) | `3000` | |
-| `ipc_name` | string | `"agent-intercom"` | |
-| `retention_days` | integer | `30` | |
-| `slack_detail_level` | string enum | `"standard"` | One of `minimal`, `standard`, `verbose`. |
+| `http_port` | integer (0–65535) | `3000` | Backend HTTP/WebSocket listener port. |
+| `retention_days` | integer | `30` | Retained as a deferred persistence-facing setting. |
+| `operator_detail_level` | string enum | `"standard"` | One of `minimal`, `standard`, `verbose`. |
 
-## `[slack]`
+## `[copilot]`
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `slack.channel_id` | string | `""` | |
-| `slack.markdown_upload_extensions` | table of string to string | `{}` | |
+| `copilot.cli_path` | string | `""` | Empty means resolve the Copilot CLI from `PATH` / `COPILOT_CLI_PATH`. A bare name is allowed with a non-fatal advisory if it is not currently resolvable on `PATH`. An absolute path must exist. A relative path is rejected. |
 
-Secret-bearing fields (`app_token`, `bot_token`, `team_id`) are **never**
-read from `config.toml` — see the migration section below.
+## `[commands]`
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `commands.<name>` | string | `{}` | Named command shortcuts. Values are operator-authored prompt content. |
 
 ## `[timeouts]`
 
@@ -45,7 +41,7 @@ read from `config.toml` — see the migration section below.
 |---|---|---|---|
 | `timeouts.approval_seconds` | integer | `3600` | |
 | `timeouts.prompt_seconds` | integer | `1800` | |
-| `timeouts.wait_seconds` | integer | `0` | `0` means "no timeout" (oracle parity; the only zero default). |
+| `timeouts.wait_seconds` | integer | `0` | `0` means "no timeout". |
 
 ## `[stall]`
 
@@ -61,55 +57,37 @@ read from `config.toml` — see the migration section below.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `database.path` | string | `"data/agent-rc.db"` | May not contain a `..` segment; absolute paths are permitted. |
-
-## `[acp]`
-
-| Key | Type | Default | Notes |
-|---|---|---|---|
-| `acp.max_sessions` | integer | `5` | |
-| `acp.startup_timeout_seconds` | integer | `30` | |
-| `acp.max_msg_rate` | integer | `10` | |
-| `acp.http_port` | integer (0–65535) | `3001` | |
+| `database.path` | string | `"data/agent-rc.db"` | May not contain a `..` segment. Absolute paths are permitted. |
 
 ## `[[workspace]]`
-
-Each entry maps a workspace to a Slack channel.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `workspace.workspace_id` | string | *(required per entry)* | Must be unique across entries. |
-| `workspace.channel_id` | string | *(required per entry)* | Must be unique across entries. |
 | `workspace.label` | string | `""` | Free-text label, no validation. |
-| `workspace.path` | string | `""` | If non-empty, canonicalized through `pathsafe.NewRoot` and used as the workspace root for this channel instead of `default_workspace_root`. |
+| `workspace.path` | string | `""` | If non-empty, canonicalized through `pathsafe.NewRoot` and used as the workspace root for that entry instead of `default_workspace_root`. |
 
-## The 17 non-zero defaults
+## The non-zero defaults
 
-`internal/config.Default()` reproduces exactly these 17 non-zero values
-from the oracle (`config.rs:167-341`):
+`internal/config.Default()` pre-populates these non-zero values:
 
-| # | Field | Value |
-|---|---|---|
-| 1 | `Timeouts.ApprovalSeconds` | `3600` |
-| 2 | `Timeouts.PromptSeconds` | `1800` |
-| 3 | `Stall.Enabled` | `true` |
-| 4 | `Stall.InactivityThresholdSeconds` | `300` |
-| 5 | `Stall.EscalationThresholdSeconds` | `120` |
-| 6 | `Stall.MaxRetries` | `3` |
-| 7 | `Stall.DefaultNudgeMessage` | `"Continue working on the current task. Pick up where you left off."` |
-| 8 | `RetentionDays` | `30` |
-| 9 | `MaxConcurrentSessions` | `3` |
-| 10 | `ACP.MaxSessions` | `5` |
-| 11 | `ACP.StartupTimeoutSeconds` | `30` |
-| 12 | `ACP.MaxMsgRate` | `10` |
-| 13 | `ACP.HTTPPort` | `3001` |
-| 14 | `HTTPPort` | `3000` |
-| 15 | `IPCName` | `"agent-intercom"` |
-| 16 | `Database.Path` | `"data/agent-rc.db"` |
-| 17 | `SlackDetailLevel` | `DetailStandard` |
+| Field | Value |
+|---|---|
+| `Timeouts.ApprovalSeconds` | `3600` |
+| `Timeouts.PromptSeconds` | `1800` |
+| `Stall.Enabled` | `true` |
+| `Stall.InactivityThresholdSeconds` | `300` |
+| `Stall.EscalationThresholdSeconds` | `120` |
+| `Stall.MaxRetries` | `3` |
+| `Stall.DefaultNudgeMessage` | `"Continue working on the current task. Pick up where you left off."` |
+| `RetentionDays` | `30` |
+| `MaxConcurrentSessions` | `3` |
+| `HTTPPort` | `3000` |
+| `Database.Path` | `"data/agent-rc.db"` |
+| `OperatorDetailLevel` | `DetailStandard` |
 
-`Timeouts.WaitSeconds` is the only field with a *zero* default (`0`,
-meaning "no timeout") and is therefore excluded from this list of 17.
+`Timeouts.WaitSeconds` is the only field with a zero default (`0`, meaning
+"no timeout") and is therefore excluded from this table.
 
 ## Validation rules
 
@@ -122,66 +100,91 @@ yields the same error.
 | 1 | `max_concurrent_sessions` must be non-zero | `max_concurrent_sessions must be greater than zero` |
 | 2 | `default_workspace_root` must be set and must canonicalize | `default_workspace_root must be set` (absent or empty); `default_workspace_root invalid: {err}` (canonicalization failure) |
 | 3 | Per `[[workspace]]` entry, `workspace_id` must be non-empty | `workspace_id cannot be empty in [[workspace]] entry` |
-| 4 | Per `[[workspace]]` entry, `channel_id` must be non-empty | `channel_id cannot be empty in [[workspace]] entry` |
-| 5 | `workspace_id` must be unique across entries | `duplicate workspace_id '{id}' in [[workspace]] entries` |
-| 6 | `host_cli` must be set | `host_cli must be set` |
-| 7 | An absolute `host_cli` must exist | `host_cli '{path}' does not exist` |
-| 8 | `channel_id` must be unique across entries | `duplicate channel_id '{id}' in [[workspace]] entries; ACP routing requires each channel_id to map to exactly one workspace` |
-| 9 | Per `[[workspace]]` entry, a non-empty `path` must canonicalize | `workspace path invalid for workspace_id '{id}': {err}` |
-| 10 | `database.path` must not contain a `..` segment | `database.path must not contain '..' segments` |
+| 4 | `workspace_id` must be unique across entries | `duplicate workspace_id '{id}' in [[workspace]] entries` |
+| 5 | `copilot.cli_path` must be well-formed | `copilot.cli_path '{path}' does not exist`; `copilot.cli_path '{path}' must not be drive-relative; use an absolute path, a bare name, or empty`; `copilot.cli_path '{path}' must not be relative; use an absolute path, a bare name, or empty` |
+| 6 | Per `[[workspace]]` entry, a non-empty `path` must canonicalize | `workspace path invalid for workspace_id '{id}': {err}` |
+| 7 | `database.path` must not contain a `..` segment | `database.path must not contain '..' segments` |
 
-A relative or bare (non-absolute) `host_cli` that `exec.LookPath` cannot
-resolve produces a single non-fatal advisory instead of a validation
-failure.
+Rule 5 has one additional non-fatal advisory: a bare name that is not
+currently resolvable on `PATH` produces `copilot.cli_path '{name}' was not
+resolvable via PATH` in `Report.Warnings`, but loading still succeeds.
 
-**Order-of-checks caveat.** The rule table above describes `Validate()`'s
-own internal order, which is fixed and unconditional whenever `Validate()`
-is called directly. `Load`/`Decode` (the package's primary entry points)
-additionally perform an earlier, separate check for
+The rule-5 classifier is:
+
+```text
+cli_path == ""                              -> valid, return early with no warning
+filepath.IsAbs(cli_path)                    -> valid iff the file exists
+matches ^[A-Za-z]: and not absolute         -> error (Windows drive-relative)
+contains '/' or '\' and not absolute       -> error (relative path)
+otherwise                                   -> bare name, PATH advisory only
+```
+
+**Order-of-checks caveat.** The table above describes `Validate()`'s own
+internal order, which is fixed whenever `Validate()` is called directly.
+`Load`/`Decode` additionally perform an earlier, separate check for
 `default_workspace_root` being entirely absent from the document, before
 `Validate()` is ever invoked. A document that both omits
-`default_workspace_root` and violates a `Validate()` rule ordered earlier
-than rule 2 (e.g. rule 1, `max_concurrent_sessions == 0`) therefore still
-reports `default_workspace_root must be set` from `Load`/`Decode`, not the
-rule-1 message — `Validate()`'s fixed-order guarantee holds fully only
-when `Validate()` is called directly. This is a deliberate design
-predating this document (Decision R8) and is locked by a regression test.
+`default_workspace_root` and violates an earlier `Validate()` rule (for
+example rule 1) therefore still reports `default_workspace_root must be set`
+from `Load`/`Decode`, not the rule-1 message.
 
-## Recorded divergences from the oracle
+## Migration from pre-correction configs
 
-| # | Divergence | Direction | Notes |
-|---|---|---|---|
-| V1 | Missing `[slack]`, `[timeouts]`, `[stall]` sections default instead of erroring | More permissive | The oracle requires these sections due to a missing `#[serde(default)]`, not a designed contract. |
-| V2 | Case-fold-colliding keys (e.g. `host_cli` and `Host_CLI`) are **rejected** | Stricter | Prevents nondeterministic field selection from the decoder's `EqualFold` fallback. |
-| V2b | A lone non-canonical spelling with no colliding variant still decodes | More permissive | Harmless without a collision. |
-| V3 | Unknown keys are reported to the caller | Additive | The oracle ignores them silently. |
-| V4 | `channel_id` uniqueness is enforced eagerly at load | Stricter | The oracle enforces this at ACP session start, which does not exist in this port. |
-| V5 | The `host_cli` empty-value message drops "to use ACP mode" | Cosmetic | ACP/transport mode selection is retired in this port. |
-| V6 | Secret-bearing fields (`app_token`, `bot_token`, `team_id`, `authorized_user_ids`) are omitted from the schema entirely | Narrower | Never read from `config.toml`; owned by a later credential-resolution phase. |
-| V7 | A non-empty `[[workspace]].path` must canonicalize | Stricter | The oracle passes it unvalidated into a subprocess working directory. |
-| V8 | `database.path` may not contain a `..` segment | Stricter | The oracle leaves it unrestricted. Absolute paths remain permitted as an explicit operator privilege. |
-| V9 | The config file is bounded at 1 MiB | Stricter | The oracle reads the file unbounded. |
+The C1 correction removes, renames, or re-founds several previously shipped
+keys. Tolerant decode keeps most legacy files loadable by reporting retired
+keys in `Report.UnknownKeys` rather than failing immediately. One documented
+exception is listed below.
 
-Divergences V2, V4, V7, V8, and V9 are the only ones that can reject a
-configuration the oracle would accept.
+### Removed keys and sections
 
-## Operator migration from agent-intercom (Rust)
+| Previously written | What to write instead |
+|---|---|
+| `[slack]` | Delete the section. There is no replacement in C1. |
+| `[slack].channel_id` | Delete the key. There is no replacement. |
+| `[slack].markdown_upload_extensions` | Delete the table. There is no replacement. |
+| `[acp]` | Delete the section. There is no replacement in C1. |
+| `[acp].max_sessions` | Delete the key. Do not migrate it. |
+| `[acp].startup_timeout_seconds` | Delete the key in C1. Do not add a replacement yet; the follow-on `[copilot]` timeout work is deferred to C2. |
+| `[acp].max_msg_rate` | Delete the key. There is no replacement. |
+| `[acp].http_port` | Delete the key. There is no replacement. |
+| `host_cli_args` | Delete the key. Do not pass `--dangerously-skip-permissions`; that bypasses operator approval prompts and is intentionally removed. |
+| `ipc_name` | Delete the key. There is no replacement in C1. |
+| `[[workspace]].channel_id` | Delete the key from every workspace entry. Workspace lookup is now keyed by `workspace_id`. |
 
-If you are migrating a `config.toml` from the Rust `agent-intercom`
-implementation to `intercom-go`, note the following behavioral changes:
+### Renamed key
 
-* **Duplicate `channel_id` is now a startup failure (V4).** The Rust
-  implementation only rejected a duplicate `channel_id` when an ACP session
-  started; `intercom-go` rejects it at load time. If your existing config
-  has two `[[workspace]]` entries sharing a `channel_id`, loading it will
-  now fail immediately rather than at first use.
-* **`--mode` and `protocol_mode` are gone.** Multiplexer/transport mode
-  selection is retired in this port; any `mode` or `protocol_mode` key in
-  an existing `config.toml` is not part of the schema and will be reported
-  as an unknown key (V3) rather than applied.
-* **Tokens in `config.toml` are ignored.** `app_token`, `bot_token`,
-  `team_id`, and any `authorized_user_ids` entry are not read from the
-  config file at all (V6) — they will be reported as unknown keys if
-  present. Credential values are resolved outside `config.toml` by a
-  separate credential-resolution phase; do not rely on tokens present in a
-  migrated config file being honored.
+| Previously written | What to write instead |
+|---|---|
+| `slack_detail_level` | `operator_detail_level` |
+
+### Migrated key
+
+| Previously written | What to write instead |
+|---|---|
+| `host_cli` | Write `[copilot]` with `cli_path = ""`, a bare executable name, or an absolute path to the CLI binary. Empty means SDK default resolution from `PATH` / `COPILOT_CLI_PATH`. Bare names are allowed with a warning if unresolved. Absolute paths must exist. Relative paths and Windows drive-relative paths are rejected. |
+
+### Validation behavior changes
+
+* The old per-workspace presence rule for `channel_id` is gone because the
+  key itself is gone.
+* The old uniqueness rule over `channel_id` is gone for the same reason.
+* The old required-value rule for `host_cli` is gone. An empty
+  `[copilot].cli_path` is now valid and means SDK default resolution.
+* The old absolute-path existence check now applies to
+  `[copilot].cli_path`, with the added rejection of relative and
+  drive-relative paths.
+
+### Documented tolerant-decode exception
+
+Most retired keys now surface in `Report.UnknownKeys` and remain non-fatal.
+One exception is a legacy `[slack.markdown_upload_extensions]` table whose
+keys differ only by case, such as `".md"` and `".MD"`. That shape now fails
+with a case-fold collision error rather than loading with warnings, because
+the legacy nested map field no longer exists in the schema.
+
+### Security note
+
+The example and migration target deliberately remove
+`host_cli_args = ["--dangerously-skip-permissions"]`. The corrected
+architecture treats permission approval as a real operator control; a
+migration should not preserve a config line that disables it.
