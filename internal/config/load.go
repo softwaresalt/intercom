@@ -31,10 +31,7 @@ const maxUnknownKeys = 64
 //  2. toml.Decode(data, cfg) — syntax/type errors become apperr.KindConfig.
 //  3. Case-fold collision rejection — two distinct key paths equal under
 //     strings.EqualFold (divergence V2).
-//  4. Required-key check — md.IsDefined("default_workspace_root") only;
-//     host_cli's required-ness is enforced solely by validation rule 6
-//     (Decision R8), which covers both the absent and explicitly-empty
-//     case with one message.
+//  4. Required-key check — md.IsDefined("default_workspace_root") only.
 //  5. md.Undecoded() -> Report.UnknownKeys: sorted, sanitized, capped.
 //  6. cfg.Validate() -> its Report merged into the returned Report.
 //
@@ -47,7 +44,7 @@ const maxUnknownKeys = 64
 //
 // Order-of-checks caveat: step 4's required-key check for
 // default_workspace_root's ABSENCE runs, and can return, before step 6
-// (cfg.Validate(), whose own 10 rules run in the fixed order documented
+// (cfg.Validate(), whose own fixed-order rule contract is documented
 // in docs/config-reference.md) is ever invoked. A document that BOTH
 // omits default_workspace_root AND violates a rule ordered before
 // Validate's rule 2 (e.g. rule 1, max_concurrent_sessions == 0) therefore
@@ -92,15 +89,16 @@ func Decode(data string) (*Config, Report, error) {
 
 // findCaseFoldCollision scans every distinct key path present in the
 // document (at every nesting level) and reports the first pair equal
-// under strings.EqualFold but not identical — e.g. "host_cli" and
-// "Host_CLI" both target the same struct field, and because the decoder
+// under strings.EqualFold but not identical — e.g.
+// "operator_detail_level" and "Operator_Detail_Level" both target the
+// same struct field, and because the decoder
 // iterates a Go map internally, the winner would otherwise be
 // nondeterministic (divergence V2, security finding P1-f). A lone
 // non-canonical spelling with no colliding variant is unaffected
 // (divergence V2b).
 //
-// Key paths that fall inside a map-typed schema field (Commands,
-// Slack.MarkdownUploadExtensions) are excluded: their sub-keys are
+// Key paths that fall inside a map-typed schema field (Commands) are
+// excluded: their sub-keys are
 // literal, case-sensitive runtime data assigned directly into a Go map,
 // never resolved through the decoder's ambiguous case-fold struct-field
 // fallback, so two differently-cased map entries (e.g. two distinct
