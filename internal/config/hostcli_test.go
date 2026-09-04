@@ -65,7 +65,7 @@ func TestValidateRule1WinsOverRules6And8Simultaneously(t *testing.T) {
 	cfg := Default()
 	cfg.DefaultWorkspaceRoot = t.TempDir()
 	cfg.MaxConcurrentSessions = 0 // violates rule 1
-	cfg.HostCLI = ""             // violates rule 6
+	cfg.HostCLI = ""              // violates rule 6
 	cfg.Workspaces = []WorkspaceMapping{
 		{WorkspaceID: "W1", ChannelID: "C1"},
 		{WorkspaceID: "W2", ChannelID: "C1"}, // violates rule 8
