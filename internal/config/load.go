@@ -33,9 +33,7 @@ const maxUnknownKeys = 64
 //     (Decision R8), which covers both the absent and explicitly-empty
 //     case with one message.
 //  5. md.Undecoded() -> Report.UnknownKeys: sorted, sanitized, capped.
-//
-// Validate integration (step 6) is wired in by unit C1 per the Decode
-// Contract.
+//  6. cfg.Validate() -> its Report merged into the returned Report.
 //
 // Report-on-error semantics: Decode returns the Report populated with
 // everything gathered so far even when it also returns a non-nil error, so
@@ -58,6 +56,12 @@ func Decode(data string) (*Config, Report, error) {
 
 	if !md.IsDefined("default_workspace_root") {
 		return cfg, report, apperr.New(apperr.KindConfig, "default_workspace_root must be set")
+	}
+
+	validateReport, err := cfg.Validate()
+	report.Warnings = append(report.Warnings, validateReport.Warnings...)
+	if err != nil {
+		return cfg, report, err
 	}
 
 	return cfg, report, nil
