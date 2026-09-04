@@ -5,11 +5,12 @@ shipment: 002-S
 feature: 002-F
 status: shipped
 pr_main: 8
-pr_closure: TBD
+pr_closure: 9
 merge_commit_sha: 9efb156839e679fd7c29484fb99acd35fb9acd8b
 compacted_from:
   - docs/archive/memory/2026-09-03-stage-intercom-go-apperr-pathsafe.md
   - docs/archive/memory/2026-09-03-ship-intercom-go-apperr-pathsafe.md
+  - docs/archive/memory/2026-09-03-ship-resume-merge-post-merge-closure-002-s.md
 ---
 
 # Compacted Memory — intercom-go P1 (002-S)
@@ -94,6 +95,18 @@ machine-checkable oracle-drift gate — deferred from plan review, depends on
   not `main` (P-020/branch-per-release-unit).
 * Source artifact cleanup: `002-F` carries no `source_stash_id` /
   `source_deliberation_id` custom fields — none applicable.
+
+## Closure PR addendum (folded from resume-session memory, 003-S closure pass)
+
+PR #9 (`chore: post-merge closure for 002-F — ...`) merged
+`2026-09-04T00:15:55Z`, closing out the `pr_closure: TBD` gap left by the
+prior session. 1 compound learning captured: backlogit's generic
+`move --status shipped` refuses shipment artifacts — shipment closure
+requires the dedicated `ShipShipment`/`shipment ship` path (see
+`docs/compound/2026-05-07-backlogit-shipment-status-constraints.md`). All
+unrelated local dirty state (`.gitignore`, `.claude/`, hooks queue,
+`references/herdr`, sibling oracle repo) verified untouched throughout.
+Shipment `002-S` fully closed: no further action outstanding.
 
 ## Open items surfaced during staging (still relevant post-ship)
 
