@@ -2,7 +2,6 @@
 title: "P2 Config — Deliberation Addendum: Oracle Re-verification and Decode/Validation Contract"
 description: "Resolves the P2 open questions left by the continuation deliberation and pins the exact decode, defaulting, validation, and path-integration contract for internal/config"
 date: 2026-09-03
-status: accepted
 phase: P2
 parent_deliberation: "docs/decisions/2026-09-03-intercom-go-port-continuation-deliberation.md"
 source_brief: "docs/decisions/2026-07-06-go-port-reference-brief.md"
@@ -15,7 +14,32 @@ stash_entries: ["037B1552"]
 predecessor: "002-F / 002-S (P1, shipped, merge 9efb156)"
 successor: "P3 credential resolution (remains in stash 037B1552)"
 tags: ["go", "port", "config", "toml", "validation", "deliberation"]
+superseded_by: "docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md"
+governing: false
+status: superseded
 ---
+
+> [!IMPORTANT]
+> **SUPERSEDED / NON-GOVERNING — 2026-09-04.**
+> This artifact is retained as **historical evidence only**. It is no longer
+> authoritative for intercom-go's architecture, operator surface, transport,
+> configuration schema, or credentials.
+>
+> It was written under assumptions that an explicit operator architecture
+> correction has since retired: Slack as the operator surface, an
+> application-owned ACP broker / `coder/acp-go-sdk` / headless Copilot CLI
+> lifecycle, an iOS remote client, and the Rust `softwaresalt/agent-intercom`
+> repository as a **behavioral oracle**.
+>
+> The governing architecture is
+> [`docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md`](2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md)
+> and the governing design is
+> [`docs/design-docs/intercom-go-backend-architecture.md`](../design-docs/intercom-go-backend-architecture.md)
+> (revision 2).
+>
+> **Do not plan, implement, or review against this document.** The Rust
+> repository is now *historical reference only*, not a behavioral oracle.
+
 
 # P2 Config — Deliberation Addendum: Oracle Re-verification and Decode/Validation Contract
 
