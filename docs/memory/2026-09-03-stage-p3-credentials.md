@@ -3,11 +3,11 @@ title: "Stage session memory — intercom-go P3 credential resolution"
 date: 2026-09-03
 agent: stage
 session_id: stage-p3-credentials-2026-09-03
-phase: gate-blocked
+phase: escalation-gate-blocked
 stash_entries: ["037B1552"]
 roadmap_parent: "4989A42D"
 predecessor: "003-F / 003-S (P2), merge 40c7d289, closure 2a547913"
-outcome: "deliberation accepted; plan FAILed the adversarial gate at attempt 3; circuit breaker opened; no harvest, no shipment"
+outcome: "deliberation accepted; normal and configured escalation routes both failed review; no harvest, no shipment"
 ---
 
 # Stage Session Memory — intercom-go P3 Credential Resolution
@@ -96,9 +96,20 @@ Verified by running Go against the pinned `go1.26.5`, not by argument:
 
 ## Resumption
 
-Resume at **Step 4 (plan review gating)** with the 17-item remediation queue recorded in the
-plan's *Gate Status* section. The deliberation is accepted and needs no rework; do not re-run
-triage, oracle research, or deliberation.
+The configured escalation route completed three bounded review passes over revisions 4–6 and
+failed its final gate with 1 P0, 3 P1, 6 P2, and 2 P3. This is the second consecutive Stage
+failure, so the operator stop condition applies.
+
+The blocking operator decision is the ACL precedence contract:
+
+* **Oracle parity:** restore `load_authorized_users` behavior from `config.rs:489-493`, where an
+  absent **or empty** `SLACK_MEMBER_IDS_ACP` falls through to `SLACK_MEMBER_IDS`.
+* **Intentional divergence:** retain first-present behavior, reopen deliberation, and explicitly
+  accept that an empty ACP value blocks shared fallback.
+
+After that decision, a future Stage session must also resolve the three mechanical P1s recorded in
+the plan's final review: C6/D1b ordering, cancel-during-lookup orchestration, and the exhaustive fmt
+verb matrix. Do not harvest from revision 6.
 
 ## Preservation
 

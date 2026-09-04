@@ -96,3 +96,25 @@ Run against `go1.26.5`, the toolchain pinned in `go.mod`:
 Resume at **Step 4 (plan review gating)**. The deliberation is accepted and requires no rework.
 Do **not** re-run stash triage, oracle research, or deliberation. No backlog items and no shipment
 were created, so there is nothing to reconcile or roll back on the backlog side.
+
+## Escalation Outcome
+
+The configured route (`gpt-5.6-sol` / `openai` / `high`) produced revisions 4–6 and ran three
+full five-persona reviews. The final bounded gate returned:
+
+```text
+dispatch_mode: multi-agent
+decision: FAIL
+P0: 1
+P1: 3
+P2: 6
+P3: 2
+```
+
+The P0 is an oracle-contract conflict: revision 6 specifies first-present ACL env semantics, while
+the pinned oracle removes empty ACP values before shared fallback. The operator must choose exact
+oracle parity or authorize a deliberated divergence. The three remaining P1s are C6/D1b compile
+ordering, cancel-during-lookup orchestration, and incomplete total-fmt test enumeration.
+
+No harvest, backlog hierarchy, shipment, dependency edge, or stash archival was performed. Stash
+`037B1552` remains active and `4989A42D` remains unchanged for P4+.
