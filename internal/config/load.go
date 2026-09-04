@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -25,10 +26,15 @@ const maxUnknownKeys = 64
 //
 //  1. cfg := Default() — pre-populated baseline.
 //  2. toml.Decode(data, cfg) — syntax/type errors become apperr.KindConfig.
+//  3. Case-fold collision rejection — two distinct key paths equal under
+//     strings.EqualFold (divergence V2).
+//  4. Required-key check — md.IsDefined("default_workspace_root") only;
+//     host_cli's required-ness is enforced solely by validation rule 6
+//     (Decision R8), which covers both the absent and explicitly-empty
+//     case with one message.
 //  5. md.Undecoded() -> Report.UnknownKeys: sorted, sanitized, capped.
 //
-// Case-fold collision rejection, the required-key check, and Validate
-// integration are wired in by later units (B2, C1) per the Decode
+// Validate integration (step 6) is wired in by unit C1 per the Decode
 // Contract.
 //
 // Report-on-error semantics: Decode returns the Report populated with
@@ -46,7 +52,60 @@ func Decode(data string) (*Config, Report, error) {
 
 	report.UnknownKeys = sanitizeUnknownKeys(md.Undecoded())
 
+	if collision, ok := findCaseFoldCollision(md.Keys()); ok {
+		return cfg, report, apperr.Newf(apperr.KindConfig, "config keys %q and %q differ only by case; rename one to avoid ambiguous decoding", collision[0], collision[1])
+	}
+
+	if !md.IsDefined("default_workspace_root") {
+		return cfg, report, apperr.New(apperr.KindConfig, "default_workspace_root must be set")
+	}
+
 	return cfg, report, nil
+}
+
+// findCaseFoldCollision scans every distinct key path present in the
+// document (at every nesting level) and reports the first pair equal
+// under strings.EqualFold but not identical — e.g. "host_cli" and
+// "Host_CLI" both target the same struct field, and because the decoder
+// iterates a Go map internally, the winner would otherwise be
+// nondeterministic (divergence V2, security finding P1-f). A lone
+// non-canonical spelling with no colliding variant is unaffected
+// (divergence V2b).
+func findCaseFoldCollision(keys []toml.Key) ([2]string, bool) {
+	seen := make(map[string]string, len(keys))
+	for _, k := range keys {
+		path := k.String()
+		folded := strings.ToLower(path)
+		if existing, ok := seen[folded]; ok {
+			if existing != path {
+				return [2]string{existing, path}, true
+			}
+			continue
+		}
+		seen[folded] = path
+	}
+	return [2]string{}, false
+}
+
+// Load stats path, rejects anything larger than MaxConfigBytes, reads it,
+// and delegates to Decode.
+func Load(path string) (*Config, Report, error) {
+	var report Report
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, report, apperr.Newf(apperr.KindConfig, "cannot read config file '%s': %s — create it or pass --config with a valid path", path, err.Error())
+	}
+	if info.Size() > MaxConfigBytes {
+		return nil, report, apperr.Newf(apperr.KindConfig, "config file '%s' exceeds the maximum allowed size of %d bytes", path, int64(MaxConfigBytes))
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, report, apperr.Newf(apperr.KindConfig, "cannot read config file '%s': %s — create it or pass --config with a valid path", path, err.Error())
+	}
+
+	return Decode(string(data))
 }
 
 // sanitizeUnknownKeys sorts, sanitizes, and caps the undecoded key list per

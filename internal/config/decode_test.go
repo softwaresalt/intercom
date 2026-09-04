@@ -14,7 +14,7 @@ import (
 // criterion (i): a config with wobble = 1 and [nonsense]\nx = 2 loads
 // without a decode error and reports both dotted paths sorted.
 func TestDecodeReportsUnknownKeysTolerantly(t *testing.T) {
-	data := "wobble = 1\n\n[nonsense]\nx = 2\n"
+	data := "default_workspace_root = \".\"\nwobble = 1\n\n[nonsense]\nx = 2\n"
 	cfg, report, err := Decode(data)
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
@@ -51,7 +51,7 @@ func TestDecodeMalformedTOMLYieldsKindConfig(t *testing.T) {
 // through toml.Decode yields DetailVerbose, proving the decoder honours
 // UnmarshalText on a value field.
 func TestDecodeSlackDetailLevelThroughUnmarshalText(t *testing.T) {
-	cfg, _, err := Decode("slack_detail_level = \"verbose\"\n")
+	cfg, _, err := Decode("default_workspace_root = \".\"\nslack_detail_level = \"verbose\"\n")
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
 	}
@@ -65,6 +65,7 @@ func TestDecodeSlackDetailLevelThroughUnmarshalText(t *testing.T) {
 // reports 64 entries plus a "… N more" marker.
 func TestDecodeCapsUnknownKeysAt64PlusMarker(t *testing.T) {
 	var b strings.Builder
+	b.WriteString("default_workspace_root = \".\"\n")
 	for i := range 200 {
 		fmt.Fprintf(&b, "key%03d = %d\n", i, i)
 	}
@@ -91,7 +92,7 @@ func TestDecodeCapsUnknownKeysAt64PlusMarker(t *testing.T) {
 // the caller; this test locks that observable behavior for
 // Report.UnknownKeys.
 func TestDecodeEscapesControlCharactersInUnknownKeys(t *testing.T) {
-	data := "\"has\\nnewline\" = 1\n"
+	data := "default_workspace_root = \".\"\n\"has\\nnewline\" = 1\n"
 	_, report, err := Decode(data)
 	if err != nil {
 		t.Fatalf("Decode returned unexpected error: %v", err)
