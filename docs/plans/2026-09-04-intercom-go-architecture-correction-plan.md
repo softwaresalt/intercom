@@ -43,7 +43,7 @@ Separately, `go.mod` declares `go 1.22` while the Copilot SDK declares
 a Cobra flag default. Both `cmd` binaries still return a `not implemented`
 sentinel from `RunE`. **No `cmd/` file is touched by any unit** —
 `DefaultConfigPath` is unchanged. The remediation touches `internal/config`
-(9 non-test/test source files plus 10 test files, enumerated in the unit
+(5 non-test files + 12 test files = 17, each enumerated in the unit
 inventory below), two operator-facing artifacts, one new script, and one CI
 step.
 
@@ -301,10 +301,12 @@ persistence fence is not breached.
 **Close the drift-test blind spot** that let P2-NAME-1 survive on `main`:
 `example_test.go` is *key-coverage only* — `TestExampleConfigCoversEveryStructField`
 compares toml key **paths** via `md.Keys()` and never compares a **value**
-against `Default()`. Add a value-agreement assertion (with an explicit,
-documented exemption list for keys that are legitimately illustrative rather
-than default-equal), so the same divergence cannot silently recur on the next
-edit. Without this, U-D2 fixes one instance of P2-NAME-1 but not its cause.
+against `Default()`. Add a value-agreement assertion with an **enumerated** exemption list for keys
+that are legitimately illustrative rather than default-equal. The list must be
+declared, not left to the implementer, or U-D3 -- the sole green boundary --
+is red on landing. At minimum it must exempt `default_workspace_root`
+(`"."` in the example vs `""` in `Default()`), `[commands]`, and the
+`[[workspace]]` entries. Every other key must match `Default()` exactly. Without this, U-D2 fixes one instance of P2-NAME-1 but not its cause.
 *Verifiable exit:* `go test ./internal/config -run TestExampleConfig` green;
 example loads with **0** unknown keys; the new value-agreement assertion fails
 if `database.path` is reverted to `agent-intercom.db`.
@@ -485,7 +487,7 @@ No destructive data actions, no backfill, no irreversible steps.
 * **R7a — Narrow the gate's scope to what can actually pass.** `internal/**`
   was wrong: `internal/apperr` legitimately declares `KindSlack`/`KindIPC`/
   `KindACP`, and I5 freezes that package, so the gate could never go green.
-  Scope is `internal/config/**` + `config.toml.example` + `cmd/**`. The apperr
+  Scope is `internal/config/**` (excluding `*_test.go` and `testdata/`) + `config.toml.example` + `cmd/**`. `*_test.go` and `testdata/` are excluded because U-B2's mandatory legacy migration fixtures live there — a gate that reddens on its own required fixtures can never pass. The apperr
   taxonomy contamination is tracked separately (D6a), not ignored.
 * **R8 — Leave `retention_days` and `default.go`'s `database` value
   untouched.** D7 defers persistence; pre-empting it is beyond this slice's
@@ -505,9 +507,9 @@ No destructive data actions, no backfill, no irreversible steps.
 | Go 1.24 floor breaks a CI leg (cross-compile / govulncheck / `go mod tidy` dirty-check) | low | U-A1 is independently revertible; toolchain is already 1.26.5 so the language-floor move is conservative; G2 adds the tidy dirty-check explicitly |
 | Defaults/rule count drift across the **five** pin sites | **medium-high** — this exact error class occurred twice in P2 history, and the first draft of this plan reproduced it a third time (the "10 → 7" arithmetic) | U-D1 recomputes from code and owns all five sites; count-bearing test **names** are renamed so counts are not re-encoded in identifiers; G4/G5 fail loudly |
 | Rule renumbering silently changes which error an operator sees first | medium | U-B2 re-pins the multi-violation determinism fixture (I2); `TestValidateRule6WinsOverRule8` is **deleted**, not renumbered |
-| Gate produces false positives, blocking unrelated PRs | medium | Scope narrowed to `internal/config/**` + `config.toml.example` + `cmd/**`; `internal/apperr` deliberately excluded (D6a); Go comments out of scope; committed-fixture `--self-test` proves both directions |
+| Gate produces false positives, blocking unrelated PRs | medium | Scope narrowed to `internal/config/**` (excluding `*_test.go` and `testdata/`) + `config.toml.example` + `cmd/**`; `internal/apperr` **and the package's own legacy migration fixtures** deliberately excluded (D6, D6a); Go comments out of scope; committed-fixture `--self-test` proves both directions |
 | Gate is not the durable control R7 claims | **medium — confirmed** | `ci.yml` is autoharness-generated, and a `pull_request` workflow runs from the PR head, so the gate is an **anti-accident**, not anti-adversary, control (D6b). Recorded in the script header and the closure artifact; upstream template change noted as follow-up |
-| Removing `SlackConfig` turns a legacy `[slack.markdown_upload_extensions]` case-collision into a **fatal** error, violating I4 | medium | U-B2 pins this edge case explicitly and either preserves the map-path exemption or documents and tests the exception |
+| Removing `SlackConfig` turns a legacy `[slack.markdown_upload_extensions]` case-collision into a **fatal** error, violating I4 | medium | Resolved as an owned decision, not a fork: U-B2 asserts the fatal collision as a **documented, tested I4 exception** and U-D3 surfaces it in the Migration section. Restoring the exemption is rejected — it would hard-code `slack.markdown_upload_extensions` into `load.go`, which the gate forbids |
 | Tolerant decode accepts retired keys instead of erroring | low | By design — retired keys surface via `Report.UnknownKeys` (I4), asserted in U-B2. Operators get a signal, not a wall, during migration |
 | Reviewers assume the Rust oracle still governs config | medium | Superseded banners on all four historical decision artifacts; the governing decision demotes the oracle (D8) |
 | Executor confuses unit IDs with roadmap phase IDs | low | Units namespaced `U-*`; phases remain `C1…C11` |
@@ -634,7 +636,7 @@ slice, and I1/V1 below exist specifically to contain it.
   now **rejected**. A relative path is neither existence-checked nor
   containment-checked and resolves against the process working directory —
   `./bin/copilot` or `..\x\copilot` would otherwise be spawned unchecked with
-  agent capabilities. Only empty or absolute are permitted.
+  agent capabilities. Permitted forms are **empty** (PATH resolution) and **absolute** (existence-checked); a **bare name** is permitted with a non-fatal advisory (accepted residual risk, below). Only the *relative* form is rejected. See design §6.2 for the normative predicate that separates a bare name from a relative path.
 * **Residual risk accepted and RECORDED (not validated):** a bare name resolves
   through ambient `PATH`, which is a genuine PATH-hijacking surface on both
   Windows and POSIX for a binary that is spawned as a child process with agent
@@ -669,7 +671,7 @@ slice, and I1/V1 below exist specifically to contain it.
   (`cmd/intercom/main.go`) consuming only `DefaultConfigPath`; both binaries
   return `not implemented`; there is no deployed instance and no operator
   config in production.
-* **Mandatory mitigation:** D3's Migration section must enumerate **every**
+* **Mandatory mitigation:** U-D3's Migration section must enumerate **every**
   removed/renamed key with its replacement. A migration that lists only "what
   changed" without "what to write instead" does not satisfy this.
 * **ActionResult:** `planned`
@@ -712,7 +714,7 @@ slice, and I1/V1 below exist specifically to contain it.
 
 ### Not risky — explicitly classified
 
-* **A1 (Go floor bump):** `ActionRisk: low`. Toolchain already 1.26.5; language
+* **U-A1 (Go floor bump):** `ActionRisk: low`. Toolchain already 1.26.5; language
   floor move is conservative and single-line.
 * **U-B0/U-B1/U-B2:** `ActionRisk: moderate` (shared-code/contract edits, no
   security or migration dimension beyond PA-3).
@@ -735,12 +737,12 @@ slice, and I1/V1 below exist specifically to contain it.
 | ID | Scenario | Expected |
 |---|---|---|
 | V1 | Load a config with **no** `cli_path`, **no** `channel_id` | **Loads clean, zero warnings.** The corrected-architecture happy path and the direct proof P2-COMPAT-1 is fixed. Empty `cli_path` must return early — it must NOT fall through to `exec.LookPath("")`, which would emit a spurious advisory |
-| V2 | Load the **shipped-shape** `config.toml` (with `[slack]`, `[acp]`, `host_cli`, `ipc_name`, workspace `channel_id`) | Loads, and **every** retired key appears in `Report.UnknownKeys` — none silently bound, none fatal (I4). **Pin two verified edge cases:** (a) legacy `[slack.markdown_upload_extensions]` keys differing only by case must not become a *fatal* collision once the map-path exemption is gone; (b) two workspace entries with `channel_id` yield the **duplicate** path `workspace.channel_id` twice — assertions must expect the duplicate |
+| V2 | Load the **shipped-shape** `config.toml` (with `[slack]`, `[acp]`, `host_cli`, `ipc_name`, workspace `channel_id`) | Loads, and **every** retired key appears in `Report.UnknownKeys` — none silently bound, none fatal (I4). **Pin two verified edge cases:** (a) once the map-path exemption is gone, a legacy `[slack.markdown_upload_extensions]` table with keys differing only by case **does** become a fatal collision — assert that behaviour as the documented, owned I4 exception (U-B2), do not assert the opposite; (b) two workspace entries with `channel_id` yield the **duplicate** path `workspace.channel_id` twice — assertions must expect the duplicate |
 | V3 | Absolute `cli_path` pointing at a non-existent file | **Fails** — the retained existence check (PA-1 residual control) |
 | V4 | Bare `cli_path` name not on `PATH` | Advisory in `Report.Warnings`, **not** an error |
 | **V4b** | **Relative `cli_path`** (`./bin/copilot`, `..\x\copilot`) | **Fails** — new compensating control (R4a, design §6.2) |
 | V5 | Document violating several rules at once | Deterministically reports the lowest-numbered violation (I2), against the **7-rule** contract. `TestValidateRule6WinsOverRule8` is deleted, not renumbered |
-| V6 | `config.toml.example` round-trip | 0 unknown keys (G3); `copilot.cli_path` and `copilot.startup_timeout_seconds` both present as written keys |
+| V6 | `config.toml.example` round-trip | 0 unknown keys (G3); `copilot.cli_path` present as a written key. **No `startup_timeout_seconds`** — it is deferred to C2, so writing it here would add a key with no struct field and redden G3 |
 | V7 | Defaults enumeration | Test lists default field **names**; all **five** pin sites agree; `docs/config-reference.md` contains each verbatim (I1, G4) |
 | V8 | Gate self-test | `--self-test` exits non-zero on the committed fixture and zero on the clean tree (both directions, repeatable) |
 | V9 | `go test -race ./...` | Clean (baseline hygiene before concurrency phases C4–C7) |
@@ -828,7 +830,7 @@ were factual errors that would have produced a non-compiling tree.
 | 4 | "10 rules → 7, with rule 6 **relaxed** rather than removed" is self-contradictory arithmetic (10 − 2 = 8) — a **third** instance of this package's counting-error class | Decision §B rewritten: rule 6 is *eliminated*, not relaxed; post-change contract enumerated **by name** |
 | 5 | Invariant I8 (`database` byte-identical) contradicted U-D1's claim to resolve P2-NAME-1 | P2-NAME-1 resolved on the **example side only** (U-D2); I8 narrowed to `default.go`'s value |
 | 6 | The gate scoped to `internal/**` **could never pass** — `internal/apperr` declares `KindSlack`/`KindIPC`/`KindACP` and is frozen by I5 | Scope narrowed to `internal/config/**` + `config.toml.example` + `cmd/**`; apperr contamination tracked separately (D6a) |
-| 7 | `copilot.startup_timeout_seconds` had no specified default, so it would silently be 0 (an SDK `Client.Start` deadline of zero) | Default **30** specified explicitly in U-B1 |
+| 7 | *(SUPERSEDED BY ROW 31 — the key was subsequently removed from C1 entirely.)* `copilot.startup_timeout_seconds` had no specified default, so it would silently be 0 (an SDK `Client.Start` deadline of zero) | Default **30** specified explicitly in U-B1 |
 | 8 | Unit IDs `C1/C2/C3` collided with roadmap phase IDs `C1/C2/C3` in the same document | Units namespaced `U-*` |
 | 9 | `ci.yml` is autoharness-generated and `pull_request` workflows run from the PR head — the gate is not "the only durable control" | R7 downgraded; D6b caveat added; CODEOWNERS made a precondition for H1 |
 | 10 | Dependency graph claimed B1–B5 independent, contradicted by the plan's own text | Graph rewritten as a linear chain |
@@ -881,3 +883,5 @@ were factual errors that would have produced a non-compiling tree.
 
 
 <!-- plan-review-attempt: 3 -->
+
+

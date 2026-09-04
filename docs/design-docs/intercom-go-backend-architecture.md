@@ -523,16 +523,24 @@ so the discriminator is stated explicitly:
 ```text
 cli_path == ""                              -> valid  (SDK resolves via PATH / COPILOT_CLI_PATH)
 filepath.IsAbs(cli_path)                    -> valid iff the file exists, else ERROR
+matches ^[A-Za-z]: and not absolute         -> ERROR  (Windows drive-relative, e.g. "C:copilot")
 contains '/' or '\' (and not absolute)      -> ERROR  (relative path)
-otherwise (contains no separator)           -> bare name: PATH advisory only, never fatal
+otherwise (no separator, no drive prefix)   -> bare name: PATH advisory only, never fatal
 ```
 
 Both separators are tested regardless of `GOOS`, following the existing
 `containsDotDotSegment` precedent in `internal/config`, because `config.toml`
 is portable text that may be authored on a different platform than it runs on.
-Windows drive-relative forms (`C:copilot`) and UNC paths are handled correctly
-by this ordering: `C:copilot` is non-absolute and contains no separator, so it
-is treated as a bare name and never silently executed as a path.
+
+**The drive-prefix branch is not redundant, and omitting it is a real bypass.**
+`C:copilot` is non-absolute *and* contains no separator, so a naive predicate
+would classify it as a bare name and pass it through with only an advisory.
+But Go's `exec.LookPath` on Windows treats any string containing `:` as a
+**path** rather than a `PATH` search, and `StdioConnection.Path` would then
+spawn it drive-relative to the process working directory — exactly the
+unchecked, CWD-relative execution the relative-path rejection exists to
+prevent. It is therefore rejected explicitly, ahead of the separator test.
+UNC paths are already absolute and are handled by the `IsAbs` branch.
 
 Rationale per branch:
 

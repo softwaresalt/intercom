@@ -698,6 +698,7 @@ eighth check that escapes both the contract pin and the doc-completeness test.
 ```text
 cli_path == ""                                    -> valid (SDK resolves via PATH/COPILOT_CLI_PATH)
 filepath.IsAbs(cli_path)                          -> valid iff the file exists
+matches ^[A-Za-z]: and not absolute               -> REJECT (Windows drive-relative, e.g. "C:copilot")
 contains '/' or '\' (but not absolute)            -> REJECT (relative path)
 otherwise (no separator)                          -> bare name; PATH advisory only, never fatal
 ```
@@ -760,3 +761,4 @@ settled facts:
 5. **The event envelope schema in the revised design is intercom-go-owned and
    newly authored.** It is not derived from the SDK's wire types and must not
    be assumed to mirror them.
+
