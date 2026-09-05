@@ -122,8 +122,18 @@ disposition of the P-021 deferred entries below.
 
 ## Compaction status (P-020)
 
-`pending` -- finalized to `done`/`degraded` by the mandatory
-`compact-context` invocation later in this same closure sequence.
+`done`. `compact-context` invoked with `target: memory`; the just-closed
+release unit's session memory
+(`docs/memory/2026-09-04-ship-005-s-session.md`) was the intended candidate
+under the completed-work rule -- compacted to
+`docs/memory/compacted/2026-09-04-005-s-intercom-go-c2-reconciliation-spike-compacted.md`,
+verbose original archived to
+`docs/archive/memory/2026-09-04-ship-005-s-session.md`. Plan consolidation
+for `docs/plans/2026-09-04-intercom-go-c2-sdk-spike-plan.md` was evaluated
+and deferred (the plan's own appended review-remediation history remains
+useful context for anyone auditing the B1-B7 acceptance-criteria trail
+against the live findings, and is not yet a compaction candidate under the
+skill's own criteria -- no threshold exceeded).
 
 ## Releasability evidence
 
