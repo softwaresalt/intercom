@@ -95,7 +95,7 @@ isolates workspace lifecycles completely.
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Language | **Go 1.24+** | Hard floor: `github.com/github/copilot-sdk/go` declares `go 1.24`. The repository is currently at `go 1.22` and **must be raised**. |
+| Language | **Go 1.24+** | Hard floor: `github.com/github/copilot-sdk/go` declares `go 1.24`. **Raised** (shipment 004-S / U-A1): the repository's `go.mod` language floor is now `go 1.24` (toolchain pinned at `go1.26.5` per go.mod's own CVE-remediation comment). |
 | Agent SDK | `github.com/github/copilot-sdk/go` **v1.0.11** (tag `go/v1.0.11`, commit `a550258d5c37bd662197536992a23d633bfe5804`) | Only stable Go release; GA with SemVer. See §7 for risk controls. |
 | TUI | `charmbracelet/bubbletea` + `lipgloss` + `bubbles/viewport` | Elm architecture decouples terminal rendering from asynchronous event streams. `viewport` is required so continuous token streaming does not destroy native scrollback. |
 | WebSocket | **Deferred to implementation** | Note the SDK already pulls in `coder/websocket`; reusing it avoids a second WS implementation in the binary. Whatever is chosen must expose ping/pong control so an idle tunnel is not dropped while the agent is "thinking". |
@@ -320,20 +320,30 @@ the same SDK event folded twice receives two different `seq` values and the
 **register the callback first, then call `GetEvents`, then de-duplicate while
 folding.**
 
-**De-duplication key: DETERMINED (2026-09-04, shipment 005-S / B7).**
-`SessionEvent` carries a stable identity: `SessionEvent.ID` (`rpc.SessionEvent.ID`)
-is a non-empty, unique-per-event UUID v4, generated when the event is
-emitted — the phase-C2 proving spike observed 76/76 unique IDs with zero
-duplicates across one probe session, and `ParentID` additionally provides a
-linked-chain ordering signal. See
-`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-d). This
-**refutes** this section's prior prediction that no stable identity exists;
-the two-branch specification below is collapsed to the applicable branch:
+**De-duplication key: PROVISIONALLY DETERMINED (2026-09-04, shipment 005-S /
+B7) — primary branch adopted, fallback branch RETAINED pending resume-path
+re-verification.** `SessionEvent` carries a stable identity: `SessionEvent.ID`
+(`rpc.SessionEvent.ID`) is a non-empty, unique-per-event UUID v4, generated
+when the event is emitted — the phase-C2 proving spike observed 76/76 unique
+IDs with zero duplicates across one continuous **live-callback** probe
+session, and `ParentID` additionally provides a linked-chain ordering signal.
+See `docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-d).
+This **refutes** this section's prior prediction that no stable identity
+exists for live callback delivery. However, per the untested-scope caveat
+below, the spec is **not** collapsed to a single branch; both remain
+specified, with the first now designated primary:
 
-* **De-duplicate on `SessionEvent.ID`.** The adapter normalises it to an
-  opaque, intercom-go-owned `source_event_id` **inside the ACL** — the hub
-  never sees or interprets an SDK field, preserving §7.1 and keeping the
-  envelope free of SDK wire types.
+* **Primary (adopt now): de-duplicate on `SessionEvent.ID`.** The adapter
+  normalises it to an opaque, intercom-go-owned `source_event_id` **inside
+  the ACL** — the hub never sees or interprets an SDK field, preserving §7.1
+  and keeping the envelope free of SDK wire types.
+* **Fallback (retained, use if the resume-path re-verification below finds ID
+  stability does not hold across resume/replay): buffer live callback events
+  without folding them until `GetEvents` returns, then reconcile by
+  prefix/content-hash and fold exactly once.** This was this section's
+  original specification for the "no stable identity" branch; it is kept
+  verbatim here rather than deleted, because the live-callback proof below
+  does not cover the resume/replay path this fallback exists for.
 
 > **Scope of this finding (hedged consistently with §4.2's SQ-b amendment).**
 > `SessionEvent.ID` uniqueness is validated against the
@@ -354,10 +364,9 @@ the two-branch specification below is collapsed to the applicable branch:
 > the same race §5.3 solves for clients"). Whether `SessionEvent.ID` remains
 > stable and non-duplicated across a resume-then-replay sequence (not just
 > within one live stream) MUST be probed specifically before or during C3/C4,
-> before this collapsed single-branch spec is relied upon for the resume
-> path. If that follow-up probe finds ID stability does not hold across
-> resume, revert to the buffer-then-reconcile-by-prefix/content-hash branch
-> this section previously specified as the fallback.
+> before the primary branch above is relied upon for the resume path. Use the
+> fallback branch above for the resume path until that probe runs, or if it
+> finds ID stability does not hold.
 
 C2 spike question (d) is answered; the blocking gate on C4 (alongside H6) is
 lifted for this question, subject to the resume-path re-verification above.
@@ -497,10 +506,12 @@ unobtainable.
 dispatch is independent of event dispatch is **YES** — no head-of-line
 blocking observed. The phase-C2 proving spike
 (`internal/copilotprobe/concurrency_test.go`) held a `PermissionHandlerFunc`
-genuinely blocked and observed 31 further session events arrive strictly
-after the block began (54 total vs. 24 before blocking started); event
+genuinely blocked and observed 42 further session events arrive strictly
+after the block began (62 total vs. 21 before blocking started); event
 delivery was not frozen by the blocked handler. See
-`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-c).
+`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-c) for
+the authoritative captured run and a footnote on the two-counter
+measurement mechanism behind these figures.
 **This is an empirical observation of the pinned SDK version's
 (`v1.0.11`) current dispatch behaviour, not a documented guarantee** — the
 SDK's own API surface makes no contractual claim about dispatch
@@ -651,11 +662,24 @@ All SDK types are confined to one adapter package.
 ### 7.2 Version pinning
 
 * Pin the module to `v1.0.11`.
-* **Pinning the module does not pin the Copilot CLI.** The SDK declares
-  `SDKProtocolVersion = 3` and, for Go, the CLI is an unbundled,
-  operator-installed dependency. The validated CLI version must be recorded
-  and asserted at startup. Embedding the CLI (`go/embeddedcli`) is a deferred
-  option that would remove this variable entirely.
+* **Pinning the module does not pin the Copilot CLI, and the CLI is not
+  necessarily operator-installed.** The SDK declares `SDKProtocolVersion = 3`.
+  **Correction (2026-09-04, shipment 005-S / B6/B7):** the prior assumption
+  that the CLI is "an unbundled, operator-installed dependency" and that
+  embedding is "a deferred option" is **outdated** at the pinned version --
+  the phase-C2 proving spike's `client.GetStatus(ctx)` call succeeded against
+  a real runtime with no `cli_path`/`PATH` configuration supplied by the
+  probe at all, and the SDK's own `ClientOptions.BaseDirectory` doc comment
+  states the Go SDK "extracts the embedded CLI binary" independently of
+  `PATH` resolution, configurable via the SDK's own `embeddedcli.Config.Dir`.
+  Embedding is therefore **available today at this pin**, not a future
+  option. The validated CLI/runtime version (`1.0.84-1`, SDK protocol `3` --
+  see `docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md`) must
+  still be recorded and asserted at startup regardless of which resolution
+  path (embedded vs. `[copilot].cli_path`) a given deployment uses; §6.2's
+  `cli_path` validation contract is unaffected and remains a valid
+  configuration surface for deployments that need to point at a specific,
+  separately-installed CLI.
 
 ### 7.3 Multi-tenant hygiene
 
@@ -755,10 +779,11 @@ removed as part of the remediation.
 
 ### 9.1 Deferred and adoptable material register
 
-Recorded here (rather than left to survive only in the untracked
-IMPL-DESIGN candidate document,
-`docs/design-docs/intercom-architecture-implementation-design.md`) per
-decision D14:
+Recorded here (rather than left to survive only in the IMPL-DESIGN
+candidate document,
+`docs/design-docs/intercom-architecture-implementation-design.md` --
+untracked at the time this register was first written, now tracked and
+preserved per A1, but still non-governing per D11) per decision D14:
 
 | ID | Item | Disposition | Source |
 |---|---|---|---|

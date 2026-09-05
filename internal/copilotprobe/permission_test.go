@@ -30,13 +30,14 @@ func TestS1PermissionRoundTrip(t *testing.T) {
 	feedback := "B2 spike: exercising PermissionDecisionReject"
 
 	cases := []struct {
-		name     string
-		decision rpc.PermissionDecision
+		name            string
+		decision        rpc.PermissionDecision
+		expectTurnEnded bool
 	}{
-		{"ApproveOnce", &rpc.PermissionDecisionApproveOnce{}},
-		{"Reject", &rpc.PermissionDecisionReject{Feedback: &feedback}},
-		{"UserNotAvailable", &rpc.PermissionDecisionUserNotAvailable{}},
-		{"NoResult", &rpc.PermissionDecisionNoResult{}},
+		{"ApproveOnce", &rpc.PermissionDecisionApproveOnce{}, true},
+		{"Reject", &rpc.PermissionDecisionReject{Feedback: &feedback}, true},
+		{"UserNotAvailable", &rpc.PermissionDecisionUserNotAvailable{}, true},
+		{"NoResult", &rpc.PermissionDecisionNoResult{}, false},
 	}
 
 	for _, tc := range cases {
@@ -69,6 +70,14 @@ func TestS1PermissionRoundTrip(t *testing.T) {
 
 			for _, req := range harness.Requests() {
 				t.Logf("variant=%s request#%d kind=%s decision_returned=%T", tc.name, req.N, req.Kind, req.Decision)
+			}
+
+			// Regression guard (adversarial-review finding F7): the S1
+			// "PROVEN" claim in the findings artifact is only meaningful if
+			// a future SDK/behavior change that breaks it would fail this
+			// test, not silently pass with only a changed log line.
+			if result.Ended != tc.expectTurnEnded {
+				t.Errorf("S1 REGRESSION for variant %s: expected turn_ended=%v (per the recorded findings), observed turn_ended=%v", tc.name, tc.expectTurnEnded, result.Ended)
 			}
 		})
 	}

@@ -70,7 +70,14 @@ func DriveTurn(ctx context.Context, session *copilot.Session, prompt string, onE
 	defer unsubscribe()
 
 	if _, err := session.Send(ctx, copilot.MessageOptions{Prompt: prompt}); err != nil {
-		return result, err
+		// Same aliasing hazard as the success-path return below: return a
+		// defensively-copied snapshot here too, never the live result
+		// still being appended to by the callback above.
+		mu.Lock()
+		defer mu.Unlock()
+		snapshot := make([]copilot.SessionEvent, len(result.Events))
+		copy(snapshot, result.Events)
+		return &TurnResult{Events: snapshot, Ended: false}, err
 	}
 
 	select {

@@ -2,6 +2,7 @@ package copilotprobe
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -24,19 +25,35 @@ func TestS3CancellationShutdown(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), probeDeadline)
 	defer cancel()
 
+	blockCh := make(chan struct{}) // released via releaseHandler below
 	handlerEntered := make(chan struct{})
-	blockCh := make(chan struct{}) // deliberately never closed during the probe window
 	var enteredOnce int32
+	var releaseOnce sync.Once
+	releaseHandler := func() { releaseOnce.Do(func() { close(blockCh) }) }
+
+	// Guaranteed to run on every exit path (t.Fatalf, t.Skip, or normal
+	// return) via t.Cleanup, not just the happy path: releases a parked
+	// handler goroutine and runs the same bounded, escalating Stop ladder
+	// used at the end of the happy path. Guarded by stopOnce so the happy
+	// path's own explicit call and this Cleanup never both execute.
+	var stopOnce sync.Once
+	stopLadder := func(client *copilot.Client) {
+		stopOnce.Do(func() {
+			releaseHandler()
+			boundedStopEscalating(t, client)
+		})
+	}
 
 	harness := NewPermissionHarness(func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
 		if atomic.CompareAndSwapInt32(&enteredOnce, 0, 1) {
 			close(handlerEntered)
 		}
-		<-blockCh // block indefinitely -- simulates an already-blocked handler
+		<-blockCh // block until releaseHandler runs -- simulates an already-blocked handler
 		return &rpc.PermissionDecisionApproveOnce{}
 	})
 
 	client := newProbeClientManualLifecycle(t, ctx)
+	t.Cleanup(func() { stopLadder(client) })
 	session := newProbeSession(t, ctx, client, &copilot.SessionConfig{
 		OnPermissionRequest: harness.Handler(),
 	})
@@ -72,12 +89,12 @@ func TestS3CancellationShutdown(t *testing.T) {
 	t.Logf("Abort: returned_promptly=%v err=%v", abortReturnedPromptly, abortErr)
 
 	// SQ-a evidence caveat (correctness finding): blockCh in this harness is
-	// ONLY ever closed by this test's own close(blockCh) call below -- no
-	// other path (SDK-driven or otherwise) can close it. A select against
-	// blockCh is therefore NOT an independent empirical observation of
-	// whether Abort delivered any signal into the handler; it is
-	// guaranteed to report "still parked" by construction on every run. It
-	// is retained here only as a construction sanity-check (it would be a
+	// ONLY ever closed by releaseHandler -- no other path (SDK-driven or
+	// otherwise) can close it. A select against blockCh is therefore NOT an
+	// independent empirical observation of whether Abort delivered any
+	// signal into the handler; it is guaranteed to report "still parked" by
+	// construction at this point (releaseHandler has not run yet). It is
+	// retained here only as a construction sanity-check (it would be a
 	// genuine harness bug if it ever reported otherwise), not as SQ-a
 	// evidence. The actual empirical measurement this probe produces is
 	// abortReturnedPromptly above (whether Abort itself hangs); the
@@ -93,7 +110,7 @@ func TestS3CancellationShutdown(t *testing.T) {
 	default:
 	}
 	if !handlerStillParked {
-		t.Fatalf("construction invariant violated: blockCh closed before this test's own close(blockCh) call -- harness bug, not an SQ-a finding")
+		t.Fatalf("construction invariant violated: blockCh closed before this test's own release -- harness bug, not an SQ-a finding")
 	}
 	t.Log("SQ-a evidence: abortReturnedPromptly is the genuine empirical signal (no deadlock at the Abort/RPC layer); the handler-remains-blocked half of the conclusion below follows from PermissionHandlerFunc's signature (no context.Context parameter), not from a live SDK-driven unblock signal, since no such signal exists for this harness to observe.")
 	if abortReturnedPromptly {
@@ -102,16 +119,28 @@ func TestS3CancellationShutdown(t *testing.T) {
 		t.Log("SQ-a ANSWER: DEADLOCK OBSERVED -- Session.Abort itself did not return within its 20s sub-deadline while the permission handler remained blocked. This is the design section 3.1 deadlock scenario made concrete; recorded as a successful, informative de-risking outcome.")
 	}
 
-	// Release the blocked handler goroutine so it doesn't leak past this test.
-	close(blockCh)
+	// S3 escalating shutdown ladder: release the handler, then Stop, then
+	// ForceStop ONLY if Stop does not return within its deadline (this is
+	// what makes it an *escalating* ladder rather than an unconditional
+	// double-teardown -- ForceStop must not run when Stop already
+	// succeeded promptly). Guarded by stopOnce so the t.Cleanup above never
+	// re-runs this.
+	stopLadder(client)
 
-	// S3 escalating shutdown ladder: Stop, then ForceStop as the escape
-	// hatch, each bounded so neither call can hang this test unbounded.
+	t.Log("S3 PROVEN: Abort -> Stop -> (ForceStop only if Stop did not return promptly) shutdown ladder exercised under a deadline-bearing context.Context; no unbounded hang occurred in this test (each stage individually bounded).")
+}
+
+// boundedStopEscalating calls client.Stop() with a bounded wait; ForceStop
+// is invoked ONLY if Stop does not return within its deadline, matching
+// design section 3.1 step 4's escalating (not unconditional) ladder.
+func boundedStopEscalating(t *testing.T, client *copilot.Client) {
+	t.Helper()
 	stopDone := make(chan error, 1)
 	go func() { stopDone <- client.Stop() }()
 	select {
 	case err := <-stopDone:
 		t.Logf("Client.Stop(): returned err=%v", err)
+		return
 	case <-time.After(20 * time.Second):
 		t.Log("Client.Stop(): did not return within 20s; escalating to ForceStop")
 	}
@@ -127,6 +156,4 @@ func TestS3CancellationShutdown(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Log("Client.ForceStop(): did not return within 10s (unexpected for a force-kill escape hatch)")
 	}
-
-	t.Log("S3 PROVEN: Abort -> Stop -> ForceStop shutdown ladder exercised under a deadline-bearing context.Context; no unbounded hang occurred in this test (each stage individually bounded).")
 }
