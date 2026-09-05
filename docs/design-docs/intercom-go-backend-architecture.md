@@ -243,16 +243,33 @@ latch (an atomic closed-flag checked and incremented under a mutex, or an
 equivalent refcount with a close latch), so `Unsubscribe` composes safely with
 an already-entered callback.
 
-**Re-entrancy is UNSPECIFIED by the SDK.** `Session.On` carries no documented
-serialisation guarantee, and `SessionEvent` carries **no sequence number**
-(verified). Concurrent invocation would therefore race any adapter-local
-accumulator and make ingress ordering nondeterministic **with no way to
-reconstruct order downstream**. Determining this empirically is a **required
-C2 spike question**, and C2 may not close until the design has been **amended
-with the chosen fallback** — "answered empirically" is not sufficient, because
-an adverse answer invalidates the ordered fold in §5.1. Until answered, the
-adapter must be safe under concurrent invocation and must not rely on callback
-ordering.
+**Re-entrancy is DETERMINED (2026-09-04, shipment 005-S / B7).** `Session.On`
+callback invocation is **serialised** at the pinned SDK version
+(`github.com/github/copilot-sdk/go@v1.0.11`): the phase-C2 proving spike
+(`internal/copilotprobe`) instrumented the callback with an atomic in-flight
+counter across a token-streaming turn and observed a maximum concurrent
+in-flight count of **1** across 62 sampled invocations — no overlapping
+invocation occurred. See
+`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-b).
+
+> **Normative adapter rule.** The adapter MAY rely on `Session.On` delivering
+> events to a single callback instance one at a time (no concurrent
+> invocation to guard against at this pin). This is an **empirical
+> observation of the pinned version's current behaviour, not a documented SDK
+> guarantee** — the SDK's own API surface still carries no serialisation
+> contract in its type signatures or documentation. The adapter MUST NOT
+> silently assume this holds across a future SDK version bump; re-verify
+> empirically (re-run the B5 probe, or an equivalent) before or alongside any
+> `copilot-sdk/go` version upgrade, and revert to the conservative
+> concurrent-safe posture below if re-verification is not performed.
+> Regardless of serialisation, the adapter still MUST NOT rely on callback
+> ordering *across* `Unsubscribe`/re-subscribe boundaries, and the
+> "no new entrants" latch above remains required — serialisation within one
+> subscription does not eliminate the shutdown race the latch guards against.
+
+**C2 closure status: CLOSED for SQ-b.** This amendment satisfies design
+§4.2's closure condition ("C2 may not close until the design has been amended
+with the chosen fallback").
 
 ### 4.3 Event-union safety (normative)
 
@@ -290,20 +307,23 @@ the same SDK event folded twice receives two different `seq` values and the
 **register the callback first, then call `GetEvents`, then de-duplicate while
 folding.**
 
-The de-duplication key depends on an SDK property that is **not yet verified**,
-so both branches are specified now rather than leaving the normative rule
-resting on a hope:
+**De-duplication key: DETERMINED (2026-09-04, shipment 005-S / B7).**
+`SessionEvent` carries a stable identity: `SessionEvent.ID` (`rpc.SessionEvent.ID`)
+is a non-empty, unique-per-event UUID v4, generated when the event is
+emitted — the phase-C2 proving spike observed 76/76 unique IDs with zero
+duplicates across one probe session, and `ParentID` additionally provides a
+linked-chain ordering signal. See
+`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-d). This
+**refutes** this section's prior prediction that no stable identity exists;
+the two-branch specification below is collapsed to the applicable branch:
 
-* **If `SessionEvent` carries a stable identity** (C2 spike question (d)):
-  de-duplicate on it. The adapter normalises it to an opaque, intercom-go-owned
-  `source_event_id` **inside the ACL** — the hub never sees or interprets an
-  SDK field, preserving §7.1 and keeping the envelope free of SDK wire types.
-* **If it does not** (the likelier answer — §4.2 records that `SessionEvent`
-  exposes no sequence number): the adapter **buffers** live callback events
-  without folding them until `GetEvents` returns, then reconciles by
-  prefix/content-hash and folds exactly once.
+* **De-duplicate on `SessionEvent.ID`.** The adapter normalises it to an
+  opaque, intercom-go-owned `source_event_id` **inside the ACL** — the hub
+  never sees or interprets an SDK field, preserving §7.1 and keeping the
+  envelope free of SDK wire types.
 
-C2 spike question (d) is a **blocking gate on C4**, alongside H6.
+C2 spike question (d) is answered; the blocking gate on C4 (alongside H6) is
+lifted for this question.
 
 ### 5.2 Event envelope
 
