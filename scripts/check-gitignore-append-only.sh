@@ -17,6 +17,20 @@
 # `subsequence_check` implementation below; the CLI surface and
 # git-ref comparison mode (`run_check`) are unchanged from U4a.
 #
+# REMEDIATION (adversarial re-review, 2026-09-04): two gaps fixed prior to
+# merge, both verified: (1) `non_comment_lines` now strips trailing `\r`
+# before classification, so a CRLF-vs-LF-only difference between base and
+# head can never be misread as a deletion/reorder (verified: a
+# content-identical CRLF/LF pair now returns pass, previously a bare-CR
+# artifact could have been miscompared as distinct text); (2) `run_check`
+# now distinguishes "target_file did not exist at base_ref at all" (a
+# genuinely first-ever add -- e.g. the very first `.gitignore` a repo ever
+# commits) from "base_ref itself does not resolve" -- the former is
+# treated as an empty OLD (trivially compliant, per subsequence_check's
+# own empty-OLD semantics) rather than failing closed; the latter (an
+# actually-unresolvable ref) still fails closed exactly as AC-4 requires.
+# Verified with a synthetic empty-tree commit as --base-ref.
+#
 # Usage:
 #   check-gitignore-append-only.sh --self-test
 #       Runs every fixture pair under scripts/testdata/gitignore/ and
@@ -90,10 +104,13 @@ done
 #
 # Extracts the non-comment, non-blank lines from FILE, in order. A line is
 # a comment if its first non-whitespace character is '#'; a line is blank
-# if it contains only whitespace.
+# if it contains only whitespace. Trailing carriage returns (CRLF line
+# endings) are stripped before classification/comparison so a CRLF vs LF
+# difference alone (no content change) can never be misread as a
+# deletion/reorder.
 non_comment_lines() {
   local file="$1"
-  grep -Ev '^[[:space:]]*(#|$)' -- "$file"
+  sed 's/\r$//' -- "$file" | grep -Ev '^[[:space:]]*(#|$)'
 }
 
 # subsequence_check OLD_FILE NEW_FILE
@@ -181,15 +198,34 @@ run_check() {
 
   echo "check-gitignore-append-only: base=${base_ref} head=${head_ref} file=${target_file}"
 
+  if ! git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
+    echo "::error::--base-ref '${base_ref}' does not resolve to a valid commit" >&2
+    return 1
+  fi
+  if ! git rev-parse --verify --quiet "${head_ref}^{commit}" >/dev/null; then
+    echo "::error::--head-ref '${head_ref}' does not resolve to a valid commit" >&2
+    return 1
+  fi
+
   local old_tmp new_tmp
   old_tmp="$(mktemp)"
   new_tmp="$(mktemp)"
   trap 'rm -f "$old_tmp" "$new_tmp"' RETURN
 
-  if ! git show "${base_ref}:${target_file}" > "$old_tmp" 2>/dev/null; then
-    echo "::error::could not read ${target_file} at ${base_ref}" >&2
-    return 1
+  # First-ever-file carve-out: if target_file did not exist at base_ref at
+  # all (a valid commit, just no version of this path), there is nothing
+  # prior to have deleted or reordered -- treat it as an empty OLD, which
+  # subsequence_check already handles as trivially compliant (any NEW
+  # content is vacuously a superset of nothing). This is NOT the fail-open
+  # "no --base-ref supplied" case above (AC-4): base_ref itself is valid
+  # and explicit; only the path is absent there.
+  if git cat-file -e "${base_ref}:${target_file}" 2>/dev/null; then
+    git show "${base_ref}:${target_file}" > "$old_tmp"
+  else
+    : > "$old_tmp"
+    echo "::notice::${target_file} did not exist at ${base_ref}; treating as a first-ever add (trivially append-only)"
   fi
+
   if ! git show "${head_ref}:${target_file}" > "$new_tmp" 2>/dev/null; then
     echo "::error::could not read ${target_file} at ${head_ref}" >&2
     return 1

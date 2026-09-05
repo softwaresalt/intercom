@@ -228,6 +228,15 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Self-test the checker's own logic (regression guard)
+        # Guards against a future edit to check-gitignore-append-only.sh
+        # silently breaking the subsequence predicate: runs every
+        # committed fixture (scripts/testdata/gitignore/) and fails the
+        # job if any fixture's actual result no longer matches its
+        # recorded expectation. Runs before the real invariant check below
+        # so a broken checker is reported as "self-test failed", not
+        # misread as a real .gitignore violation.
+        run: bash scripts/check-gitignore-append-only.sh --self-test
       - name: Check .gitignore append-only (I6)
         run: |
           set -euo pipefail
@@ -350,10 +359,16 @@ jobs:
       - name: Install autoharness (hash-pinned, --require-hashes)
         # Hermetic install: every package in the full transitive closure is
         # pinned to an exact version AND verified against a committed
-        # SHA-256 hash before pip will install it. See
+        # SHA-256 hash before pip will install it. --only-binary=:all:
+        # additionally forecloses a fallback to building an unhashed sdist
+        # via PEP 517 build isolation if a wheel is ever unavailable for
+        # this platform/Python combination -- with --require-hashes alone,
+        # that fallback path is a live unhashed-code-execution route pip
+        # does not close by default. See
         # .github/constraints/autoharness-lock.txt for provenance and the
         # bump procedure. Resolves stash EFFAA358.
-        run: pip install --require-hashes -r .github/constraints/autoharness-lock.txt
+        run: |
+          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt
       - name: Run CI topology-check entrypoint
         run: bash scripts/ci-topology-check.sh
 

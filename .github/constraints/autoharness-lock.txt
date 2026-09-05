@@ -43,8 +43,27 @@
 #      enforces this at install time, but do not attempt to work around it.
 #
 # Full transitive closure of `autoharness==1.4.11` for cp312-manylinux_2_17
-# (7 packages total; verified as the complete resolved set — no additional
-# dependency introduced silently by a future run of this same install).
+# (8 packages total; verified as the complete resolved set via a REAL
+# Python 3.12 interpreter's native resolver -- see "REMEDIATION" note below
+# -- no additional dependency introduced silently by a future run of this
+# same install).
+#
+# REMEDIATION (adversarial re-review, 2026-09-04): the original 7-package
+# closure recorded here was resolved via
+# `pip download --platform ... --python-version 312 --implementation cp
+# --abi cp312`, a CROSS-PLATFORM/CROSS-VERSION resolve mode. That mode was
+# independently found (by two adversarial reviewers, one with a
+# reproduction) to NOT fully evaluate PEP 508 environment markers the same
+# way a native resolve does: `referencing==0.37.0` declares
+# `typing-extensions>=4.4.0; python_version < "3.13"`, which is a REAL,
+# mandatory requirement under Python 3.12 (the exact version `ci.yml`
+# pins) but was silently omitted from the cross-platform resolve's output.
+# Confirmed against a REAL local Python 3.12.10 interpreter
+# (`pip install --dry-run` with no platform override, native resolver):
+# `typing-extensions` IS collected and IS part of "Would install". Added
+# below with its own verified hash. `pip install --require-hashes -r
+# <this file>` was re-run afterward against the corrected 8-package set
+# targeting manylinux_2_17_x86_64/cp312 and now succeeds.
 
 autoharness==1.4.11 \
     --hash=sha256:1062b9fdbc8500c937dddd6d21109e661a8653ce774264586c3d53e9532ceafa
@@ -60,3 +79,5 @@ referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231
 rpds-py==2026.6.3 \
     --hash=sha256:ecabd69db66de867690f9797f2f8fa27ba501bbc24540cbdbdc649cd15888ba6
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8

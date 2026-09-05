@@ -32,10 +32,17 @@
 # a control with none of the effect.
 #
 # Covers ALL CI-critical scripts and workflow surfaces, or none (partial
-# ownership coverage here would be a misleading control).
+# ownership coverage here would be a misleading control). "CI-critical"
+# here means executable gate/workflow logic and the ownership file itself.
+# /.github/constraints/ is included: it is the hash-pin trust boundary this
+# shipment builds (007.001-T) and is exactly as CI-critical as the
+# workflows that consume it. scripts/testdata/gitignore/** (fixture DATA,
+# not executable gate logic) is deliberately NOT listed here -- it is
+# committed test input, not a CI-critical script or workflow surface.
 
 /.github/workflows/                          @softwaresalt
 /.github/CODEOWNERS                          @softwaresalt
+/.github/constraints/                        @softwaresalt
 /scripts/ci-topology-check.sh                @softwaresalt
 /scripts/check-retired-architecture.sh       @softwaresalt
 /scripts/check-gitignore-append-only.sh      @softwaresalt
