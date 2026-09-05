@@ -107,9 +107,12 @@ alerts affected by this change.
 ## Rollback trigger / rollback procedure
 
 Not applicable for a docs + disposable-spike-package merge with no runtime
-surface. If ever needed: `git revert 3fdb871` (single merge commit revert;
-the pinned SDK dependency and `internal/copilotprobe` package were added in
-one shipment and have no other consumers, so a revert is clean).
+surface. If ever needed: `git revert -m 1 3fdb871b5367f7cde54af9406840f15669e4f1ca`
+(reverting a merge commit requires specifying the mainline parent via `-m 1`;
+a plain `git revert` on a merge commit fails or behaves unexpectedly). This
+is a single merge commit revert; the pinned SDK dependency and
+`internal/copilotprobe` package were added in one shipment and have no other
+consumers, so a revert is clean.
 
 ## Validation window
 

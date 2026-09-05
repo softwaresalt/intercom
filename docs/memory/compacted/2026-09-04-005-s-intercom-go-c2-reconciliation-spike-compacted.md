@@ -1,12 +1,14 @@
 ---
-title: "Compacted memory: 005-S intercom-go C2 design reconciliation + Copilot SDK proving spike"
-description: "Dense compacted summary of the Ship session for shipment 005-S, replacing the verbose original"
-status: "complete"
-tags:
-  - "ship"
-  - "compacted"
-  - "005-S"
-  - "006-F"
+title: "Compacted memory — 005-S intercom-go C2 design reconciliation + Copilot SDK proving spike"
+date: 2026-09-04
+shipment: 005-S
+feature: 006-F
+status: shipped
+pr_main: 17
+pr_closure: 18
+merge_commit_sha: 3fdb871b5367f7cde54af9406840f15669e4f1ca
+compacted_from:
+  - docs/archive/memory/2026-09-04-ship-005-s-session.md
 ---
 
 # Compacted memory: 005-S / 006-F
