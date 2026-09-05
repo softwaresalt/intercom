@@ -42,7 +42,71 @@
 #      without a matching `--hash=sha256:...`) — `--require-hashes`
 #      enforces this at install time, but do not attempt to work around it.
 #
-# Full transitive closure of `autoharness==1.4.11` for cp312-manylinux_2_17
+# [Historical: originally resolved for autoharness==1.4.11 below; see the
+# CORRECTION note further down -- the ACTIVE pin is autoharness==1.5.0.]
+# Full transitive closure for cp312-manylinux_2_17 (8 packages total;
+# verified as the complete resolved set via a REAL Python 3.12
+# interpreter's native resolver -- see "REMEDIATION" note below -- no
+# additional dependency introduced silently by a future run of this same
+# install).
+#
+# REMEDIATION (adversarial re-review, 2026-09-04): the original 7-package
+# closure recorded here was resolved via
+# `pip download --platform ... --python-version 312 --implementation cp
+# --abi cp312`, a CROSS-PLATFORM/CROSS-VERSION resolve mode. That mode was
+# independently found (by two adversarial reviewers, one with a
+# reproduction) to NOT fully evaluate PEP 508 environment markers the same
+# way a native resolve does: `referencing==0.37.0` declares
+# `typing-extensions>=4.4.0; python_version < "3.13"`, which is a REAL,
+# mandatory requirement under Python 3.12 (the exact version `ci.yml`
+# pins) but was silently omitted from the cross-platform resolve's output.
+# Confirmed against a REAL local Python 3.12.10 interpreter
+# (`pip install --dry-run` with no platform override, native resolver):
+# `typing-extensions` IS collected and IS part of "Would install". Added
+# below with its own verified hash. `pip install --require-hashes -r
+# <this file>` was re-run afterward against the corrected 8-package set
+# targeting manylinux_2_17_x86_64/cp312 and now succeeds.
+
+# CORRECTION (CI failure, 2026-09-05): the version above (1.4.11) was
+# WRONG. It was resolved via this sandbox's `pip`, which is configured
+# (`pip config list` -> `global.index-url=https://packagefeedproxy.microsoft.io/pypi/simple/`)
+# to use an INTERNAL package proxy whose view of "latest" was stale
+# relative to the REAL public PyPI that GitHub-hosted `ubuntu-latest`
+# runners actually resolve against (no proxy, direct public internet).
+# The prior floating `pip install autoharness` on the real CI runner had
+# been resolving `autoharness==1.5.0` all along (confirmed directly from
+# this repo's own last-known-good CI job log, and independently from
+# `https://pypi.org/pypi/autoharness/json` queried directly), NOT 1.4.11.
+# Pinning to 1.4.11 was therefore not "reproducing CI's current behavior"
+# (U1 AC-3) — it silently downgraded the runtime and broke
+# `ci-topology-check.sh`, which calls `autoharness gate pipeline-topology`,
+# a subcommand that does not exist in 1.4.11 (added after 1.4.11, present
+# in 1.5.0). CI on this PR caught this immediately (`Unknown gate
+# subcommand: pipeline-topology`, exit 2).
+#
+# Fixed: `autoharness` bumped to `1.5.0` with its official PyPI-published
+# SHA-256 digest (fetched directly from
+# `https://pypi.org/pypi/autoharness/1.5.0/json` -> `urls[].digests.sha256`
+# for the `py3-none-any` wheel — this environment's direct HTTPS access to
+# `files.pythonhosted.org` for the actual wheel bytes is itself blocked by
+# the same sandbox network policy, but PyPI's own JSON metadata API,
+# reachable directly, publishes the authoritative digest PyPI computed at
+# upload time; no separate download-and-hash step was needed or possible
+# here). `autoharness==1.5.0`'s `requires_dist` (`jsonschema>=4.23.0`,
+# `pyyaml>=6.0.2`) is IDENTICAL to `1.4.11`'s, and this repo's own
+# most-recent successful main-branch CI run (the last floating install
+# before this shipment) already recorded the exact resolved transitive
+# closure on the real runner: `attrs-26.1.0`, `jsonschema-4.26.0`,
+# `jsonschema-specifications-2025.9.1`, `pyyaml-6.0.3`, `referencing-0.37.0`,
+# `rpds-py-2026.6.3`, `typing-extensions-4.16.0` — the SAME 7 versions
+# already recorded below (unchanged; only the `autoharness` entry itself
+# needed correction). LESSON FOR FUTURE BUMPS: always cross-check a
+# resolved version/hash against the real `https://pypi.org/pypi/<name>/json`
+# (or an actual GitHub Actions CI log) before trusting any locally
+# configured package index/proxy — a corporate mirror's freshness is not
+# guaranteed to match what the public CI runner will actually fetch.
+#
+# Full transitive closure of `autoharness==1.5.0` for cp312-manylinux_2_17
 # (8 packages total; verified as the complete resolved set via a REAL
 # Python 3.12 interpreter's native resolver -- see "REMEDIATION" note below
 # -- no additional dependency introduced silently by a future run of this
@@ -65,8 +129,8 @@
 # <this file>` was re-run afterward against the corrected 8-package set
 # targeting manylinux_2_17_x86_64/cp312 and now succeeds.
 
-autoharness==1.4.11 \
-    --hash=sha256:1062b9fdbc8500c937dddd6d21109e661a8653ce774264586c3d53e9532ceafa
+autoharness==1.5.0 \
+    --hash=sha256:720049ceb1731b01168cd455c2d36babe7743de890b0ce05a840353a52424282
 attrs==26.1.0 \
     --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309
 jsonschema==4.26.0 \
