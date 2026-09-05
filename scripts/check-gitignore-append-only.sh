@@ -102,30 +102,120 @@ done
 
 # non_comment_lines FILE
 #
-# Extracts the non-comment, non-blank lines from FILE, in order. A line is
-# a comment if its first non-whitespace character is '#'; a line is blank
-# if it contains only whitespace. Trailing carriage returns (CRLF line
-# endings) are stripped before classification/comparison so a CRLF vs LF
-# difference alone (no content change) can never be misread as a
+# Extracts the non-comment, non-blank lines from FILE, in order, via
+# stdout; returns 0 on success (including a legitimately empty result --
+# e.g. an all-comment/blank file) or 2 on a genuine read/filter failure. A
+# line is a comment if its first non-whitespace character is '#'; a line
+# is blank if it contains only whitespace. Trailing carriage returns (CRLF
+# line endings) are stripped before classification/comparison so a CRLF vs
+# LF difference alone (no content change) can never be misread as a
 # deletion/reorder.
+#
+# HARDENING (Copilot review, 2026-09-05): `grep -Ev` exits 1 when it finds
+# zero matching lines -- a LEGITIMATE, expected outcome for an all-comment
+# or blank file (or the first-ever-file carve-out's empty OLD), not an
+# error. `sed` and `grep` are each run as a SEPARATE command-substitution
+# assignment (not one piped one-liner) specifically so each stage's own
+# exit status can be checked independently and unambiguously: a piped
+# `sed | grep` inside a single `$(...)` runs in a subshell whose internal
+# `PIPESTATUS` does not propagate to the outer shell, and `pipefail` alone
+# can report the rightmost (grep's) exit code even when sed is the one
+# that actually failed. Each assignment is the condition of an `if`, which
+# is exempt from `set -e` propagation, so the exit status is captured
+# explicitly without ever toggling the global `errexit` setting (toggling
+# it with a bare `set +e`/`set -e` pair would be unsafe here: it is GLOBAL
+# shell state, not scoped to this function, so it could clobber whatever
+# errexit state an outer caller was itself relying on). grep's exit 1 is
+# treated as "valid empty result"; any OTHER nonzero exit from either
+# command is a genuine failure and is reported as such rather than
+# silently treated as "no lines".
 non_comment_lines() {
   local file="$1"
-  sed 's/\r$//' -- "$file" | grep -Ev '^[[:space:]]*(#|$)'
+  local raw_content filtered_content sed_status grep_status
+
+  if raw_content="$(sed 's/\r$//' -- "$file")"; then
+    sed_status=0
+  else
+    sed_status=$?
+  fi
+  if [ "$sed_status" -ne 0 ]; then
+    echo "::error::sed failed reading ${file} (exit ${sed_status})" >&2
+    return 2
+  fi
+
+  if filtered_content="$(printf '%s\n' "$raw_content" | grep -Ev '^[[:space:]]*(#|$)')"; then
+    grep_status=0
+  else
+    grep_status=$?
+  fi
+  if [ "$grep_status" -ne 0 ] && [ "$grep_status" -ne 1 ]; then
+    echo "::error::grep failed filtering ${file} (exit ${grep_status})" >&2
+    return 2
+  fi
+
+  if [ -n "$filtered_content" ]; then
+    printf '%s\n' "$filtered_content"
+  fi
+  return 0
 }
 
 # subsequence_check OLD_FILE NEW_FILE
 #
 # Returns 0 if OLD_FILE's non-comment/non-blank lines are an ordered
-# subsequence of NEW_FILE's; returns 1 otherwise. Implemented (007.005-T /
-# U4b) as a standard two-pointer subsequence walk: advance the OLD pointer
-# only on a match while scanning NEW once; OLD is a subsequence of NEW iff
-# every OLD line was matched by the time NEW is exhausted. An empty OLD
-# (no non-comment/non-blank lines) is trivially a subsequence of anything.
+# subsequence of NEW_FILE's; returns 1 if not; returns 2 on a genuine
+# extraction failure from either file (distinct from "not a subsequence").
+# Implemented (007.005-T / U4b) as a standard two-pointer subsequence
+# walk: advance the OLD pointer only on a match while scanning NEW once;
+# OLD is a subsequence of NEW iff every OLD line was matched by the time
+# NEW is exhausted. An empty OLD (no non-comment/non-blank lines) is
+# trivially a subsequence of anything.
+#
+# HARDENING (Copilot review, 2026-09-05): the two `non_comment_lines`
+# calls are now MATERIALIZED via direct command-substitution assignment
+# (`var="$(...)"`), not process substitution consumed by `mapfile`. A
+# failure inside a process substitution (`< <(...)`) does not reliably
+# propagate to trigger `set -e` in the consuming command, since `mapfile`
+# itself still "succeeds" regardless of what the substituted command's
+# exit status was -- which could silently produce a truncated/empty array
+# and a false PASS. Each assignment is the condition of an `if` (same
+# rationale as `non_comment_lines` above: this avoids ever toggling the
+# global `errexit` setting) so its exit status is checked explicitly
+# before any comparison proceeds.
 subsequence_check() {
   local old_file="$1" new_file="$2"
+  local old_content new_content old_status new_status
   local -a old_lines new_lines
-  mapfile -t old_lines < <(non_comment_lines "$old_file")
-  mapfile -t new_lines < <(non_comment_lines "$new_file")
+
+  if old_content="$(non_comment_lines "$old_file")"; then
+    old_status=0
+  else
+    old_status=$?
+  fi
+  if [ "$old_status" -ne 0 ]; then
+    echo "::error::could not extract non-comment lines from ${old_file}" >&2
+    return 2
+  fi
+
+  if new_content="$(non_comment_lines "$new_file")"; then
+    new_status=0
+  else
+    new_status=$?
+  fi
+  if [ "$new_status" -ne 0 ]; then
+    echo "::error::could not extract non-comment lines from ${new_file}" >&2
+    return 2
+  fi
+
+  if [ -n "$old_content" ]; then
+    mapfile -t old_lines <<< "$old_content"
+  else
+    old_lines=()
+  fi
+  if [ -n "$new_content" ]; then
+    mapfile -t new_lines <<< "$new_content"
+  else
+    new_lines=()
+  fi
 
   local old_len=${#old_lines[@]} new_len=${#new_lines[@]}
   local i=0 j=0

@@ -336,17 +336,28 @@ jobs:
   #
   # REQUIRED-VS-ADVISORY is an explicit OPERATOR TOGGLE via the
   # `PIPELINE_TOPOLOGY_GATE_REQUIRED` repository variable: unset (default)
-  # means advisory -- `continue-on-error: true` keeps this job's reported
-  # result `success` for dependents (including `ci-gate` below) even when the
-  # gate itself reports BLOCK. Setting the variable to `'true'` flips
-  # `continue-on-error` to `false`, making a BLOCK verdict fail this job (and
-  # therefore `ci-gate`) for real -- with NO WORKFLOW RE-RENDER NEEDED. See
+  # means advisory -- `continue-on-error: true` keeps the topology-verdict
+  # STEP's reported result `success` for dependents (including `ci-gate`
+  # below) even when the gate itself reports BLOCK. Setting the variable to
+  # `'true'` flips `continue-on-error` to `false`, making a BLOCK verdict
+  # fail this step (and therefore the job, and therefore `ci-gate`) for
+  # real -- with NO WORKFLOW RE-RENDER NEEDED. See
   # docs/pipeline-topology-gate.md and docs/pipeline-topology-gate-ci-rollout.md
   # for the staged advisory->required rollout.
+  #
+  # NOTE (Copilot review, 2026-09-05): `continue-on-error` is scoped to ONLY
+  # the topology-verdict step below, not the job as a whole. It previously
+  # lived at the job level, which meant a genuine setup/checkout/install
+  # failure (e.g. this job's own hash-pinned `pip install --require-hashes`
+  # failing on a tampered/mismatched package) could ALSO be silently masked
+  # as job-success whenever the advisory toggle is off -- undermining the
+  # supply-chain-hardening signal U1 exists to provide. Scoping the toggle
+  # to just the verdict step preserves the advisory/required rollout
+  # semantics while ensuring setup/install failures always fail the job for
+  # real, regardless of the toggle.
   topology-check:
     name: pipeline-topology (ambient)
     runs-on: ubuntu-latest
-    continue-on-error: ${{ vars.PIPELINE_TOPOLOGY_GATE_REQUIRED != 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -366,10 +377,13 @@ jobs:
         # that fallback path is a live unhashed-code-execution route pip
         # does not close by default. See
         # .github/constraints/autoharness-lock.txt for provenance and the
-        # bump procedure. Resolves stash EFFAA358.
+        # bump procedure. Resolves stash EFFAA358. This step is NEVER
+        # covered by the advisory continue-on-error toggle below -- a hash
+        # mismatch or install failure always fails the job for real.
         run: |
           pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt
       - name: Run CI topology-check entrypoint
+        continue-on-error: ${{ vars.PIPELINE_TOPOLOGY_GATE_REQUIRED != 'true' }}
         run: bash scripts/ci-topology-check.sh
 
   # Always-reporting aggregation gate. REQUIRE THIS job in branch protection
