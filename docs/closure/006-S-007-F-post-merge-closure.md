@@ -13,7 +13,7 @@ shipment: 006-S
 feature: 007-F
 pr: 20
 merge_commit_sha: c627a9d3e28354b10323bf1d6605529fc679c267
-compaction_status: pending
+compaction_status: done
 closure_status: READY
 releasability: READY
 ---
@@ -189,9 +189,23 @@ deferred entries below.
 
 ## Compaction status (P-020)
 
-Set by the `compact-context` invocation immediately following this
-artifact's creation (see the session's final memory/compaction note for
-the outcome).
+`done`. `compact-context` invoked with `target: all`:
+
+* **Memory**: the just-closed release unit's session memory
+  (`docs/memory/2026-09-05-ship-006-s-session.md`) qualified under the
+  completed-work rule — compacted to
+  `docs/memory/compacted/2026-09-05-006-s-ci-supply-chain-hardening-compacted.md`,
+  verbose original archived to
+  `docs/archive/memory/2026-09-05-ship-006-s-session.md`.
+* **Plans**: `docs/plans/2026-09-04-intercom-go-ci-supply-chain-hardening-plan.md`
+  qualified (feature complete, plan carried appended review/remediation
+  content) — consolidated to
+  `docs/plans/2026-09-04-intercom-go-ci-supply-chain-hardening-decided-plan.md`,
+  verbose original (full deliberation/remediation history) archived to
+  `docs/archive/plans/2026-09-04-intercom-go-ci-supply-chain-hardening-plan.md`.
+* **Closure**: this artifact is 0 days old and does not yet meet the
+  `threshold_days` age gate for closure-record compaction — not compacted
+  this cycle, as expected.
 
 ## Releasability evidence
 
