@@ -624,7 +624,18 @@ the governing decision's *Shipped P2 Audit*. Summary:
   `WorkspaceRootForChannel` re-founded on `workspace_id`). `acp.max_sessions`
   is **deleted** (its semantics are already covered by
   `max_concurrent_sessions`, Q6); `acp.startup_timeout_seconds` is **deleted in
-  C1 and re-introduced in C2** with its first real consumer.
+    C1** and re-introduced **in C3** with its first real consumer (the SDK
+    `Client.Start` deadline).
+    > **Amended 2026-09-04 (005-S / A2).** Previously scheduled for
+    > re-introduction in C2. C2 (the Copilot SDK proving spike, shipment 005-S)
+    > produces **no production consumer** — `internal/copilotprobe` is
+    > explicitly disposable per its Non-Goals — so re-introducing this field in
+    > C2 would ship a config surface with no reader, reproducing exactly the
+    > kind of coupling C1 removed. Deferred one phase to C3, where the first
+    > real `Client.Start` call exists to read it. See
+    > `docs/plans/2026-09-04-intercom-go-c2-sdk-spike-plan.md` (Decisions and
+    > Rationale) and
+    > `docs/decisions/2026-09-04-intercom-go-implementation-design-reconciliation-deliberation.md`.
 * **Renamed:** `slack_detail_level` → `operator_detail_level`.
 * **Migrated:** `host_cli` → `[copilot].cli_path`. Empty means resolve from
   `PATH`; a bare name gets a non-fatal advisory; an absolute path must exist;
@@ -660,4 +671,43 @@ removed as part of the remediation.
 * Parity with the Rust `agent-intercom` implementation. That repository is
   **historical reference only**, not a behavioural oracle for operator UI,
   transport, configuration, or credentials.
+* **RC-2 — Sidecar process supervision over Named Pipes / IPC.** Rejected for
+  now (deferred as **Q7**, see §9.1 below): inverts the decided supervision
+  topology, spans three repositories with no authorization, and is
+  Windows-only against a cross-platform posture.
+* **RC-3 — React / iOS / VAPID web-push re-introduction.** Rejected: directly
+  contradicts the 2026-09-04 correction's UI and transport decisions.
+* **RC-5 — Clean-room ephemeral `_stage`/`_ship` delegation engine.** Deferred
+  to ≥ C9 (tracked as Q6): presumes an unresolved sessions-per-process
+  decision.
+* **RC-6 — Fail-closed circuit breaker performing automated `git reset` /
+  stash writes against the operator's checkout.** Deferred, with the risk
+  flagged as **R8** (see §9.1): if revived, any automated convergence
+  remediation must target a dedicated worktree or branch, never the
+  operator's own checkout.
+
+### 9.1 Deferred and adoptable material register
+
+Recorded here (rather than left to survive only in the untracked
+IMPL-DESIGN candidate document,
+`docs/design-docs/intercom-architecture-implementation-design.md`) per
+decision D14:
+
+| ID | Item | Disposition | Source |
+|---|---|---|---|
+| **Q7** | How intercom reaches workspace tooling (`agent-engram`, `graphtor-docs`, `backlogit`) — transport undecided (Named Pipes / IPC was proposed via RC-2 and rejected for now) | Open question, future deliberation | RC-2; IMPL-DESIGN §2 |
+| **R8** | An automated fail-closed circuit breaker performing `git reset` or stash writes could destroy operator work if revived | Risk, flagged; deferred with RC-6 | RC-6; IMPL-DESIGN §4.2 |
+| Event bus (adoptable) | Central unidirectional fan-out event bus: strict payload typing, buffered channels, `context.Context` cancellation, timeout thresholds so a dropped mobile connection never stalls the SDK loop | **Adoptable** — carries forward into design rev 3 (C5–C11 planning); materially consistent with and sharpens §4 (Concurrency), §5.2 (event envelope), and §5.5 (WebSocket backpressure) | IMPL-DESIGN §7, Phase 3 "Telemetry & State Bus", step 8 |
+| TUI layout (adoptable) | Bubble Tea Elm architecture (`tea.Model`/`Update`/`View`), `lipgloss` 2D layout, intervention modals | **Adoptable** — consistent with and adds useful layout detail beyond §2's stack (`bubbletea` + `lipgloss` + `bubbles/viewport`) | IMPL-DESIGN §6.1 |
+
+### 9.2 Terminology (D12)
+
+The acronym **"ACP"** is retired as a product term **in both expansions** —
+*Agent Client Protocol* and *Agent Control Plane* — per decision D12
+(`docs/decisions/2026-09-04-intercom-go-implementation-design-reconciliation-deliberation.md`).
+Use "control plane" in prose where needed; the acronym itself must never
+appear as a Go identifier, a TOML key, or any other code/config surface in a
+governing artifact. The retired term survives only inside the preserved,
+non-governing IMPL-DESIGN candidate document (its title and body predate this
+decision and are left unmodified per D11).
 
