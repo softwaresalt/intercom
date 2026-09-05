@@ -1,4 +1,27 @@
+---
+status: candidate-vision
+governing: false
+related_decisions:
+  - docs/decisions/2026-09-04-intercom-go-implementation-design-reconciliation-deliberation.md
+related_design:
+  - docs/design-docs/intercom-go-backend-architecture.md
+---
 # **Intercom: Agent Control Plane (ACP) Architecture Design**
+
+> **Status: candidate-vision — not governing.** This document is an
+> operator-authored candidate vision input, preserved here unmodified in
+> content (decision D11,
+> `docs/decisions/2026-09-04-intercom-go-implementation-design-reconciliation-deliberation.md`).
+> Governance rests with design rev 2
+> (`docs/design-docs/intercom-go-backend-architecture.md`) and the
+> reconciliation deliberation above; this document's adoptable and deferred
+> material has been carried into design rev 2's Non-Goals and "Deferred and
+> adoptable material" register so it survives independently of this file.
+> Note: this document's title and body use the term "ACP" (Agent Control
+> Plane / Agent Client Protocol). Per decision D12 that acronym is **retired
+> in both expansions** and must never appear as a Go identifier or TOML key
+> in any governing artifact going forward; it is left as-is here only because
+> this file's content is preserved byte-for-byte.
 
 ## **1\. Executive Summary & System Tenets**
 
