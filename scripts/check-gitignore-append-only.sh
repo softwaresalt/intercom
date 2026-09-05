@@ -219,11 +219,29 @@ run_check() {
   # content is vacuously a superset of nothing). This is NOT the fail-open
   # "no --base-ref supplied" case above (AC-4): base_ref itself is valid
   # and explicit; only the path is absent there.
-  if git cat-file -e "${base_ref}:${target_file}" 2>/dev/null; then
-    git show "${base_ref}:${target_file}" > "$old_tmp"
-  else
+  #
+  # POSITIVELY confirms absence via `git ls-tree` rather than inferring it
+  # from any nonzero `git cat-file -e` exit (re-review finding, 2026-09-04):
+  # a bare nonzero exit cannot distinguish "path genuinely absent" from
+  # other failure modes (e.g. a corrupted/unreadable tree or blob object),
+  # so a real error could otherwise be silently mistaken for "first-ever
+  # add" and pass. `git ls-tree --name-only <ref> -- <path>` exits non-zero
+  # only when the TREE lookup itself fails (already-validated base_ref, so
+  # this should not happen); a healthy lookup that simply finds no matching
+  # path exits 0 with empty output -- that combination is the only case
+  # treated as "absent".
+  local base_ls_tree_output
+  if ! base_ls_tree_output="$(git ls-tree --name-only "${base_ref}" -- "${target_file}" 2>&1)"; then
+    echo "::error::git ls-tree failed while checking whether ${target_file} exists at ${base_ref}: ${base_ls_tree_output}" >&2
+    return 1
+  fi
+
+  if [ -z "$base_ls_tree_output" ]; then
     : > "$old_tmp"
-    echo "::notice::${target_file} did not exist at ${base_ref}; treating as a first-ever add (trivially append-only)"
+    echo "::notice::${target_file} did not exist at ${base_ref} (git ls-tree confirmed absent); treating as a first-ever add (trivially append-only)"
+  elif ! git show "${base_ref}:${target_file}" > "$old_tmp" 2>/dev/null; then
+    echo "::error::${target_file} is listed in ${base_ref}'s tree but could not be read (unexpected)" >&2
+    return 1
   fi
 
   if ! git show "${head_ref}:${target_file}" > "$new_tmp" 2>/dev/null; then
