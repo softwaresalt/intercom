@@ -10,14 +10,12 @@
 # Insertions anywhere pass; deletions and reorders fail. One mechanical
 # predicate, not ad-hoc cases.
 #
-# STATUS (007.004-T / U4a): this file currently ships the CLI surface,
-# fixture harness, and --self-test driver ONLY. The core subsequence
-# predicate below is an INTENTIONAL STUB (Principle II, test-first): the
-# fixtures under scripts/testdata/gitignore/ are authored and committed
-# BEFORE the detection logic exists, and MUST fail against this stub to
-# prove they assert something real. 007.005-T (U4b) replaces
-# `subsequence_check` with the real implementation and wires the
-# git-ref comparison mode; nothing else in this file's interface changes.
+# STATUS: 007.004-T (U4a) shipped the CLI surface, fixture harness, and
+# --self-test driver first, with the core subsequence predicate as an
+# intentional stub that every fixture failed against (test-first,
+# Principle II). 007.005-T (U4b) replaces the stub with the real
+# `subsequence_check` implementation below; the CLI surface and
+# git-ref comparison mode (`run_check`) are unchanged from U4a.
 #
 # Usage:
 #   check-gitignore-append-only.sh --self-test
@@ -101,16 +99,28 @@ non_comment_lines() {
 # subsequence_check OLD_FILE NEW_FILE
 #
 # Returns 0 if OLD_FILE's non-comment/non-blank lines are an ordered
-# subsequence of NEW_FILE's; returns 1 otherwise.
-#
-# INTENTIONAL STUB (007.004-T / U4a): the real subsequence predicate is
-# implemented in 007.005-T (U4b). This stub deliberately does not
-# implement the check and always reports "not implemented" (exit 2) so
-# that every committed fixture demonstrably fails against it (AC-3),
-# proving the fixtures assert something real before the logic exists.
+# subsequence of NEW_FILE's; returns 1 otherwise. Implemented (007.005-T /
+# U4b) as a standard two-pointer subsequence walk: advance the OLD pointer
+# only on a match while scanning NEW once; OLD is a subsequence of NEW iff
+# every OLD line was matched by the time NEW is exhausted. An empty OLD
+# (no non-comment/non-blank lines) is trivially a subsequence of anything.
 subsequence_check() {
-  echo "check-gitignore-append-only: subsequence_check not yet implemented (007.005-T / U4b)" >&2
-  return 2
+  local old_file="$1" new_file="$2"
+  local -a old_lines new_lines
+  mapfile -t old_lines < <(non_comment_lines "$old_file")
+  mapfile -t new_lines < <(non_comment_lines "$new_file")
+
+  local old_len=${#old_lines[@]} new_len=${#new_lines[@]}
+  local i=0 j=0
+
+  while [ "$i" -lt "$old_len" ] && [ "$j" -lt "$new_len" ]; do
+    if [ "${old_lines[$i]}" = "${new_lines[$j]}" ]; then
+      i=$((i + 1))
+    fi
+    j=$((j + 1))
+  done
+
+  [ "$i" -eq "$old_len" ]
 }
 
 run_self_test() {
