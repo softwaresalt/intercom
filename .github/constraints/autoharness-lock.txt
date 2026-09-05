@@ -1,0 +1,62 @@
+# autoharness-lock.txt
+#
+# Hash-pinned constraints for the `autoharness` CI install
+# (.github/workflows/ci.yml, topology-check job). Resolves stash EFFAA358
+# (007.001-T / U1).
+#
+# WHY THIS EXISTS: the previous `pip install autoharness` was a FLOATING,
+# unhashed install. It re-resolved the latest release and its transitive
+# dependency graph on every CI run with no verification that the fetched
+# bytes matched anything previously audited — a compromised PyPI account,
+# mutable index, or MITM'd transitive dependency could execute arbitrary
+# code in the runner. `pip install --require-hashes -r <this file>` closes
+# that: every package (autoharness itself AND its full transitive closure)
+# is pinned to an exact version AND verified against a committed SHA-256
+# hash before pip will install it. A hash mismatch or an unlisted
+# transitive dependency fails the install instead of silently proceeding.
+#
+# RESOLUTION PROVENANCE: versions/hashes below were resolved on
+# 2026-09-04 via:
+#   pip download autoharness==1.4.11 \
+#     --platform manylinux_2_17_x86_64 --python-version 312 \
+#     --implementation cp --abi cp312 --only-binary=:all: -d <scratch>
+#   pip hash <each wheel>
+# `--platform manylinux_2_17_x86_64 --python-version 312 --abi cp312`
+# targets the exact runtime this install runs under today: ubuntu-latest +
+# `actions/setup-python` `python-version: '3.12'` (see the `topology-check`
+# job above). 1.4.11 was PyPI's latest release for `autoharness` at
+# resolution time (`pip index versions autoharness` reported
+# `LATEST: 1.4.11`), i.e. the same version the prior floating install
+# would have resolved on a clean runner — this pin reproduces, not changes,
+# CI's current behavior.
+#
+# MAINTENANCE: version bumps are deliberate, not automatic. To bump:
+#   1. Resolve the new target version and re-run the two pip commands above
+#      against THIS repo's CI runtime (ubuntu-latest + the Python version
+#      pinned in ci.yml's `actions/setup-python` step for this job).
+#   2. Regenerate every hash below for the new full transitive closure —
+#      do not hand-edit hashes, and do not carry forward a stale hash for
+#      an unchanged-looking dependency (transitive wheels can be rebuilt
+#      with the same version string).
+#   3. Never float (`autoharness` with no `==`, or any dependency added
+#      without a matching `--hash=sha256:...`) — `--require-hashes`
+#      enforces this at install time, but do not attempt to work around it.
+#
+# Full transitive closure of `autoharness==1.4.11` for cp312-manylinux_2_17
+# (7 packages total; verified as the complete resolved set — no additional
+# dependency introduced silently by a future run of this same install).
+
+autoharness==1.4.11 \
+    --hash=sha256:1062b9fdbc8500c937dddd6d21109e661a8653ce774264586c3d53e9532ceafa
+attrs==26.1.0 \
+    --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309
+jsonschema==4.26.0 \
+    --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
+jsonschema-specifications==2025.9.1 \
+    --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe
+pyyaml==6.0.3 \
+    --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc
+referencing==0.37.0 \
+    --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231
+rpds-py==2026.6.3 \
+    --hash=sha256:ecabd69db66de867690f9797f2f8fa27ba501bbc24540cbdbdc649cd15888ba6

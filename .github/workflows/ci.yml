@@ -321,8 +321,13 @@ jobs:
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
-      - name: Install autoharness
-        run: pip install autoharness
+      - name: Install autoharness (hash-pinned, --require-hashes)
+        # Hermetic install: every package in the full transitive closure is
+        # pinned to an exact version AND verified against a committed
+        # SHA-256 hash before pip will install it. See
+        # .github/constraints/autoharness-lock.txt for provenance and the
+        # bump procedure. Resolves stash EFFAA358.
+        run: pip install --require-hashes -r .github/constraints/autoharness-lock.txt
       - name: Run CI topology-check entrypoint
         run: bash scripts/ci-topology-check.sh
 
