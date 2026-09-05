@@ -95,7 +95,7 @@ isolates workspace lifecycles completely.
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Language | **Go 1.24+** | Hard floor: `github.com/github/copilot-sdk/go` declares `go 1.24`. The repository is currently at `go 1.22` and **must be raised**. |
+| Language | **Go 1.24+** | Hard floor: `github.com/github/copilot-sdk/go` declares `go 1.24`. **Raised** (shipment 004-S / U-A1): the repository's `go.mod` language floor is now `go 1.24` (toolchain pinned at `go1.26.5` per go.mod's own CVE-remediation comment). |
 | Agent SDK | `github.com/github/copilot-sdk/go` **v1.0.11** (tag `go/v1.0.11`, commit `a550258d5c37bd662197536992a23d633bfe5804`) | Only stable Go release; GA with SemVer. See §7 for risk controls. |
 | TUI | `charmbracelet/bubbletea` + `lipgloss` + `bubbles/viewport` | Elm architecture decouples terminal rendering from asynchronous event streams. `viewport` is required so continuous token streaming does not destroy native scrollback. |
 | WebSocket | **Deferred to implementation** | Note the SDK already pulls in `coder/websocket`; reusing it avoids a second WS implementation in the binary. Whatever is chosen must expose ping/pong control so an idle tunnel is not dropped while the agent is "thinking". |
@@ -172,9 +172,16 @@ Normative sequence:
 Every step is `context`-bounded. `Stop()` aggregates errors; they are logged,
 never swallowed.
 
-**Open spike question (C2):** does `Session.Abort` unblock an already-blocked
-`PermissionHandlerFunc`? If it does, step 0 can be simplified. Until answered,
-assume it does not.
+**SQ-a: ANSWERED (2026-09-04, shipment 005-S / B7).** Does `Session.Abort`
+unblock an already-blocked `PermissionHandlerFunc`? **NO.** The phase-C2
+proving spike (`internal/copilotprobe/shutdown_test.go`) observed
+`Session.Abort` return promptly (`err=nil`) while a deliberately-blocked
+handler remained parked; `PermissionHandlerFunc`'s signature carries no
+`context.Context`, so `Abort` has no channel through which to deliver a
+cancellation signal into an in-flight handler call. See
+`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-a). This
+**confirms** the conservative assumption below: step 0 is **not** simplified.
+Fail all pending permissions first, exactly as normatively sequenced.
 
 ---
 
@@ -236,23 +243,46 @@ the implementer:
   `error` envelope and forces full re-hydration.
 
 **Callback quiescing requires a latch, not a bare `WaitGroup`.** Because
-re-entrancy is unspecified (below), `wg.Add(1)` inside a callback races
-`wg.Wait()` in the shutdown path — Go requires a positive-delta `Add` that
-starts from zero to happen-before `Wait`. Use a one-way "no new entrants"
-latch (an atomic closed-flag checked and incremented under a mutex, or an
-equivalent refcount with a close latch), so `Unsubscribe` composes safely with
-an already-entered callback.
+re-entrancy is empirically serialised at the pinned SDK version but carries
+no documented guarantee (determined below), `wg.Add(1)` inside a callback
+races `wg.Wait()` in the shutdown path — Go requires a positive-delta `Add`
+that starts from zero to happen-before `Wait`. Use a one-way "no new
+entrants" latch (an atomic closed-flag checked and incremented under a
+mutex, or an equivalent refcount with a close latch), so `Unsubscribe`
+composes safely with an already-entered callback.
 
-**Re-entrancy is UNSPECIFIED by the SDK.** `Session.On` carries no documented
-serialisation guarantee, and `SessionEvent` carries **no sequence number**
-(verified). Concurrent invocation would therefore race any adapter-local
-accumulator and make ingress ordering nondeterministic **with no way to
-reconstruct order downstream**. Determining this empirically is a **required
-C2 spike question**, and C2 may not close until the design has been **amended
-with the chosen fallback** — "answered empirically" is not sufficient, because
-an adverse answer invalidates the ordered fold in §5.1. Until answered, the
-adapter must be safe under concurrent invocation and must not rely on callback
-ordering.
+**Re-entrancy is DETERMINED (2026-09-04, shipment 005-S / B7).** `Session.On`
+callback invocation is **serialised** at the pinned SDK version
+(`github.com/github/copilot-sdk/go@v1.0.11`): the phase-C2 proving spike
+(`internal/copilotprobe`) instrumented the callback with an atomic in-flight
+counter across a token-streaming turn and observed a maximum concurrent
+in-flight count of **1** across 62 sampled invocations — no overlapping
+invocation occurred. See
+`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-b).
+
+> **Normative adapter rule.** The adapter MAY rely on `Session.On` delivering
+> events to a single callback instance one at a time (no concurrent
+> invocation to guard against at this pin). This is an **empirical
+> observation of the pinned version's current behaviour, not a documented SDK
+> guarantee** — the SDK's own API surface still carries no serialisation
+> contract in its type signatures or documentation. The adapter MUST NOT
+> silently assume this holds across a future SDK version bump; re-verify
+> empirically (re-run the B5 probe, or an equivalent) before or alongside any
+> `copilot-sdk/go` version upgrade, and revert to the conservative
+> concurrent-safe posture if re-verification is not performed: guard every
+> callback-local accumulator with its own mutex (or an equivalent
+> synchronization primitive) rather than assuming exclusive access, exactly
+> as if invocation were concurrent — i.e. the pre-amendment §4.1
+> sole-hub-writer / blocking-send discipline, applied defensively at the
+> callback boundary rather than relied upon as already safe by construction.
+> Regardless of serialisation, the adapter still MUST NOT rely on callback
+> ordering *across* `Unsubscribe`/re-subscribe boundaries, and the
+> "no new entrants" latch above remains required — serialisation within one
+> subscription does not eliminate the shutdown race the latch guards against.
+
+**C2 closure status: CLOSED for SQ-b.** This amendment satisfies design
+§4.2's closure condition ("C2 may not close until the design has been amended
+with the chosen fallback").
 
 ### 4.3 Event-union safety (normative)
 
@@ -290,20 +320,56 @@ the same SDK event folded twice receives two different `seq` values and the
 **register the callback first, then call `GetEvents`, then de-duplicate while
 folding.**
 
-The de-duplication key depends on an SDK property that is **not yet verified**,
-so both branches are specified now rather than leaving the normative rule
-resting on a hope:
+**De-duplication key: PROVISIONALLY DETERMINED (2026-09-04, shipment 005-S /
+B7) — primary branch adopted, fallback branch RETAINED pending resume-path
+re-verification.** `SessionEvent` carries a stable identity: `SessionEvent.ID`
+(`rpc.SessionEvent.ID`) is a non-empty, unique-per-event UUID v4, generated
+when the event is emitted — the phase-C2 proving spike observed 76/76 unique
+IDs with zero duplicates across one continuous **live-callback** probe
+session, and `ParentID` additionally provides a linked-chain ordering signal.
+See `docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-d).
+This **refutes** this section's prior prediction that no stable identity
+exists for live callback delivery. However, per the untested-scope caveat
+below, the spec is **not** collapsed to a single branch; both remain
+specified, with the first now designated primary:
 
-* **If `SessionEvent` carries a stable identity** (C2 spike question (d)):
-  de-duplicate on it. The adapter normalises it to an opaque, intercom-go-owned
-  `source_event_id` **inside the ACL** — the hub never sees or interprets an
-  SDK field, preserving §7.1 and keeping the envelope free of SDK wire types.
-* **If it does not** (the likelier answer — §4.2 records that `SessionEvent`
-  exposes no sequence number): the adapter **buffers** live callback events
-  without folding them until `GetEvents` returns, then reconciles by
-  prefix/content-hash and folds exactly once.
+* **Primary (adopt now): de-duplicate on `SessionEvent.ID`.** The adapter
+  normalises it to an opaque, intercom-go-owned `source_event_id` **inside
+  the ACL** — the hub never sees or interprets an SDK field, preserving §7.1
+  and keeping the envelope free of SDK wire types.
+* **Fallback (retained, use if the resume-path re-verification below finds ID
+  stability does not hold across resume/replay): buffer live callback events
+  without folding them until `GetEvents` returns, then reconcile by
+  prefix/content-hash and fold exactly once.** This was this section's
+  original specification for the "no stable identity" branch; it is kept
+  verbatim here rather than deleted, because the live-callback proof below
+  does not cover the resume/replay path this fallback exists for.
 
-C2 spike question (d) is a **blocking gate on C4**, alongside H6.
+> **Scope of this finding (hedged consistently with §4.2's SQ-b amendment).**
+> `SessionEvent.ID` uniqueness is validated against the
+> `github.com/github/copilot-sdk/go@v1.0.11` pin only, for one continuous
+> live-callback streaming session — it is an **empirical observation of the
+> pinned version's current behaviour, not a documented SDK guarantee** (the
+> field's doc comment states it is "generated when the event is emitted",
+> which is suggestive but not a contractual uniqueness guarantee across SDK
+> versions). Re-verify empirically before or alongside any `copilot-sdk/go`
+> version upgrade, consistent with §7.2's pinning policy and §4.2's SQ-b
+> re-verification requirement.
+>
+> **Untested scope, called out explicitly.** The spike validated ID
+> uniqueness only for live callback delivery within one session; it did
+> **not** exercise the specific `Client.ResumeSession` / `Session.GetEvents`
+> race this section itself identifies as the actual motivating risk for
+> de-duplication ("Registering the live callback and calling `GetEvents` is
+> the same race §5.3 solves for clients"). Whether `SessionEvent.ID` remains
+> stable and non-duplicated across a resume-then-replay sequence (not just
+> within one live stream) MUST be probed specifically before or during C3/C4,
+> before the primary branch above is relied upon for the resume path. Use the
+> fallback branch above for the resume path until that probe runs, or if it
+> finds ID stability does not hold.
+
+C2 spike question (d) is answered; the blocking gate on C4 (alongside H6) is
+lifted for this question, subject to the resume-path re-verification above.
 
 ### 5.2 Event envelope
 
@@ -436,12 +502,24 @@ timeout with an operator watching it. **Membership is explicit: the local TUI co
 burning the full deadline waiting for an answer that is definitionally
 unobtainable.
 
-**Head-of-line blocking is assumed until disproven.** If the SDK dispatches
-`OnPermissionRequest` on the same goroutine or queue as session events, a
-blocked handler freezes *all* event delivery for the approval window. Whether
-permission dispatch is independent of event dispatch is a **required C2 spike
-question**. Until answered, do not design a UI that expects streaming to
-continue behind a modal.
+**SQ-c: ANSWERED (2026-09-04, shipment 005-S / B7).** Whether permission
+dispatch is independent of event dispatch is **YES** — no head-of-line
+blocking observed. The phase-C2 proving spike
+(`internal/copilotprobe/concurrency_test.go`) held a `PermissionHandlerFunc`
+genuinely blocked and observed 42 further session events arrive strictly
+after the block began (62 total vs. 21 before blocking started); event
+delivery was not frozen by the blocked handler. See
+`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-c) for
+the authoritative captured run and a footnote on the two-counter
+measurement mechanism behind these figures.
+**This is an empirical observation of the pinned SDK version's
+(`v1.0.11`) current dispatch behaviour, not a documented guarantee** — the
+SDK's own API surface makes no contractual claim about dispatch
+independence. A UI MAY now be designed to expect streaming to continue
+behind a modal at this pin, but this must be re-verified empirically before
+or alongside any `copilot-sdk/go` version upgrade (consistent with §4.2's
+SQ-b re-verification requirement); revert to the "assume head-of-line
+blocking" conservative posture if re-verification is not performed.
 
 **Authorization, not just authentication.** Any *connected* surface can approve
 an agent shell command. Connection-time authentication alone is therefore not
@@ -584,11 +662,24 @@ All SDK types are confined to one adapter package.
 ### 7.2 Version pinning
 
 * Pin the module to `v1.0.11`.
-* **Pinning the module does not pin the Copilot CLI.** The SDK declares
-  `SDKProtocolVersion = 3` and, for Go, the CLI is an unbundled,
-  operator-installed dependency. The validated CLI version must be recorded
-  and asserted at startup. Embedding the CLI (`go/embeddedcli`) is a deferred
-  option that would remove this variable entirely.
+* **Pinning the module does not pin the Copilot CLI, and the CLI is not
+  necessarily operator-installed.** The SDK declares `SDKProtocolVersion = 3`.
+  **Correction (2026-09-04, shipment 005-S / B6/B7):** the prior assumption
+  that the CLI is "an unbundled, operator-installed dependency" and that
+  embedding is "a deferred option" is **outdated** at the pinned version --
+  the phase-C2 proving spike's `client.GetStatus(ctx)` call succeeded against
+  a real runtime with no `cli_path`/`PATH` configuration supplied by the
+  probe at all, and the SDK's own `ClientOptions.BaseDirectory` doc comment
+  states the Go SDK "extracts the embedded CLI binary" independently of
+  `PATH` resolution, configurable via the SDK's own `embeddedcli.Config.Dir`.
+  Embedding is therefore **available today at this pin**, not a future
+  option. The validated CLI/runtime version (`1.0.84-1`, SDK protocol `3` --
+  see `docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md`) must
+  still be recorded and asserted at startup regardless of which resolution
+  path (embedded vs. `[copilot].cli_path`) a given deployment uses; §6.2's
+  `cli_path` validation contract is unaffected and remains a valid
+  configuration surface for deployments that need to point at a specific,
+  separately-installed CLI.
 
 ### 7.3 Multi-tenant hygiene
 
@@ -624,7 +715,18 @@ the governing decision's *Shipped P2 Audit*. Summary:
   `WorkspaceRootForChannel` re-founded on `workspace_id`). `acp.max_sessions`
   is **deleted** (its semantics are already covered by
   `max_concurrent_sessions`, Q6); `acp.startup_timeout_seconds` is **deleted in
-  C1 and re-introduced in C2** with its first real consumer.
+    C1** and re-introduced **in C3** with its first real consumer (the SDK
+    `Client.Start` deadline).
+    > **Amended 2026-09-04 (005-S / A2).** Previously scheduled for
+    > re-introduction in C2. C2 (the Copilot SDK proving spike, shipment 005-S)
+    > produces **no production consumer** — `internal/copilotprobe` is
+    > explicitly disposable per its Non-Goals — so re-introducing this field in
+    > C2 would ship a config surface with no reader, reproducing exactly the
+    > kind of coupling C1 removed. Deferred one phase to C3, where the first
+    > real `Client.Start` call exists to read it. See
+    > `docs/plans/2026-09-04-intercom-go-c2-sdk-spike-plan.md` (Decisions and
+    > Rationale) and
+    > `docs/decisions/2026-09-04-intercom-go-implementation-design-reconciliation-deliberation.md`.
 * **Renamed:** `slack_detail_level` → `operator_detail_level`.
 * **Migrated:** `host_cli` → `[copilot].cli_path`. Empty means resolve from
   `PATH`; a bare name gets a non-fatal advisory; an absolute path must exist;
@@ -660,4 +762,44 @@ removed as part of the remediation.
 * Parity with the Rust `agent-intercom` implementation. That repository is
   **historical reference only**, not a behavioural oracle for operator UI,
   transport, configuration, or credentials.
+* **RC-2 — Sidecar process supervision over Named Pipes / IPC.** Rejected for
+  now (deferred as **Q7**, see §9.1 below): inverts the decided supervision
+  topology, spans three repositories with no authorization, and is
+  Windows-only against a cross-platform posture.
+* **RC-3 — React / iOS / VAPID web-push re-introduction.** Rejected: directly
+  contradicts the 2026-09-04 correction's UI and transport decisions.
+* **RC-5 — Clean-room ephemeral `_stage`/`_ship` delegation engine.** Deferred
+  to ≥ C9 (tracked as Q6): presumes an unresolved sessions-per-process
+  decision.
+* **RC-6 — Fail-closed circuit breaker performing automated `git reset` /
+  stash writes against the operator's checkout.** Deferred, with the risk
+  flagged as **R8** (see §9.1): if revived, any automated convergence
+  remediation must target a dedicated worktree or branch, never the
+  operator's own checkout.
+
+### 9.1 Deferred and adoptable material register
+
+Recorded here (rather than left to survive only in the IMPL-DESIGN
+candidate document,
+`docs/design-docs/intercom-architecture-implementation-design.md` --
+untracked at the time this register was first written, now tracked and
+preserved per A1, but still non-governing per D11) per decision D14:
+
+| ID | Item | Disposition | Source |
+|---|---|---|---|
+| **Q7** | How intercom reaches workspace tooling (`agent-engram`, `graphtor-docs`, `backlogit`) — transport undecided (Named Pipes / IPC was proposed via RC-2 and rejected for now) | Open question, future deliberation | RC-2; IMPL-DESIGN §2 |
+| **R8** | An automated fail-closed circuit breaker performing `git reset` or stash writes could destroy operator work if revived | Risk, flagged; deferred with RC-6 | RC-6; IMPL-DESIGN §4.2 |
+| Event bus (adoptable) | Central unidirectional fan-out event bus: strict payload typing, buffered channels, `context.Context` cancellation, timeout thresholds so a dropped mobile connection never stalls the SDK loop | **Adoptable** — carries forward into design rev 3 (C5–C11 planning); materially consistent with and sharpens §4 (Concurrency), §5.2 (event envelope), and §5.5 (WebSocket backpressure) | IMPL-DESIGN §7, Phase 3 "Telemetry & State Bus", step 8 |
+| TUI layout (adoptable) | Bubble Tea Elm architecture (`tea.Model`/`Update`/`View`), `lipgloss` 2D layout, intervention modals | **Adoptable** — consistent with and adds useful layout detail beyond §2's stack (`bubbletea` + `lipgloss` + `bubbles/viewport`) | IMPL-DESIGN §6.1 |
+
+### 9.2 Terminology (D12)
+
+The acronym **"ACP"** is retired as a product term **in both expansions** —
+*Agent Client Protocol* and *Agent Control Plane* — per decision D12
+(`docs/decisions/2026-09-04-intercom-go-implementation-design-reconciliation-deliberation.md`).
+Use "control plane" in prose where needed; the acronym itself must never
+appear as a Go identifier, a TOML key, or any other code/config surface in a
+governing artifact. The retired term survives only inside the preserved,
+non-governing IMPL-DESIGN candidate document (its title and body predate this
+decision and are left unmodified per D11).
 
