@@ -1,0 +1,4 @@
+# comment
+dist/
+node_modules/
+*.log
