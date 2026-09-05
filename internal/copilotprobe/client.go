@@ -15,8 +15,6 @@
 package copilotprobe
 
 import (
-	"context"
-
 	copilot "github.com/github/copilot-sdk/go"
 )
 
@@ -24,21 +22,13 @@ import (
 // is the package's genuine, non-test importer required by D9a so that
 // `go mod tidy` does not prune the pinned dependency (an ordinary,
 // non-build-tagged file — see the plan's "Untagged importer" decision).
+// permission.go and fixture.go also import the SDK directly, so no single
+// file is solely responsible for pruning-avoidance; this file remains the
+// designated, explicitly-documented importer of record.
 //
 // It applies no probe-specific behaviour: callers configure ClientOptions
 // (working directory, permission handler, etc.) for their own scenario.
 // This function performs no I/O; the caller must still call Start.
 func NewClient(opts *copilot.ClientOptions) *copilot.Client {
 	return copilot.NewClient(opts)
-}
-
-// StartClient is a small convenience wrapper proving the SDK's documented
-// Start/Stop lifecycle via its public API. Callers are responsible for
-// calling the returned stop function (typically via defer) exactly once.
-func StartClient(ctx context.Context, opts *copilot.ClientOptions) (*copilot.Client, func() error, error) {
-	client := NewClient(opts)
-	if err := client.Start(ctx); err != nil {
-		return nil, nil, err
-	}
-	return client, client.Stop, nil
 }

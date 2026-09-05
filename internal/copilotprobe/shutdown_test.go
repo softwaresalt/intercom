@@ -36,7 +36,7 @@ func TestS3CancellationShutdown(t *testing.T) {
 		return &rpc.PermissionDecisionApproveOnce{}
 	})
 
-	client := newProbeClient(t, ctx)
+	client := newProbeClientManualLifecycle(t, ctx)
 	session := newProbeSession(t, ctx, client, &copilot.SessionConfig{
 		OnPermissionRequest: harness.Handler(),
 	})
@@ -71,22 +71,35 @@ func TestS3CancellationShutdown(t *testing.T) {
 	}
 	t.Logf("Abort: returned_promptly=%v err=%v", abortReturnedPromptly, abortErr)
 
-	select {
-	case <-time.After(500 * time.Millisecond):
-	}
-	stillBlocked := true
+	// SQ-a evidence caveat (correctness finding): blockCh in this harness is
+	// ONLY ever closed by this test's own close(blockCh) call below -- no
+	// other path (SDK-driven or otherwise) can close it. A select against
+	// blockCh is therefore NOT an independent empirical observation of
+	// whether Abort delivered any signal into the handler; it is
+	// guaranteed to report "still parked" by construction on every run. It
+	// is retained here only as a construction sanity-check (it would be a
+	// genuine harness bug if it ever reported otherwise), not as SQ-a
+	// evidence. The actual empirical measurement this probe produces is
+	// abortReturnedPromptly above (whether Abort itself hangs); the
+	// "handler remains blocked" half of the SQ-a conclusion below is a
+	// structural consequence of PermissionHandlerFunc's signature carrying
+	// no context.Context (verified via `go doc`), not something this
+	// specific channel check discovered live.
+	time.Sleep(500 * time.Millisecond)
+	handlerStillParked := true
 	select {
 	case <-blockCh:
-		stillBlocked = false
+		handlerStillParked = false
 	default:
 	}
-	t.Logf("SQ-a evidence: handler_still_blocked_after_abort=%v", stillBlocked)
-	if abortReturnedPromptly && stillBlocked {
-		t.Log("SQ-a ANSWER: NO -- Session.Abort returned without unblocking the already-blocked PermissionHandlerFunc. The handler goroutine remains parked; Abort operates at the session/RPC level and does not deliver any cancellation signal into the handler (PermissionHandlerFunc's signature carries no context.Context), consistent with design section 3.1's conservative assumption ('until answered, assume it does not').")
-	} else if !abortReturnedPromptly {
-		t.Log("SQ-a ANSWER: DEADLOCK OBSERVED -- Session.Abort itself did not return within its 20s sub-deadline while the permission handler remained blocked. This is the design section 3.1 deadlock scenario made concrete; recorded as a successful, informative de-risking outcome.")
+	if !handlerStillParked {
+		t.Fatalf("construction invariant violated: blockCh closed before this test's own close(blockCh) call -- harness bug, not an SQ-a finding")
+	}
+	t.Log("SQ-a evidence: abortReturnedPromptly is the genuine empirical signal (no deadlock at the Abort/RPC layer); the handler-remains-blocked half of the conclusion below follows from PermissionHandlerFunc's signature (no context.Context parameter), not from a live SDK-driven unblock signal, since no such signal exists for this harness to observe.")
+	if abortReturnedPromptly {
+		t.Log("SQ-a ANSWER: NO -- Session.Abort returned promptly without delivering any signal that could unblock an already-blocked PermissionHandlerFunc. Abort operates at the session/RPC level and PermissionHandlerFunc's signature carries no context.Context, so there is no channel through which Abort could interrupt an in-flight handler call. Consistent with design section 3.1's conservative assumption ('until answered, assume it does not').")
 	} else {
-		t.Log("SQ-a ANSWER: YES -- the handler unblocked as a side effect of Abort")
+		t.Log("SQ-a ANSWER: DEADLOCK OBSERVED -- Session.Abort itself did not return within its 20s sub-deadline while the permission handler remained blocked. This is the design section 3.1 deadlock scenario made concrete; recorded as a successful, informative de-risking outcome.")
 	}
 
 	// Release the blocked handler goroutine so it doesn't leak past this test.

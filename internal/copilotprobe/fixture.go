@@ -16,18 +16,38 @@ type TurnResult struct {
 	Ended bool
 }
 
-// DriveTurn is the shared turn/streaming fixture consumed by B3 (event-union
-// proving, SQ-d, R5) and B5 (SQ-b callback re-entrancy, SQ-c dispatch
-// independence). It subscribes to session events, sends prompt, forwards
-// every observed event to onEvent (the "instrumented event-callback hook"
-// both subtasks require) as it arrives, and returns once an
-// AssistantTurnEndData event is seen or ctx is done -- whichever first.
+// DriveTurn is the shared turn/streaming fixture. Actual consumers in this
+// package: permission_test.go (B2, S1 permission round-trip) and
+// events_test.go (B3, S2/SQ-d/R5). concurrency_test.go (B5, SQ-b/SQ-c)
+// intentionally does NOT reuse this fixture: SQ-b/SQ-c need to observe
+// events while a permission handler remains genuinely blocked mid-turn, a
+// different termination signal than "wait for AssistantTurnEndData", so B5
+// re-implements an equivalent subscribe/send loop inline with its own
+// termination condition.
+//
+// It subscribes to session events, sends prompt, forwards every observed
+// event to onEvent (the "instrumented event-callback hook" B3 requires) as
+// it arrives, and returns once an AssistantTurnEndData event is seen or ctx
+// is done -- whichever first.
 //
 // onEvent may be nil. It MUST NOT block indefinitely: DriveTurn's own
 // termination depends on the session's internal delivery, not on onEvent
 // returning quickly, but a slow onEvent will still delay this turn's
 // completion signal because callback delivery order is exactly what SQ-b
 // probes.
+//
+// Concurrency/synchronization note: the returned TurnResult.Events is a
+// snapshot copy taken under this function's internal lock immediately
+// before return, specifically so callers (who have no access to that lock)
+// never read the slice concurrently with an in-flight append. This package
+// does not have an independently-verified guarantee from the SDK that no
+// further callback invocation can occur once session.On's returned
+// unsubscribe function has been called (that guarantee is itself unverified
+// SDK behaviour, outside this spike's proven criteria) -- the snapshot copy
+// bounds the exposure to "events observed up to the moment of copy", not
+// "no more events will ever be appended to the original backing array",
+// which is why callers must use the returned copy, never assume the
+// snapshot is a live view.
 func DriveTurn(ctx context.Context, session *copilot.Session, prompt string, onEvent func(copilot.SessionEvent)) (*TurnResult, error) {
 	result := &TurnResult{}
 	var mu sync.Mutex
@@ -62,5 +82,7 @@ func DriveTurn(ctx context.Context, session *copilot.Session, prompt string, onE
 
 	mu.Lock()
 	defer mu.Unlock()
-	return result, nil
+	snapshot := make([]copilot.SessionEvent, len(result.Events))
+	copy(snapshot, result.Events)
+	return &TurnResult{Events: snapshot, Ended: result.Ended}, nil
 }

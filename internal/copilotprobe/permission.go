@@ -2,6 +2,7 @@ package copilotprobe
 
 import (
 	"sync"
+	"sync/atomic"
 
 	copilot "github.com/github/copilot-sdk/go"
 	"github.com/github/copilot-sdk/go/rpc"
@@ -27,7 +28,11 @@ type DecideFunc func(n int, request copilot.PermissionRequest, invocation copilo
 type PermissionHarness struct {
 	mu       sync.Mutex
 	requests []RecordedPermissionRequest
-	Decide   DecideFunc
+	nextN    int64 // atomic: reserves each request's N independently of
+	// slice-append timing, so N is well-defined even under concurrent
+	// handler invocation (SQ-b/SQ-c genuinely probe for concurrent
+	// dispatch; N must not be a length-based TOCTOU race).
+	Decide DecideFunc
 }
 
 // NewPermissionHarness constructs a harness that delegates every incoming
@@ -40,9 +45,12 @@ func NewPermissionHarness(decide DecideFunc) *PermissionHarness {
 // suitable for SessionConfig.OnPermissionRequest.
 func (h *PermissionHarness) Handler() copilot.PermissionHandlerFunc {
 	return func(request copilot.PermissionRequest, invocation copilot.PermissionInvocation) (rpc.PermissionDecision, error) {
-		h.mu.Lock()
-		n := len(h.requests)
-		h.mu.Unlock()
+		// Reserve this request's index atomically, independent of the
+		// (unlocked, potentially long-blocking) Decide call below and the
+		// later re-lock for the append -- this is the actual arrival-order
+		// index, not a length snapshot that could collide under
+		// concurrent invocation.
+		n := int(atomic.AddInt64(&h.nextN, 1) - 1)
 
 		decision := h.Decide(n, request, invocation)
 
