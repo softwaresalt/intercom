@@ -342,6 +342,15 @@ def scan_toml_with_fallback(path: Path):  # pragma: no cover - defensive only
             token = matches_forbidden_parts(key.lower().split('_'))
             if token:
                 findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML key {key!r}")
+
+    # Fail closed (AC-6): an unterminated multi-line string at EOF means this
+    # lexer's simplified state tracking cannot vouch for the rest of the file.
+    # Reporting nothing here would be exactly the silent fail-open masking
+    # bug (R2) this shipment exists to close, just relocated into the
+    # defensive fallback instead of the primary tomllib path.
+    if state['in_multiline_basic'] or state['in_multiline_literal']:
+        findings.append(f"{path.as_posix()}: unterminated multi-line string at EOF (fail-closed)")
+
     return findings
 
 
