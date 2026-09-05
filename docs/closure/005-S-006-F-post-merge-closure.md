@@ -7,6 +7,15 @@ tags:
   - "005-S"
   - "006-F"
   - "post-merge"
+date: 2026-09-04
+mode: post-merge
+shipment: 005-S
+feature: 006-F
+pr: 17
+merge_commit_sha: 3fdb871b5367f7cde54af9406840f15669e4f1ca
+compaction_status: done
+closure_status: READY
+releasability: READY
 ---
 
 # Post-merge closure: 005-S / 006-F
