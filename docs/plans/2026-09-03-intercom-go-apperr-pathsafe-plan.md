@@ -86,6 +86,22 @@ its directory, with zero downstream breakage.
 
 ## Constitution Check
 
+> **CORRECTION NOTICE (2026-09-04, Stage — resolves stash `2130906D`).**
+> The principle titles and numbering in the table below **do not match** this
+> workspace's ratified `.github/instructions/constitution.instructions.md`
+> (e.g. this table's "IV — Least surprise" vs. the ratified "IV — CLI Workspace
+> Containment"; this table's "VIII — Dependency minimalism" vs. the ratified
+> "VIII — Explicit Safety Modes for Elevated Risk").
+>
+> This table is **preserved unmodified as the historical record** of what was
+> actually reviewed when shipment `002-S` was gated; rewriting it would falsify
+> that record. It is **NOT a template**. Do not copy its structure into new
+> plans.
+>
+> The canonical ratified principle table for all future plans is recorded in
+> `docs/decisions/2026-09-04-intercom-go-residual-hardening-triage-deliberation.md`
+> (section "Constitution Check Correction").
+
 | Principle | Status | Units | Justification / rejected alternative |
 |---|---|---|---|
 | I — Quality gates (`gofmt`, `golangci-lint`, `go vet`, tests) | Satisfied | all | Existing `001-S` CI gates apply unchanged; no workflow edits in this slice. |
