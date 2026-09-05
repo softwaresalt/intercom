@@ -1,0 +1,41 @@
+# CODEOWNERS — CI-critical paths (007.003-T / U3)
+#
+# Partially resolves stash BEDD2E70. Does NOT close the self-modifying-PR
+# gap: `pull_request` workflows execute from the PR's own proposed head, so
+# a PR touching these paths can still edit the very workflow/scripts that
+# validate it and make its own required check succeed. Advisory CODEOWNERS
+# review has no enforcement effect against that on its own. This file ships
+# OWNERSHIP METADATA — a prerequisite for a future control, not the control
+# itself. The residual self-modifying-PR gap remains an explicit open
+# operator decision.
+#
+# ADVISORY METADATA ONLY (NON-NEGOTIABLE, see docs/plans/
+# 2026-09-04-intercom-go-ci-supply-chain-hardening-plan.md, risk R1): this
+# file has NO enforcement effect until branch protection or a repository
+# ruleset explicitly enables "Require review from Code Owners" on `main`.
+# THAT IS A SEPARATE, DELIBERATE OPERATOR ACTION — this unit does not take
+# it, and verified at implementation time that no repository or
+# organization ruleset / branch protection rule already enables it (if one
+# had, creating this file would have newly matched an owner and been
+# expected to deadlock unattended merges awaiting a review that, under dark
+# -factory/unattended operation, is not coming;
+# `merge_approval_pre_authorized` satisfies the harness's own merge gate,
+# never a GitHub branch-protection code-owner-review requirement). Before
+# ever flipping code-owner review to required, first provision an approval
+# path for unattended PRs (see risk R1 in the plan above) — otherwise every
+# dark-factory PR touching the paths below will block forever awaiting a
+# human review.
+#
+# Every owner below was verified to resolve to a real account with repo
+# access at authoring time (`gh api users/softwaresalt`) — a dangling owner
+# silently disables the rule it's attached to, producing the appearance of
+# a control with none of the effect.
+#
+# Covers ALL CI-critical scripts and workflow surfaces, or none (partial
+# ownership coverage here would be a misleading control).
+
+/.github/workflows/                          @softwaresalt
+/.github/CODEOWNERS                          @softwaresalt
+/scripts/ci-topology-check.sh                @softwaresalt
+/scripts/check-retired-architecture.sh       @softwaresalt
+/scripts/check-gitignore-append-only.sh      @softwaresalt
