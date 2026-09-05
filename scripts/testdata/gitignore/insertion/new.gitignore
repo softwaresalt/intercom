@@ -1,0 +1,7 @@
+# comment
+node_modules/
+build/
+*.log
+
+dist/
+# a trailing comment, ignored by the invariant
