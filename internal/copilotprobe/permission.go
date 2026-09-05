@@ -28,10 +28,13 @@ type DecideFunc func(n int, request copilot.PermissionRequest, invocation copilo
 type PermissionHarness struct {
 	mu       sync.Mutex
 	requests []RecordedPermissionRequest
-	nextN    int64 // atomic: reserves each request's N independently of
+	nextN    atomic.Int64 // reserves each request's N independently of
 	// slice-append timing, so N is well-defined even under concurrent
 	// handler invocation (SQ-b/SQ-c genuinely probe for concurrent
-	// dispatch; N must not be a length-based TOCTOU race).
+	// dispatch; N must not be a length-based TOCTOU race). atomic.Int64
+	// (not a raw int64) avoids the classic 32-bit alignment footgun for
+	// sync/atomic operations on 64-bit values and is the idiomatic choice
+	// in modern Go (>= 1.19).
 	Decide DecideFunc
 }
 
@@ -50,7 +53,7 @@ func (h *PermissionHarness) Handler() copilot.PermissionHandlerFunc {
 		// later re-lock for the append -- this is the actual arrival-order
 		// index, not a length snapshot that could collide under
 		// concurrent invocation.
-		n := int(atomic.AddInt64(&h.nextN, 1) - 1)
+		n := int(h.nextN.Add(1) - 1)
 
 		decision := h.Decide(n, request, invocation)
 
