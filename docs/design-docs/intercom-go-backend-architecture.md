@@ -172,9 +172,16 @@ Normative sequence:
 Every step is `context`-bounded. `Stop()` aggregates errors; they are logged,
 never swallowed.
 
-**Open spike question (C2):** does `Session.Abort` unblock an already-blocked
-`PermissionHandlerFunc`? If it does, step 0 can be simplified. Until answered,
-assume it does not.
+**SQ-a: ANSWERED (2026-09-04, shipment 005-S / B7).** Does `Session.Abort`
+unblock an already-blocked `PermissionHandlerFunc`? **NO.** The phase-C2
+proving spike (`internal/copilotprobe/shutdown_test.go`) observed
+`Session.Abort` return promptly (`err=nil`) while a deliberately-blocked
+handler remained parked; `PermissionHandlerFunc`'s signature carries no
+`context.Context`, so `Abort` has no channel through which to deliver a
+cancellation signal into an in-flight handler call. See
+`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-a). This
+**confirms** the conservative assumption below: step 0 is **not** simplified.
+Fail all pending permissions first, exactly as normatively sequenced.
 
 ---
 
@@ -236,12 +243,13 @@ the implementer:
   `error` envelope and forces full re-hydration.
 
 **Callback quiescing requires a latch, not a bare `WaitGroup`.** Because
-re-entrancy is unspecified (below), `wg.Add(1)` inside a callback races
-`wg.Wait()` in the shutdown path — Go requires a positive-delta `Add` that
-starts from zero to happen-before `Wait`. Use a one-way "no new entrants"
-latch (an atomic closed-flag checked and incremented under a mutex, or an
-equivalent refcount with a close latch), so `Unsubscribe` composes safely with
-an already-entered callback.
+re-entrancy is empirically serialised at the pinned SDK version but carries
+no documented guarantee (determined below), `wg.Add(1)` inside a callback
+races `wg.Wait()` in the shutdown path — Go requires a positive-delta `Add`
+that starts from zero to happen-before `Wait`. Use a one-way "no new
+entrants" latch (an atomic closed-flag checked and incremented under a
+mutex, or an equivalent refcount with a close latch), so `Unsubscribe`
+composes safely with an already-entered callback.
 
 **Re-entrancy is DETERMINED (2026-09-04, shipment 005-S / B7).** `Session.On`
 callback invocation is **serialised** at the pinned SDK version
@@ -261,7 +269,12 @@ invocation occurred. See
 > silently assume this holds across a future SDK version bump; re-verify
 > empirically (re-run the B5 probe, or an equivalent) before or alongside any
 > `copilot-sdk/go` version upgrade, and revert to the conservative
-> concurrent-safe posture below if re-verification is not performed.
+> concurrent-safe posture if re-verification is not performed: guard every
+> callback-local accumulator with its own mutex (or an equivalent
+> synchronization primitive) rather than assuming exclusive access, exactly
+> as if invocation were concurrent — i.e. the pre-amendment §4.1
+> sole-hub-writer / blocking-send discipline, applied defensively at the
+> callback boundary rather than relied upon as already safe by construction.
 > Regardless of serialisation, the adapter still MUST NOT rely on callback
 > ordering *across* `Unsubscribe`/re-subscribe boundaries, and the
 > "no new entrants" latch above remains required — serialisation within one
@@ -322,8 +335,32 @@ the two-branch specification below is collapsed to the applicable branch:
   never sees or interprets an SDK field, preserving §7.1 and keeping the
   envelope free of SDK wire types.
 
+> **Scope of this finding (hedged consistently with §4.2's SQ-b amendment).**
+> `SessionEvent.ID` uniqueness is validated against the
+> `github.com/github/copilot-sdk/go@v1.0.11` pin only, for one continuous
+> live-callback streaming session — it is an **empirical observation of the
+> pinned version's current behaviour, not a documented SDK guarantee** (the
+> field's doc comment states it is "generated when the event is emitted",
+> which is suggestive but not a contractual uniqueness guarantee across SDK
+> versions). Re-verify empirically before or alongside any `copilot-sdk/go`
+> version upgrade, consistent with §7.2's pinning policy and §4.2's SQ-b
+> re-verification requirement.
+>
+> **Untested scope, called out explicitly.** The spike validated ID
+> uniqueness only for live callback delivery within one session; it did
+> **not** exercise the specific `Client.ResumeSession` / `Session.GetEvents`
+> race this section itself identifies as the actual motivating risk for
+> de-duplication ("Registering the live callback and calling `GetEvents` is
+> the same race §5.3 solves for clients"). Whether `SessionEvent.ID` remains
+> stable and non-duplicated across a resume-then-replay sequence (not just
+> within one live stream) MUST be probed specifically before or during C3/C4,
+> before this collapsed single-branch spec is relied upon for the resume
+> path. If that follow-up probe finds ID stability does not hold across
+> resume, revert to the buffer-then-reconcile-by-prefix/content-hash branch
+> this section previously specified as the fallback.
+
 C2 spike question (d) is answered; the blocking gate on C4 (alongside H6) is
-lifted for this question.
+lifted for this question, subject to the resume-path re-verification above.
 
 ### 5.2 Event envelope
 
@@ -456,12 +493,22 @@ timeout with an operator watching it. **Membership is explicit: the local TUI co
 burning the full deadline waiting for an answer that is definitionally
 unobtainable.
 
-**Head-of-line blocking is assumed until disproven.** If the SDK dispatches
-`OnPermissionRequest` on the same goroutine or queue as session events, a
-blocked handler freezes *all* event delivery for the approval window. Whether
-permission dispatch is independent of event dispatch is a **required C2 spike
-question**. Until answered, do not design a UI that expects streaming to
-continue behind a modal.
+**SQ-c: ANSWERED (2026-09-04, shipment 005-S / B7).** Whether permission
+dispatch is independent of event dispatch is **YES** — no head-of-line
+blocking observed. The phase-C2 proving spike
+(`internal/copilotprobe/concurrency_test.go`) held a `PermissionHandlerFunc`
+genuinely blocked and observed 31 further session events arrive strictly
+after the block began (54 total vs. 24 before blocking started); event
+delivery was not frozen by the blocked handler. See
+`docs/decisions/2026-09-04-intercom-go-c2-sdk-spike-findings.md` (SQ-c).
+**This is an empirical observation of the pinned SDK version's
+(`v1.0.11`) current dispatch behaviour, not a documented guarantee** — the
+SDK's own API surface makes no contractual claim about dispatch
+independence. A UI MAY now be designed to expect streaming to continue
+behind a modal at this pin, but this must be re-verified empirically before
+or alongside any `copilot-sdk/go` version upgrade (consistent with §4.2's
+SQ-b re-verification requirement); revert to the "assume head-of-line
+blocking" conservative posture if re-verification is not performed.
 
 **Authorization, not just authentication.** Any *connected* surface can approve
 an agent shell command. Connection-time authentication alone is therefore not
