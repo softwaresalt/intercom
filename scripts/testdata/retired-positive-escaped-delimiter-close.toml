@@ -1,0 +1,4 @@
+notes = """
+escaped closing quotes live here: \"""
+"""
+channel_id = 1

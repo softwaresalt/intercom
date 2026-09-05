@@ -1,0 +1,5 @@
+notes = """
+this string mentions host_cli = "not a key"
+and # is not a comment while the string is open
+"""
+host_cli = "real retired key after close"

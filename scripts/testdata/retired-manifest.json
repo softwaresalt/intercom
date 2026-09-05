@@ -1,0 +1,8 @@
+{
+  "retired-architecture-fixture.toml": "reject",
+  "retired-negative-inside-multiline-literal.toml": "accept",
+  "retired-positive-after-multiline-close.toml": "reject",
+  "retired-negative-nested-inert-delimiters.toml": "accept",
+  "retired-positive-escaped-delimiter-close.toml": "reject",
+  "retired-malformed-unparseable.toml": "reject"
+}

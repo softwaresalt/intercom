@@ -1,0 +1,5 @@
+notes = """
+a literal opener ''' inside a basic multi-line string must stay inert
+socket_mode = "still string content"
+"""
+safe_key = "clean"
