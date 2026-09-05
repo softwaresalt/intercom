@@ -209,6 +209,32 @@ jobs:
       - name: gitleaks detect
         run: gitleaks detect --source . --no-git -v
 
+  # .gitignore append-only invariant (I6) gate (007.006-T / U5). Runs on
+  # `pull_request` only -- it needs `github.event.pull_request.base.sha`,
+  # which does not exist on a `push` event. Full history (`fetch-depth: 0`)
+  # is fetched on THIS JOB ONLY so the base SHA resolves; no other job's
+  # checkout is slowed. Fails the job on a deletion or reorder (fail-closed
+  # per scripts/check-gitignore-append-only.sh AC-4); an append-only PR
+  # passes. Resolves stash F7C6420D (part 3 of 3).
+  gitignore-append-only:
+    name: gitignore append-only (I6)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (full history for base-ref resolution)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check .gitignore append-only (I6)
+        run: |
+          set -euo pipefail
+          bash scripts/check-gitignore-append-only.sh \
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref "${{ github.sha }}"
+
   # Loads the target matrix from scripts/targets.json (single source of
   # truth, shared with scripts/build.ps1 - 001.001.004-ST) so the CI matrix
   # below cannot drift from the local build script's target list.
@@ -345,12 +371,12 @@ jobs:
   ci-gate:
     name: ci gate
     if: always()
-    needs: [changes, expensive, lint, security, cross-compile-targets, cross-compile, topology-check]
+    needs: [changes, expensive, lint, security, cross-compile-targets, cross-compile, topology-check, gitignore-append-only]
     runs-on: ubuntu-latest
     steps:
       - name: Verify no required job failed
         run: |
-          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }}"
+          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }} ${{ needs['gitignore-append-only'].result }}"
           echo "job results: $results"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
