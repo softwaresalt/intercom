@@ -1,9 +1,13 @@
 package pathsafe
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
 // TestNewRootOnExistingDirIsAbsoluteAndSymlinkResolved verifies NewRoot on an
@@ -36,6 +40,78 @@ func TestNewRootOnMissingDirReturnsPathViolation(t *testing.T) {
 	}
 	if !strings.HasPrefix(err.Error(), "path violation: workspace root invalid") {
 		t.Fatalf("err.Error() = %q, want prefix %q", err.Error(), "path violation: workspace root invalid")
+	}
+}
+
+// TestNewRootPreservesEvalSymlinksNotExistCause verifies a missing workspace
+// root preserves both the path-violation classification and the underlying
+// os.ErrNotExist cause from filepath.EvalSymlinks.
+func TestNewRootPreservesEvalSymlinksNotExistCause(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "does-not-exist")
+
+	_, err := NewRoot(dir)
+	if err == nil {
+		t.Fatalf("NewRoot(%q) = nil error, want wrapped PathViolation", dir)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("errors.Is(err, os.ErrNotExist) = false, want true; err = %v", err)
+	}
+	if !errors.Is(err, apperr.ErrPathViolation) {
+		t.Fatalf("errors.Is(err, apperr.ErrPathViolation) = false, want true; err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "workspace root invalid") {
+		t.Fatalf("err.Error() = %q, want to contain %q", err.Error(), "workspace root invalid")
+	}
+}
+
+// TestNewRootRejectsFilePathAsWorkspaceRoot verifies NewRoot rejects an
+// existing file path rather than accepting it as a valid workspace root.
+func TestNewRootRejectsFilePathAsWorkspaceRoot(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "not-a-directory.txt")
+	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create file root candidate: %v", err)
+	}
+
+	root, err := NewRoot(filePath)
+	if err == nil {
+		t.Fatalf("NewRoot(%q) = (%v, nil error), want PathViolation", filePath, root)
+	}
+	if !errors.Is(err, apperr.ErrPathViolation) {
+		t.Fatalf("errors.Is(err, apperr.ErrPathViolation) = false, want true; err = %v", err)
+	}
+}
+
+// TestNewRootAcceptsSymlinkToDirectory verifies NewRoot resolves symlinks
+// before checking the canonical target type, so a symlink to a directory is
+// accepted as a valid workspace root.
+func TestNewRootAcceptsSymlinkToDirectory(t *testing.T) {
+	if err := canSymlink(t); err != nil {
+		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
+	}
+
+	dir := t.TempDir()
+	targetDir := filepath.Join(dir, "target")
+	if err := os.Mkdir(targetDir, 0o755); err != nil {
+		t.Fatalf("failed to create target directory: %v", err)
+	}
+	linkDir := filepath.Join(dir, "link")
+	if err := os.Symlink(targetDir, linkDir); err != nil {
+		t.Fatalf("failed to create directory symlink: %v", err)
+	}
+
+	root, err := NewRoot(linkDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", linkDir, err)
+	}
+
+	resolved, err := filepath.EvalSymlinks(linkDir)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q) returned error: %v", linkDir, err)
+	}
+	want := stripUNCPrefix(resolved)
+	if root.Path() != want {
+		t.Fatalf("Root.Path() = %q, want %q", root.Path(), want)
 	}
 }
 

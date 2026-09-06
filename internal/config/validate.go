@@ -76,7 +76,7 @@ func (c *Config) Validate() (Report, error) {
 	// parent directories there, an arbitrary-write primitive otherwise).
 	// Absolute paths remain permitted as an explicit, visible operator
 	// privilege.
-	if containsDotDotSegment(c.Database.Path) {
+	if pathsafe.ContainsDotDotSegment(c.Database.Path) {
 		return report, apperr.New(apperr.KindConfig, "database.path must not contain '..' segments")
 	}
 
@@ -104,24 +104,6 @@ func pathErrorMessage(err error) string {
 		return appErr.Message()
 	}
 	return err.Error()
-}
-
-// containsDotDotSegment reports whether path contains a literal ".."
-// path-separator-delimited segment, checked against the original
-// (uncleaned) string so a traversal component cannot be hidden by
-// filepath.Clean's collapsing behavior. Both '/' and '\' are treated as
-// separators regardless of GOOS, since a config file is portable text
-// that may be authored on a different platform than the one that loads
-// it.
-func containsDotDotSegment(path string) bool {
-	for _, part := range strings.FieldsFunc(path, func(r rune) bool {
-		return r == '/' || r == '\\'
-	}) {
-		if part == ".." {
-			return true
-		}
-	}
-	return false
 }
 
 // validateCLIPath implements validation rule 5. Empty is valid and returns

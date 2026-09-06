@@ -119,6 +119,35 @@ func TestResolveRejectsSymlinkedIntermediateDirEscapingRoot(t *testing.T) {
 	}
 }
 
+// TestResolveAllowsDanglingSymlinkAtFinalComponent verifies the documented
+// lexical-only accept branch for a dangling symlink at the final path
+// component.
+func TestResolveAllowsDanglingSymlinkAtFinalComponent(t *testing.T) {
+	if err := canSymlink(t); err != nil {
+		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
+	}
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	danglingTarget := filepath.Join(t.TempDir(), "missing-target.txt")
+	linkPath := filepath.Join(root.Path(), "dangling-link")
+	if err := os.Symlink(danglingTarget, linkPath); err != nil {
+		t.Fatalf("failed to create dangling symlink: %v", err)
+	}
+
+	resolved, err := root.Resolve("dangling-link")
+	if err != nil {
+		t.Fatalf("Resolve(%q) returned unexpected error: %v", "dangling-link", err)
+	}
+	if resolved != linkPath {
+		t.Fatalf("Resolve(%q) = %q, want %q", "dangling-link", resolved, linkPath)
+	}
+}
+
 // path under the root resolves successfully (oracle step 7).
 func TestResolveAllowsNonExistentRelativePath(t *testing.T) {
 	rootDir := t.TempDir()

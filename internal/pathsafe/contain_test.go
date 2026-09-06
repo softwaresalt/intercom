@@ -3,6 +3,7 @@ package pathsafe
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -53,6 +54,61 @@ func TestResolveRejectsSiblingDirEscape(t *testing.T) {
 	// hasPathPrefix must not treat the sibling "ws-evil" as contained by "ws".
 	if hasPathPrefix(evilDir, root.Path()) {
 		t.Fatalf("hasPathPrefix(%q, %q) = true, want false (sibling-directory escape)", evilDir, root.Path())
+	}
+}
+
+// TestHasPathPrefixTreatsFilesystemRootAsContainingChild verifies the
+// filesystem root itself is handled as a container prefix for a direct child,
+// without requiring a doubled separator in the child path.
+func TestHasPathPrefixTreatsFilesystemRootAsContainingChild(t *testing.T) {
+	prefix := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		volume := filepath.VolumeName(t.TempDir())
+		if volume == "" {
+			t.Fatal("filepath.VolumeName(t.TempDir()) = empty, want drive volume")
+		}
+		prefix = volume + string(filepath.Separator)
+	}
+
+	path := filepath.Join(prefix, "child")
+	if !hasPathPrefix(path, prefix) {
+		t.Fatalf("hasPathPrefix(%q, %q) = false, want true", path, prefix)
+	}
+}
+
+// TestHasPathPrefixCommonContainmentVerdicts locks common containment
+// verdicts that must not change during internal helper deduplication.
+func TestHasPathPrefixCommonContainmentVerdicts(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "ws")
+	parent := filepath.Dir(workspace)
+	filesystemRoot := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		volume := filepath.VolumeName(workspace)
+		if volume == "" {
+			t.Fatal("filepath.VolumeName(workspace) = empty, want drive volume")
+		}
+		filesystemRoot = volume + string(filepath.Separator)
+	}
+
+	cases := []struct {
+		name   string
+		path   string
+		prefix string
+		want   bool
+	}{
+		{name: "exact match", path: workspace, prefix: workspace, want: true},
+		{name: "child inside prefix", path: filepath.Join(workspace, "child.txt"), prefix: workspace, want: true},
+		{name: "sibling with shared prefix", path: filepath.Join(parent, filepath.Base(workspace)+"-evil"), prefix: workspace, want: false},
+		{name: "unrelated path", path: filepath.Join(parent, "other", "child.txt"), prefix: workspace, want: false},
+		{name: "filesystem root equals prefix", path: filesystemRoot, prefix: filesystemRoot, want: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasPathPrefix(tc.path, tc.prefix); got != tc.want {
+				t.Fatalf("hasPathPrefix(%q, %q) = %v, want %v", tc.path, tc.prefix, got, tc.want)
+			}
+		})
 	}
 }
 
