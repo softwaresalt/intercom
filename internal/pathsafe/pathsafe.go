@@ -54,7 +54,7 @@ func normalize(candidate string) ([]string, error) {
 	}
 
 	cleaned := filepath.Clean(candidate)
-	parts := splitPath(cleaned)
+	parts := filepathSplitList(cleaned)
 
 	stack := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -72,11 +72,6 @@ func normalize(candidate string) ([]string, error) {
 	}
 
 	return stack, nil
-}
-
-// splitPath splits a filepath.Clean-ed path on filepath.Separator.
-func splitPath(cleaned string) []string {
-	return filepathSplitList(cleaned)
 }
 
 // isRooted reports whether candidate begins with a path separator without a
@@ -166,6 +161,9 @@ func (r Root) Resolve(candidate string) (string, error) {
 func hasPathPrefix(path, prefix string) bool {
 	if pathEqual(path, prefix) {
 		return true
+	}
+	if strings.HasSuffix(prefix, string(filepath.Separator)) {
+		return pathHasPrefix(path, prefix)
 	}
 	return pathHasPrefix(path, prefix+string(filepath.Separator))
 }
