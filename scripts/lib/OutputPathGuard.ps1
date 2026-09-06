@@ -34,7 +34,21 @@ function Resolve-ReparseAwarePath {
     $currentPath = $pathRoot
     for ($i = 0; $i -lt $parts.Count; $i++) {
         $candidatePath = Join-Path $currentPath $parts[$i]
-        if (-not (Test-Path -LiteralPath $candidatePath)) {
+
+        # Deliberately use Get-Item -Force instead of Test-Path to decide
+        # existence. Test-Path (and the underlying Directory.Exists/File.Exists
+        # checks) can follow a symlink/junction to its target on some
+        # platforms, so a DANGLING reparse point (the link itself exists on
+        # disk, but its target does not yet) can report as "does not exist".
+        # That would skip reparse-point resolution entirely and fall through
+        # to a purely lexical join for the remainder of the path -- exactly
+        # the I5 containment bypass this guard exists to close, just gated on
+        # link-target existence instead of link existence. Get-Item -Force
+        # retrieves reparse-point metadata (LinkType, ResolveLinkTarget) for a
+        # dangling link too, so the reparse point is always inspected when one
+        # is present, regardless of whether its target currently exists.
+        $item = Get-Item -LiteralPath $candidatePath -Force -ErrorAction SilentlyContinue
+        if ($null -eq $item) {
             $resolvedPath = $currentPath
             for ($j = $i; $j -lt $parts.Count; $j++) {
                 $resolvedPath = Join-Path $resolvedPath $parts[$j]
@@ -42,7 +56,6 @@ function Resolve-ReparseAwarePath {
             return Normalize-GuardPath -Path $resolvedPath
         }
 
-        $item = Get-Item -LiteralPath $candidatePath -Force
         if ($item.LinkType -eq 'SymbolicLink' -or $item.LinkType -eq 'Junction') {
             $target = $item.ResolveLinkTarget($true)
             if ($null -eq $target) {

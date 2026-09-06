@@ -140,6 +140,28 @@ func TestResolveOutputPathWithinRoot(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects dangling symlink escape", func(t *testing.T) {
+		// The symlink target intentionally does NOT exist. Existence checks
+		// that follow a reparse point to its target (rather than detecting
+		// the reparse point itself) can report a dangling link as "does not
+		// exist" and skip resolution entirely, falling through to a lexical
+		// join that can pass the in-root check even though the eventual
+		// target is outside the repo root. This guards against that gap.
+		fixtureRoot := inRepoGuardDir(t, root)
+		outsideRoot := filepath.Join(t.TempDir(), "outside-not-created-yet")
+
+		linkPath := filepath.Join(fixtureRoot, "dangling-symlink-out")
+		createDirectorySymlink(t, linkPath, outsideRoot)
+
+		out, err := runOutputPathGuard(t, root, filepath.Join(linkPath, "nested", "missing"))
+		if err == nil {
+			t.Fatalf("expected dangling symlink escape to be rejected, got success with output:\n%s", out)
+		}
+		if !strings.Contains(string(out), "invariant I5") {
+			t.Fatalf("expected invariant I5 in refusal output, got:\n%s", out)
+		}
+	})
+
 	t.Run("rejects junction escape", func(t *testing.T) {
 		fixtureRoot := inRepoGuardDir(t, root)
 		outsideRoot := filepath.Join(t.TempDir(), "outside")

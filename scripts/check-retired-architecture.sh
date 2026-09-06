@@ -313,7 +313,12 @@ def scan_toml_with_tomllib(path: Path):
     return findings
 
 
-def scan_toml_with_fallback(path: Path):  # pragma: no cover - defensive only
+def scan_toml_with_fallback(path: Path):
+    # Used as the real scan engine only when tomllib is unavailable (pre-3.11
+    # interpreters), but --self-test exercises this function directly against
+    # every fixture on every run regardless of interpreter version, so it is
+    # never untested dead code even though tomllib is expected to be present
+    # in every currently supported environment.
     findings = []
     current_table = []
     state = {
@@ -343,13 +348,17 @@ def scan_toml_with_fallback(path: Path):  # pragma: no cover - defensive only
             if token:
                 findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML key {key!r}")
 
-    # Fail closed (AC-6): an unterminated multi-line string at EOF means this
-    # lexer's simplified state tracking cannot vouch for the rest of the file.
-    # Reporting nothing here would be exactly the silent fail-open masking
-    # bug (R2) this shipment exists to close, just relocated into the
-    # defensive fallback instead of the primary tomllib path.
-    if state['in_multiline_basic'] or state['in_multiline_literal']:
-        findings.append(f"{path.as_posix()}: unterminated multi-line string at EOF (fail-closed)")
+    # Fail closed (AC-6): an unterminated string at EOF (single-line basic/
+    # literal OR multi-line basic/literal) means this lexer's simplified
+    # state tracking cannot vouch for the rest of the file. Reporting nothing
+    # here would be exactly the silent fail-open masking bug (R2) this
+    # shipment exists to close, just relocated into the defensive fallback
+    # instead of the primary tomllib path. in_basic/in_literal are included
+    # (not just the multiline flags) because this simplified per-line lexer
+    # tolerates an unterminated single-line string spanning multiple physical
+    # lines, and content on those "swallowed" lines must not be silently lost.
+    if state['in_multiline_basic'] or state['in_multiline_literal'] or state['in_basic'] or state['in_literal']:
+        findings.append(f"{path.as_posix()}: unterminated string at EOF (fail-closed)")
 
     return findings
 
@@ -410,25 +419,40 @@ def run_fixture_self_test():
     for name in discovered:
         expectation = manifest.get(name)
         path = fixture_dir / name
-        findings = scan_toml(path)
-        rejected = bool(findings)
 
-        if expectation == 'accept':
-            if rejected:
-                detail = '; '.join(findings)
-                failures.append(f"{name}: expected clean, got findings: {detail}")
-            else:
-                print(f"PASS {name}: clean as expected")
-            continue
+        # Exercise BOTH scan engines against every fixture, not just whichever
+        # one scan_toml() would naturally pick for this interpreter. The
+        # fallback lexer (scan_toml_with_fallback) previously went completely
+        # unexercised whenever tomllib was importable (true on any Python
+        # >=3.11, i.e. every currently supported CI/dev environment), so a
+        # regression in its own EOF fail-closed handling could land with a
+        # fully green self-test. Running both engines here means the
+        # fallback's correctness is proven on every self-test invocation,
+        # never left as untested dead code.
+        engines = [('tomllib', scan_toml_with_tomllib)] if tomllib is not None else []
+        engines.append(('fallback', scan_toml_with_fallback))
 
-        if expectation == 'reject':
-            if rejected:
-                print(f"PASS {name}: rejected as expected")
-            else:
-                failures.append(f"{name}: expected rejection, got clean")
-            continue
+        for engine_name, engine_fn in engines:
+            findings = engine_fn(path)
+            rejected = bool(findings)
+            label = f"{name} [{engine_name}]"
 
-        failures.append(f"{name}: unknown expectation {expectation!r} in retired-manifest.json")
+            if expectation == 'accept':
+                if rejected:
+                    detail = '; '.join(findings)
+                    failures.append(f"{label}: expected clean, got findings: {detail}")
+                else:
+                    print(f"PASS {label}: clean as expected")
+                continue
+
+            if expectation == 'reject':
+                if rejected:
+                    print(f"PASS {label}: rejected as expected")
+                else:
+                    failures.append(f"{label}: expected rejection, got clean")
+                continue
+
+            failures.append(f"{label}: unknown expectation {expectation!r} in retired-manifest.json")
 
     if failures:
         print('\n'.join(f"FAIL {failure}" for failure in failures), file=sys.stderr)

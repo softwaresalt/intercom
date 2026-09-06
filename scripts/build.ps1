@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires -Version 7.2
 <#
 .SYNOPSIS
     Canonical cross-compile build script for intercom-go (001.001.004-ST).
