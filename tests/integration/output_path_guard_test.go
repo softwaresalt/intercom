@@ -102,8 +102,14 @@ func createDirectoryJunction(t *testing.T, linkPath, targetPath string) {
 		t.Fatalf("writing junction helper script: %v", err)
 	}
 
-	cmd := exec.Command("pwsh", "-NoProfile", "-File", helperScript, "-LinkPath", linkPath, "-TargetPath", targetPath)
+	ctx, cancel := context.WithTimeout(context.Background(), outputPathGuardTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-File", helperScript, "-LinkPath", linkPath, "-TargetPath", targetPath)
 	out, err := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("junction creation exceeded %s timeout; output so far:\n%s", outputPathGuardTimeout, out)
+	}
 	if err != nil {
 		t.Fatalf("creating junction %q -> %q: %v\noutput:\n%s", linkPath, targetPath, err, out)
 	}
