@@ -84,3 +84,25 @@ func TestNormalizePreservesSafeInteriorTraversal(t *testing.T) {
 		}
 	}
 }
+
+func TestContainsDotDotSegment(t *testing.T) {
+	cases := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "windows-style traversal", path: `..\..\etc`, want: true},
+		{name: "posix traversal", path: "../secret", want: true},
+		{name: "safe relative path", path: "data/agent-rc.db", want: false},
+		{name: "absolute path without traversal", path: "/var/lib/agent-rc.db", want: false},
+		{name: "interior dots are not traversal", path: "data/.../agent-rc.db", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ContainsDotDotSegment(tc.path); got != tc.want {
+				t.Fatalf("ContainsDotDotSegment(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
