@@ -47,7 +47,21 @@ function Resolve-ReparseAwarePath {
         # retrieves reparse-point metadata (LinkType, ResolveLinkTarget) for a
         # dangling link too, so the reparse point is always inspected when one
         # is present, regardless of whether its target currently exists.
-        $item = Get-Item -LiteralPath $candidatePath -Force -ErrorAction SilentlyContinue
+        #
+        # Only treat a genuine "no such item" as "does not exist yet" (the
+        # common case for a not-yet-created build output leaf). Any OTHER
+        # Get-Item failure (e.g. an access-denied error reading a reparse
+        # point's own metadata) must fail closed -- NOT be silently folded
+        # into the same "safe to lexically join" branch, since that would
+        # reopen exactly the same class of I5 bypass this function exists to
+        # close, just triggered by a permission error instead of a dangling
+        # target.
+        $item = $null
+        try {
+            $item = Get-Item -LiteralPath $candidatePath -Force -ErrorAction Stop
+        } catch [System.Management.Automation.ItemNotFoundException] {
+            $item = $null
+        }
         if ($null -eq $item) {
             $resolvedPath = $currentPath
             for ($j = $i; $j -lt $parts.Count; $j++) {
