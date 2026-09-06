@@ -1,0 +1,6 @@
+notes = '''
+slack = "string content, not a key"
+channel_id = 12345
+# still string content
+'''
+safe_key = "clean"

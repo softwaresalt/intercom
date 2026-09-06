@@ -1,0 +1,3 @@
+notes = """
+unterminated multiline string
+host_cli = "must fail closed"

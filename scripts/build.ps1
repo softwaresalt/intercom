@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires -Version 7.2
 <#
 .SYNOPSIS
     Canonical cross-compile build script for intercom-go (001.001.004-ST).
@@ -30,29 +30,14 @@ Set-StrictMode -Version Latest
 # Resolve the repository root from this script's own location, never from
 # the caller's current working directory.
 $scriptRoot = $PSScriptRoot
+. (Join-Path (Join-Path $scriptRoot 'lib') 'OutputPathGuard.ps1')
 $repoRoot = (Resolve-Path (Join-Path $scriptRoot '..')).Path.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
 
 if (-not $OutputDir) {
     $OutputDir = Join-Path $repoRoot 'dist'
 }
 
-# GetFullPath resolves '..' segments and relative paths without requiring the
-# directory to already exist.
-$resolvedOutputDir = [System.IO.Path]::GetFullPath($OutputDir, (Get-Location).Path)
-$resolvedOutputDir = $resolvedOutputDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
-
-# Compare ordinally (case-sensitive) rather than case-insensitively: this
-# guard is a security/safety boundary (invariant I5), so it must fail closed
-# (refuse) on an ambiguous case mismatch rather than risk a false negative on
-# a case-sensitive filesystem (Linux, or macOS in case-sensitive mode).
-$repoRootWithSep = $repoRoot + [System.IO.Path]::DirectorySeparatorChar
-$isDescendant = $resolvedOutputDir.Equals($repoRoot, [System.StringComparison]::Ordinal) -or
-    $resolvedOutputDir.StartsWith($repoRootWithSep, [System.StringComparison]::Ordinal)
-
-if (-not $isDescendant) {
-    Write-Error "Refusing to build: resolved output path '$resolvedOutputDir' is not a descendant of the repository root '$repoRoot' (invariant I5)."
-    exit 1
-}
+$resolvedOutputDir = Resolve-OutputPathWithinRoot -RepoRoot $repoRoot -OutputDir $OutputDir -BasePath (Get-Location).Path
 
 # Create/overwrite only - never delete anything, recursively or otherwise.
 New-Item -ItemType Directory -Path $resolvedOutputDir -Force | Out-Null
