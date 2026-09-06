@@ -1,6 +1,6 @@
 // Package apperr defines the AppError taxonomy ported from the
 // agent-intercom behavioral oracle (softwaresalt/agent-intercom @ 41df772,
-// src/errors.rs). It provides a fixed, 14-variant error kind taxonomy with a
+// src/errors.rs). It provides a fixed, 11-variant error kind taxonomy with a
 // pinned, lowercase-prefixed display contract that later phases and the
 // oracle parity corpus depend on.
 package apperr
@@ -18,16 +18,12 @@ const (
 	KindConfig Kind = iota
 	// KindDB indicates a database-layer failure.
 	KindDB
-	// KindSlack indicates a Slack-integration failure.
-	KindSlack
 	// KindMCP indicates an MCP (Model Context Protocol) surface failure.
 	KindMCP
 	// KindDiff indicates a diff-generation or diff-application failure.
 	KindDiff
 	// KindPolicy indicates a policy-evaluation failure.
 	KindPolicy
-	// KindIPC indicates an inter-process-communication failure.
-	KindIPC
 	// KindPathViolation indicates a workspace path-containment violation.
 	KindPathViolation
 	// KindPatchConflict indicates a patch application conflict.
@@ -40,8 +36,6 @@ const (
 	KindAlreadyConsumed
 	// KindIO indicates a generic input/output failure.
 	KindIO
-	// KindACP indicates an Agent Client Protocol failure.
-	KindACP
 )
 
 // prefix returns the exact, lowercase display prefix for the kind, pinned to
@@ -53,16 +47,12 @@ func (k Kind) prefix() string {
 		return "config"
 	case KindDB:
 		return "db"
-	case KindSlack:
-		return "slack"
 	case KindMCP:
 		return "mcp"
 	case KindDiff:
 		return "diff"
 	case KindPolicy:
 		return "policy"
-	case KindIPC:
-		return "ipc"
 	case KindPathViolation:
 		return "path violation"
 	case KindPatchConflict:
@@ -75,10 +65,42 @@ func (k Kind) prefix() string {
 		return "already consumed"
 	case KindIO:
 		return "io"
-	case KindACP:
-		return "acp"
 	default:
 		return "unknown"
+	}
+}
+
+// String returns the Kind's exported name (e.g. "NotFound"), satisfying
+// fmt.Stringer. This is a debugging/observability affordance and is
+// deliberately separate from the unexported prefix() display-contract
+// accessor used by Error.Error(): collapsing the two would couple log
+// formatting to the pinned, wire-visible error text.
+func (k Kind) String() string {
+	switch k {
+	case KindConfig:
+		return "Config"
+	case KindDB:
+		return "DB"
+	case KindMCP:
+		return "MCP"
+	case KindDiff:
+		return "Diff"
+	case KindPolicy:
+		return "Policy"
+	case KindPathViolation:
+		return "PathViolation"
+	case KindPatchConflict:
+		return "PatchConflict"
+	case KindNotFound:
+		return "NotFound"
+	case KindUnauthorized:
+		return "Unauthorized"
+	case KindAlreadyConsumed:
+		return "AlreadyConsumed"
+	case KindIO:
+		return "IO"
+	default:
+		return "Unknown"
 	}
 }
 
@@ -145,4 +167,20 @@ func Wrap(kind Kind, cause error) *Error {
 		msg = cause.Error()
 	}
 	return &Error{kind: kind, msg: msg, cause: cause}
+}
+
+// Wrapf constructs an *Error of the given kind with a formatted message,
+// while also preserving cause for Unwrap()/errors.Is/errors.As traversal.
+// Neither Wrap (no message parameter; derives msg from cause.Error()) nor
+// New (accepts a message but drops the cause) can both preserve a cause and
+// retain human-readable context — Wrapf fills that gap.
+//
+// Like Newf, Wrapf's format string is not checked by go vet's printf
+// analyzer unless explicitly registered (see .golangci.yml's
+// linters.settings.govet.settings.printf.funcs); Wrapf is registered
+// alongside Newf for exactly this reason.
+//
+// Wrapf guards cause == nil, matching Wrap's existing nil-cause handling.
+func Wrapf(kind Kind, cause error, format string, args ...any) *Error {
+	return &Error{kind: kind, msg: fmt.Sprintf(format, args...), cause: cause}
 }

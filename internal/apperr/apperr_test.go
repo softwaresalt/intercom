@@ -9,25 +9,22 @@ import (
 var allKinds = []Kind{
 	KindConfig,
 	KindDB,
-	KindSlack,
 	KindMCP,
 	KindDiff,
 	KindPolicy,
-	KindIPC,
 	KindPathViolation,
 	KindPatchConflict,
 	KindNotFound,
 	KindUnauthorized,
 	KindAlreadyConsumed,
 	KindIO,
-	KindACP,
 }
 
-// TestPrefixUniquenessAndNoTrailingPeriod asserts, across all 14 kinds, that
+// TestPrefixUniquenessAndNoTrailingPeriod asserts, across all 11 kinds, that
 // each rendered prefix is unique and that no rendered message ends in '.'.
 func TestPrefixUniquenessAndNoTrailingPeriod(t *testing.T) {
-	if got := len(allKinds); got != 14 {
-		t.Fatalf("expected 14 kinds, got %d", got)
+	if got := len(allKinds); got != 11 {
+		t.Fatalf("expected 11 kinds, got %d", got)
 	}
 
 	seen := make(map[string]Kind, len(allKinds))
@@ -45,10 +42,11 @@ func TestPrefixUniquenessAndNoTrailingPeriod(t *testing.T) {
 	}
 }
 
-// TestACPErrorDisplay pins the exact display contract for a representative kind.
-func TestACPErrorDisplay(t *testing.T) {
-	e := &Error{kind: KindACP, msg: "stream closed"}
-	const want = "acp: stream closed"
+// TestPathViolationErrorDisplay pins the exact display contract for a
+// representative multi-word-prefix kind.
+func TestPathViolationErrorDisplay(t *testing.T) {
+	e := &Error{kind: KindPathViolation, msg: "stream closed"}
+	const want = "path violation: stream closed"
 	if got := e.Error(); got != want {
 		t.Fatalf("Error() = %q, want %q", got, want)
 	}

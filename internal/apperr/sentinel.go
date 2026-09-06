@@ -19,18 +19,15 @@ func (k kindSentinel) Error() string {
 var (
 	ErrConfig          error = kindSentinel(KindConfig)
 	ErrDB              error = kindSentinel(KindDB)
-	ErrSlack           error = kindSentinel(KindSlack)
 	ErrMCP             error = kindSentinel(KindMCP)
 	ErrDiff            error = kindSentinel(KindDiff)
 	ErrPolicy          error = kindSentinel(KindPolicy)
-	ErrIPC             error = kindSentinel(KindIPC)
 	ErrPathViolation   error = kindSentinel(KindPathViolation)
 	ErrPatchConflict   error = kindSentinel(KindPatchConflict)
 	ErrNotFound        error = kindSentinel(KindNotFound)
 	ErrUnauthorized    error = kindSentinel(KindUnauthorized)
 	ErrAlreadyConsumed error = kindSentinel(KindAlreadyConsumed)
 	ErrIO              error = kindSentinel(KindIO)
-	ErrACP             error = kindSentinel(KindACP)
 )
 
 // Is reports whether target is the kind sentinel matching e's kind. It
