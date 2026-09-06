@@ -12,6 +12,7 @@
 package pathsafe
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -49,7 +50,16 @@ func NewRoot(dir string) (Root, error) {
 		return Root{}, apperr.Wrapf(apperr.KindPathViolation, err, "workspace root invalid: %s", err.Error())
 	}
 
-	return Root{path: stripUNCPrefix(resolved)}, nil
+	canonical := stripUNCPrefix(resolved)
+	info, err := os.Stat(canonical)
+	if err != nil {
+		return Root{}, apperr.Wrapf(apperr.KindPathViolation, err, "workspace root invalid: %s", err.Error())
+	}
+	if !info.IsDir() {
+		return Root{}, apperr.Newf(apperr.KindPathViolation, "workspace root invalid: not a directory: %s", canonical)
+	}
+
+	return Root{path: canonical}, nil
 }
 
 // stripUNCPrefix removes a leading \\?\ prefix, which Go's EvalSymlinks

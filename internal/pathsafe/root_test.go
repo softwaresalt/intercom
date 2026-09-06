@@ -82,6 +82,39 @@ func TestNewRootRejectsFilePathAsWorkspaceRoot(t *testing.T) {
 	}
 }
 
+// TestNewRootAcceptsSymlinkToDirectory verifies NewRoot resolves symlinks
+// before checking the canonical target type, so a symlink to a directory is
+// accepted as a valid workspace root.
+func TestNewRootAcceptsSymlinkToDirectory(t *testing.T) {
+	if err := canSymlink(t); err != nil {
+		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
+	}
+
+	dir := t.TempDir()
+	targetDir := filepath.Join(dir, "target")
+	if err := os.Mkdir(targetDir, 0o755); err != nil {
+		t.Fatalf("failed to create target directory: %v", err)
+	}
+	linkDir := filepath.Join(dir, "link")
+	if err := os.Symlink(targetDir, linkDir); err != nil {
+		t.Fatalf("failed to create directory symlink: %v", err)
+	}
+
+	root, err := NewRoot(linkDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", linkDir, err)
+	}
+
+	resolved, err := filepath.EvalSymlinks(linkDir)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q) returned error: %v", linkDir, err)
+	}
+	want := stripUNCPrefix(resolved)
+	if root.Path() != want {
+		t.Fatalf("Root.Path() = %q, want %q", root.Path(), want)
+	}
+}
+
 // TestNewRootIsIdempotent verifies NewRoot(r.Path()) yields the same path.
 func TestNewRootIsIdempotent(t *testing.T) {
 	dir := t.TempDir()
