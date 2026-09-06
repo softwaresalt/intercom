@@ -41,12 +41,12 @@ func (r Root) Path() string {
 func NewRoot(dir string) (Root, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return Root{}, apperr.New(apperr.KindPathViolation, "workspace root invalid: "+err.Error())
+		return Root{}, apperr.Wrapf(apperr.KindPathViolation, err, "workspace root invalid: %s", err.Error())
 	}
 
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil {
-		return Root{}, apperr.New(apperr.KindPathViolation, "workspace root invalid: "+err.Error())
+		return Root{}, apperr.Wrapf(apperr.KindPathViolation, err, "workspace root invalid: %s", err.Error())
 	}
 
 	return Root{path: stripUNCPrefix(resolved)}, nil
