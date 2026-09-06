@@ -33,6 +33,8 @@ cd "$ROOT"
 scan_with_mode() {
   local mode="$1"
   "$PYTHON_BIN" - "$mode" <<'PY'
+from __future__ import annotations
+
 import json
 import re
 import subprocess
