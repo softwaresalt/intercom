@@ -1,3 +1,23 @@
+---
+title: "Post-merge closure: 008-S -- apperr taxonomy correction (PR #24)"
+description: "Operational closure artifact for shipment 008-S / feature 009-F"
+status: "complete"
+tags:
+  - "closure"
+  - "008-S"
+  - "009-F"
+  - "post-merge"
+date: 2026-09-06
+mode: post-merge
+shipment: 008-S
+feature: 009-F
+pr: 24
+merge_commit_sha: 1334c5b14958a4755ee590d24f580b4b43701dec
+compaction_status: done
+closure_status: READY
+releasability: READY
+---
+
 # 2026-09-06 — 008-S / 009-F apperr taxonomy correction — closure
 
 - shipment: 008-S
