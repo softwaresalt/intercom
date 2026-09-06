@@ -28,16 +28,12 @@ func sentinelForKind(k Kind) error {
 		return ErrConfig
 	case KindDB:
 		return ErrDB
-	case KindSlack:
-		return ErrSlack
 	case KindMCP:
 		return ErrMCP
 	case KindDiff:
 		return ErrDiff
 	case KindPolicy:
 		return ErrPolicy
-	case KindIPC:
-		return ErrIPC
 	case KindPathViolation:
 		return ErrPathViolation
 	case KindPatchConflict:
@@ -50,14 +46,12 @@ func sentinelForKind(k Kind) error {
 		return ErrAlreadyConsumed
 	case KindIO:
 		return ErrIO
-	case KindACP:
-		return ErrACP
 	default:
 		return nil
 	}
 }
 
-// TestAllSentinelsMatchOwnKindOnly is a table test asserting each of the 14
+// TestAllSentinelsMatchOwnKindOnly is a table test asserting each of the 11
 // sentinels matches its own kind and no other.
 func TestAllSentinelsMatchOwnKindOnly(t *testing.T) {
 	for _, k := range allKinds {

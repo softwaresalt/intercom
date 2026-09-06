@@ -8,6 +8,13 @@ linters:
   enable:
     - unconvert
     - unparam
+  settings:
+    govet:
+      settings:
+        printf:
+          funcs:
+            - github.com/softwaresalt/intercom-go/internal/apperr.Newf
+            - github.com/softwaresalt/intercom-go/internal/apperr.Wrapf
 
 output:
   formats:
