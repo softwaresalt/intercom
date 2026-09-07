@@ -433,7 +433,28 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
+          # PYTHON PIN COUPLING (011.013-T): must stay within 3.12 --
+          # .github/constraints/pip-bootstrap-lock.txt and
+          # autoharness-lock.txt are both resolved for cp312 /
+          # manylinux_2_17_x86_64. Bumping this without re-resolving both
+          # lock files breaks the install with a hash mismatch
+          # (fail-closed, never silently wrong).
           python-version: '3.12'
+      - name: Bootstrap pip/setuptools/wheel (hash-pinned, --require-hashes)
+        # 011.013-T (resolves AFE0E95C): pins the INSTALLER TOOLCHAIN
+        # itself, not just autoharness's installed closure -- pip,
+        # setuptools, wheel, and the Python patch version were previously
+        # ambient/unverified on the runner. Runs BEFORE the autoharness
+        # install below (bootstrap ordering is load-bearing: the hardened
+        # installer must be the one PERFORMING the hardened install).
+        # --no-deps: this lock file is the complete, self-contained
+        # bootstrap set with no further transitive resolution needed.
+        # See .github/constraints/pip-bootstrap-lock.txt for the trust-root
+        # statement, Python pin coupling, and bump procedure. This step is
+        # NEVER covered by the advisory continue-on-error toggle below --
+        # a hash mismatch or install failure always fails the job for real.
+        run: |
+          pip install --require-hashes --only-binary=:all: --no-deps -r .github/constraints/pip-bootstrap-lock.txt
       - name: Install autoharness (hash-pinned, --require-hashes)
         # Hermetic install: every package in the full transitive closure is
         # pinned to an exact version AND verified against a committed

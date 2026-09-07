@@ -4,6 +4,14 @@
 # (.github/workflows/ci.yml, topology-check job). Resolves stash EFFAA358
 # (007.001-T / U1).
 #
+# PYTHON PIN COUPLING (011.013-T, recorded here and in
+# .github/constraints/pip-bootstrap-lock.txt): resolved for cp312 /
+# manylinux_2_17_x86_64. The `setup-python` version pin in ci.yml's
+# topology-check job must stay within 3.12 for these hashes (AND
+# pip-bootstrap-lock.txt's) to remain satisfiable. pip-bootstrap-lock.txt
+# installs the pip/setuptools/wheel installer toolchain itself BEFORE this
+# file's install runs -- bootstrap ordering is load-bearing.
+#
 # WHY THIS EXISTS: the previous `pip install autoharness` was a FLOATING,
 # unhashed install. It re-resolved the latest release and its transitive
 # dependency graph on every CI run with no verification that the fetched
