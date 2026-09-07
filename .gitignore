@@ -35,3 +35,12 @@ go.work.sum
 dist/
 .env.*
 config.toml
+
+# Preserve-only machine-local paths (011.001-T, resolves 9F9A3CB2 item: confirmed
+# NOT previously ignored). These carry per-machine command/environment payloads
+# and are never intended for commit; ignored individually (not directory-wide) so
+# unrelated content under the same parent directories remains trackable.
+.claude/instructions.md
+.github/copilot/settings.local.json
+.autoharness/gates/pipeline-topology-force-audit.log
+.backlogit/hooks_queue.jsonl
