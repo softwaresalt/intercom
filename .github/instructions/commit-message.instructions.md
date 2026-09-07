@@ -28,7 +28,7 @@ Types MUST be one of the following:
 
 Scopes MUST be one of the following:
 
-tui, server, hub, acp, tunnel, session, config, ci, docs
+tui, server, hub, tunnel, session, config, ci, docs
 
 ## Description
 

@@ -44,13 +44,13 @@ func TestS3CancellationShutdown(t *testing.T) {
 		})
 	}
 
-	harness := NewPermissionHarness(func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
+	harness := NewPermissionHarness(allowlistedDecide(t, "echo B4TEST", func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
 		if atomic.CompareAndSwapInt32(&enteredOnce, 0, 1) {
 			close(handlerEntered)
 		}
 		<-blockCh // block until releaseHandler runs -- simulates an already-blocked handler
 		return &rpc.PermissionDecisionApproveOnce{}
-	})
+	}))
 
 	client := newProbeClientManualLifecycle(t, ctx)
 	t.Cleanup(func() { stopLadder(client) })

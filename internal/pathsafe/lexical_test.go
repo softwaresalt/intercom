@@ -85,6 +85,56 @@ func TestNormalizePreservesSafeInteriorTraversal(t *testing.T) {
 	}
 }
 
+// TestNormalizeTreatsUnexpandedEnvVarSegmentLiterally pins 011.008-T
+// (resolves 8472E0A1 item (g)): a candidate segment shaped like an
+// unexpanded environment-variable reference ("$VAR" or "%VAR%") is treated
+// as an ordinary, literal path component -- never substituted with an
+// environment value. This proves normalize performs no expansion of any
+// kind; expansion (if wanted) is entirely the caller's responsibility.
+func TestNormalizeTreatsUnexpandedEnvVarSegmentLiterally(t *testing.T) {
+	cases := []string{
+		"$VAR/file.txt",
+		"%VAR%/file.txt",
+		"${VAR}/file.txt",
+	}
+	for _, input := range cases {
+		components, err := normalize(input)
+		if err != nil {
+			t.Fatalf("normalize(%q) returned unexpected error: %v", input, err)
+		}
+		if len(components) == 0 {
+			t.Fatalf("normalize(%q) = no components, want at least one literal component", input)
+		}
+		first := components[0]
+		if !strings.ContainsAny(first, "$%") {
+			t.Fatalf("normalize(%q) first component = %q, want the literal, unexpanded env-var-shaped segment preserved verbatim", input, first)
+		}
+	}
+}
+
+// TestNormalizeAcceptsLegitimateDollarAndPercentFilenames is the paired
+// positive test for 011.008-T: real filenames containing '$' or '%' (both
+// legal on their native platforms -- e.g. Windows' own top-level
+// "$Recycle.Bin" directory, and '%' as a legal POSIX filename byte) must
+// still validate successfully. No refusal class is added by 011.008-T (J2:
+// zero verdict change).
+func TestNormalizeAcceptsLegitimateDollarAndPercentFilenames(t *testing.T) {
+	cases := []string{
+		"$Recycle.Bin/desktop.ini",
+		"$WinREAgent/config",
+		"reports/100%-complete.txt",
+	}
+	for _, input := range cases {
+		components, err := normalize(input)
+		if err != nil {
+			t.Fatalf("normalize(%q) returned unexpected error: %v, want acceptance (no refusal class added)", input, err)
+		}
+		if len(components) == 0 {
+			t.Fatalf("normalize(%q) = no components, want a valid component list", input)
+		}
+	}
+}
+
 func TestContainsDotDotSegment(t *testing.T) {
 	cases := []struct {
 		name string

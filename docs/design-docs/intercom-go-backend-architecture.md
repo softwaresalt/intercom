@@ -700,6 +700,62 @@ Because each process is workspace-scoped, evaluate
 **does not exist**. Always pass a deadline-bearing `context`. Trust
 signatures over prose.
 
+### 7.6 C3 exit criteria and tracked divergences (011.020-T)
+
+**C3 phase entry criteria (explicit).** Before C3 (the real production SDK
+adapter) begins, both of the following must be true:
+
+* **`internal/copilotprobe` is deleted.** It is a disposable phase-C2
+  proving spike (see its own package doc); C3 supersedes it with the real
+  anti-corruption-layer adapter described in §7.1. Its deletion is a C3
+  entry action, not a C3-owned residual to carry forward.
+* **The `depguard` Copilot-SDK-boundary allowlist is tightened.** The
+  `copilot-sdk-boundary` rule in `.golangci.yml` currently exempts
+  `internal/copilotprobe/*.go` specifically because that package is the
+  probe's own non-test, genuine SDK importer (see
+  `internal/copilotprobe/client.go`'s doc comment). Once C3's real adapter
+  package exists and `internal/copilotprobe` is deleted, the allowlist
+  must be re-pointed at the real adapter package (never left pointing at a
+  deleted directory, and never widened to `internal/**`).
+
+**Live-SDK test opt-in convention survives copilotprobe's deletion.** The
+`INTERCOM_LIVE_SDK_TESTS` default-deny opt-in gate (011.002-T, resolves
+`A0A2D049`) is a workspace-wide testing CONVENTION, not a
+`copilotprobe`-owned mechanism: any future package that makes real Copilot
+SDK connections in its tests (including C3's own adapter) is expected to
+gate those tests behind the same environment variable and the same
+default-deny semantics (`strconv.ParseBool`, deny on parse error). This
+convention is recorded here -- a package-independent, durable location --
+specifically so it is not lost when `internal/copilotprobe` (today's only
+consumer) is deleted at C3.
+
+**Tracked divergences (recorded, not fixed -- from 011.008-T's dropped
+items).** Three findings from `8472E0A1` were dropped from 011.008-T's
+scope as over-reach or unfalsifiable, and are recorded here instead as
+deliberate, tracked divergences with no fix obligation attached:
+
+* **`hasWindowsDrivePrefix` (`internal/config/validate.go`) is
+  deliberately NOT GOOS-gated.** `internal/pathsafe.isRooted` IS
+  GOOS-gated for its leading-backslash check (see `pathsafe.go`'s own doc
+  comment), but `hasWindowsDrivePrefix` guards PORTABLE config text
+  (`copilot.cli_path`), which may be authored on a different platform than
+  the one that loads it. GOOS-gating it would make `cli_path = "C:evil"`
+  *accepted* on Linux -- a verdict LOOSENING, not a no-op refactor (J11:
+  no `Validate()` verdict becomes more permissive on any GOOS). The
+  originating finding itself calls this "an inconsistency, not a defect."
+* **`os.Stat` argument-order note.** Call-site argument ordering around
+  `os.Stat` in `internal/pathsafe` was flagged as a minor stylistic
+  inconsistency in the original finding. No functional defect was
+  identified, and no fix is authorized by this note -- recorded so it is
+  not silently re-discovered as new.
+* **`internal/pathsafe/lexical.go` file-organization note.** The
+  originating finding suggested `lexical.go`'s contents might be
+  reorganized (e.g. split or relocated) for readability. No definition of
+  done was ever specified for this suggestion, and reorganizing exported
+  API surface without one risks an unbounded, unreviewable diff -- deferred
+  indefinitely, recorded here as a documented, tracked divergence rather
+  than an open action item.
+
 ---
 
 ## 8. Configuration Impact

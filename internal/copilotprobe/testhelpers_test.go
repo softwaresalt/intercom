@@ -2,11 +2,72 @@ package copilotprobe
 
 import (
 	"context"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
 )
+
+// liveSDKTestsEnvVar is the opt-in gate for tests in this package that make
+// real Copilot SDK connections (which may consume ambient credentials and
+// execute real shell commands via the probed permission handler). See
+// 011.002-T (resolves A0A2D049).
+const liveSDKTestsEnvVar = "INTERCOM_LIVE_SDK_TESTS"
+
+// liveSDKTestsDenied is a package-level denial flag set once by TestMain.
+// It defaults to true (denied) so that any test executed before TestMain
+// hypothetically ran would still observe the fail-closed value.
+var liveSDKTestsDenied = true
+
+// liveSDKTestsAllowed implements default-deny value semantics for
+// INTERCOM_LIVE_SDK_TESTS: enabled only when raw parses as boolean true via
+// strconv.ParseBool (which accepts the exact string "1" among others).
+// "0", "false", "off", the empty string, and any unparseable value all deny
+// -- there is no fail-open path on a parse error.
+func liveSDKTestsAllowed(raw string) bool {
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false
+	}
+	return v
+}
+
+// credentialEnvVarsToSanitize lists ambient credential environment variables
+// that must never silently authorize a live Copilot SDK connection when the
+// opt-in gate is denied.
+var credentialEnvVarsToSanitize = []string{
+	"GITHUB_TOKEN",
+	"GITHUB_PERSONAL_ACCESS_TOKEN",
+	"COPILOT_TOKEN",
+	"GH_TOKEN",
+}
+
+// TestMain is the fail-closed backstop (011.002-T). When
+// INTERCOM_LIVE_SDK_TESTS is not enabled per liveSDKTestsAllowed, ambient
+// credential environment variables are sanitized from this test binary's
+// own process environment and liveSDKTestsDenied is set so per-test helpers
+// (newProbeClient / newProbeClientManualLifecycle) refuse to start a real
+// SDK connection. This backstop deliberately still calls m.Run() in every
+// case -- it must never skip or exit the whole package, which would mask
+// regressions and block its own verification test from executing.
+func TestMain(m *testing.M) {
+	if liveSDKTestsAllowed(os.Getenv(liveSDKTestsEnvVar)) {
+		liveSDKTestsDenied = false
+	} else {
+		liveSDKTestsDenied = true
+		for _, key := range credentialEnvVarsToSanitize {
+			// os.Unsetenv's error return is intentionally discarded here:
+			// per its own documentation it "unsets a single environment
+			// variable" and returns a non-nil error only on invalid input
+			// (never on "already unset"), and every key in
+			// credentialEnvVarsToSanitize is a fixed, valid literal.
+			_ = os.Unsetenv(key)
+		}
+	}
+	os.Exit(m.Run())
+}
 
 // cleanupTimeout bounds every t.Cleanup teardown call in this package so a
 // hung Stop()/Disconnect() (exactly the deadlock scenario B4/S3 probes for)
@@ -72,6 +133,9 @@ func newProbeClient(t *testing.T, ctx context.Context) *copilot.Client {
 // itself exactly once.
 func newProbeClientManualLifecycle(t *testing.T, ctx context.Context) *copilot.Client {
 	t.Helper()
+	if liveSDKTestsDenied {
+		t.Skipf("live Copilot SDK tests disabled (default-deny): set %s=1 to opt in", liveSDKTestsEnvVar)
+	}
 	client := NewClient(&copilot.ClientOptions{WorkingDirectory: t.TempDir()})
 	if err := client.Start(ctx); err != nil {
 		t.Skipf("copilot SDK runtime unavailable, recording UNPROVEN: Start() failed: %v", err)

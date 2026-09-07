@@ -35,3 +35,90 @@ go.work.sum
 dist/
 .env.*
 config.toml
+
+# Preserve-only machine-local paths (011.001-T, resolves 9F9A3CB2 item: confirmed
+# NOT previously ignored). These carry per-machine command/environment payloads
+# and are never intended for commit; ignored individually (not directory-wide) so
+# unrelated content under the same parent directories remains trackable.
+.claude/instructions.md
+.github/copilot/settings.local.json
+.autoharness/gates/pipeline-topology-force-audit.log
+.backlogit/hooks_queue.jsonl
+
+# Copilot tracking, Test output and PR comments
+.test-output.txt
+.test-out.txt
+*.pr-comments.json
+.pr-comments.json
+.copilot-tracking/pr/**/pr-reference.xml
+*.code-workspace
+
+# Directories
+bin/
+logs/
+.vscode/
+.copilot/
+.mcp.json
+
+# Local environment files (secrets) — never commit. Only .env.example may be tracked.
+.env
+!.env.example
+
+# Plugin .mcp.json is intentionally tracked (distinct from local dev config).
+# 011.015-T credential check: if plugin/.mcp.json is ever actually tracked,
+# it MUST reference credentials by ${VAR} indirection only (never a literal
+# secret value) -- the existing CI `security` job's unconditional
+# `gitleaks detect --source . --no-git -v` scan (which covers every file
+# present on disk, respecting no ignore rules under --no-git) is the
+# durable, standing safeguard over this and every other newly-un-ignored
+# path here; neither plugin/.mcp.json nor .env.example exists in this
+# repo as of this commit, so there is nothing to scan yet.
+!plugin/.mcp.json
+
+# Ephemeral SQLite databases (always regenerated; never commit)
+backlogit.db
+.backlogit/backlogit.db
+.backlogit/backlogit.db-shm
+.backlogit/backlogit.db-wal
+.backlogit/checkpoints/
+.backlogit/runtime/
+
+# Runtime state (per-consumer checkpoints, not committed)
+.autoharness/staging/
+.autoharness/backups/
+prompt.md
+
+# Advisory file locks (autoharness concurrency protocol)
+.*.lock
+
+# Machine-local telemetry harvest checkpoint (changes per machine/run)
+.backlogit/.telemetry-checkpoint.json
+
+# Engram runtime data (keep templates/, registry.yaml, .version).
+# 011.015-T effect assertion (NOT assumed): the four negations immediately
+# below are INERT under git semantics -- git cannot re-include a file
+# whose parent directory is already excluded by ".engram/" above. Verified
+# via `git check-ignore -v` for each: all four resolve to the ".engram/"
+# directory-pattern match (line above), never their own negation line, so
+# .version/.workspace-id/config.toml/registry.yaml under .engram/ remain
+# IGNORED despite these lines existing. Recorded here rather than shipping
+# a silently-wrong ignore policy as "validated".
+.engram/
+!.engram/.version
+!.engram/.workspace-id
+!.engram/config.toml
+!.engram/registry.yaml
+
+# graphtor-docs — managed by graphtor-docs install
+.graphtor/
+diff.txt
+
+# Ephemeral depguard fixture directories created transiently by
+# scripts/check-depguard-fixtures.sh and removed by its own trap cleanup;
+# ignored as a belt-and-suspenders control so an abnormal termination that
+# bypasses shell trap handling (SIGKILL, CI runner hard-stop) can never
+# leave these deliberately-non-compliant fixture files stageable via a
+# careless `git add -A` (security review + constitution review finding,
+# shipment 010-S).
+internal/depguardfixture/
+internal/copilotprobe2/

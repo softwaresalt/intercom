@@ -1,0 +1,19 @@
+// Fixture template for scripts/check-depguard-fixtures.sh (011.014-T,
+// resolves 309FBF5A(ii)). This file is copied at runtime into
+// internal/copilotprobe2/violation.go -- a SIBLING directory name to the
+// real, allowlisted internal/copilotprobe -- to prove the allowlist's
+// `files` pattern is anchored to the exact directory and has NOT silently
+// widened to match any directory whose name merely starts with
+// "copilotprobe". golangci-lint must exit non-zero against this file too.
+// This file's own extension is .go.tmpl, which the Go toolchain ignores.
+package copilotprobe2
+
+import (
+	copilot "github.com/github/copilot-sdk/go"
+)
+
+// UseSDKInSiblingDirectory exists only so the import above is used; this
+// function is never called by anything real.
+func UseSDKInSiblingDirectory() *copilot.Client {
+	return copilot.NewClient(nil)
+}

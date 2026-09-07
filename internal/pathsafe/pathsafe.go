@@ -48,6 +48,30 @@ const (
 // post-Clean walk therefore yields the same final stack as the oracle's
 // pre-Clean component walk, and for the same reason rather than by
 // coincidence (finding CORR-3).
+//
+// Candidates MUST be raw, unexpanded strings (011.008-T, resolves
+// 8472E0A1 item (g)). normalize performs NO environment-variable or
+// shell-style expansion of any kind: a segment such as "$VAR" or "%VAR%"
+// is treated as a literal, ordinary path component — a directory or file
+// LITERALLY named "$VAR" — never substituted with an environment value.
+// Expansion, if a caller wants it, is entirely the CALLER's
+// responsibility to perform (or not) BEFORE calling normalize/Resolve.
+//
+// This is deliberately NOT tightened into a refusal of "$"/"%"-containing
+// segments: a literal, unexpanded "$VAR" segment resolves INSIDE the
+// root (it is just an ordinarily-named directory), so it is already
+// Principle IV-compliant on its own. Refusing such segments would also
+// be a false-positive hazard against real filenames — Windows ships
+// "$Recycle.Bin", "$WinREAgent", and "$SysReset" as legitimate top-level
+// directories, and '%' is a legal POSIX filename byte.
+//
+// RESIDUAL (Constitution IV, named and tracked, not silently absorbed):
+// the actual expansion vector this package cannot control is a CALLER
+// that expands a candidate (e.g. via os.ExpandEnv or shell interpolation)
+// BEFORE passing it to normalize/Resolve. pathsafe has no visibility into
+// that expansion and cannot refuse it retroactively. Callers that accept
+// externally-influenced path input and perform their own expansion are
+// responsible for their own containment re-validation after expanding.
 func normalize(candidate string) ([]string, error) {
 	if filepath.VolumeName(candidate) != "" || filepath.IsAbs(candidate) || isRooted(candidate) {
 		return nil, apperr.New(apperr.KindPathViolation, absMsg)
@@ -217,10 +241,20 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 		}
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
-			// Reached the filesystem root without finding an existing
-			// ancestor. resolved is already asserted to be inside root
-			// (which itself exists), so this is unreachable in practice;
-			// guarded defensively to avoid an infinite loop.
+			// DOCUMENTED-UNREACHABLE, coverage-excluded (011.006-T item
+			// (e), resolves 8472E0A1 item (e)): reached the filesystem
+			// root without finding an existing ancestor. resolved is
+			// already asserted (by Root.Resolve's caller-side hasPathPrefix
+			// check before this function is ever invoked) to be inside
+			// root, and root itself is required by NewRoot to already
+			// exist and be a directory -- so walking parent directories
+			// from inside an existing root must find root itself (or a
+			// deeper existing ancestor) before ever reaching the
+			// filesystem root. Requiring a "fails before, passes after"
+			// test here is unsatisfiable without an injectable filesystem
+			// seam, which would be a production behavior change inside a
+			// tests-only unit (Width Isolation). Guarded defensively only
+			// to avoid an infinite loop, never exercised by real input.
 			return resolved, nil
 		}
 		ancestor = parent

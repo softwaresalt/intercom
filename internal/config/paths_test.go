@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -32,6 +33,36 @@ func TestValidateRule6ValidWorkspacePathCanonicalizes(t *testing.T) {
 	}
 	if !filepath.IsAbs(cfg.Workspaces[0].Path) {
 		t.Errorf("Workspaces[0].Path = %q, want an absolute canonical path", cfg.Workspaces[0].Path)
+	}
+}
+
+// TestValidateRule6WorkspacePathRejectsRegularFile (011.006-T item (c),
+// resolves 8472E0A1 item (c)) pins rule 6's integration WIRING to
+// pathsafe.NewRoot at the Validate() layer: a workspace path that points at
+// an existing REGULAR FILE (not a directory) must be rejected. This is
+// deliberately NOT a duplicate of pathsafe's own
+// TestNewRootRejectsFilePathAsWorkspaceRoot (root_test.go), which pins
+// NewRoot's own behavior in isolation -- this test instead pins that
+// Validate() actually calls NewRoot for each non-empty [[workspace]].path
+// and correctly propagates its rejection through the config-layer error
+// message, rather than silently accepting the file.
+func TestValidateRule6WorkspacePathRejectsRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "not-a-directory.txt")
+	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create file workspace-path candidate: %v", err)
+	}
+
+	cfg := newValidBaseConfig(t)
+	cfg.Workspaces = []WorkspaceMapping{{WorkspaceID: "W1", Path: filePath}}
+
+	_, err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate returned nil error for a workspace path pointing at a regular file")
+	}
+	want := "config: workspace path invalid for workspace_id 'W1': "
+	if got := err.Error(); len(got) < len(want) || got[:len(want)] != want {
+		t.Errorf("Validate error = %q, want prefix %q", got, want)
 	}
 }
 

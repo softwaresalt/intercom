@@ -38,13 +38,13 @@ func TestSQBReentrancyAndSQCDispatchIndependence(t *testing.T) {
 	// early exit.
 	defer releaseHandler()
 
-	harness := NewPermissionHarness(func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
+	harness := NewPermissionHarness(allowlistedDecide(t, "echo B5TEST", func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
 		if atomic.CompareAndSwapInt32(&enteredOnce, 0, 1) {
 			close(handlerEntered)
 		}
 		<-blockCh
 		return &rpc.PermissionDecisionApproveOnce{}
-	})
+	}))
 
 	client := newProbeClient(t, ctx)
 	session := newProbeSession(t, ctx, client, &copilot.SessionConfig{
