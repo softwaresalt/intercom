@@ -282,9 +282,11 @@ jobs:
   # is fetched on THIS JOB ONLY so the base SHA resolves; no other job's
   # checkout is slowed. Fails the job on a deletion or reorder (fail-closed
   # per scripts/check-gitignore-append-only.sh AC-4); an append-only PR
-  # passes. Resolves stash F7C6420D (part 3 of 3).
+  # passes. Resolves stash F7C6420D (part 3 of 3). Also runs the
+  # un-ignore regression checker (011.012-T, resolves 11ECB954) -- same
+  # pull_request-only / full-history rationale applies to both checks.
   gitignore-append-only:
-    name: gitignore append-only (I6)
+    name: gitignore append-only + un-ignore regression (I6)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -308,6 +310,18 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/check-gitignore-append-only.sh \
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref "${{ github.sha }}"
+      - name: Self-test the un-ignore regression checker's own logic
+        # 011.012-T (resolves 11ECB954): same regression-guard rationale as
+        # the append-only self-test above -- runs the landing precondition
+        # (every denylist entry ignored at HEAD) and both synthetic
+        # accept/reject scenarios before the real invariant check below.
+        run: bash scripts/check-unignore-regression.sh --self-test
+      - name: Check un-ignore regression (behavioural differential)
+        run: |
+          set -euo pipefail
+          bash scripts/check-unignore-regression.sh \
             --base-ref "${{ github.event.pull_request.base.sha }}" \
             --head-ref "${{ github.sha }}"
 
