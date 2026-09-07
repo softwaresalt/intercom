@@ -3,6 +3,7 @@ package pathsafe
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -22,13 +23,38 @@ func canSymlink(t *testing.T) error {
 	return os.Symlink(target, link)
 }
 
+// requireSymlinkOrFailClosed is the 011.010-T durable assertion: on Windows,
+// a symlink-dependent test's unmet precondition must FAIL rather than skip,
+// except for the single enumerated privilege case (ERROR_PRIVILEGE_NOT_HELD
+// -- junction/symlink creation requiring elevation or Developer Mode), which
+// still skips with an explicit reason. This replaces a one-time log
+// inspection with a mechanically enforced assertion: any other Windows
+// failure reason (a genuinely broken environment, not merely an unprivileged
+// one) now fails the test instead of silently skipping it. Non-Windows
+// platforms are unaffected by this tightening and keep the original
+// unconditional skip.
+func requireSymlinkOrFailClosed(t *testing.T) {
+	t.Helper()
+	err := canSymlink(t)
+	if err == nil {
+		return
+	}
+	if runtime.GOOS != "windows" {
+		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
+		return
+	}
+	if isSymlinkPrivilegeError(err) {
+		t.Skipf("skipping (enumerated privilege case, 011.010-T): ERROR_PRIVILEGE_NOT_HELD -- SeCreateSymbolicLinkPrivilege not held; enable Developer Mode or run elevated: %v", err)
+		return
+	}
+	t.Fatalf("symlink precondition failed on windows for a reason OTHER than the enumerated privilege case (011.010-T durable assertion demands failure, not a silent skip): %v", err)
+}
+
 // TestResolveRejectsSymlinkEscapingRoot verifies a symlink inside the root
 // whose target is outside the root is rejected with
 // "symlink target escapes workspace".
 func TestResolveRejectsSymlinkEscapingRoot(t *testing.T) {
-	if err := canSymlink(t); err != nil {
-		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
-	}
+	requireSymlinkOrFailClosed(t)
 
 	outsideDir := t.TempDir()
 	outsideTarget := filepath.Join(outsideDir, "secret.txt")
@@ -59,9 +85,7 @@ func TestResolveRejectsSymlinkEscapingRoot(t *testing.T) {
 // TestResolveAllowsSymlinkInsideRoot verifies a symlink inside the root
 // whose target is also inside the root resolves successfully.
 func TestResolveAllowsSymlinkInsideRoot(t *testing.T) {
-	if err := canSymlink(t); err != nil {
-		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
-	}
+	requireSymlinkOrFailClosed(t)
 
 	rootDir := t.TempDir()
 	root, err := NewRoot(rootDir)
@@ -91,9 +115,7 @@ func TestResolveAllowsSymlinkInsideRoot(t *testing.T) {
 // "symlink target escapes workspace" rather than silently falling into the
 // non-existent-leaf accept branch.
 func TestResolveRejectsSymlinkedIntermediateDirEscapingRoot(t *testing.T) {
-	if err := canSymlink(t); err != nil {
-		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
-	}
+	requireSymlinkOrFailClosed(t)
 
 	outsideDir := t.TempDir()
 
@@ -123,9 +145,7 @@ func TestResolveRejectsSymlinkedIntermediateDirEscapingRoot(t *testing.T) {
 // lexical-only accept branch for a dangling symlink at the final path
 // component.
 func TestResolveAllowsDanglingSymlinkAtFinalComponent(t *testing.T) {
-	if err := canSymlink(t); err != nil {
-		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
-	}
+	requireSymlinkOrFailClosed(t)
 
 	rootDir := t.TempDir()
 	root, err := NewRoot(rootDir)

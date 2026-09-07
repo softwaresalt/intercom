@@ -86,9 +86,7 @@ func TestNewRootRejectsFilePathAsWorkspaceRoot(t *testing.T) {
 // before checking the canonical target type, so a symlink to a directory is
 // accepted as a valid workspace root.
 func TestNewRootAcceptsSymlinkToDirectory(t *testing.T) {
-	if err := canSymlink(t); err != nil {
-		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
-	}
+	requireSymlinkOrFailClosed(t)
 
 	dir := t.TempDir()
 	targetDir := filepath.Join(dir, "target")
