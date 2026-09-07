@@ -206,6 +206,8 @@ jobs:
         run: bash scripts/check-retired-architecture.sh
       - name: Run retired-architecture self-test
         run: bash scripts/check-retired-architecture.sh --self-test
+      - name: Run write-path-precondition self-test (011.004-T)
+        run: bash scripts/check-write-path-precondition.sh --self-test
       - name: Install goimports (pinned)
         run: go install golang.org/x/tools/cmd/goimports@v0.49.0
       - name: gofmt
