@@ -8,6 +8,7 @@ linters:
   enable:
     - unconvert
     - unparam
+    - depguard
   settings:
     govet:
       settings:
@@ -15,6 +16,41 @@ linters:
           funcs:
             - github.com/softwaresalt/intercom-go/internal/apperr.Newf
             - github.com/softwaresalt/intercom-go/internal/apperr.Wrapf
+    depguard:
+      rules:
+        # 011.014-T (resolves 309FBF5A(ii)): the credential-consuming,
+        # shell-executing Copilot SDK surface (NewClient, Client.Start,
+        # CreateSession, SessionConfig.OnPermissionRequest) lives in the
+        # ROOT package github.com/github/copilot-sdk/go, imported by
+        # client.go, fixture.go, permission.go, and every probe test in
+        # internal/copilotprobe. Denying only the /rpc subpackage (as a
+        # prior revision did) matches zero files and ships as false
+        # assurance. The root-prefix deny below subsumes /rpc.
+        #
+        # The allowlist exempts ONLY internal/copilotprobe via depguard's
+        # negated, absolute-path-anchored `files` form -- depguard
+        # evaluates `files` against absolute paths, so a bare
+        # "internal/copilotprobe/*.go" pattern (no leading "**/") would
+        # never match and would silently do nothing.
+        #
+        # Removal trigger: C3 (copilotprobe deletion + this allowlist's
+        # tightening/removal, per docs/plans's C3 phase entry). Ownership:
+        # depguard owns Go package-import boundaries; scripts/
+        # check-retired-architecture.sh owns retired-architecture/path-
+        # surface contamination -- the two are deliberately non-
+        # overlapping gates.
+        copilot-sdk-boundary:
+          deny:
+            - pkg: github.com/github/copilot-sdk/go
+              desc: >-
+                github.com/github/copilot-sdk/go (and its /rpc subpackage)
+                is confined to internal/copilotprobe, a disposable C2
+                proving spike. Production code must not import the
+                Copilot SDK directly outside that package. See
+                internal/copilotprobe's package doc and 011.014-T.
+          files:
+            - "$all"
+            - "!**/internal/copilotprobe/*.go"
 
 output:
   formats:

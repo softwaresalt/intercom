@@ -58,7 +58,12 @@ func TestMain(m *testing.M) {
 	} else {
 		liveSDKTestsDenied = true
 		for _, key := range credentialEnvVarsToSanitize {
-			os.Unsetenv(key)
+			// os.Unsetenv's error return is intentionally discarded here:
+			// per its own documentation it "unsets a single environment
+			// variable" and returns a non-nil error only on invalid input
+			// (never on "already unset"), and every key in
+			// credentialEnvVarsToSanitize is a fixed, valid literal.
+			_ = os.Unsetenv(key)
 		}
 	}
 	os.Exit(m.Run())
