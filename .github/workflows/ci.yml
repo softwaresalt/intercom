@@ -60,6 +60,23 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Assert INTERCOM_LIVE_SDK_TESTS is not enabled in CI (011.002-T)
+        # The live-SDK opt-in gate (internal/copilotprobe) must never be set
+        # in any committed workflow file and must be unset in every job's
+        # runtime environment -- ambient credentials must never silently
+        # authorize a live Copilot SDK connection (and real shell execution)
+        # in CI. Resolves A0A2D049's CI-assertion acceptance criterion.
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.yml' --include='*.yaml' -n 'INTERCOM_LIVE_SDK_TESTS' .github/workflows/; then
+            echo "::error::INTERCOM_LIVE_SDK_TESTS must not appear in any committed workflow file"
+            exit 1
+          fi
+          if [ -n "${INTERCOM_LIVE_SDK_TESTS:-}" ]; then
+            echo "::error::INTERCOM_LIVE_SDK_TESTS must be unset in the CI runtime environment"
+            exit 1
+          fi
+          echo "INTERCOM_LIVE_SDK_TESTS is absent from workflow config and unset in this job's environment."
       - name: Detect code changes
         id: filter
         uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
