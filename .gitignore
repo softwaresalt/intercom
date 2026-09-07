@@ -44,3 +44,55 @@ config.toml
 .github/copilot/settings.local.json
 .autoharness/gates/pipeline-topology-force-audit.log
 .backlogit/hooks_queue.jsonl
+
+# Copilot tracking, Test output and PR comments
+.test-output.txt
+.test-out.txt
+*.pr-comments.json
+.pr-comments.json
+.copilot-tracking/pr/**/pr-reference.xml
+*.code-workspace
+
+# Directories
+bin/
+logs/
+.vscode/
+.copilot/
+.mcp.json
+
+# Local environment files (secrets) — never commit. Only .env.example may be tracked.
+.env
+!.env.example
+
+# Plugin .mcp.json is intentionally tracked (distinct from local dev config)
+!plugin/.mcp.json
+
+# Ephemeral SQLite databases (always regenerated; never commit)
+backlogit.db
+.backlogit/backlogit.db
+.backlogit/backlogit.db-shm
+.backlogit/backlogit.db-wal
+.backlogit/checkpoints/
+.backlogit/runtime/
+
+# Runtime state (per-consumer checkpoints, not committed)
+.autoharness/staging/
+.autoharness/backups/
+prompt.md
+
+# Advisory file locks (autoharness concurrency protocol)
+.*.lock
+
+# Machine-local telemetry harvest checkpoint (changes per machine/run)
+.backlogit/.telemetry-checkpoint.json
+
+# Engram runtime data (keep templates/, registry.yaml, .version)
+.engram/
+!.engram/.version
+!.engram/.workspace-id
+!.engram/config.toml
+!.engram/registry.yaml
+
+# graphtor-docs — managed by graphtor-docs install
+.graphtor/
+diff.txt
