@@ -203,6 +203,40 @@ func TestResolveGraphtorDocsCommandFallsBackToLocalInstall(t *testing.T) {
 	}
 }
 
+// 011.017-T regression test (correctness review finding): a failed/
+// unauthenticated `gh auth token` (non-zero exit, empty stdout -- which
+// does NOT throw under PowerShell's default error-action posture) must
+// leave GITHUB_PERSONAL_ACCESS_TOKEN genuinely UNSET, never clobbered with
+// an empty string. This directly pins Resolve-GitHubTokens's own doc
+// comment ("non-fatal when gh is absent or failing -- the affected
+// variable is simply left unset").
+func TestResolveGitHubTokensDoesNotClobberOnFailure(t *testing.T) {
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh not available on PATH")
+	}
+	root := repoRoot(t)
+	stubDir := t.TempDir()
+	// Exits non-zero with EMPTY stdout, simulating `gh` installed but not
+	// authenticated (a common real-world case) -- not a thrown exception.
+	failingGh := writeStubExecutable(t, stubDir, "gh-stub", 1, "")
+
+	snippet := fmt.Sprintf(
+		"Resolve-GitHubTokens -GhExePath '%s'; if ($env:GITHUB_PERSONAL_ACCESS_TOKEN) { Write-Output \"SET:$($env:GITHUB_PERSONAL_ACCESS_TOKEN)\" } else { Write-Output 'UNSET' }",
+		strings.ReplaceAll(failingGh, "'", "''"),
+	)
+	out, err := runStartScriptSnippet(t, root, snippet, map[string]string{
+		"GITHUB_PERSONAL_ACCESS_TOKEN": "",
+		"GITHUB_TOKEN":                 "",
+	})
+	if err != nil {
+		t.Fatalf("Resolve-GitHubTokens failed: %v\noutput:\n%s", err, out)
+	}
+	got := strings.TrimSpace(out)
+	if got != "UNSET" {
+		t.Fatalf("GITHUB_PERSONAL_ACCESS_TOKEN = %q after a failed gh auth token call, want UNSET (left alone, not clobbered with an empty string)", got)
+	}
+}
+
 // 011.016-T AC: ai_tools.copilot_cli.exe_path forwarding, at the same
 // precedence tier COPILOT_EXE_PATH would occupy, without overriding an
 // operator's own already-set COPILOT_EXE_PATH.

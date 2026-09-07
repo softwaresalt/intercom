@@ -112,3 +112,13 @@ prompt.md
 # graphtor-docs — managed by graphtor-docs install
 .graphtor/
 diff.txt
+
+# Ephemeral depguard fixture directories created transiently by
+# scripts/check-depguard-fixtures.sh and removed by its own trap cleanup;
+# ignored as a belt-and-suspenders control so an abnormal termination that
+# bypasses shell trap handling (SIGKILL, CI runner hard-stop) can never
+# leave these deliberately-non-compliant fixture files stageable via a
+# careless `git add -A` (security review + constitution review finding,
+# shipment 010-S).
+internal/depguardfixture/
+internal/copilotprobe2/

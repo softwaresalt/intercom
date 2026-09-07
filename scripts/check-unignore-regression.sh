@@ -271,8 +271,14 @@ def run_differential_check(repo_dir: Path, scratch_root: Path, base_ref: str, he
     directories built above, never the real tree (see make_scratch_gitignore
     for why).
     """
-    proc = git(["ls-files", "--others"], cwd=str(repo_dir))
-    all_untracked = [line for line in proc.stdout.splitlines() if line]
+    proc = git(["ls-files", "--others", "-z"], cwd=str(repo_dir))
+    # -z (NUL-terminated, unquoted) avoids git's C-style quoting of
+    # unusual/non-ASCII filenames that a newline-delimited
+    # `git ls-files --others` (no -z) would otherwise apply -- a quoted
+    # representation fed back into check-ignore --stdin would not match
+    # the real on-disk path, silently mis-evaluating that candidate's
+    # ignored/not-ignored verdict.
+    all_untracked = [p for p in proc.stdout.split("\0") if p]
 
     if not all_untracked:
         return 0, []

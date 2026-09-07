@@ -115,6 +115,31 @@ function Invoke-EngramCommandWithProgress {
   }
 }
 
+# Resolve-ExecutableCommand resolves an external command either from an
+# explicit override path (ExePath -- purely for test injectability, so a
+# stub executable can be substituted without touching PATH) or, when no
+# override is given, via a normal `Get-Command <Name>` PATH lookup.
+# Maintainability follow-up (review finding): factors out the
+# override-or-PATH-lookup pattern previously duplicated across
+# Resolve-GitHubTokens, Invoke-BacklogitSync, and Invoke-EngramSync.
+function Resolve-ExecutableCommand {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Name,
+
+    [string]$ExePath
+  )
+
+  if ($ExePath) {
+    if (Test-Path -LiteralPath $ExePath -PathType Leaf) {
+      return [pscustomobject]@{ Source = $ExePath }
+    }
+    return $null
+  }
+
+  return Get-Command $Name -ErrorAction SilentlyContinue
+}
+
 # Import-DotEnvLocal loads .env.local (gitignored per-developer overrides) if
 # present. Each KEY=VALUE line is exported only when that variable is not
 # already set. A single pair of matching surrounding quotes is stripped from
@@ -181,36 +206,36 @@ function Resolve-GitHubTokens {
     [string]$GhExePath
   )
 
-  $ghCmd = $null
-  if ($GhExePath) {
-    if (Test-Path -LiteralPath $GhExePath -PathType Leaf) {
-      $ghCmd = [pscustomobject]@{ Source = $GhExePath }
-    }
-  }
-  else {
-    $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
-  }
+  $ghCmd = Resolve-ExecutableCommand -Name "gh" -ExePath $GhExePath
 
   if (-not $ghCmd) {
     return
   }
 
+  # Resolve the token exactly once and reuse it for both variables (avoids
+  # spawning `gh auth token` twice on every script start).
+  $ghToken = $null
   try {
-    $env:GITHUB_PERSONAL_ACCESS_TOKEN = (& $ghCmd.Source auth token 2>$null).Trim()
+    $ghToken = (& $ghCmd.Source auth token 2>$null).Trim()
   }
   catch {
     Write-Warning "gh auth token failed (non-fatal): $_"
   }
 
+  if ($ghToken) {
+    # GITHUB_PERSONAL_ACCESS_TOKEN is UNGUARDED (always re-resolved when
+    # available) but must still only be assigned a genuinely resolved,
+    # non-empty token -- a failed/unauthenticated `gh auth token` (exit
+    # non-zero, empty stdout; this does NOT throw under PowerShell's
+    # default error-action posture) must leave the variable exactly as
+    # documented above ("simply left unset"), never clobbered with an
+    # empty string.
+    $env:GITHUB_PERSONAL_ACCESS_TOKEN = $ghToken
+  }
+
   if (-not $env:GITHUB_TOKEN) {
-    try {
-      $ghToken = (& $ghCmd.Source auth token 2>$null).Trim()
-      if ($ghToken) {
-        $env:GITHUB_TOKEN = $ghToken
-      }
-    }
-    catch {
-      Write-Warning "gh auth token failed (non-fatal): $_"
+    if ($ghToken) {
+      $env:GITHUB_TOKEN = $ghToken
     }
   }
 }
@@ -275,15 +300,7 @@ function Invoke-BacklogitSync {
     return
   }
 
-  $backlogitCmd = $null
-  if ($BacklogitExePath) {
-    if (Test-Path -LiteralPath $BacklogitExePath -PathType Leaf) {
-      $backlogitCmd = [pscustomobject]@{ Source = $BacklogitExePath }
-    }
-  }
-  else {
-    $backlogitCmd = Get-Command backlogit -ErrorAction SilentlyContinue
-  }
+  $backlogitCmd = Resolve-ExecutableCommand -Name "backlogit" -ExePath $BacklogitExePath
 
   if (-not $backlogitCmd) {
     return
@@ -313,15 +330,7 @@ function Invoke-EngramSync {
     return
   }
 
-  $engramCmd = $null
-  if ($EngramExePath) {
-    if (Test-Path -LiteralPath $EngramExePath -PathType Leaf) {
-      $engramCmd = [pscustomobject]@{ Source = $EngramExePath }
-    }
-  }
-  else {
-    $engramCmd = Get-Command engram -ErrorAction SilentlyContinue
-  }
+  $engramCmd = Resolve-ExecutableCommand -Name "engram" -ExePath $EngramExePath
 
   if (-not $engramCmd) {
     return
