@@ -241,10 +241,20 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 		}
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
-			// Reached the filesystem root without finding an existing
-			// ancestor. resolved is already asserted to be inside root
-			// (which itself exists), so this is unreachable in practice;
-			// guarded defensively to avoid an infinite loop.
+			// DOCUMENTED-UNREACHABLE, coverage-excluded (011.006-T item
+			// (e), resolves 8472E0A1 item (e)): reached the filesystem
+			// root without finding an existing ancestor. resolved is
+			// already asserted (by Root.Resolve's caller-side hasPathPrefix
+			// check before this function is ever invoked) to be inside
+			// root, and root itself is required by NewRoot to already
+			// exist and be a directory -- so walking parent directories
+			// from inside an existing root must find root itself (or a
+			// deeper existing ancestor) before ever reaching the
+			// filesystem root. Requiring a "fails before, passes after"
+			// test here is unsatisfiable without an injectable filesystem
+			// seam, which would be a production behavior change inside a
+			// tests-only unit (Width Isolation). Guarded defensively only
+			// to avoid an infinite loop, never exercised by real input.
 			return resolved, nil
 		}
 		ancestor = parent

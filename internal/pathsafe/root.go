@@ -9,6 +9,40 @@
 //   - EvalSymlinks does not resolve hardlinks, so a pre-existing in-workspace
 //     hardlink to an external file on the same volume passes validation
 //     (finding SEC-5).
+//
+// Consolidated risk register (011.004-T, partially resolves BF5DE670). Each
+// entry names its current mitigation status and the concrete condition
+// that would force mitigation:
+//
+//   - GO-14 (write-through-dangling-symlink): checkSymlinkEscape treats a
+//     dangling symlink at the FINAL path component as the lexical-only
+//     accept branch (matching the oracle's Path::exists() semantics, which
+//     follows symlinks and reports false for a dangling link). STATUS:
+//     accepted, oracle-parity. TRIGGER: mitigation is forced the moment any
+//     caller uses a Resolve()'d path to WRITE through a dangling symlink
+//     whose target is outside the workspace — i.e. the first real
+//     persistence/file-write call site (the same trigger as the
+//     database.path Constitution Check exception in
+//     internal/config/validate.go rule 7, and this package's own mechanical
+//     CI gate, scripts/check-write-path-precondition.sh).
+//   - Resolve -> use TOCTOU window (see "Known limitations" above): there
+//     is no atomic validate-then-open primitive in this package. STATUS:
+//     accepted, oracle-parity. TRIGGER: same as GO-14 — forced the moment a
+//     real write path exists.
+//   - SEC-5 (EvalSymlinks ignores hardlinks, see "Known limitations"
+//     above). STATUS: accepted, oracle-parity. TRIGGER: same as GO-14.
+//
+// RETIREMENT PROCEDURE when a real write path arrives (C4-C6): each finding
+// above must be re-evaluated against the concrete write call site before
+// that code merges; a mitigation (or an explicit, re-justified acceptance)
+// must land in the SAME change that introduces the write path. This
+// register, scripts/check-write-path-precondition.sh, and
+// internal/config/validate.go rule 7's Constitution Check exception all
+// expire together at that one trigger.
+//
+// ANTI-GOAL (011.004-T): no TOCTOU/hardlink mitigation mechanism is added
+// by this register's creation; it records status quo risk, it does not
+// change it.
 package pathsafe
 
 import (
@@ -42,24 +76,46 @@ func (r Root) Path() string {
 func NewRoot(dir string) (Root, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return Root{}, apperr.Wrapf(apperr.KindPathViolation, err, "workspace root invalid: %s", err.Error())
+		return Root{}, wrapRootInvalid(err)
 	}
 
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil {
-		return Root{}, apperr.Wrapf(apperr.KindPathViolation, err, "workspace root invalid: %s", err.Error())
+		return Root{}, wrapRootInvalid(err)
 	}
 
 	canonical := stripUNCPrefix(resolved)
+	// DOCUMENTED-UNREACHABLE, coverage-excluded (011.006-T item (b),
+	// resolves 8472E0A1 item (b)): this os.Stat call cannot observe a
+	// failure in practice. filepath.EvalSymlinks above already performs an
+	// os.Lstat-based syscall walk over every path component (including the
+	// final one) to resolve symlinks, and it already returned successfully
+	// by this point — so a subsequent os.Stat on that same, just-resolved
+	// path failing would require the filesystem to change between the two
+	// calls (a TOCTOU race), not a normal input-driven code path. Requiring
+	// a "fails before, passes after" test for this branch is unsatisfiable
+	// without an injectable stat seam, which would itself be a production
+	// behavior change inside a tests-only unit (Width Isolation). The
+	// error return remains defensive, not dead, code.
 	info, err := os.Stat(canonical)
 	if err != nil {
-		return Root{}, apperr.Wrapf(apperr.KindPathViolation, err, "workspace root invalid: %s", err.Error())
+		return Root{}, wrapRootInvalid(err)
 	}
 	if !info.IsDir() {
 		return Root{}, apperr.Newf(apperr.KindPathViolation, "workspace root invalid: not a directory: %s", canonical)
 	}
 
 	return Root{path: canonical}, nil
+}
+
+// wrapRootInvalid wraps err as a KindPathViolation "workspace root invalid"
+// error. Collapses three previously-identical apperr.Wrapf call sites in
+// NewRoot into one (011.007-T, characterization-first refactor -- resolves
+// 8472E0A1 item (a)). Zero verdict change: error Kind and
+// errors.Is/errors.As discriminability are identical to the pre-refactor
+// call sites, and every existing pathsafe test passes unmodified.
+func wrapRootInvalid(err error) error {
+	return apperr.Wrapf(apperr.KindPathViolation, err, "workspace root invalid: %s", err.Error())
 }
 
 // stripUNCPrefix removes a leading \\?\ prefix, which Go's EvalSymlinks
