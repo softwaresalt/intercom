@@ -1,12 +1,21 @@
 ---
-title: "Post-Merge Closure — Shipment 010-S / Feature 011-F"
+title: "Post-merge closure: 010-S -- residual hardening round 2 (PR #29)"
+description: "Operational closure artifact for shipment 010-S / feature 011-F"
+status: "complete"
+tags:
+  - "closure"
+  - "010-S"
+  - "011-F"
+  - "post-merge"
 date: 2026-09-07
-shipment_id: 010-S
-feature_id: 011-F
+mode: post-merge
+shipment: 010-S
+feature: 011-F
 pr: 29
-merge_commit: 797fc1ed9e4833374552d8bfaa3ddd41e46fec26
+merge_commit_sha: 797fc1ed9e4833374552d8bfaa3ddd41e46fec26
 compaction_status: done
 closure_status: READY
+releasability: READY
 ---
 
 # Post-Merge Closure — 010-S / 011-F: Residual Hardening Round 2
