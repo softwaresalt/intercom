@@ -76,6 +76,40 @@ func (c *Config) Validate() (Report, error) {
 	// parent directories there, an arbitrary-write primitive otherwise).
 	// Absolute paths remain permitted as an explicit, visible operator
 	// privilege.
+	//
+	// CONSTITUTION CHECK EXCEPTION (011.003-T, resolves 8D953C4B) — dated
+	// 2026-09-06, bounded and expiring:
+	//
+	//   Principle: III. Workspace Isolation.
+	//   Divergence: database.path is validated with the lighter
+	//     ContainsDotDotSegment lexical check above, NOT routed through
+	//     pathsafe.NewRoot/Root.Resolve (the containment control every
+	//     other path-shaped config field in this file uses).
+	//   Rejected simpler alternative (branch (a)): route database.path
+	//     through pathsafe.NewRoot/Resolve like DefaultWorkspaceRoot and
+	//     each [[workspace]].path above. Found INFEASIBLE:
+	//     pathsafe.normalize rejects every absolute candidate outright,
+	//     and NewRoot additionally requires an ALREADY-EXISTING directory
+	//     — but database.path names a not-yet-existing FILE, and rule 7's
+	//     own contract deliberately permits an absolute path here as a
+	//     visible operator privilege (unlike the workspace-relative-only
+	//     fields). Forcing branch (a) would reject every legitimate
+	//     absolute database.path and require a new pathsafe capability
+	//     for a not-yet-existing-file root, which is out of scope here.
+	//   Why Principle III is NOT breached today: measured directly — no
+	//     code in this module or elsewhere in internal/** or cmd/** opens,
+	//     writes, or creates database.path (confirmed mechanically by
+	//     scripts/check-write-path-precondition.sh, 011.004-T). The
+	//     divergence above is therefore LATENT, not live.
+	//   Bound / expiry trigger: this exception expires — and containment
+	//     must be added to database.path BEFORE it does — at the exact
+	//     same trigger as scripts/check-write-path-precondition.sh's own
+	//     gate: the first code path that actually opens, creates, or
+	//     writes database.path. The consolidated risk register in
+	//     internal/pathsafe's package doc (root.go) names the same
+	//     trigger for its own tracked findings, so all three artifacts
+	//     (this exception, the register, and the mechanical gate) expire
+	//     together.
 	if pathsafe.ContainsDotDotSegment(c.Database.Path) {
 		return report, apperr.New(apperr.KindConfig, "database.path must not contain '..' segments")
 	}
