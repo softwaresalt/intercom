@@ -64,7 +64,15 @@ logs/
 .env
 !.env.example
 
-# Plugin .mcp.json is intentionally tracked (distinct from local dev config)
+# Plugin .mcp.json is intentionally tracked (distinct from local dev config).
+# 011.015-T credential check: if plugin/.mcp.json is ever actually tracked,
+# it MUST reference credentials by ${VAR} indirection only (never a literal
+# secret value) -- the existing CI `security` job's unconditional
+# `gitleaks detect --source . --no-git -v` scan (which covers every file
+# present on disk, respecting no ignore rules under --no-git) is the
+# durable, standing safeguard over this and every other newly-un-ignored
+# path here; neither plugin/.mcp.json nor .env.example exists in this
+# repo as of this commit, so there is nothing to scan yet.
 !plugin/.mcp.json
 
 # Ephemeral SQLite databases (always regenerated; never commit)
@@ -86,7 +94,15 @@ prompt.md
 # Machine-local telemetry harvest checkpoint (changes per machine/run)
 .backlogit/.telemetry-checkpoint.json
 
-# Engram runtime data (keep templates/, registry.yaml, .version)
+# Engram runtime data (keep templates/, registry.yaml, .version).
+# 011.015-T effect assertion (NOT assumed): the four negations immediately
+# below are INERT under git semantics -- git cannot re-include a file
+# whose parent directory is already excluded by ".engram/" above. Verified
+# via `git check-ignore -v` for each: all four resolve to the ".engram/"
+# directory-pattern match (line above), never their own negation line, so
+# .version/.workspace-id/config.toml/registry.yaml under .engram/ remain
+# IGNORED despite these lines existing. Recorded here rather than shipping
+# a silently-wrong ignore policy as "validated".
 .engram/
 !.engram/.version
 !.engram/.workspace-id
