@@ -138,6 +138,50 @@ jobs:
         # set CGO_ENABLED=0 only on the build/cross-compile steps above/below.
         run: go test -race -mod=readonly ./...
 
+  # Advisory windows-latest verification job (011.009-T, resolves E89E5D00 +
+  # DA945722): every other job runs ubuntu-latest, so isRooted's
+  # leading-backslash rejection, hasPathPrefix/pathEqual case-folding,
+  # stripUNCPrefix, and the junction-escape test never execute anywhere in CI.
+  #
+  # -race is deliberately OMITTED: windows-latest has no cgo, and -race fails
+  # closed with exit 2 without it -- see
+  # docs/compound/build-errors/go-race-requires-cgo-fails-closed-2026-09-03.md.
+  #
+  # Advisory-until-proven-green (011.010-T flips WINDOWS_GATE_REQUIRED to
+  # 'true' after a documented green run with explicit operator confirmation --
+  # see docs/compound / the shipment closure record for the flip decision).
+  # continue-on-error is scoped to ONLY the test step, matching
+  # topology-check's rationale above: a genuine setup/checkout/Go-install
+  # failure always fails the job for real regardless of the toggle.
+  #
+  # 011.002-T is a hard precondition: without the default-deny opt-in gate in
+  # internal/copilotprobe, `go test ./...` here would otherwise attempt real
+  # Copilot SDK connections on a runner with no such credentials configured.
+  #
+  # LOCAL DIVERGENCE (ci.yml is autoharness-generated; re-apply this job after
+  # regeneration until the OS-matrix escape hatch documented in this file's
+  # header, lines 17-20, is applied upstream in the generating template).
+  windows:
+    name: test (windows, advisory)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Test (no -race — windows-latest has no cgo)
+        continue-on-error: ${{ vars.WINDOWS_GATE_REQUIRED != 'true' }}
+        run: go test -mod=readonly ./...
+
   # Format and lint gate (001.002.002-ST). Runs only when `changes` detected a
   # code/config change, matching `expensive`'s gating rationale above.
   lint:
@@ -419,12 +463,12 @@ jobs:
   ci-gate:
     name: ci gate
     if: always()
-    needs: [changes, expensive, lint, security, cross-compile-targets, cross-compile, topology-check, gitignore-append-only]
+    needs: [changes, expensive, windows, lint, security, cross-compile-targets, cross-compile, topology-check, gitignore-append-only]
     runs-on: ubuntu-latest
     steps:
       - name: Verify no required job failed
         run: |
-          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }} ${{ needs['gitignore-append-only'].result }}"
+          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.windows.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }} ${{ needs['gitignore-append-only'].result }}"
           echo "job results: $results"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
