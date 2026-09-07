@@ -18,7 +18,8 @@ set -euo pipefail
 # copilot.CreateSession):
 #   os.WriteFile os.Create os.OpenFile os.Remove os.RemoveAll os.Rename
 #   os.Mkdir os.MkdirAll os.Symlink os.Chmod os.Truncate io.Copy
-#   sql.Open bbolt.Open
+#   sql.Open bbolt.Open os.CreateTemp os.MkdirTemp os.Link os.Chown
+#   os.Lchown os.Chtimes
 #
 # ACCEPTED RESIDUAL (recorded in the shipment plan): (*os.File).Write* is
 # not textually decidable by a grep-shaped detector without full type
@@ -68,6 +69,13 @@ SELECTORS = [
     "os.WriteFile", "os.Create", "os.OpenFile", "os.Remove", "os.RemoveAll",
     "os.Rename", "os.Mkdir", "os.MkdirAll", "os.Symlink", "os.Chmod",
     "os.Truncate", "io.Copy", "sql.Open", "bbolt.Open",
+    # Adversarial review additions (two independent reviewers, non-
+    # overlapping, both plausible): os.CreateTemp/os.MkdirTemp create real
+    # files/directories; os.Link creates a hardlink (a write primitive
+    # distinct from os.Symlink, already covered); os.Chown/os.Lchown/
+    # os.Chtimes mutate existing filesystem metadata in place.
+    "os.CreateTemp", "os.MkdirTemp", "os.Link", "os.Chown", "os.Lchown",
+    "os.Chtimes",
 ]
 
 SELECTOR_RES = [

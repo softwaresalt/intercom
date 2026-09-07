@@ -272,6 +272,20 @@ func TestResolveOutputPathWithinRoot(t *testing.T) {
 		goodRoot := filepath.Join(fsRoot, marker)
 		evilDir := filepath.Join(fsRoot, marker+"-evil")
 
+		// Refuse to proceed if either path already exists (adversarial
+		// review finding, verified: os.MkdirAll succeeds silently on an
+		// already-existing directory, and the unconditional
+		// os.RemoveAll cleanup below would then delete pre-existing,
+		// unrelated content at a deterministic, guessable path). This
+		// test may only create and later remove paths it is certain it
+		// itself created.
+		if _, err := os.Stat(goodRoot); err == nil {
+			t.Skipf("refusing to use pre-existing path %q (would risk deleting unrelated content on cleanup)", goodRoot)
+		}
+		if _, err := os.Stat(evilDir); err == nil {
+			t.Skipf("refusing to use pre-existing path %q (would risk deleting unrelated content on cleanup)", evilDir)
+		}
+
 		if err := os.MkdirAll(goodRoot, 0o755); err != nil {
 			t.Skipf("cannot create a top-level directory at the filesystem root (privilege-shaped failure, accepted residual): %v", err)
 		}

@@ -86,17 +86,29 @@ jobs:
         # runtime environment -- ambient credentials must never silently
         # authorize a live Copilot SDK connection (and real shell execution)
         # in CI. Resolves A0A2D049's CI-assertion acceptance criterion.
+        #
+        # CRITICAL: the pattern below is anchored to a genuine assignment
+        # (a YAML env-key `INTERCOM_LIVE_SDK_TESTS:` at the start of a
+        # line, or a shell `INTERCOM_LIVE_SDK_TESTS=`/`export
+        # INTERCOM_LIVE_SDK_TESTS=`), NOT a bare substring search. A bare
+        # substring search (adversarial review finding, verified) would
+        # match THIS VERY STEP's own name/comments/script text (which
+        # necessarily mentions the variable name to describe the
+        # safeguard), making the assertion self-defeating and permanently
+        # red the moment this workflow ever runs.
         run: |
           set -euo pipefail
-          if grep -R --include='*.yml' --include='*.yaml' -n 'INTERCOM_LIVE_SDK_TESTS' .github/workflows/; then
-            echo "::error::INTERCOM_LIVE_SDK_TESTS must not appear in any committed workflow file"
+          if grep -RE --include='*.yml' --include='*.yaml' -n \
+            '^[[:space:]]*(export[[:space:]]+)?INTERCOM_LIVE_SDK_TESTS[[:space:]]*[:=]' \
+            .github/workflows/; then
+            echo "::error::INTERCOM_LIVE_SDK_TESTS must not be assigned in any committed workflow file"
             exit 1
           fi
           if [ -n "${INTERCOM_LIVE_SDK_TESTS:-}" ]; then
             echo "::error::INTERCOM_LIVE_SDK_TESTS must be unset in the CI runtime environment"
             exit 1
           fi
-          echo "INTERCOM_LIVE_SDK_TESTS is absent from workflow config and unset in this job's environment."
+          echo "INTERCOM_LIVE_SDK_TESTS is not assigned in workflow config and unset in this job's environment."
       - name: Detect code changes
         id: filter
         uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
@@ -133,6 +145,19 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Assert INTERCOM_LIVE_SDK_TESTS is unset in this job's environment (011.002-T)
+        # Defense-in-depth: this job (not `changes`) is the one that
+        # actually runs `go test ./...` and therefore the
+        # internal/copilotprobe suite. The workflow-file-content half of
+        # this assertion is already covered once in the `changes` job (no
+        # need to repeat the grep here); this re-assertion covers the
+        # runtime-environment half specifically for the job that matters.
+        run: |
+          set -euo pipefail
+          if [ -n "${INTERCOM_LIVE_SDK_TESTS:-}" ]; then
+            echo "::error::INTERCOM_LIVE_SDK_TESTS must be unset in the CI runtime environment"
+            exit 1
+          fi
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
@@ -195,12 +220,22 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Assert INTERCOM_LIVE_SDK_TESTS is unset in this job's environment (011.002-T)
+        # Defense-in-depth: this job also runs `go test ./...` and
+        # therefore the internal/copilotprobe suite. GitHub Actions
+        # defaults to pwsh on windows-latest runners, so this step is
+        # PowerShell, not bash, unlike its sibling in the `expensive` job.
+        shell: pwsh
+        run: |
+          if ($env:INTERCOM_LIVE_SDK_TESTS) {
+            Write-Output "::error::INTERCOM_LIVE_SDK_TESTS must be unset in the CI runtime environment"
+            exit 1
+          }
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: '1.26.x'
           cache: true
-      - name: Test (no -race — windows-latest has no cgo)
         continue-on-error: ${{ vars.WINDOWS_GATE_REQUIRED != 'true' }}
         run: go test -mod=readonly ./...
 

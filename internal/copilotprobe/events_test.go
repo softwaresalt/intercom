@@ -23,9 +23,9 @@ func TestS2EventUnionHandling(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), probeDeadline)
 	defer cancel()
 
-	harness := NewPermissionHarness(func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
+	harness := NewPermissionHarness(allowlistedDecide(t, "echo B3TEST", func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
 		return &rpc.PermissionDecisionApproveOnce{}
-	})
+	}))
 
 	client := newProbeClient(t, ctx)
 	session := newProbeSession(t, ctx, client, &copilot.SessionConfig{

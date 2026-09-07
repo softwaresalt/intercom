@@ -45,9 +45,9 @@ func TestS1PermissionRoundTrip(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), probeDeadline)
 			defer cancel()
 
-			harness := NewPermissionHarness(func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
+			harness := NewPermissionHarness(allowlistedDecide(t, fmt.Sprintf("echo B2-%s", tc.name), func(n int, _ copilot.PermissionRequest, _ copilot.PermissionInvocation) rpc.PermissionDecision {
 				return tc.decision
-			})
+			}))
 
 			client := newProbeClient(t, ctx)
 			session := newProbeSession(t, ctx, client, &copilot.SessionConfig{

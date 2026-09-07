@@ -34,7 +34,8 @@ linters:
         # never match and would silently do nothing.
         #
         # Removal trigger: C3 (copilotprobe deletion + this allowlist's
-        # tightening/removal, per docs/plans's C3 phase entry). Ownership:
+        # tightening/removal, per docs/design-docs/intercom-go-backend-
+        # architecture.md §7.6's C3 exit-criteria entry). Ownership:
         # depguard owns Go package-import boundaries; scripts/
         # check-retired-architecture.sh owns retired-architecture/path-
         # surface contamination -- the two are deliberately non-

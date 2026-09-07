@@ -119,6 +119,11 @@ from pathlib import Path
 
 # Revision 5 denylist: ONLY paths guaranteed ignored by HEAD + 011.001-T.
 # Never reference a pattern introduced by droppable content (standing rule).
+# The two 011.014-T fixture-isolation paths are also HEAD-guaranteed as of
+# shipment 010-S (non-droppable shipment work, not stowaway content) --
+# adversarial review finding: omitting them would let a silent removal of
+# either ignore line defeat check-depguard-fixtures.sh's fixture-isolation
+# control with no gate firing.
 DENYLIST = [
     ".env",
     ".env.local",
@@ -127,6 +132,8 @@ DENYLIST = [
     ".github/copilot/settings.local.json",
     ".autoharness/gates/pipeline-topology-force-audit.log",
     ".backlogit/hooks_queue.jsonl",
+    "internal/depguardfixture/marker",
+    "internal/copilotprobe2/marker",
 ]
 
 
@@ -260,16 +267,19 @@ def run_denylist_check(repo_dir: Path, scratch_root: Path, ref: str = "HEAD"):
 def run_differential_check(repo_dir: Path, scratch_root: Path, base_ref: str, head_ref: str = "HEAD"):
     """Part 2. Returns (evaluated_count, failures).
 
-    Candidate universe: ALL untracked paths REALLY PRESENT in the working
-    tree, ignored or not (git ls-files --others WITHOUT --exclude-standard)
-    -- deliberately broader than "--ignored", because the whole point of a
-    regression is a path that is untracked and NO LONGER ignored at head;
-    such a path would never appear under an --ignored-filtered enumeration
-    at head. This enumeration is the only place real on-disk untracked
-    content is consulted; the actual ignored-status EVALUATION for each
-    candidate is always against the isolated root-.gitignore-only scratch
-    directories built above, never the real tree (see make_scratch_gitignore
-    for why).
+    Candidate universe (adversarial review finding, remediated): the UNION
+    of (a) all untracked paths REALLY PRESENT in the working tree, ignored
+    or not (git ls-files --others WITHOUT --exclude-standard) -- broader
+    than "--ignored", since a path that is untracked and NO LONGER ignored
+    at head would never appear under an --ignored-filtered enumeration --
+    and (b) every path actually touched between base_ref and head_ref
+    (git diff --name-only), so a PR that both removes a negation/pattern
+    AND `git add`s the now-un-ignored file in the SAME change (making it
+    TRACKED, not untracked) is still evaluated -- (a) alone would miss it
+    entirely, since a tracked path never appears in `git ls-files
+    --others`. The actual ignored-status EVALUATION for each candidate is
+    always against the isolated root-.gitignore-only scratch directories
+    built below, never the real tree (see make_scratch_gitignore for why).
     """
     proc = git(["ls-files", "--others", "-z"], cwd=str(repo_dir))
     # -z (NUL-terminated, unquoted) avoids git's C-style quoting of
@@ -279,6 +289,26 @@ def run_differential_check(repo_dir: Path, scratch_root: Path, base_ref: str, he
     # the real on-disk path, silently mis-evaluating that candidate's
     # ignored/not-ignored verdict.
     all_untracked = [p for p in proc.stdout.split("\0") if p]
+
+    diff_proc = subprocess.run(
+        ["git", "diff", "--name-only", "-z", f"{base_ref}", f"{head_ref}"],
+        cwd=str(repo_dir), capture_output=True,
+    )
+    if diff_proc.returncode != 0:
+        raise SystemExit(
+            f"::error::git diff --name-only failed resolving {base_ref}..{head_ref}: "
+            f"{diff_proc.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    diff_paths = [p for p in diff_proc.stdout.decode("utf-8", "replace").split("\0") if p]
+
+    # Union, order-stable, de-duplicated.
+    seen = set()
+    all_candidates = []
+    for p in all_untracked + diff_paths:
+        if p not in seen:
+            seen.add(p)
+            all_candidates.append(p)
+    all_untracked = all_candidates
 
     if not all_untracked:
         return 0, []
@@ -318,7 +348,7 @@ def do_self_test_landing_precondition(scratch_root: Path):
     return True
 
 
-def make_scenario_repo(tmp_root: Path, name: str, old_gitignore: str, new_gitignore: str, existing_paths):
+def make_scenario_repo(tmp_root: Path, name: str, old_gitignore: str, new_gitignore: str, existing_paths, tracked_paths=None):
     repo = tmp_root / name
     repo.mkdir(parents=True)
     git(["init", "-q", "-b", "main"], cwd=str(repo))
@@ -335,14 +365,20 @@ def make_scenario_repo(tmp_root: Path, name: str, old_gitignore: str, new_gitign
         p = repo / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("fixture content\n", encoding="utf-8")
-    git(["add", ".gitignore"], cwd=str(repo))
+    add_args = [".gitignore"]
+    for rel in (tracked_paths or []):
+        p = repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("fixture content\n", encoding="utf-8")
+        add_args.append(rel)
+    git(["add"] + add_args, cwd=str(repo))
     git(["commit", "-q", "-m", "head"], cwd=str(repo))
 
     return repo, base_ref
 
 
-def run_scenario(tmp_root: Path, name: str, old_gitignore: str, new_gitignore: str, existing_paths, expect_reject: bool):
-    repo, base_ref = make_scenario_repo(tmp_root, name, old_gitignore, new_gitignore, existing_paths)
+def run_scenario(tmp_root: Path, name: str, old_gitignore: str, new_gitignore: str, existing_paths, expect_reject: bool, tracked_paths=None):
+    repo, base_ref = make_scenario_repo(tmp_root, name, old_gitignore, new_gitignore, existing_paths, tracked_paths)
     scratch_root = tmp_root / f"{name}-scratch"
     evaluated, failures = run_differential_check(repo, scratch_root, base_ref)
     rejected = bool(failures)
@@ -387,6 +423,22 @@ def do_self_test_scenarios():
             new_gitignore="foo/\n!foo/keep.txt\n",
             existing_paths=[],
             expect_reject=False,
+        )
+
+        # Scenario C (adversarial review finding, remediated): a negation
+        # un-ignores a previously-ignored file, AND that file is `git add`ed
+        # in the SAME change -- making it TRACKED at head, not untracked.
+        # Must still be REJECTED: relying solely on `git ls-files --others`
+        # would miss this entirely, since a tracked path never appears
+        # there. The git-diff-based candidate union closes this gap.
+        ok &= run_scenario(
+            tmp_root,
+            "reject-tracked-file-unignored-in-same-change",
+            old_gitignore="foo/bar.secret\n",
+            new_gitignore="foo/bar.secret\n!foo/bar.secret\n",
+            existing_paths=[],
+            expect_reject=True,
+            tracked_paths=["foo/bar.secret"],
         )
 
     return ok
