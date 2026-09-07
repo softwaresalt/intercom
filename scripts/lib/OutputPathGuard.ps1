@@ -115,7 +115,25 @@ function Resolve-OutputPathWithinRoot {
     # guard is a security/safety boundary (invariant I5), so it must fail closed
     # (refuse) on an ambiguous case mismatch rather than risk a false negative on
     # a case-sensitive filesystem (Linux, or macOS in case-sensitive mode).
-    $repoRootWithSep = $resolvedRepoRoot + [System.IO.Path]::DirectorySeparatorChar
+    #
+    # 011.011-T fix: append a separator ONLY when resolvedRepoRoot does not
+    # already end with one. Normalize-GuardPath trims a trailing separator
+    # only when the full path is LONGER than its path root (see that
+    # function above) -- a filesystem-root value (e.g. "C:\" or "/") is
+    # therefore returned WITH its trailing separator intact. Unconditionally
+    # appending another separator (the prior behavior) produced a doubled
+    # separator at exactly those roots ("C:\\" / "//"), which never matches
+    # any real candidate's single-separator boundary -- a false REJECTION of
+    # every legitimate descendant of a filesystem root. This is the mirror
+    # bug of the sibling-prefix hazard below: the separator boundary itself
+    # must always be present exactly once, never zero times (this bug) and
+    # never omitted entirely (which would reopen the sibling-prefix bypass
+    # this comparison exists to prevent -- see J12's mandatory negative
+    # test in tests/integration/output_path_guard_test.go).
+    $repoRootWithSep = $resolvedRepoRoot
+    if (-not $repoRootWithSep.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $repoRootWithSep += [System.IO.Path]::DirectorySeparatorChar
+    }
     $isDescendant = $resolvedOutputTarget.Equals($resolvedRepoRoot, [System.StringComparison]::Ordinal) -or
         $resolvedOutputTarget.StartsWith($repoRootWithSep, [System.StringComparison]::Ordinal)
 
