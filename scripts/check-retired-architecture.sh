@@ -14,11 +14,15 @@ set -euo pipefail
 #     testdata/ directory), config.toml.example, and cmd/**. Exits 0 when no
 #     retired-architecture token is found as a Go identifier or TOML key.
 #   scripts/check-retired-architecture.sh --self-test
-#     Verifies the committed TOML fixture suite in scripts/testdata/retired-*.toml
-#     against scripts/testdata/retired-manifest.json and the committed Go fixture
-#     suite in scripts/testdata/retiredgo/*.go against
-#     scripts/testdata/retiredgo-manifest.json, then verifies the real tracked
-#     tree passes. Exits 0 only when both checks succeed.
+#     Runs three checks: (1) verifies the committed TOML fixture suite in
+#     scripts/testdata/retired-*.toml against scripts/testdata/retired-manifest.json
+#     and the committed Go fixture suite in scripts/testdata/retiredgo/*.go against
+#     scripts/testdata/retiredgo-manifest.json; (2) verifies the real selection
+#     logic structurally (every tracked internal/** non-test, non-testdata .go
+#     file is selected, internal/** test/testdata paths and scripts/ itself are
+#     excluded, selection is non-empty, and config.toml.example dispatches to the
+#     TOML engine); (3) verifies the real tracked tree passes a repo scan. Exits 0
+#     only when all three checks succeed.
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN=python3
