@@ -171,12 +171,12 @@ are retained as historical record, not archived, consistent with how
 ## Compaction status
 
 **done.** Mandatory P-020 `compact-context` invocation performed in this
-closure session: this shipment's own fresh session memory
-(`docs/memory/2026-09-07/pathsafe-containment-shipment-011-memory.md`) was
+closure session: this shipment's own fresh session memory (originally at
+`docs/memory/2026-09-07/pathsafe-containment-shipment-011-memory.md`) was
 the intended Tier-1 candidate (eligible under the completed-work rule),
 compacted to
 `docs/memory/compacted/2026-09-08-011-s-pathsafe-containment-compacted.md`,
-and the verbose original moved to
+and the verbose original moved to (now resides at)
 `docs/archive/memory/2026-09-07-ship-pathsafe-containment-shipment-011-memory.md`.
 No other `docs/memory/`, `docs/plans/`, or `docs/closure/` artifacts met
 the threshold/completed-work candidate criteria this cycle. A durable
