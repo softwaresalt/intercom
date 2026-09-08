@@ -247,10 +247,8 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 	for {
 		info, err := probe(ancestor)
 		if err == nil {
-			if !finalProbe && !info.IsDir() {
-				if _, readlinkErr := os.Readlink(ancestor); readlinkErr != nil {
-					return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
-				}
+			if !finalProbe && !info.IsDir() && info.Mode()&fs.ModeSymlink == 0 {
+				return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
 			}
 			break
 		} else if !errors.Is(err, fs.ErrNotExist) {
@@ -283,15 +281,6 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 	real, err := filepath.EvalSymlinks(ancestor)
 	if err != nil {
 		return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
-	}
-	if target, readlinkErr := os.Readlink(ancestor); readlinkErr == nil {
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(ancestor), target)
-		}
-		real, err = filepath.EvalSymlinks(target)
-		if err != nil {
-			return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
-		}
 	}
 	real = stripUNCPrefix(real)
 

@@ -3,6 +3,7 @@ package pathsafe
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,7 +43,7 @@ func createDirectoryJunction(t *testing.T, linkPath, targetPath string) {
 		t.Fatalf("creating junction %q -> %q: %v\noutput:\n%s", linkPath, targetPath, err, out)
 	}
 	t.Cleanup(func() {
-		if err := os.Remove(linkPath); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(linkPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("removing junction %q: %v", linkPath, err)
 		}
 	})
