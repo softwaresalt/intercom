@@ -1,11 +1,14 @@
 package pathsafe
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
 // canSymlink probes for symlink-creation privilege at runtime (not
@@ -141,10 +144,15 @@ func TestResolveRejectsSymlinkedIntermediateDirEscapingRoot(t *testing.T) {
 	}
 }
 
-// TestResolveAllowsDanglingSymlinkAtFinalComponent verifies the documented
-// lexical-only accept branch for a dangling symlink at the final path
-// component.
-func TestResolveAllowsDanglingSymlinkAtFinalComponent(t *testing.T) {
+// TestResolveRejectsDanglingSymlinkAtFinalComponent verifies the GO-14
+// boundary flip (014.002-T): a dangling symlink at the final path component
+// is now REJECTED with apperr.KindPathViolation, replacing the previously
+// documented lexical-only accept branch. Renamed and inverted from
+// TestResolveAllowsDanglingSymlinkAtFinalComponent -- never deleted, per
+// H6/R5, so this remains the durable evidence that the boundary moved
+// deliberately. See root.go's GO-14 risk-register entry for the
+// replacement-boundary rationale (F133AB7E).
+func TestResolveRejectsDanglingSymlinkAtFinalComponent(t *testing.T) {
 	requireSymlinkOrFailClosed(t)
 
 	rootDir := t.TempDir()
@@ -159,12 +167,16 @@ func TestResolveAllowsDanglingSymlinkAtFinalComponent(t *testing.T) {
 		t.Fatalf("failed to create dangling symlink: %v", err)
 	}
 
-	resolved, err := root.Resolve("dangling-link")
-	if err != nil {
-		t.Fatalf("Resolve(%q) returned unexpected error: %v", "dangling-link", err)
+	_, err = root.Resolve("dangling-link")
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want a KindPathViolation rejection", "dangling-link")
 	}
-	if resolved != linkPath {
-		t.Fatalf("Resolve(%q) = %q, want %q", "dangling-link", resolved, linkPath)
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) {
+		t.Fatalf("Resolve(%q) error = %v, want an *apperr.Error", "dangling-link", err)
+	}
+	if appErr.Kind() != apperr.KindPathViolation {
+		t.Fatalf("Resolve(%q) error kind = %v, want %v", "dangling-link", appErr.Kind(), apperr.KindPathViolation)
 	}
 }
 
