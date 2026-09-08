@@ -299,21 +299,30 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
 			// DOCUMENTED-UNREACHABLE, coverage-excluded (011.006-T item
-			// (e), resolves 8472E0A1 item (e)): reached the filesystem
-			// root without finding an existing ancestor. resolved is
-			// already asserted (by Root.Resolve's caller-side hasPathPrefix
-			// check before this function is ever invoked) to be inside
-			// root, and root itself is required by NewRoot to already
-			// exist and be a directory -- so walking parent directories
-			// from inside an existing root must find root itself (or a
-			// deeper existing ancestor) before ever reaching the
-			// filesystem root. Requiring a "fails before, passes after"
-			// test here is unsatisfiable without an injectable filesystem
-			// seam, which would be a production behavior change inside a
-			// tests-only unit (Width Isolation). Guarded defensively only
-			// to avoid an infinite loop, never exercised by real input.
-			// 014.005-T flips this branch's return value; unchanged here.
-			return resolved, nil
+			// (e), resolves 8472E0A1 item (e); return value flipped by
+			// 014.005-T, covers 2362BBB5(a) / AD0D9D1F(F6)): reached the
+			// filesystem root without finding an existing ancestor.
+			// resolved is already asserted (by Root.Resolve's caller-side
+			// hasPathPrefix check before this function is ever invoked) to
+			// be inside root, and root itself is required by NewRoot to
+			// already exist and be a directory -- so walking parent
+			// directories from inside an existing root must find root
+			// itself (or a deeper existing ancestor) before ever reaching
+			// the filesystem root. Requiring a "fails before, passes
+			// after" test here is unsatisfiable without an injectable
+			// filesystem seam, which would be a production behavior
+			// change inside a tests-only unit (Width Isolation). Guarded
+			// defensively only to avoid an infinite loop, never exercised
+			// by real input -- the two hypothesized triggers were never
+			// reproduced, so this is NOT a reproduced-exploit fix (AC4).
+			// Previously returned (resolved, nil) -- a latent fail-open
+			// terminal branch (2362BBB5(a) / AD0D9D1F(F6), the same
+			// finding captured twice, implemented once here). Now returns
+			// a rejection so the branch is fail-closed like every other
+			// unresolvable-ancestor path in this function, with zero
+			// observable behavior change across the existing suite (the
+			// branch remains traced-unreachable).
+			return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
 		}
 		ancestor = parent
 		finalProbe = false
