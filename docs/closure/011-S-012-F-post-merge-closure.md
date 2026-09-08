@@ -13,7 +13,7 @@ shipment: 011-S
 feature: 012-F
 pr: 34
 merge_commit_sha: 54d27ba953a068cea539a1f691e5c4ad1231d2ba
-compaction_status: pending
+compaction_status: done
 closure_status: READY
 releasability: READY
 ---
@@ -170,6 +170,17 @@ are retained as historical record, not archived, consistent with how
 
 ## Compaction status
 
-`pending` at artifact-creation time; finalized to `done`/`degraded` by the
-mandatory P-020 `compact-context` invocation performed later in this same
-closure session (see session memory for the recorded outcome).
+**done.** Mandatory P-020 `compact-context` invocation performed in this
+closure session: this shipment's own fresh session memory
+(`docs/memory/2026-09-07/pathsafe-containment-shipment-011-memory.md`) was
+the intended Tier-1 candidate (eligible under the completed-work rule),
+compacted to
+`docs/memory/compacted/2026-09-08-011-s-pathsafe-containment-compacted.md`,
+and the verbose original moved to
+`docs/archive/memory/2026-09-07-ship-pathsafe-containment-shipment-011-memory.md`.
+No other `docs/memory/`, `docs/plans/`, or `docs/closure/` artifacts met
+the threshold/completed-work candidate criteria this cycle. A durable
+compound-learnings entry was also captured:
+`docs/compound/2026-09-08-adversarial-review-empirical-verification-and-scope-check.md`.
+No existing `docs/compound/` entries referenced pathsafe/symlink/junction
+topics, so no compound-refresh consolidation was needed.
