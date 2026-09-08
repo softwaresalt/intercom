@@ -51,7 +51,7 @@ Remove-Item reply-body.md
 This returns the newly created reply comment object (with `in_reply_to_id`
 set to the original comment's ID) on success. Continue to use the
 file-backed `--field body=@file` pattern from
-`.github/instructions/github-pr-automation.instructions.md` §1.9's "Shell-Safe
+`.github/instructions/github-pr-automation.instructions.md` §1.5's "Shell-Safe
 Comment Body Construction" section — this endpoint gotcha is independent of
 that shell-escaping guidance and both apply together.
 

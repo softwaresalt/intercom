@@ -1,5 +1,21 @@
 ---
+title: "Post-merge closure: 012-S -- retire the D6a gate narrowing (PR #36)"
+description: "Operational closure artifact for shipment 012-S / feature 013-F"
+status: "complete"
+tags:
+  - "closure"
+  - "012-S"
+  - "013-F"
+  - "post-merge"
+date: 2026-09-08
+mode: post-merge
+shipment: 012-S
+feature: 013-F
+pr: 36
+merge_commit_sha: 9d8937ae2bc721cdeb15b74963acb92221843f06
 compaction_status: done
+closure_status: READY
+releasability: READY
 ---
 
 # Post-Merge Operational Closure — Shipment 012-S (Feature 013-F)
