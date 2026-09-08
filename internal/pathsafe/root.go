@@ -132,7 +132,9 @@ func wrapRootInvalid(err error) error {
 }
 
 // stripUNCPrefix removes a leading \\?\ prefix, which Go's EvalSymlinks
-// emits on Windows.
+// emits on Windows. Extended-UNC paths are re-formed as ordinary UNC paths
+// (\\server\share\...), and any stripped result that is not a Windows-
+// absolute path is rejected by keeping the original extended-path input.
 //
 // Provenance note: this mirrors src/config.rs:24 strip_unc_prefix, which the
 // oracle applies to default_workspace_root at src/config.rs:546 — it is NOT
@@ -142,5 +144,26 @@ func wrapRootInvalid(err error) error {
 // string-based, not an oracle-faithful port of path_safety.rs (findings
 // SEC-4 / ARCH-4).
 func stripUNCPrefix(p string) string {
-	return strings.TrimPrefix(p, uncPrefix)
+	if !strings.HasPrefix(p, uncPrefix) {
+		return p
+	}
+
+	remainder := p[len(uncPrefix):]
+	if len(remainder) >= len("UNC\\") && strings.EqualFold(remainder[:len("UNC\\")], "UNC\\") {
+		remainder = `\\` + remainder[len("UNC\\"):]
+	}
+	if !isWindowsAbsolutePath(remainder) {
+		return p
+	}
+	return remainder
+}
+
+func isWindowsAbsolutePath(p string) bool {
+	if len(p) >= 2 && p[0] == '\\' && p[1] == '\\' {
+		return true
+	}
+	if len(p) < 3 {
+		return false
+	}
+	return ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) && p[1] == ':' && p[2] == '\\'
 }
