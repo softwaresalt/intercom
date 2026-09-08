@@ -14,10 +14,23 @@
 // entry names its current mitigation status and the concrete condition
 // that would force mitigation:
 //
-//   - GO-14 (write-through-dangling-symlink): checkSymlinkEscape treats a
-//     dangling symlink at the FINAL path component as the lexical-only
-//     accept branch (matching the oracle's Path::exists() semantics, which
-//     follows symlinks and reports false for a dangling link). STATUS:
+//   - GO-14 (write-through-dangling-symlink): checkSymlinkEscape's
+//     documented lexical-only acceptance is bounded to a dangling symlink
+//     at the FINAL path component only, including a transitively dangling
+//     final link whose chain ends unresolved. 012.003-T narrows, but does
+//     not remove, the same write-through-outside-workspace primitive:
+//     under the identical attacker capability, a strict-ancestor dangling
+//     link or junction is now rejected, but Resolve("link") still accepts
+//     the final-component form with one fewer path component. Intermediate
+//     directory entries that exist but are not statable as contained
+//     directories are rejected regardless of target because the target is
+//     not yet verifiably contained; that class includes dangling links,
+//     cycles, EACCES, and unresolvable reparse points.
+//     symlinkEscapeMsg deliberately covers both genuine escape and
+//     unverifiable-target rejections. A future shipment may flip the GO-14
+//     regression lock only if it explicitly reconsiders this final-
+//     component acceptance, updates the lock, and lands the replacement
+//     boundary in the same change (see stash F133AB7E). STATUS:
 //     accepted, oracle-parity. TRIGGER: mitigation is forced the moment any
 //     caller uses a Resolve()'d path to WRITE through a dangling symlink
 //     whose target is outside the workspace — i.e. the first real
