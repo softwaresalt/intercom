@@ -1,11 +1,16 @@
 ---
-title: "011-S pathsafe containment correctness — compacted session memory"
+title: "Compacted memory — pathsafe containment correctness (011-S)"
 date: 2026-09-08
 shipment: 011-S
 feature: 012-F
 status: shipped
-compaction_tier: 1
+pr: 34
+merge_commit_sha: 54d27ba953a068cea539a1f691e5c4ad1231d2ba
+compacted_from:
+  - docs/archive/memory/2026-09-07-ship-pathsafe-containment-shipment-011-memory.md
 ---
+
+# Compacted Memory — Pathsafe Containment Correctness (011-S)
 
 ## Outcome
 
