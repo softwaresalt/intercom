@@ -355,7 +355,8 @@ func TestResolveAllowsSymlinkedDirectoryWithNonExistentLeaf(t *testing.T) {
 	}
 }
 
-// path under the root resolves successfully (oracle step 7).
+// TestResolveAllowsNonExistentRelativePath verifies a non-existent
+// relative path under the root resolves successfully (oracle step 7).
 func TestResolveAllowsNonExistentRelativePath(t *testing.T) {
 	rootDir := t.TempDir()
 	root, err := NewRoot(rootDir)

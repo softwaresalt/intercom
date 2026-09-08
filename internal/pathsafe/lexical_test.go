@@ -66,6 +66,7 @@ func TestNormalizeDoesNotOverRejectLiteralBackslashOnNonWindows(t *testing.T) {
 	}
 }
 
+// TestNormalizePreservesSafeInteriorTraversal verifies a/b/../c.txt
 // normalizes to a/c.txt and ./src/main.go normalizes to src/main.go
 // (finding GO-13, proving Clean equivalence).
 func TestNormalizePreservesSafeInteriorTraversal(t *testing.T) {
