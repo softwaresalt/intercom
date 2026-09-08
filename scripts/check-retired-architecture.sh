@@ -94,6 +94,8 @@ def should_scan_repo_path(path: str) -> bool:
 
 
 def engine_for_path(path: Path):
+    if path.name == 'config.toml.example':
+        return 'toml'
     if path.suffix == '.go':
         return 'go'
     if path.suffix == '.toml':
@@ -511,6 +513,14 @@ def run_repo_selection_self_test():
         len(rel_paths) > 0,
         f"selected {len(rel_paths)} tracked repo paths",
         'selected zero repo paths',
+        failures,
+    )
+
+    report_assertion(
+        'dispatch config.toml.example',
+        engine_for_path(Path('config.toml.example')) == 'toml',
+        'engine_for_path routes config.toml.example to the TOML engine',
+        f"engine_for_path returned {engine_for_path(Path('config.toml.example'))!r}",
         failures,
     )
 
