@@ -379,6 +379,37 @@ def scan_path(path: Path):
     return []
 
 
+def select_repo_paths():
+    proc = subprocess.run(
+        ['git', 'ls-files', '--', 'config.toml.example', 'cmd/**', 'internal/config/**'],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return sorted(path for path in proc.stdout.splitlines() if should_scan_repo_path(path))
+
+
+def expected_internal_repo_paths():
+    proc = subprocess.run(
+        ['git', 'ls-files', '--', 'internal/**'],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    expected = []
+    for path in proc.stdout.splitlines():
+        if not path.startswith('internal/'):
+            continue
+        if '/testdata/' in path or path.endswith('_test.go'):
+            continue
+        if path.endswith('.go'):
+            expected.append(path)
+    return sorted(expected)
+
+
 def load_fixture_manifest():
     data = json.loads(fixture_manifest_path.read_text(encoding='utf-8'))
     if not isinstance(data, dict):
@@ -387,14 +418,7 @@ def load_fixture_manifest():
 
 
 def run_repo_scan():
-    proc = subprocess.run(
-        ['git', 'ls-files', '--', 'config.toml.example', 'cmd/**', 'internal/config/**'],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    rel_paths = [p for p in proc.stdout.splitlines() if should_scan_repo_path(p)]
+    rel_paths = select_repo_paths()
 
     findings = []
     for rel_path in rel_paths:
@@ -402,6 +426,60 @@ def run_repo_scan():
 
     if findings:
         print('\n'.join(findings), file=sys.stderr)
+        raise SystemExit(1)
+
+
+def report_assertion(name: str, ok: bool, success: str, failure: str, failures: list[str]):
+    if ok:
+        print(f"PASS {name}: {success}")
+        return
+
+    print(f"FAIL {name}: {failure}")
+    failures.append(f"{name}: {failure}")
+
+
+def run_repo_selection_self_test():
+    rel_paths = select_repo_paths()
+    internal_actual = sorted(path for path in rel_paths if path.startswith('internal/'))
+    internal_expected = expected_internal_repo_paths()
+    failures: list[str] = []
+
+    missing_internal = sorted(set(internal_expected) - set(internal_actual))
+    extra_internal = sorted(set(internal_actual) - set(internal_expected))
+    report_assertion(
+        'selection structural inclusion',
+        internal_actual == internal_expected,
+        f"selected every tracked internal non-test, non-testdata Go file ({len(internal_actual)} paths)",
+        f"missing={missing_internal or ['none']} extra={extra_internal or ['none']}",
+        failures,
+    )
+
+    report_assertion(
+        'selection internal exclusions',
+        not any(path.startswith('internal/') and (path.endswith('_test.go') or '/testdata/' in path) for path in rel_paths),
+        'excluded internal test files and internal testdata paths',
+        'selected an internal test or testdata path',
+        failures,
+    )
+
+    predicate_guard = not should_scan_repo_path('scripts/testdata/retiredgo/x.go')
+    report_assertion(
+        'selection self-scan guard',
+        not any(path.startswith('scripts/') for path in rel_paths) and predicate_guard,
+        'did not select scripts/ paths and predicate rejects scripts/testdata/retiredgo/x.go',
+        'self-scan guard failed for scripts/ selection or predicate probe',
+        failures,
+    )
+
+    report_assertion(
+        'selection non-empty',
+        len(rel_paths) > 0,
+        f"selected {len(rel_paths)} tracked repo paths",
+        'selected zero repo paths',
+        failures,
+    )
+
+    if failures:
         raise SystemExit(1)
 
 
@@ -465,6 +543,7 @@ if mode == 'repo':
     run_repo_scan()
 elif mode == 'self-test':
     run_fixture_self_test()
+    run_repo_selection_self_test()
 else:
     raise SystemExit(f'unknown mode: {mode}')
 PY
