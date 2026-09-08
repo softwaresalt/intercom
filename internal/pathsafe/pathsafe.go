@@ -216,40 +216,62 @@ func pathHasPrefix(path, p string) bool {
 
 // checkSymlinkEscape implements oracle steps 6-7, extended to close a gap
 // beyond the literal oracle port: it walks up from resolved to the nearest
-// existing ancestor (not just checking resolved itself), re-resolves that
-// ancestor's symlinks, and re-asserts containment. This is required because
-// the dominant real-world use case — creating a new file — has a
-// non-existent leaf component; gating the check on os.Stat(resolved) alone
-// would let a symlinked *intermediate directory* pointing outside the
-// workspace silently pass validation whenever the leaf does not yet exist.
-// On failure it emits "symlink target escapes workspace".
+// existing ancestor (not just checking resolved itself), re-canonicalizes
+// that ancestor through canonicalizeReparse, and re-asserts containment.
+// This is required because the dominant real-world use case — creating a
+// new file — has a non-existent leaf component; gating the check on
+// resolved's own existence alone would let a symlinked or junctioned
+// *intermediate directory* pointing outside the workspace silently pass
+// validation whenever the leaf does not yet exist. On failure it emits
+// "symlink target escapes workspace".
 //
-// The first probe (resolved itself, i.e. the final path component) uses
-// os.Stat to preserve the documented GO-14 lexical-only acceptance for a
-// dangling final symlink. Every strict ancestor above the leaf uses
-// os.Lstat so a dangling intermediate symlink or junction entry is caught
-// (Lstat reports the reparse-point entry itself rather than following it,
-// and a non-directory, non-symlink Lstat result is rejected outright).
+// 014.004-T (rev 2 of the 700B41CE remediation): every probe, including the
+// first one against resolved itself, now uses os.Lstat rather than
+// os.Stat. This is the mount-point-aware canonicalization the corrected
+// root cause requires (see the package's 700B41CE risk-register entry in
+// root.go): the defect was never "the final component's reparse identity is
+// unexamined" in isolation, it was that containment was checked against a
+// path that had never been mount-point-canonicalized. Lstat never follows
+// the exact final path component it is given, so a live OR dangling
+// symlink/junction sitting at that exact position is detected as a reparse
+// entry (or at minimum as "something exists here") instead of being
+// transparently traversed (a live target) or reported as simply absent (a
+// dangling target, the pre-rev-2 GO-14 acceptance). Once an existing
+// ancestor is found this way, canonicalizeReparse (platform-split,
+// 014.003-T) replaces the old filepath.EvalSymlinks(ancestor) call:
+// GetFinalPathNameByHandleW semantics resolve IO_REPARSE_TAG_MOUNT_POINT in
+// addition to IO_REPARSE_TAG_SYMLINK, at any path position, which
+// filepath.EvalSymlinks does not guarantee for a reparse point that is the
+// exact terminal element of the path being evaluated (finding A1: the C1
+// case from 014.001-T). A component whose target cannot be resolved this
+// way (canonicalizeReparse returns an error — e.g. a dangling symlink,
+// ELOOP, or EACCES) is rejected, never accepted (AC3): this is what flips
+// the GO-14 dangling-final-symlink case from accept to reject (014.002-T).
 //
-// KNOWN LIMITATION, NOT closed by this function (see stash-tracked follow-up
-// referenced from the package risk register): on Windows, a Lstat result for
-// a directory junction (IO_REPARSE_TAG_MOUNT_POINT) is neither ModeDir nor
-// ModeSymlink, so any live (non-dangling) junction used as a strict ancestor
-// is unconditionally rejected here without its target ever being resolved
-// or compared against root -- this is a false-rejection (fails closed), not
-// an escape, but it is NOT "re-resolved" despite what an earlier draft of
-// this comment claimed. Separately and more importantly: a LIVE junction
-// used as resolved itself (the final component) is NOT caught by this
-// function at all -- os.Stat transparently follows the junction to its
-// target and succeeds, so the loop breaks on the very first iteration
-// before any ancestor logic runs, and the post-loop filepath.EvalSymlinks
-// call does not resolve IO_REPARSE_TAG_MOUNT_POINT either, so containment
-// is never actually checked against the junction's real target. This is a
-// pre-existing gap (present before this function's dangling-symlink fix,
-// unchanged by it) and is out of this shipment's chartered scope
-// (011-S/012-F closes the DANGLING intermediate case only); it is not the
-// same defect as the accepted, unrelated GO-14 dangling-final-symlink
-// acceptance and must not be conflated with it in future risk-register work.
+// The strict-ancestor rejection for an entry that is neither a directory
+// nor a symlink (Lstat's Mode()&fs.ModeSymlink) is retained UNCHANGED from
+// the pre-rev-2 function (AC4): a live directory junction used as a
+// strict ancestor still reports fs.ModeIrregular (neither ModeDir nor
+// ModeSymlink) and is still unconditionally rejected without ever reaching
+// canonicalizeReparse, regardless of whether its real target is inside or
+// outside root. This is a deliberate, documented false-rejection
+// (fail-closed usability gap, tracked as residual F3, deferred — see
+// root.go), not a relaxation: relaxing it would require making this branch
+// itself reparse-aware, which rev 1 attempted and rev 2's adversarial
+// review (finding A2) identified as introducing a NEW intermediate-junction
+// bypass. This check therefore never fires for the three 014.001-T cases:
+// a junction used as the exact final probed component (C1) or reached only
+// as an intermediate component of a successful Lstat on a deeper path (C2,
+// C3) is never separately Lstat'd as its own standalone strict ancestor in
+// those traces — the junction's redirection is instead captured by
+// canonicalizeReparse operating on the fuller path that contains it.
+//
+// GODEBUG independence (AC5): this fix does not rely on
+// os.Stat/os.Lstat/filepath.EvalSymlinks reparse-resolution semantics for
+// the canonicalization step — canonicalizeReparse calls
+// GetFinalPathNameByHandleW directly — so the verdict is identical under
+// GODEBUG=winsymlink=0 and =1 by construction. An empirical both-settings
+// proof is deferred (§8 of the shipment plan, YAGNI per scope audit).
 //
 // Ascent is limited to fs.ErrNotExist. Any other probe error — for example
 // permission denial, a symlink cycle, or a malformed reparse point — is
@@ -257,15 +279,14 @@ func pathHasPrefix(path, p string) bool {
 //
 // Known limitations (both oracle-parity, see the package doc comment):
 // the TOCTOU window between this check and actual filesystem use, and the
-// fact that EvalSymlinks does not resolve hardlinks, so a pre-existing
-// in-workspace hardlink to an external file on the same volume passes
-// validation (finding SEC-5).
+// fact that canonicalizeReparse does not resolve hardlinks, so a
+// pre-existing in-workspace hardlink to an external file on the same
+// volume passes validation (finding SEC-5).
 func checkSymlinkEscape(root Root, resolved string) (string, error) {
 	ancestor := resolved
-	probe := os.Stat
 	finalProbe := true
 	for {
-		info, err := probe(ancestor)
+		info, err := os.Lstat(ancestor)
 		if err == nil {
 			if !finalProbe && !info.IsDir() && info.Mode()&fs.ModeSymlink == 0 {
 				return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
@@ -291,14 +312,14 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 			// seam, which would be a production behavior change inside a
 			// tests-only unit (Width Isolation). Guarded defensively only
 			// to avoid an infinite loop, never exercised by real input.
+			// 014.005-T flips this branch's return value; unchanged here.
 			return resolved, nil
 		}
 		ancestor = parent
-		probe = os.Lstat
 		finalProbe = false
 	}
 
-	real, err := filepath.EvalSymlinks(ancestor)
+	real, err := canonicalizeReparse(ancestor)
 	if err != nil {
 		return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
 	}
