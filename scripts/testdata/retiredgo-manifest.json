@@ -1,1 +1,4 @@
-{}
+{
+  "retired-accept-comment-only.go": "accept",
+  "retired-reject-slack-team-id.go": "reject"
+}
