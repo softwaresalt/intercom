@@ -523,6 +523,14 @@ anti-adversary control**, and must be documented as such. Making it a
 *required* check without the CODEOWNERS protection tracked in stash
 `BEDD2E70` would convey assurance it does not have.
 
+### D6c — Amendment (2026-09-08): broaden the gate for the first time to `internal/**`
+
+D6a's `internal/config/**` narrowing is retired. The enforced repo scope is now the tracked, non-test Go surface under `internal/**`, while `internal/**/*_test.go` and `internal/**/testdata/**` remain accepted but unenforced. `cmd/**` and `config.toml.example` remain in scope.
+
+**Reason:** `009.002-T` removed the residual `internal/apperr` retired kinds that forced the narrower fence, so invariant I5's original gate-scope consequence is discharged. This is a broadening **for the first time** to `internal/**`, not a reversal "back" to an earlier shipped scope: git history shows the gate was introduced already narrowed in commit `6dec85a`.
+
+**Threat model unchanged:** D6b still governs the control's assurance level. The gate is an anti-accident hygiene precondition for C3 coverage, not an authorization or anti-adversary control, and it does not discharge H5.
+
 ### D7 — Persistence is deferred, not decided here
 
 The 7-table SQLite schema in the port brief is Slack-shaped (`slack_ts` in 5 of
