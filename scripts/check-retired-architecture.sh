@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Usage:
 #   scripts/check-retired-architecture.sh
-#     Scans tracked files in internal/config/** (excluding *_test.go and any
+#     Scans tracked files in internal/** (excluding *_test.go and any
 #     testdata/ directory), config.toml.example, and cmd/**. Exits 0 when no
 #     retired-architecture token is found as a Go identifier or TOML key.
 #   scripts/check-retired-architecture.sh --self-test
@@ -86,7 +86,7 @@ def should_scan_repo_path(path: str) -> bool:
         return True
     if path.startswith('cmd/'):
         return path.endswith('.go')
-    if not path.startswith('internal/config/'):
+    if not path.startswith('internal/'):
         return False
     if '/testdata/' in path or path.endswith('_test.go'):
         return False
@@ -416,7 +416,7 @@ def scan_path(path: Path):
 
 def select_repo_paths():
     proc = subprocess.run(
-        ['git', 'ls-files', '--', 'config.toml.example', 'cmd/**', 'internal/config/**'],
+        ['git', 'ls-files', '--', 'config.toml.example', 'cmd/**', 'internal/**'],
         cwd=root,
         text=True,
         capture_output=True,
