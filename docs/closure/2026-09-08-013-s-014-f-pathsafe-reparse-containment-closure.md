@@ -1,3 +1,23 @@
+---
+title: "Post-merge closure: 013-S / 014-F — pathsafe reparse-point containment hardening"
+description: "Operational closure artifact for shipment 013-S / feature 014-F"
+status: "complete"
+tags:
+  - "closure"
+  - "013-S"
+  - "014-F"
+  - "post-merge"
+date: 2026-09-08
+mode: post-merge
+shipment: 013-S
+feature: 014-F
+pr: 40
+merge_commit_sha: 17daffb5614f2f8ed797d7647aeadcc1dc29b1d2
+compaction_status: done
+closure_status: READY_WITH_CONDITIONS
+releasability: READY_WITH_CONDITIONS
+---
+
 # Post-merge closure: 013-S / 014-F — pathsafe reparse-point containment hardening
 
 - Mode: `post-merge`
