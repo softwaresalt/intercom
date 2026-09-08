@@ -1,5 +1,5 @@
 ---
-compaction_status: pending
+compaction_status: done
 ---
 
 # Post-Merge Operational Closure — Shipment 012-S (Feature 013-F)
@@ -143,5 +143,11 @@ this dark-mode autonomous session.
 
 ## Compaction Status (P-020)
 
-`pending` at artifact creation. Finalized to `done` or `degraded` by Ship's
-post-merge closure Step 8 (`compact-context`) invocation below.
+`done` — `compact-context` invoked at post-merge closure, consolidated this
+release unit's memory (Stage's queuing session, task 001's RED evidence, and
+Ship's session summary) into
+`docs/memory/compacted/2026-09-08-012-s-013-f-compacted.md`, with verbose
+originals moved to `docs/archive/memory/`. Overall `docs/memory/` was well
+under both compaction thresholds (23 files / 92.7 KB vs. 40 files / 500 KB),
+so this was the intended single bounded Tier-1 consolidation of the
+just-closed release unit's memory, not a broader sweep.
