@@ -91,3 +91,95 @@ func TestResolveRejectsDanglingIntermediateJunctionOutsideRoot(t *testing.T) {
 		t.Fatalf("Resolve(%q) error = %q, want to contain %q", candidate, err.Error(), symlinkEscapeMsg)
 	}
 }
+
+// TestResolveRejectsLiveJunctionAsFinalComponent verifies case C1 (014.001-T):
+// a LIVE (non-dangling) directory junction whose real target lies outside
+// the workspace root is rejected when the junction itself is the literal
+// final path component. Deliberately uses Resolve("junction-live"), NOT
+// Resolve("junction-live/child") -- a subpath exercises the already-fixed
+// ancestor branch and would false-negative (finding A1/R3).
+func TestResolveRejectsLiveJunctionAsFinalComponent(t *testing.T) {
+	outsideRoot := t.TempDir()
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	linkPath := filepath.Join(root.Path(), "junction-live")
+	createDirectoryJunction(t, linkPath, outsideRoot)
+
+	_, err = root.Resolve("junction-live")
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", "junction-live", symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", "junction-live", err.Error(), symlinkEscapeMsg)
+	}
+}
+
+// TestResolveRejectsLiveJunctionAsIntermediateWithExistingLeaf verifies case
+// C2 (014.001-T): a live directory junction used as an INTERMEDIATE path
+// component, with an EXISTING leaf beyond it, is rejected. os.Lstat/os.Stat
+// on the full candidate transparently traverses the junction and succeeds on
+// the first ancestor-walk iteration, so the reparse branch never fires
+// without whole-prefix canonicalization (finding A1).
+func TestResolveRejectsLiveJunctionAsIntermediateWithExistingLeaf(t *testing.T) {
+	outsideRoot := t.TempDir()
+	existingLeaf := filepath.Join(outsideRoot, "existing.txt")
+	if err := os.WriteFile(existingLeaf, []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create existing leaf outside root: %v", err)
+	}
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	linkPath := filepath.Join(root.Path(), "junction-live")
+	createDirectoryJunction(t, linkPath, outsideRoot)
+
+	candidate := filepath.Join("junction-live", "existing.txt")
+	_, err = root.Resolve(candidate)
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", candidate, symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", candidate, err.Error(), symlinkEscapeMsg)
+	}
+}
+
+// TestResolveRejectsLiveJunctionAncestorWithExistingDirBeyond verifies case
+// C3 (014.001-T): a live directory junction whose real target contains an
+// EXISTING directory, with a non-existent leaf below that, is rejected. The
+// ancestor walk terminates on the existing directory BEYOND the junction --
+// a position filepath.EvalSymlinks (which does not resolve mount points)
+// cannot see as escaping, because it never redirects through the junction
+// in the first place.
+func TestResolveRejectsLiveJunctionAncestorWithExistingDirBeyond(t *testing.T) {
+	outsideRoot := t.TempDir()
+	existingDir := filepath.Join(outsideRoot, "existing-dir")
+	if err := os.Mkdir(existingDir, 0o755); err != nil {
+		t.Fatalf("failed to create existing dir outside root: %v", err)
+	}
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	linkPath := filepath.Join(root.Path(), "junction-live")
+	createDirectoryJunction(t, linkPath, outsideRoot)
+
+	candidate := filepath.Join("junction-live", "existing-dir", "missing.txt")
+	_, err = root.Resolve(candidate)
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", candidate, symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", candidate, err.Error(), symlinkEscapeMsg)
+	}
+}
