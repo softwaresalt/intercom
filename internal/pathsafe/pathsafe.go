@@ -236,7 +236,12 @@ func pathHasPrefix(path, p string) bool {
 // resolved's own existence alone would let a symlinked or junctioned
 // *intermediate directory* pointing outside the workspace silently pass
 // validation whenever the leaf does not yet exist. On failure it emits
-// "symlink target escapes workspace".
+// one of two distinct messages (014.006-T): symlinkEscapeMsg when the
+// target was successfully canonicalized and verified outside root (a
+// genuine, proven escape), or symlinkUnverifiableMsg when containment
+// could not be proven at all (an unresolvable target, a blocking
+// non-directory ancestor, or any other non-ENOENT probe error) — see the
+// per-branch commentary at each return site in the function body below.
 //
 // 014.004-T (rev 2 of the 700B41CE remediation): every probe, including the
 // first one against resolved itself, now uses os.Lstat rather than

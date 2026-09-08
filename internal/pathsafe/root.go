@@ -14,70 +14,139 @@
 // entry names its current mitigation status and the concrete condition
 // that would force mitigation:
 //
-//   - GO-14 (write-through-dangling-symlink): checkSymlinkEscape's
-//     documented lexical-only acceptance is bounded to a dangling symlink
-//     at the FINAL path component only, including a transitively dangling
-//     final link whose chain ends unresolved. 012.003-T narrows, but does
-//     not remove, the same write-through-outside-workspace primitive:
-//     under the identical attacker capability, a strict-ancestor dangling
-//     link or junction is now rejected, but Resolve("link") still accepts
-//     the final-component form with one fewer path component. Intermediate
-//     directory entries that exist but are not statable as contained
-//     directories are rejected regardless of target because the target is
-//     not yet verifiably contained; that class includes dangling links,
-//     cycles, EACCES, and unresolvable reparse points.
-//     symlinkEscapeMsg deliberately covers both genuine escape and
-//     unverifiable-target rejections. A future shipment may flip the GO-14
-//     regression lock only if it explicitly reconsiders this final-
-//     component acceptance, updates the lock, and lands the replacement
-//     boundary in the same change (see stash F133AB7E). STATUS:
-//     accepted, oracle-parity. TRIGGER: mitigation is forced the moment any
-//     caller uses a Resolve()'d path to WRITE through a dangling symlink
-//     whose target is outside the workspace — i.e. the first real
-//     persistence/file-write call site (the same trigger as the
-//     database.path Constitution Check exception in
-//     internal/config/validate.go rule 7, and this package's own mechanical
-//     CI gate, scripts/check-write-path-precondition.sh).
+//   - GO-14 (write-through-dangling-symlink): RESOLVED / FLIPPED by 013-S
+//     (014.002-T + 014.004-T), superseding the "accepted, oracle-parity"
+//     status this entry previously recorded. Previously, checkSymlinkEscape
+//     accepted a dangling symlink at the exact FINAL path component
+//     unconditionally (012.003-T had already narrowed the same primitive by
+//     rejecting a strict-ancestor dangling link or junction, but
+//     Resolve("link") itself, with one fewer path component, still
+//     accepted). 014.002-T inverts the regression lock
+//     (TestResolveRejectsDanglingSymlinkAtFinalComponent now asserts
+//     rejection where the prior test, TestResolveAllowsDanglingSymlinkAt-
+//     FinalComponent, asserted acceptance), and 014.004-T's canonicalization
+//     rewrite makes the final component pass through canonicalizeReparse
+//     exactly like every other resolved entry -- so a dangling target at
+//     ANY position, including the terminal component, is now rejected
+//     (symlinkUnverifiableMsg, 014.006-T) rather than silently accepted.
+//     REPLACEMENT BOUNDARY: the prior acceptance boundary (final component
+//     only) is withdrawn outright, not narrowed further -- there is no
+//     remaining lexical-only acceptance case for a dangling target. This is
+//     a deliberate DIVERGENCE from the behavioral oracle's lexical-only
+//     final-component acceptance, justified by D8 (agent-intercom's Rust
+//     repository is historical reference only for this package, not a live
+//     behavioral oracle this package is obligated to replicate divergence-
+//     for-divergence going forward). TRIGGER: none remaining -- finding
+//     closed. Originating flip procedure: stash F133AB7E.
 //   - Resolve -> use TOCTOU window (see "Known limitations" above): there
 //     is no atomic validate-then-open primitive in this package. STATUS:
-//     accepted, oracle-parity. TRIGGER: same as GO-14 — forced the moment a
-//     real write path exists.
+//     accepted, oracle-parity. TRIGGER: forced the moment a real write path
+//     exists (unchanged by 013-S; 013-S's anti-goal excludes this from
+//     scope — see below).
 //   - SEC-5 (EvalSymlinks ignores hardlinks, see "Known limitations"
-//     above). STATUS: accepted, oracle-parity. TRIGGER: same as GO-14.
-//   - 5FE4A7BE (012.007-T; case-folding risk register, not a BF5DE670
-//     item): darwin currently under-folds because pathEqual/pathHasPrefix
-//     fold on Windows only, while darwin is a shipped target and is
+//     above). STATUS: accepted, oracle-parity. TRIGGER: same as the
+//     Resolve -> use TOCTOU entry above (unchanged by 013-S).
+//   - 5FE4A7BE-a (012.007-T; case-folding, darwin under-fold): darwin
+//     currently under-folds because pathEqual/pathHasPrefix fold on
+//     Windows only, while darwin is a shipped target and is
 //     case-insensitive by default on APFS/HFS+. STATUS: accepted,
 //     fail-closed, plausible/unconfirmed. TRIGGER: reproduce a legitimate
-//     in-root darwin path rejected solely because the volume is case-
-//     insensitive and the only difference is casing. Extending the fold to
-//     darwin was rejected because a case-sensitive APFS volume would turn
-//     that rejection into an acceptance, i.e. fail-open. The already-
-//     enabled Windows fold is itself not the safe baseline: NTFS supports
+//     in-root darwin path rejected solely because the volume is
+//     case-insensitive and the only difference is casing. Extending the
+//     fold to darwin was rejected because a case-sensitive APFS volume
+//     would turn that rejection into an acceptance, i.e. fail-open (see
+//     5FE4A7BE-b). NOT touched by 013-S (deliberately out of scope, plan
+//     §8 residual "case-folding fail-open" — declared out of scope
+//     because fixing it is not a member of any of 013-S's selected stash
+//     entries and 700B41CE's closure below explicitly does not cover it).
+//   - 5FE4A7BE-b (012.007-T; case-folding, Windows/WSL over-fold — split
+//     out of the single 5FE4A7BE entry by 014.008-T/F9, which previously
+//     paired this with 5FE4A7BE-a under one contradictory STATUS/TRIGGER
+//     pair): the already-enabled Windows fold (pathEqual/pathHasPrefix
+//     strings.EqualFold) is itself not a safe baseline: NTFS supports
 //     per-directory case sensitivity, and WSL enables it on the
 //     directories it creates, so a symlink resolving to a case-variant
 //     sibling can be folded into acceptance. STATUS: accepted, fail-open
 //     risk. TRIGGER: a workspace root on a case-sensitivity-enabled NTFS
-//     or WSL-created tree.
-//   - 700B41CE (discovered by adversarial review during 011-S/012-F,
-//     NOT a 012-F chartered finding, NOT closed by 012.003-T): on
-//     Windows, a LIVE (non-dangling) directory junction used as the FINAL
-//     path component is accepted by checkSymlinkEscape regardless of its
-//     target, because os.Stat transparently follows
-//     IO_REPARSE_TAG_MOUNT_POINT and filepath.EvalSymlinks never resolves
-//     it -- containment is never actually checked against the junction's
-//     real target. Confirmed pre-existing in this package before 011-S
-//     (main's original checkSymlinkEscape used os.Stat unconditionally for
-//     every ancestor including the final component, so the identical
-//     bypass mechanism already existed) and empirically reproduced.
-//     Requires no elevated privilege. STATUS: accepted (unresolved,
-//     tracked), NOT oracle-parity -- this is a Go/Windows-runtime-specific
-//     gap with no equivalent finding in the oracle port record. TRIGGER:
-//     mitigation is forced by the same real-write-call-site trigger as
-//     GO-14 above, or sooner if this package is asked to certify
-//     containment for a workspace root known to contain live junctions.
+//     or WSL-created tree. NOT touched by 013-S (same plan §8 residual as
+//     5FE4A7BE-a; the two entries name opposite-direction risks on
+//     opposite platforms and must not be conflated into one).
+//   - 700B41CE: CLOSED for the reparse-point mechanism by 013-S
+//     (commits 0c51669 "feat(014.004-T): GREEN wire canonicalization into
+//     the containment check" and 3e1cb58 "fix(014.005-T): flip the
+//     fail-open terminal branch to fail-closed"). Previously: on Windows, a
+//     LIVE (non-dangling) directory junction used as the FINAL path
+//     component was accepted by checkSymlinkEscape regardless of its
+//     target, because os.Stat transparently followed
+//     IO_REPARSE_TAG_MOUNT_POINT and filepath.EvalSymlinks never resolved
+//     it as the exact terminal argument -- containment was never actually
+//     checked against the junction's real target (case C1, 014.001-T).
+//     canonicalizeReparse (014.003-T, GetFinalPathNameByHandleW semantics)
+//     now resolves IO_REPARSE_TAG_MOUNT_POINT at any path position,
+//     including the terminal component, closing C1.
+//     Cases C2 (junction as an intermediate component with an existing
+//     leaf) and C3 (junction ancestor with an existing directory beyond
+//     it) are named here as CLOSED per this entry's scope, but with an
+//     important accuracy caveat established empirically during
+//     014.001-T (Go 1.26.5, GODEBUG=winsymlink=1 default on this
+//     toolchain): C2 and C3 were ALREADY correctly rejected by the
+//     PRE-existing implementation before 013-S touched this file --
+//     filepath.EvalSymlinks, called on an ancestor path with additional
+//     components following the junction, already transparently resolved
+//     it during ordinary OS path traversal. Only C1 (the junction as the
+//     exact terminal argument passed to EvalSymlinks/Lstat, gated on a
+//     ModeSymlink check that a junction's ModeIrregular never satisfies)
+//     was a live, exploitable bypass on this toolchain. C2/C3's tests
+//     (junction_windows_test.go) remain in the suite as non-regression
+//     locks proving canonicalizeReparse continues to handle them
+//     correctly, not as evidence that 013-S fixed three separate bugs.
+//     This closure explicitly does NOT cover: case-folding (5FE4A7BE-a /
+//     5FE4A7BE-b, untouched), hardlinks (SEC-5, untouched), or the
+//     Resolve -> use TOCTOU window (untouched) -- those remain separately
+//     tracked, unresolved risks. STATUS: closed (reparse-point mechanism
+//     only). TRIGGER: none remaining for this specific mechanism; the
+//     three risks explicitly excluded above retain their own independent
+//     triggers, listed at their own entries.
 //     See docs/closure/2026-09-07-011-s-012-f-pathsafe-containment-adversarial-review.md
-//     (finding F0) for the full trace and remediation options.
+//     (finding F0) for the pre-013-S trace, and
+//     docs/plans/2026-09-08-intercom-go-pathsafe-reparse-containment-plan.md
+//     for the full 013-S remediation record.
+//   - F3 (in-root junction ancestor false-rejection; new entry, 014.008-T
+//     AC 6, plan §8 residual): checkSymlinkEscape's strict-ancestor
+//     rejection for an entry that is neither a directory nor a symlink
+//     (a live directory junction reports fs.ModeIrregular, matching
+//     neither) unconditionally rejects a junction used as a strict
+//     ancestor, even when its real target is INSIDE the workspace root --
+//     a false rejection, not a containment failure. Deliberately NOT
+//     relaxed by 013-S: rev 1 of the 013-S plan attempted exactly this
+//     relaxation, and rev 2's independent adversarial review (finding A2)
+//     identified that relaxing this branch while filepath.EvalSymlinks
+//     still cannot resolve mount points as a non-terminal probe would
+//     INTRODUCE a new intermediate-junction bypass -- the wrong risk
+//     trade inside a shipment whose purpose is closing a bypass, not
+//     opening one. STATUS: accepted, fail-closed usability gap
+//     (deliberately not relaxed). TRIGGER: a future shipment that
+//     explicitly re-derives a reparse-aware ancestor probe (not merely a
+//     terminal-canonicalization step like canonicalizeReparse) capable of
+//     distinguishing an in-root live junction ancestor from an
+//     out-of-root one without reintroducing A2's bypass.
+//   - GODEBUG-empirical (both-settings empirical proof; new entry,
+//     014.008-T AC 6, plan §8 residual): 014.004-T AC 5 makes the
+//     reparse-point fix GODEBUG-independent BY CONSTRUCTION --
+//     canonicalizeReparse calls GetFinalPathNameByHandleW directly rather
+//     than relying on os.Stat/os.Lstat/filepath.EvalSymlinks's
+//     GODEBUG=winsymlink-gated reparse-resolution semantics, so the
+//     containment verdict is identical under GODEBUG=winsymlink=0 and =1.
+//     A subprocess re-exec harness that empirically PROVES this by running
+//     the suite under both settings is deliberately not built. STATUS:
+//     accepted, YAGNI (scope-audit P3, plan §8) -- guards a non-default
+//     toolchain configuration reachable only by deliberate override (this
+//     toolchain, Go 1.26.5, pins winsymlink=1 by default). TRIGGER: a
+//     future shipment that changes canonicalizeReparse to depend, even
+//     partially, on os.Stat/os.Lstat/filepath.EvalSymlinks reparse
+//     semantics rather than a direct Win32 call, at which point the
+//     by-construction independence claim above must be re-verified or the
+//     empirical harness must be built.
 //
 // RETIREMENT PROCEDURE when a real write path arrives (C4-C6): each finding
 // above must be re-evaluated against the concrete write call site before
@@ -101,7 +170,21 @@ import (
 )
 
 // uncPrefix is the volume-path prefix Go's filepath.EvalSymlinks emits on
-// Windows via GetFinalPathNameByHandle.
+// Windows. This is Go's OWN standard-library internal implementation
+// detail (package path/filepath's Windows-specific EvalSymlinks calls
+// GetFinalPathNameByHandleW to resolve the input path and construct its
+// return value, which is where this prefix in EvalSymlinks' OUTPUT comes
+// from) -- it is used exclusively by NewRoot's one-time root
+// canonicalization above, NOT by checkSymlinkEscape.
+//
+// F8 (014.008-T): this is a DISTINCT attribution from
+// canonicalizeReparse's (reparse_windows.go, 014.003-T) own, separate,
+// DIRECT GetFinalPathNameByHandleW call, which this package's own code
+// makes explicitly (via syscall.NewLazyDLL, not through
+// filepath.EvalSymlinks) as part of checkSymlinkEscape's per-Resolve-call
+// containment check. The two call sites both ultimately reach the same
+// underlying Win32 API, but for different callers, at different times,
+// for different purposes -- do not conflate them.
 const uncPrefix = `\\?\`
 
 // Root is a canonicalized workspace root. Construct with NewRoot; the zero
