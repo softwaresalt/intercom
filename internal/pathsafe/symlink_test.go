@@ -168,6 +168,193 @@ func TestResolveAllowsDanglingSymlinkAtFinalComponent(t *testing.T) {
 	}
 }
 
+// TestResolveRejectsDanglingIntermediateSymlinkOutsideRoot verifies a depth-1
+// dangling intermediate symlink whose target is outside the root is rejected
+// with "symlink target escapes workspace".
+func TestResolveRejectsDanglingIntermediateSymlinkOutsideRoot(t *testing.T) {
+	requireSymlinkOrFailClosed(t)
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	outsideRoot := t.TempDir()
+	danglingTarget := filepath.Join(outsideRoot, "missing-target")
+	linkPath := filepath.Join(root.Path(), "dangling-link")
+	if err := os.Symlink(danglingTarget, linkPath); err != nil {
+		t.Fatalf("failed to create dangling intermediate symlink: %v", err)
+	}
+
+	_, err = root.Resolve(filepath.Join("dangling-link", "new-file.txt"))
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("dangling-link", "new-file.txt"), symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("dangling-link", "new-file.txt"), err.Error(), symlinkEscapeMsg)
+	}
+}
+
+// TestResolveRejectsDanglingIntermediateSymlinkInsideRoot verifies a
+// dangling intermediate symlink whose target is inside the root but does not
+// yet exist is still rejected because containment is unverifiable.
+func TestResolveRejectsDanglingIntermediateSymlinkInsideRoot(t *testing.T) {
+	requireSymlinkOrFailClosed(t)
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	danglingTarget := filepath.Join(root.Path(), "future-dir")
+	linkPath := filepath.Join(root.Path(), "future-link")
+	if err := os.Symlink(danglingTarget, linkPath); err != nil {
+		t.Fatalf("failed to create in-root dangling intermediate symlink: %v", err)
+	}
+
+	_, err = root.Resolve(filepath.Join("future-link", "new-file.txt"))
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("future-link", "new-file.txt"), symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("future-link", "new-file.txt"), err.Error(), symlinkEscapeMsg)
+	}
+}
+
+// TestResolveRejectsDanglingIntermediateSymlinkAboveLeaf verifies the walk
+// keeps climbing past a missing leaf and stops at a dangling symlink that sits
+// two or more levels above the leaf.
+func TestResolveRejectsDanglingIntermediateSymlinkAboveLeaf(t *testing.T) {
+	requireSymlinkOrFailClosed(t)
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	if err := os.Mkdir(filepath.Join(root.Path(), "real"), 0o755); err != nil {
+		t.Fatalf("failed to create real ancestor directory: %v", err)
+	}
+
+	outsideRoot := t.TempDir()
+	danglingTarget := filepath.Join(outsideRoot, "missing-target")
+	linkPath := filepath.Join(root.Path(), "real", "dangling-link")
+	if err := os.Symlink(danglingTarget, linkPath); err != nil {
+		t.Fatalf("failed to create deep dangling symlink: %v", err)
+	}
+
+	candidate := filepath.Join("real", "dangling-link", "deep", "new-file.txt")
+	_, err = root.Resolve(candidate)
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", candidate, symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", candidate, err.Error(), symlinkEscapeMsg)
+	}
+}
+
+// TestResolveRejectsDanglingIntermediateSymlinkChain verifies a dangling
+// intermediate symlink chain is rejected with "symlink target escapes
+// workspace".
+func TestResolveRejectsDanglingIntermediateSymlinkChain(t *testing.T) {
+	requireSymlinkOrFailClosed(t)
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	outsideRoot := t.TempDir()
+	danglingTarget := filepath.Join(outsideRoot, "missing-target")
+	secondLink := filepath.Join(root.Path(), "b")
+	if err := os.Symlink(danglingTarget, secondLink); err != nil {
+		t.Fatalf("failed to create second symlink in chain: %v", err)
+	}
+	firstLink := filepath.Join(root.Path(), "a")
+	if err := os.Symlink("b", firstLink); err != nil {
+		t.Fatalf("failed to create first symlink in chain: %v", err)
+	}
+
+	_, err = root.Resolve(filepath.Join("a", "new-file.txt"))
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("a", "new-file.txt"), symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("a", "new-file.txt"), err.Error(), symlinkEscapeMsg)
+	}
+}
+
+// TestResolveRejectsDanglingIntermediateRelativeSymlinkEscape verifies a
+// dangling intermediate symlink with a relative target that escapes the root
+// is rejected with "symlink target escapes workspace".
+func TestResolveRejectsDanglingIntermediateRelativeSymlinkEscape(t *testing.T) {
+	requireSymlinkOrFailClosed(t)
+
+	parentDir := t.TempDir()
+	rootDir := filepath.Join(parentDir, "root")
+	if err := os.Mkdir(rootDir, 0o755); err != nil {
+		t.Fatalf("failed to create root dir: %v", err)
+	}
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	if err := os.Mkdir(filepath.Join(root.Path(), "sub"), 0o755); err != nil {
+		t.Fatalf("failed to create subdir for relative symlink: %v", err)
+	}
+
+	linkPath := filepath.Join(root.Path(), "sub", "escape")
+	relTarget := filepath.Join("..", "..", "outside", "missing-target")
+	if err := os.Symlink(relTarget, linkPath); err != nil {
+		t.Fatalf("failed to create relative dangling symlink: %v", err)
+	}
+
+	_, err = root.Resolve(filepath.Join("sub", "escape", "new-file.txt"))
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("sub", "escape", "new-file.txt"), symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("sub", "escape", "new-file.txt"), err.Error(), symlinkEscapeMsg)
+	}
+}
+
+// TestResolveAllowsSymlinkedDirectoryWithNonExistentLeaf verifies an in-root
+// symlinked directory with a non-existent leaf is still accepted.
+func TestResolveAllowsSymlinkedDirectoryWithNonExistentLeaf(t *testing.T) {
+	requireSymlinkOrFailClosed(t)
+
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	innerDir := filepath.Join(root.Path(), "inner")
+	if err := os.Mkdir(innerDir, 0o755); err != nil {
+		t.Fatalf("failed to create inner directory: %v", err)
+	}
+
+	linkPath := filepath.Join(root.Path(), "link")
+	if err := os.Symlink(innerDir, linkPath); err != nil {
+		t.Fatalf("failed to create in-root directory symlink: %v", err)
+	}
+
+	candidate := filepath.Join("link", "new-file.txt")
+	resolved, err := root.Resolve(candidate)
+	if err != nil {
+		t.Fatalf("Resolve(%q) returned unexpected error: %v", candidate, err)
+	}
+	want := filepath.Join(root.Path(), "link", "new-file.txt")
+	if resolved != want {
+		t.Fatalf("Resolve(%q) = %q, want %q", candidate, resolved, want)
+	}
+}
+
 // path under the root resolves successfully (oracle step 7).
 func TestResolveAllowsNonExistentRelativePath(t *testing.T) {
 	rootDir := t.TempDir()

@@ -112,6 +112,30 @@ func TestHasPathPrefixCommonContainmentVerdicts(t *testing.T) {
 	}
 }
 
+// TestResolveRejectsChildBeneathRegularFile verifies a candidate whose
+// parent path component is an existing regular file is rejected rather than
+// accepted by walking past the non-directory entry.
+func TestResolveRejectsChildBeneathRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	root, err := NewRoot(dir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", dir, err)
+	}
+
+	filePath := filepath.Join(root.Path(), "file.txt")
+	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create regular file ancestor: %v", err)
+	}
+
+	_, err = root.Resolve(filepath.Join("file.txt", "sub"))
+	if err == nil {
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("file.txt", "sub"), symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("file.txt", "sub"), err.Error(), symlinkEscapeMsg)
+	}
+}
+
 // TestResolveRejectsEmptyCandidate verifies an empty-string candidate is
 // rejected with "path outside workspace" rather than silently resolving to
 // the workspace root itself (finding CORR-2).

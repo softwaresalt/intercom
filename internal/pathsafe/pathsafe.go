@@ -1,6 +1,8 @@
 package pathsafe
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -222,11 +224,16 @@ func pathHasPrefix(path, p string) bool {
 // workspace silently pass validation whenever the leaf does not yet exist.
 // On failure it emits "symlink target escapes workspace".
 //
-// os.Stat (not os.Lstat) gates each existence probe, matching the oracle's
-// Path::exists(), which follows symlinks — a broken symlink at the final
-// component is therefore treated as non-existent and, once no existing
-// ancestor remains to check beyond the root itself, takes the lexical-only
-// branch (finding GO-14, documented, not silently inherited).
+// The first probe (resolved itself, i.e. the final path component) uses
+// os.Stat to preserve the documented GO-14 lexical-only acceptance for a
+// dangling final symlink. Every strict ancestor above the leaf uses
+// os.Lstat so a dangling intermediate symlink or junction is treated as an
+// existing directory entry that must be re-resolved rather than silently
+// walked past.
+//
+// Ascent is limited to fs.ErrNotExist. Any other probe error — for example
+// permission denial, a symlink cycle, or a malformed reparse point — is
+// rejected with the OS cause wrapped for errors.Is/errors.As inspection.
 //
 // Known limitations (both oracle-parity, see the package doc comment):
 // the TOCTOU window between this check and actual filesystem use, and the
@@ -235,10 +242,21 @@ func pathHasPrefix(path, p string) bool {
 // validation (finding SEC-5).
 func checkSymlinkEscape(root Root, resolved string) (string, error) {
 	ancestor := resolved
+	probe := os.Stat
+	finalProbe := true
 	for {
-		if _, err := os.Stat(ancestor); err == nil {
+		info, err := probe(ancestor)
+		if err == nil {
+			if !finalProbe && !info.IsDir() {
+				if _, readlinkErr := os.Readlink(ancestor); readlinkErr != nil {
+					return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
+				}
+			}
 			break
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
 		}
+
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
 			// DOCUMENTED-UNREACHABLE, coverage-excluded (011.006-T item
@@ -258,11 +276,22 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 			return resolved, nil
 		}
 		ancestor = parent
+		probe = os.Lstat
+		finalProbe = false
 	}
 
 	real, err := filepath.EvalSymlinks(ancestor)
 	if err != nil {
-		return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
+		return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
+	}
+	if target, readlinkErr := os.Readlink(ancestor); readlinkErr == nil {
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(ancestor), target)
+		}
+		real, err = filepath.EvalSymlinks(target)
+		if err != nil {
+			return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
+		}
 	}
 	real = stripUNCPrefix(real)
 
