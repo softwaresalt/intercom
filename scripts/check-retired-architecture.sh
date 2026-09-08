@@ -484,6 +484,21 @@ def run_repo_selection_self_test():
     missing_internal = sorted(set(internal_expected) - set(internal_actual))
     extra_internal = sorted(set(internal_actual) - set(internal_expected))
     report_assertion(
+        # Guard against a vacuous pass: internal_actual == internal_expected is
+        # trivially true when both are empty (e.g. a broken 'internal/**'
+        # pathspec, wrong cwd, or a shallow/partial clone silently returning
+        # nothing from both independent git ls-files calls). Asserting the
+        # independently-derived expected set is itself non-empty closes that
+        # gap without weakening the structural equality check below.
+        'selection internal non-empty',
+        len(internal_expected) > 0,
+        f"independently-derived expected internal/** set is non-empty ({len(internal_expected)} paths)",
+        'independently-derived expected internal/** set was empty -- git ls-files -- internal/** '
+        'likely returned nothing; the structural inclusion assertion below would pass vacuously',
+        failures,
+    )
+
+    report_assertion(
         'selection structural inclusion',
         internal_actual == internal_expected,
         f"selected every tracked internal non-test, non-testdata Go file ({len(internal_actual)} paths)",
@@ -521,6 +536,21 @@ def run_repo_selection_self_test():
         engine_for_path(Path('config.toml.example')) == 'toml',
         'engine_for_path routes config.toml.example to the TOML engine',
         f"engine_for_path returned {engine_for_path(Path('config.toml.example'))!r}",
+        failures,
+    )
+
+    # The prior assertion proves engine_for_path() dispatches correctly in
+    # isolation, but does not prove config.toml.example is ever actually
+    # reached by a real repo scan. Close that gap end-to-end: confirm the
+    # real selection set (the same rel_paths a repo-mode run would scan)
+    # includes it, so the P0 dead-dispatch bug this task fixed cannot
+    # regress silently via a selection-side change instead of a
+    # dispatch-side one.
+    report_assertion(
+        'selection includes config.toml.example',
+        'config.toml.example' in rel_paths,
+        'real selection set includes config.toml.example end-to-end',
+        'config.toml.example was not present in the real selection set',
         failures,
     )
 
