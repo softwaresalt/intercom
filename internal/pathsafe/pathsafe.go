@@ -227,9 +227,29 @@ func pathHasPrefix(path, p string) bool {
 // The first probe (resolved itself, i.e. the final path component) uses
 // os.Stat to preserve the documented GO-14 lexical-only acceptance for a
 // dangling final symlink. Every strict ancestor above the leaf uses
-// os.Lstat so a dangling intermediate symlink or junction is treated as an
-// existing directory entry that must be re-resolved rather than silently
-// walked past.
+// os.Lstat so a dangling intermediate symlink or junction entry is caught
+// (Lstat reports the reparse-point entry itself rather than following it,
+// and a non-directory, non-symlink Lstat result is rejected outright).
+//
+// KNOWN LIMITATION, NOT closed by this function (see stash-tracked follow-up
+// referenced from the package risk register): on Windows, a Lstat result for
+// a directory junction (IO_REPARSE_TAG_MOUNT_POINT) is neither ModeDir nor
+// ModeSymlink, so any live (non-dangling) junction used as a strict ancestor
+// is unconditionally rejected here without its target ever being resolved
+// or compared against root -- this is a false-rejection (fails closed), not
+// an escape, but it is NOT "re-resolved" despite what an earlier draft of
+// this comment claimed. Separately and more importantly: a LIVE junction
+// used as resolved itself (the final component) is NOT caught by this
+// function at all -- os.Stat transparently follows the junction to its
+// target and succeeds, so the loop breaks on the very first iteration
+// before any ancestor logic runs, and the post-loop filepath.EvalSymlinks
+// call does not resolve IO_REPARSE_TAG_MOUNT_POINT either, so containment
+// is never actually checked against the junction's real target. This is a
+// pre-existing gap (present before this function's dangling-symlink fix,
+// unchanged by it) and is out of this shipment's chartered scope
+// (011-S/012-F closes the DANGLING intermediate case only); it is not the
+// same defect as the accepted, unrelated GO-14 dangling-final-symlink
+// acceptance and must not be conflated with it in future risk-register work.
 //
 // Ascent is limited to fs.ErrNotExist. Any other probe error — for example
 // permission denial, a symlink cycle, or a malformed reparse point — is

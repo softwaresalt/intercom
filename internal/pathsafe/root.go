@@ -59,6 +59,25 @@
 //     sibling can be folded into acceptance. STATUS: accepted, fail-open
 //     risk. TRIGGER: a workspace root on a case-sensitivity-enabled NTFS
 //     or WSL-created tree.
+//   - 700B41CE (discovered by adversarial review during 011-S/012-F,
+//     NOT a 012-F chartered finding, NOT closed by 012.003-T): on
+//     Windows, a LIVE (non-dangling) directory junction used as the FINAL
+//     path component is accepted by checkSymlinkEscape regardless of its
+//     target, because os.Stat transparently follows
+//     IO_REPARSE_TAG_MOUNT_POINT and filepath.EvalSymlinks never resolves
+//     it -- containment is never actually checked against the junction's
+//     real target. Confirmed pre-existing in this package before 011-S
+//     (main's original checkSymlinkEscape used os.Stat unconditionally for
+//     every ancestor including the final component, so the identical
+//     bypass mechanism already existed) and empirically reproduced.
+//     Requires no elevated privilege. STATUS: accepted (unresolved,
+//     tracked), NOT oracle-parity -- this is a Go/Windows-runtime-specific
+//     gap with no equivalent finding in the oracle port record. TRIGGER:
+//     mitigation is forced by the same real-write-call-site trigger as
+//     GO-14 above, or sooner if this package is asked to certify
+//     containment for a workspace root known to contain live junctions.
+//     See docs/closure/2026-09-07-011-s-012-f-pathsafe-containment-adversarial-review.md
+//     (finding F0) for the full trace and remediation options.
 //
 // RETIREMENT PROCEDURE when a real write path arrives (C4-C6): each finding
 // above must be re-evaluated against the concrete write call site before
