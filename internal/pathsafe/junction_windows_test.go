@@ -82,13 +82,15 @@ func TestResolveRejectsDanglingIntermediateJunctionOutsideRoot(t *testing.T) {
 		t.Fatalf("os.Stat(%q) succeeded after target removal, want a dangling junction", linkPath)
 	}
 
+	// A dangling junction's target cannot be resolved at all, so
+	// containment is unverifiable rather than a proven escape (014.006-T).
 	candidate := filepath.Join("junction-out", "new-file.txt")
 	_, err = root.Resolve(candidate)
 	if err == nil {
-		t.Fatalf("Resolve(%q) = nil error, want %q", candidate, symlinkEscapeMsg)
+		t.Fatalf("Resolve(%q) = nil error, want %q", candidate, symlinkUnverifiableMsg)
 	}
-	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
-		t.Fatalf("Resolve(%q) error = %q, want to contain %q", candidate, err.Error(), symlinkEscapeMsg)
+	if !strings.Contains(err.Error(), symlinkUnverifiableMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", candidate, err.Error(), symlinkUnverifiableMsg)
 	}
 }
 

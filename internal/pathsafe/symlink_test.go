@@ -181,8 +181,9 @@ func TestResolveRejectsDanglingSymlinkAtFinalComponent(t *testing.T) {
 }
 
 // TestResolveRejectsDanglingIntermediateSymlinkOutsideRoot verifies a depth-1
-// dangling intermediate symlink whose target is outside the root is rejected
-// with "symlink target escapes workspace".
+// dangling intermediate symlink whose target would resolve outside the root
+// -- if it existed -- is rejected as unverifiable: the target cannot be
+// resolved at all, so containment cannot be proven either way (014.006-T).
 func TestResolveRejectsDanglingIntermediateSymlinkOutsideRoot(t *testing.T) {
 	requireSymlinkOrFailClosed(t)
 
@@ -201,10 +202,10 @@ func TestResolveRejectsDanglingIntermediateSymlinkOutsideRoot(t *testing.T) {
 
 	_, err = root.Resolve(filepath.Join("dangling-link", "new-file.txt"))
 	if err == nil {
-		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("dangling-link", "new-file.txt"), symlinkEscapeMsg)
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("dangling-link", "new-file.txt"), symlinkUnverifiableMsg)
 	}
-	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
-		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("dangling-link", "new-file.txt"), err.Error(), symlinkEscapeMsg)
+	if !strings.Contains(err.Error(), symlinkUnverifiableMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("dangling-link", "new-file.txt"), err.Error(), symlinkUnverifiableMsg)
 	}
 }
 
@@ -228,10 +229,10 @@ func TestResolveRejectsDanglingIntermediateSymlinkInsideRoot(t *testing.T) {
 
 	_, err = root.Resolve(filepath.Join("future-link", "new-file.txt"))
 	if err == nil {
-		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("future-link", "new-file.txt"), symlinkEscapeMsg)
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("future-link", "new-file.txt"), symlinkUnverifiableMsg)
 	}
-	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
-		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("future-link", "new-file.txt"), err.Error(), symlinkEscapeMsg)
+	if !strings.Contains(err.Error(), symlinkUnverifiableMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("future-link", "new-file.txt"), err.Error(), symlinkUnverifiableMsg)
 	}
 }
 
@@ -261,16 +262,16 @@ func TestResolveRejectsDanglingIntermediateSymlinkAboveLeaf(t *testing.T) {
 	candidate := filepath.Join("real", "dangling-link", "deep", "new-file.txt")
 	_, err = root.Resolve(candidate)
 	if err == nil {
-		t.Fatalf("Resolve(%q) = nil error, want %q", candidate, symlinkEscapeMsg)
+		t.Fatalf("Resolve(%q) = nil error, want %q", candidate, symlinkUnverifiableMsg)
 	}
-	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
-		t.Fatalf("Resolve(%q) error = %q, want to contain %q", candidate, err.Error(), symlinkEscapeMsg)
+	if !strings.Contains(err.Error(), symlinkUnverifiableMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", candidate, err.Error(), symlinkUnverifiableMsg)
 	}
 }
 
 // TestResolveRejectsDanglingIntermediateSymlinkChain verifies a dangling
-// intermediate symlink chain is rejected with "symlink target escapes
-// workspace".
+// intermediate symlink chain is rejected as unverifiable -- the chain's
+// final target cannot be resolved at all (014.006-T).
 func TestResolveRejectsDanglingIntermediateSymlinkChain(t *testing.T) {
 	requireSymlinkOrFailClosed(t)
 
@@ -293,16 +294,17 @@ func TestResolveRejectsDanglingIntermediateSymlinkChain(t *testing.T) {
 
 	_, err = root.Resolve(filepath.Join("a", "new-file.txt"))
 	if err == nil {
-		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("a", "new-file.txt"), symlinkEscapeMsg)
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("a", "new-file.txt"), symlinkUnverifiableMsg)
 	}
-	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
-		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("a", "new-file.txt"), err.Error(), symlinkEscapeMsg)
+	if !strings.Contains(err.Error(), symlinkUnverifiableMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("a", "new-file.txt"), err.Error(), symlinkUnverifiableMsg)
 	}
 }
 
 // TestResolveRejectsDanglingIntermediateRelativeSymlinkEscape verifies a
-// dangling intermediate symlink with a relative target that escapes the root
-// is rejected with "symlink target escapes workspace".
+// dangling intermediate symlink with a relative target that would escape the
+// root -- if it existed -- is rejected as unverifiable, since a dangling
+// target cannot be resolved to prove containment either way (014.006-T).
 func TestResolveRejectsDanglingIntermediateRelativeSymlinkEscape(t *testing.T) {
 	requireSymlinkOrFailClosed(t)
 
@@ -328,10 +330,10 @@ func TestResolveRejectsDanglingIntermediateRelativeSymlinkEscape(t *testing.T) {
 
 	_, err = root.Resolve(filepath.Join("sub", "escape", "new-file.txt"))
 	if err == nil {
-		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("sub", "escape", "new-file.txt"), symlinkEscapeMsg)
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("sub", "escape", "new-file.txt"), symlinkUnverifiableMsg)
 	}
-	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
-		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("sub", "escape", "new-file.txt"), err.Error(), symlinkEscapeMsg)
+	if !strings.Contains(err.Error(), symlinkUnverifiableMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("sub", "escape", "new-file.txt"), err.Error(), symlinkUnverifiableMsg)
 	}
 }
 

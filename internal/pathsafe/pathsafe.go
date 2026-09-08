@@ -22,8 +22,21 @@ const (
 	// component-aware containment check (unit B3).
 	outsideMsg = "path outside workspace"
 	// symlinkEscapeMsg is emitted when a resolved, existing path's
-	// canonicalized form escapes the root (unit B4).
+	// canonicalized form is successfully verified to escape the root (unit
+	// B4). Reserved for a GENUINE, VERIFIED escape only (014.006-T): the
+	// target was successfully canonicalized and containment was checked
+	// against a known, real path.
 	symlinkEscapeMsg = "symlink target escapes workspace"
+	// symlinkUnverifiableMsg is emitted when a resolved path's existing
+	// entry cannot be verified as contained -- its target could not be
+	// canonicalized at all (a dangling symlink/junction, ELOOP, EACCES, or
+	// a malformed reparse point), or an ancestor blocks further descent
+	// without itself being resolvable (a plain file, or a live junction
+	// deferred per F3) -- rather than being verified to escape (014.006-T,
+	// covers 2362BBB5(b)). apperr.KindPathViolation is retained for both
+	// messages (no taxonomy change); the OS cause, when present, is
+	// wrapped and recoverable via errors.Is/errors.As.
+	symlinkUnverifiableMsg = "symlink target cannot be verified"
 )
 
 // normalize validates and decomposes candidate into its cleaned, contained
@@ -289,40 +302,50 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 		info, err := os.Lstat(ancestor)
 		if err == nil {
 			if !finalProbe && !info.IsDir() && info.Mode()&fs.ModeSymlink == 0 {
-				return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
+				// Ancestor blocks further descent without being resolvable
+				// itself (a plain file, or a live junction -- F3 deferred):
+				// unverifiable, not a proven escape (014.006-T).
+				return "", apperr.New(apperr.KindPathViolation, symlinkUnverifiableMsg)
 			}
 			break
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
+			// Any non-ENOENT probe error (ELOOP, EACCES, a malformed
+			// reparse point) means the entry exists but cannot be
+			// verified (014.006-T); the OS cause is wrapped for
+			// errors.Is/errors.As inspection.
+			return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkUnverifiableMsg)
 		}
 
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
 			// DOCUMENTED-UNREACHABLE, coverage-excluded (011.006-T item
 			// (e), resolves 8472E0A1 item (e); return value flipped by
-			// 014.005-T, covers 2362BBB5(a) / AD0D9D1F(F6)): reached the
-			// filesystem root without finding an existing ancestor.
-			// resolved is already asserted (by Root.Resolve's caller-side
-			// hasPathPrefix check before this function is ever invoked) to
-			// be inside root, and root itself is required by NewRoot to
-			// already exist and be a directory -- so walking parent
-			// directories from inside an existing root must find root
-			// itself (or a deeper existing ancestor) before ever reaching
-			// the filesystem root. Requiring a "fails before, passes
-			// after" test here is unsatisfiable without an injectable
-			// filesystem seam, which would be a production behavior
-			// change inside a tests-only unit (Width Isolation). Guarded
-			// defensively only to avoid an infinite loop, never exercised
-			// by real input -- the two hypothesized triggers were never
-			// reproduced, so this is NOT a reproduced-exploit fix (AC4).
-			// Previously returned (resolved, nil) -- a latent fail-open
-			// terminal branch (2362BBB5(a) / AD0D9D1F(F6), the same
-			// finding captured twice, implemented once here). Now returns
-			// a rejection so the branch is fail-closed like every other
-			// unresolvable-ancestor path in this function, with zero
-			// observable behavior change across the existing suite (the
-			// branch remains traced-unreachable).
-			return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
+			// 014.005-T, covers 2362BBB5(a) / AD0D9D1F(F6); message
+			// aligned to symlinkUnverifiableMsg by 014.006-T for
+			// consistency with every other unresolvable-ancestor path in
+			// this function): reached the filesystem root without finding
+			// an existing ancestor. resolved is already asserted (by
+			// Root.Resolve's caller-side hasPathPrefix check before this
+			// function is ever invoked) to be inside root, and root
+			// itself is required by NewRoot to already exist and be a
+			// directory -- so walking parent directories from inside an
+			// existing root must find root itself (or a deeper existing
+			// ancestor) before ever reaching the filesystem root.
+			// Requiring a "fails before, passes after" test here is
+			// unsatisfiable without an injectable filesystem seam, which
+			// would be a production behavior change inside a tests-only
+			// unit (Width Isolation). Guarded defensively only to avoid
+			// an infinite loop, never exercised by real input -- the two
+			// hypothesized triggers were never reproduced, so this is NOT
+			// a reproduced-exploit fix (AC4). Previously returned
+			// (resolved, nil) -- a latent fail-open terminal branch
+			// (2362BBB5(a) / AD0D9D1F(F6), the same finding captured
+			// twice, implemented once here). Now returns a rejection so
+			// the branch is fail-closed like every other unresolvable-
+			// ancestor path in this function, with zero observable
+			// behavior change across the existing suite (the branch
+			// remains traced-unreachable).
+			return "", apperr.New(apperr.KindPathViolation, symlinkUnverifiableMsg)
 		}
 		ancestor = parent
 		finalProbe = false
@@ -330,7 +353,13 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 
 	real, err := canonicalizeReparse(ancestor)
 	if err != nil {
-		return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
+		// The entry exists (Lstat succeeded above) but its target could
+		// not be canonicalized -- a dangling symlink/junction target,
+		// ELOOP, EACCES, or a malformed reparse point. This is a correct
+		// rejection with an accurate explanation: containment is
+		// unverifiable, not a proven escape (014.006-T, covers
+		// 2362BBB5(b)). The OS cause is wrapped for errors.Is/errors.As.
+		return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkUnverifiableMsg)
 	}
 	real = stripUNCPrefix(real)
 
