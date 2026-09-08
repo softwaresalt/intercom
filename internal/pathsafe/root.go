@@ -44,6 +44,21 @@
 //     real write path exists.
 //   - SEC-5 (EvalSymlinks ignores hardlinks, see "Known limitations"
 //     above). STATUS: accepted, oracle-parity. TRIGGER: same as GO-14.
+//   - 5FE4A7BE (012.007-T; case-folding risk register, not a BF5DE670
+//     item): darwin currently under-folds because pathEqual/pathHasPrefix
+//     fold on Windows only, while darwin is a shipped target and is
+//     case-insensitive by default on APFS/HFS+. STATUS: accepted,
+//     fail-closed, plausible/unconfirmed. TRIGGER: reproduce a legitimate
+//     in-root darwin path rejected solely because the volume is case-
+//     insensitive and the only difference is casing. Extending the fold to
+//     darwin was rejected because a case-sensitive APFS volume would turn
+//     that rejection into an acceptance, i.e. fail-open. The already-
+//     enabled Windows fold is itself not the safe baseline: NTFS supports
+//     per-directory case sensitivity, and WSL enables it on the
+//     directories it creates, so a symlink resolving to a case-variant
+//     sibling can be folded into acceptance. STATUS: accepted, fail-open
+//     risk. TRIGGER: a workspace root on a case-sensitivity-enabled NTFS
+//     or WSL-created tree.
 //
 // RETIREMENT PROCEDURE when a real write path arrives (C4-C6): each finding
 // above must be re-evaluated against the concrete write call site before
