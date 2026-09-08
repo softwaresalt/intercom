@@ -192,32 +192,52 @@ import (
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
-// uncPrefix is the volume-path prefix that GetFinalPathNameByHandleW
-// (VOLUME_NAME_DOS mode, the default) emits on Windows, stripped by
-// stripUNCPrefix (below) before a resolved path is compared against
-// root or returned to a caller.
+// uncPrefix is the extended-length-path volume prefix Windows APIs use
+// for the `\\?\`-style path convention, stripped by stripUNCPrefix
+// (below) before a resolved path is compared against root or returned
+// to a caller.
 //
-// F8 (014.008-T, corrected during review after an inaccurate first
-// draft of this comment claimed uncPrefix was NOT used by
-// checkSymlinkEscape -- it is): stripUNCPrefix, the sole consumer of
-// this constant, is called from BOTH of this package's two independent
-// GetFinalPathNameByHandleW call sites, which is exactly why they share
-// one prefix constant rather than each needing their own:
+// F8 (014.008-T, corrected TWICE during review: an inaccurate first
+// draft claimed uncPrefix was NOT used by checkSymlinkEscape -- it is;
+// a second draft then claimed filepath.EvalSymlinks "internally calls
+// GetFinalPathNameByHandleW to construct its return value" as a
+// general mechanism -- verified FALSE against this toolchain's actual
+// path/filepath source, corrected below):
+//
+// stripUNCPrefix, the sole consumer of this constant, is called from
+// BOTH of this package's two independent `\\?\`-prefix-emitting call
+// sites, which is exactly why they share one prefix constant rather
+// than each needing their own -- but the two sites reach that shared
+// prefix by DIFFERENT internal mechanisms, verified by reading
+// GOROOT/src/path/filepath/symlink.go, symlink_windows.go, and
+// GOROOT/src/os/file_windows.go for this toolchain:
 //  1. NewRoot's one-time root canonicalization (this file), via Go's
-//     OWN standard-library filepath.EvalSymlinks, whose Windows-specific
-//     implementation internally calls GetFinalPathNameByHandleW to
-//     construct its return value.
+//     OWN standard-library filepath.EvalSymlinks. Its walkSymlinks
+//     (symlink.go) resolves each path component via plain os.Lstat /
+//     os.Readlink -- NOT GetFinalPathNameByHandleW -- and normally
+//     never touches uncPrefix at all. The ONE narrow exception:
+//     os.Readlink's Windows implementation (file_windows.go,
+//     normaliseLinkPath) special-cases a symlink target expressed as
+//     an NT-native `\??\Volume{GUID}\...` path, where it either
+//     directly string-substitutes `\\?\` for `\??\` (the
+//     winreadlinkvolume GODEBUG's non-"0" fast path, avoiding any
+//     Win32 call), or -- only under the legacy winreadlinkvolume="0"
+//     opt-out -- opens the link and calls
+//     windows.GetFinalPathNameByHandle to normalize it. Either way,
+//     this is an edge case (a GUID-only-addressable volume symlink
+//     target), not EvalSymlinks' general resolution mechanism.
 //  2. checkSymlinkEscape's per-Resolve-call containment check
-//     (pathsafe.go), via canonicalizeReparse's own, separate, DIRECT
-//     GetFinalPathNameByHandleW call (reparse_windows.go, 014.003-T,
-//     invoked through syscall.NewLazyDLL, not through
-//     filepath.EvalSymlinks).
+//     (pathsafe.go), via canonicalizeReparse's own, separate, DIRECT,
+//     UNCONDITIONAL GetFinalPathNameByHandleW call for every single
+//     resolution (reparse_windows.go, 014.003-T, invoked through
+//     syscall.NewLazyDLL, not through filepath.EvalSymlinks or
+//     os.Readlink).
 //
-// Both call sites reach the identical underlying Win32 API in
-// VOLUME_NAME_DOS mode and therefore emit the identical `\\?\` prefix
-// convention, which is the whole reason a single stripUNCPrefix
-// helper correctly serves both callers -- do not read this as evidence
-// that only one of the two call sites exists or matters.
+// The two sites are independent, sometimes-divergent code paths that
+// happen to converge on the same `\\?\` output convention for the
+// specific cases each of them actually emits it -- do not read this as
+// evidence that one call site is a thin wrapper around the other, or
+// that both always take a Win32-call-based path to get there.
 const uncPrefix = `\\?\`
 
 // Root is a canonicalized workspace root. Construct with NewRoot; the zero
