@@ -4,7 +4,7 @@
 - PR: #40 (`fix(pathsafe): close Windows directory-junction containment bypass (013-S/014-F)`)
 - Merge commit: `17daffb5614f2f8ed797d7647aeadcc1dc29b1d2` (merge-commit strategy, P-009)
 - Date: 2026-09-08
-- Compaction status (P-020): `pending` (finalized by Ship after `compact-context` runs — see Step 8 of the Ship pipeline)
+- Compaction status (P-020): `done` — `compact-context` invoked (target: all) after this closure artifact was created; bounded Tier-1 consolidation of this release unit's own memory checkpoints (Stage's `013-s-memory.md` + Ship's pre-PR checkpoint) into `docs/memory/compacted/2026-09-08-013-s-014-f-pathsafe-reparse-containment-compacted.md`, verbose originals moved to `docs/archive/memory/`. No other memory/plan/closure artifacts in the repository qualified for compaction under this invocation's candidate rules (closure records for this release unit are 0 days old, below the 14-day threshold; other shipments' memory files are out of this bounded invocation's scope).
 
 ## Summary of the change
 
