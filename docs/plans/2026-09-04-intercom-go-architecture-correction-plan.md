@@ -376,6 +376,9 @@ plus `config.toml.example`, plus `cmd/**`.
 > exempt — stated explicitly so each exclusion is deliberate, not accidental.
 > This scope is mirrored normatively in governing decision **D6**, so the plan
 > does not silently broaden its governing artifact.
+
+> **Historical note (2026-09-08):** This `internal/config/**` gate scope is historical. 013-F broadened the enforced scope to `internal/**` for the first time via amendment D6c. `internal/**/*_test.go` and `internal/**/testdata/**` remain accepted but unenforced. See `docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md` amendment D6c.
+
 *Change (robustness):* `set -euo pipefail`; scan **tracked paths only**, so an
 untracked local artifact cannot alter the verdict; `--self-test` mode driven by
 the committed fixture, so the positive control is a **repeatable artifact**
@@ -517,6 +520,9 @@ No destructive data actions, no backfill, no irreversible steps.
   `KindACP`, and I5 freezes that package, so the gate could never go green.
   Scope is `internal/config/**` (excluding `*_test.go` and `testdata/`) + `config.toml.example` + `cmd/**`. `*_test.go` and `testdata/` are excluded because U-B2's mandatory legacy migration fixtures live there — a gate that reddens on its own required fixtures can never pass. The apperr
   taxonomy contamination is tracked separately (D6a), not ignored.
+
+> **Historical note (2026-09-08):** This `internal/config/**` gate scope is historical. 013-F broadened the enforced scope to `internal/**` for the first time via amendment D6c. `internal/**/*_test.go` and `internal/**/testdata/**` remain accepted but unenforced. See `docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md` amendment D6c.
+
 * **R8 — Leave `retention_days` and `default.go`'s `database` value
   untouched.** D7 defers persistence; pre-empting it is beyond this slice's
   authority, and keeping them costs nothing because they are inert. P2-NAME-1
@@ -541,6 +547,8 @@ No destructive data actions, no backfill, no irreversible steps.
 | Tolerant decode accepts retired keys instead of erroring | low | By design — retired keys surface via `Report.UnknownKeys` (I4), asserted in U-B2. Operators get a signal, not a wall, during migration |
 | Reviewers assume the Rust oracle still governs config | medium | Superseded banners on all four historical decision artifacts; the governing decision demotes the oracle (D8) |
 | Executor confuses unit IDs with roadmap phase IDs | low | Units namespaced `U-*`; phases remain `C1…C11` |
+
+> **Historical note (2026-09-08):** This `internal/config/**` gate scope is historical. 013-F broadened the enforced scope to `internal/**` for the first time via amendment D6c. `internal/**/*_test.go` and `internal/**/testdata/**` remain accepted but unenforced. See `docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md` amendment D6c.
 
 ## Plan Hardening Signals (REQUIRED)
 
@@ -644,6 +652,8 @@ slice, and I1/V1 below exist specifically to contain it.
 | **I7** | The `toolchain go1.26.5` pin (GO-2025-3750 remediation) is preserved byte-identical | Removing it re-opens a known CVE that govulncheck will fail on | U-A1 asserts the line is untouched |
 | **I8** | `retention_days` and **`default.go`'s `database` value** are left byte-identical | D7 defers persistence; this slice has no authority to pre-empt it. P2-NAME-1 is resolved on the **example side only** (U-D2), so the fence holds | Diff review |
 | **I9** | No unit touches `cmd/**` | `DefaultConfigPath` is unchanged; the first draft's "at most one flag-default line" invited unnecessary `cmd/` edits | Diff review |
+
+> **Historical note (2026-09-08):** I5's gate-scope consequence is historical. 009.002-T removed the blocking `internal/apperr` retired kinds, so 013-F / D6c broadened enforcement to `internal/**` while keeping `internal/**/*_test.go` and `internal/**/testdata/**` out of scope. See `docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md` amendment D6c.
 
 ## Risky actions (ProposedAction / ActionRisk)
 
@@ -907,8 +917,7 @@ were factual errors that would have produced a non-compiling tree.
 
 
 
-
-
+> **Historical note (2026-09-08):** Rows 6 and 29 remain accurate history for the earlier narrowed scope, but 013-F / D6c later broadened the gate to `internal/**` for the first time after 009.002-T removed the blocking `internal/apperr` retired kinds. `internal/**/*_test.go` and `internal/**/testdata/**` remain accepted but unenforced. See `docs/decisions/2026-09-04-intercom-go-architecture-correction-copilot-sdk-deliberation.md` amendment D6c.
 
 <!-- plan-review-attempt: 3 -->
 

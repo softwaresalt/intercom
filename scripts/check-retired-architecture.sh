@@ -10,13 +10,19 @@ set -euo pipefail
 #
 # Usage:
 #   scripts/check-retired-architecture.sh
-#     Scans tracked files in internal/config/** (excluding *_test.go and any
+#     Scans tracked files in internal/** (excluding *_test.go and any
 #     testdata/ directory), config.toml.example, and cmd/**. Exits 0 when no
 #     retired-architecture token is found as a Go identifier or TOML key.
 #   scripts/check-retired-architecture.sh --self-test
-#     Verifies every committed scripts/testdata/retired-*.toml fixture against
-#     scripts/testdata/retired-manifest.json, then verifies the real tracked
-#     tree passes. Exits 0 only when both checks succeed.
+#     Runs three checks: (1) verifies the committed TOML fixture suite in
+#     scripts/testdata/retired-*.toml against scripts/testdata/retired-manifest.json
+#     and the committed Go fixture suite in scripts/testdata/retiredgo/*.go against
+#     scripts/testdata/retiredgo-manifest.json; (2) verifies the real selection
+#     logic structurally (every tracked internal/** non-test, non-testdata .go
+#     file is selected, internal/** test/testdata paths and scripts/ itself are
+#     excluded, selection is non-empty, and config.toml.example dispatches to the
+#     TOML engine); (3) verifies the real tracked tree passes a repo scan. Exits 0
+#     only when all three checks succeed.
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN=python3
@@ -59,8 +65,20 @@ forbidden_parts = {
     "ipc_name": ["ipc", "name"],
 }
 
-fixture_glob = "retired-*.toml"
-fixture_manifest_path = root / "scripts" / "testdata" / "retired-manifest.json"
+fixture_suites = [
+    {
+        "name": "toml",
+        "glob": "retired-*.toml",
+        "manifest_path": root / "scripts" / "testdata" / "retired-manifest.json",
+        "engines": ["toml"],
+    },
+    {
+        "name": "go",
+        "glob": "retiredgo/*.go",
+        "manifest_path": root / "scripts" / "testdata" / "retiredgo-manifest.json",
+        "engines": ["go"],
+    },
+]
 
 go_identifier_re = re.compile(r'\b[A-Za-z_][A-Za-z0-9_]*\b')
 bare_key_re = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
@@ -72,11 +90,21 @@ def should_scan_repo_path(path: str) -> bool:
         return True
     if path.startswith('cmd/'):
         return path.endswith('.go')
-    if not path.startswith('internal/config/'):
+    if not path.startswith('internal/'):
         return False
     if '/testdata/' in path or path.endswith('_test.go'):
         return False
     return path.endswith('.go')
+
+
+def engine_for_path(path: Path):
+    if path.name == 'config.toml.example':
+        return 'toml'
+    if path.suffix == '.go':
+        return 'go'
+    if path.suffix == '.toml':
+        return 'toml'
+    return None
 
 
 def split_identifier(name: str):
@@ -371,30 +399,67 @@ def scan_toml(path: Path):
     return scan_toml_with_fallback(path)
 
 
+def self_test_engines_for_name(engine_name: str):
+    if engine_name == 'go':
+        return [('go', scan_go)]
+
+    if engine_name == 'toml':
+        engines = [('tomllib', scan_toml_with_tomllib)] if tomllib is not None else []
+        engines.append(('fallback', scan_toml_with_fallback))
+        return engines
+
+    return []
+
+
 def scan_path(path: Path):
-    if path.suffix == '.go':
+    engine_name = engine_for_path(path)
+    if engine_name == 'go':
         return scan_go(path)
-    if path.suffix == '.toml':
+    if engine_name == 'toml':
         return scan_toml(path)
     return []
 
 
-def load_fixture_manifest():
-    data = json.loads(fixture_manifest_path.read_text(encoding='utf-8'))
-    if not isinstance(data, dict):
-        raise SystemExit(f"invalid fixture manifest shape: {fixture_manifest_path.as_posix()}")
-    return data
-
-
-def run_repo_scan():
+def select_repo_paths():
     proc = subprocess.run(
-        ['git', 'ls-files', '--', 'config.toml.example', 'cmd/**', 'internal/config/**'],
+        ['git', 'ls-files', '--', 'config.toml.example', 'cmd/**', 'internal/**'],
         cwd=root,
         text=True,
         capture_output=True,
         check=True,
     )
-    rel_paths = [p for p in proc.stdout.splitlines() if should_scan_repo_path(p)]
+    return sorted(path for path in proc.stdout.splitlines() if should_scan_repo_path(path))
+
+
+def expected_internal_repo_paths():
+    proc = subprocess.run(
+        ['git', 'ls-files', '--', 'internal/**'],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    expected = []
+    for path in proc.stdout.splitlines():
+        if not path.startswith('internal/'):
+            continue
+        if '/testdata/' in path or path.endswith('_test.go'):
+            continue
+        if path.endswith('.go'):
+            expected.append(path)
+    return sorted(expected)
+
+
+def load_fixture_manifest(manifest_path: Path):
+    data = json.loads(manifest_path.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        raise SystemExit(f"invalid fixture manifest shape: {manifest_path.as_posix()}")
+    return data
+
+
+def run_repo_scan():
+    rel_paths = select_repo_paths()
 
     findings = []
     for rel_path in rel_paths:
@@ -405,56 +470,152 @@ def run_repo_scan():
         raise SystemExit(1)
 
 
+def report_assertion(name: str, ok: bool, success: str, failure: str, failures: list[str]):
+    if ok:
+        print(f"PASS {name}: {success}")
+        return
+
+    print(f"FAIL {name}: {failure}")
+    failures.append(f"{name}: {failure}")
+
+
+def run_repo_selection_self_test():
+    rel_paths = select_repo_paths()
+    internal_actual = sorted(path for path in rel_paths if path.startswith('internal/'))
+    internal_expected = expected_internal_repo_paths()
+    failures: list[str] = []
+
+    missing_internal = sorted(set(internal_expected) - set(internal_actual))
+    extra_internal = sorted(set(internal_actual) - set(internal_expected))
+    report_assertion(
+        # Guard against a vacuous pass: internal_actual == internal_expected is
+        # trivially true when both are empty (e.g. a broken 'internal/**'
+        # pathspec, wrong cwd, or a shallow/partial clone silently returning
+        # nothing from both independent git ls-files calls). Asserting the
+        # independently-derived expected set is itself non-empty closes that
+        # gap without weakening the structural equality check below.
+        'selection internal non-empty',
+        len(internal_expected) > 0,
+        f"independently-derived expected internal/** set is non-empty ({len(internal_expected)} paths)",
+        'independently-derived expected internal/** set was empty -- git ls-files -- internal/** '
+        'likely returned nothing; the structural inclusion assertion below would pass vacuously',
+        failures,
+    )
+
+    report_assertion(
+        'selection structural inclusion',
+        internal_actual == internal_expected,
+        f"selected every tracked internal non-test, non-testdata Go file ({len(internal_actual)} paths)",
+        f"missing={missing_internal or ['none']} extra={extra_internal or ['none']}",
+        failures,
+    )
+
+    report_assertion(
+        'selection internal exclusions',
+        not any(path.startswith('internal/') and (path.endswith('_test.go') or '/testdata/' in path) for path in rel_paths),
+        'excluded internal test files and internal testdata paths',
+        'selected an internal test or testdata path',
+        failures,
+    )
+
+    predicate_guard = not should_scan_repo_path('scripts/testdata/retiredgo/x.go')
+    report_assertion(
+        'selection self-scan guard',
+        not any(path.startswith('scripts/') for path in rel_paths) and predicate_guard,
+        'did not select scripts/ paths and predicate rejects scripts/testdata/retiredgo/x.go',
+        'self-scan guard failed for scripts/ selection or predicate probe',
+        failures,
+    )
+
+    report_assertion(
+        'selection non-empty',
+        len(rel_paths) > 0,
+        f"selected {len(rel_paths)} tracked repo paths",
+        'selected zero repo paths',
+        failures,
+    )
+
+    report_assertion(
+        'dispatch config.toml.example',
+        engine_for_path(Path('config.toml.example')) == 'toml',
+        'engine_for_path routes config.toml.example to the TOML engine',
+        f"engine_for_path returned {engine_for_path(Path('config.toml.example'))!r}",
+        failures,
+    )
+
+    # The prior assertion proves engine_for_path() dispatches correctly in
+    # isolation, but does not prove config.toml.example is ever actually
+    # reached by a real repo scan. Close that gap end-to-end: confirm the
+    # real selection set (the same rel_paths a repo-mode run would scan)
+    # includes it, so the P0 dead-dispatch bug this task fixed cannot
+    # regress silently via a selection-side change instead of a
+    # dispatch-side one.
+    report_assertion(
+        'selection includes config.toml.example',
+        'config.toml.example' in rel_paths,
+        'real selection set includes config.toml.example end-to-end',
+        'config.toml.example was not present in the real selection set',
+        failures,
+    )
+
+    if failures:
+        raise SystemExit(1)
+
+
 def run_fixture_self_test():
-    manifest = load_fixture_manifest()
-    fixture_dir = fixture_manifest_path.parent
-    discovered = sorted(path.name for path in fixture_dir.glob(fixture_glob))
-
     failures = []
-    missing_manifest = sorted(set(discovered) - set(manifest))
-    extra_manifest = sorted(set(manifest) - set(discovered))
-    for name in missing_manifest:
-        failures.append(f"{name}: discovered by {fixture_glob} but missing from retired-manifest.json")
-    for name in extra_manifest:
-        failures.append(f"{name}: listed in retired-manifest.json but not found on disk")
 
-    for name in discovered:
-        expectation = manifest.get(name)
-        path = fixture_dir / name
+    for suite in fixture_suites:
+        manifest_path = suite['manifest_path']
+        manifest = load_fixture_manifest(manifest_path)
+        fixture_dir = manifest_path.parent
+        discovered_paths = sorted(fixture_dir.glob(suite['glob']), key=lambda path: path.as_posix())
+        discovered = [path.name for path in discovered_paths]
 
-        # Exercise BOTH scan engines against every fixture, not just whichever
-        # one scan_toml() would naturally pick for this interpreter. The
-        # fallback lexer (scan_toml_with_fallback) previously went completely
-        # unexercised whenever tomllib was importable (true on any Python
-        # >=3.11, i.e. every currently supported CI/dev environment), so a
-        # regression in its own EOF fail-closed handling could land with a
-        # fully green self-test. Running both engines here means the
-        # fallback's correctness is proven on every self-test invocation,
-        # never left as untested dead code.
-        engines = [('tomllib', scan_toml_with_tomllib)] if tomllib is not None else []
-        engines.append(('fallback', scan_toml_with_fallback))
+        missing_manifest = sorted(set(discovered) - set(manifest))
+        extra_manifest = sorted(set(manifest) - set(discovered))
+        for name in missing_manifest:
+            failures.append(f"{name}: discovered by {suite['glob']} but missing from {manifest_path.name}")
+        for name in extra_manifest:
+            failures.append(f"{name}: listed in {manifest_path.name} but not found on disk")
 
-        for engine_name, engine_fn in engines:
-            findings = engine_fn(path)
-            rejected = bool(findings)
-            label = f"{name} [{engine_name}]"
+        for path in discovered_paths:
+            name = path.name
+            expectation = manifest.get(name)
+            engine_name = engine_for_path(path)
 
-            if expectation == 'accept':
-                if rejected:
-                    detail = '; '.join(findings)
-                    failures.append(f"{label}: expected clean, got findings: {detail}")
-                else:
-                    print(f"PASS {label}: clean as expected")
+            if engine_name not in suite['engines']:
+                failures.append(
+                    f"{name}: suite {suite['name']} expected engines {suite['engines']} but engine_for_path returned {engine_name!r}"
+                )
                 continue
 
-            if expectation == 'reject':
-                if rejected:
-                    print(f"PASS {label}: rejected as expected")
-                else:
-                    failures.append(f"{label}: expected rejection, got clean")
+            engines = self_test_engines_for_name(engine_name)
+            if not engines:
+                failures.append(f"{name}: no self-test engines configured for {engine_name!r}")
                 continue
 
-            failures.append(f"{label}: unknown expectation {expectation!r} in retired-manifest.json")
+            for engine_label, engine_fn in engines:
+                findings = engine_fn(path)
+                rejected = bool(findings)
+                label = f"{name} [{engine_label}]"
+
+                if expectation == 'accept':
+                    if rejected:
+                        detail = '; '.join(findings)
+                        failures.append(f"{label}: expected clean, got findings: {detail}")
+                    else:
+                        print(f"PASS {label}: clean as expected")
+                    continue
+
+                if expectation == 'reject':
+                    if rejected:
+                        print(f"PASS {label}: rejected as expected")
+                    else:
+                        failures.append(f"{label}: expected rejection, got clean")
+                    continue
+
+                failures.append(f"{label}: unknown expectation {expectation!r} in {manifest_path.name}")
 
     if failures:
         print('\n'.join(f"FAIL {failure}" for failure in failures), file=sys.stderr)
@@ -465,6 +626,7 @@ if mode == 'repo':
     run_repo_scan()
 elif mode == 'self-test':
     run_fixture_self_test()
+    run_repo_selection_self_test()
 else:
     raise SystemExit(f'unknown mode: {mode}')
 PY
