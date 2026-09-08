@@ -127,12 +127,14 @@ func TestResolveRejectsChildBeneathRegularFile(t *testing.T) {
 		t.Fatalf("failed to create regular file ancestor: %v", err)
 	}
 
+	// A regular file blocking descent is unverifiable (we don't know what
+	// lies beyond it), not a proven escape (014.006-T).
 	_, err = root.Resolve(filepath.Join("file.txt", "sub"))
 	if err == nil {
-		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("file.txt", "sub"), symlinkEscapeMsg)
+		t.Fatalf("Resolve(%q) = nil error, want %q", filepath.Join("file.txt", "sub"), symlinkUnverifiableMsg)
 	}
-	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
-		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("file.txt", "sub"), err.Error(), symlinkEscapeMsg)
+	if !strings.Contains(err.Error(), symlinkUnverifiableMsg) {
+		t.Fatalf("Resolve(%q) error = %q, want to contain %q", filepath.Join("file.txt", "sub"), err.Error(), symlinkUnverifiableMsg)
 	}
 }
 
