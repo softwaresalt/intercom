@@ -52,7 +52,20 @@ func canonicalizeReparse(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer syscall.CloseHandle(handle)
+	// The close error is deliberately, explicitly discarded (not merely
+	// unchecked): this is a metadata-only, read-only handle opened solely
+	// to query GetFinalPathNameByHandleW below; by the time this deferred
+	// close runs, that query has already completed (successfully or not)
+	// and its result is already being returned to the caller. A close
+	// failure here cannot retroactively invalidate data already read, and
+	// there is no caller-actionable response to a failed handle close on
+	// this path -- silently leaking the report through the function's own
+	// return value would incorrectly overwrite (or mask) the real
+	// getFinalPathNameByHandle result/error with an unrelated close
+	// failure. errcheck (2026-09-08 review finding) flagged the bare
+	// `defer syscall.CloseHandle(handle)` form; this explicit discard
+	// keeps identical runtime behavior while satisfying the linter.
+	defer func() { _ = syscall.CloseHandle(handle) }()
 
 	return getFinalPathNameByHandle(handle)
 }

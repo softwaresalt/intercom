@@ -89,17 +89,40 @@
 //     it) are named here as CLOSED per this entry's scope, but with an
 //     important accuracy caveat established empirically during
 //     014.001-T (Go 1.26.5, GODEBUG=winsymlink=1 default on this
-//     toolchain): C2 and C3 were ALREADY correctly rejected by the
-//     PRE-existing implementation before 013-S touched this file --
-//     filepath.EvalSymlinks, called on an ancestor path with additional
-//     components following the junction, already transparently resolved
-//     it during ordinary OS path traversal. Only C1 (the junction as the
+//     toolchain) and corrected during review of 014.008-T's first draft
+//     of this entry: C2 and C3 were ALREADY rejected by the PRE-existing
+//     implementation before 013-S touched this file, but NOT because
+//     filepath.EvalSymlinks "transparently resolved" the junction's real
+//     target and compared it against root -- it did not. EvalSymlinks's
+//     Windows walker Lstats each intermediate component, and a directory
+//     junction reports fs.ModeIrregular (neither ModeDir nor
+//     ModeSymlink); when further path components remain, the walker
+//     unconditionally errors out (an ENOTDIR-class OS error) the moment
+//     it hits that irregular mode, REGARDLESS of whether the junction's
+//     real target is inside or outside the workspace root. This produced
+//     a coincidentally-correct rejection for the malicious (target
+//     outside root) C2/C3 shapes, but the exact same code path ALSO
+//     falsely rejected the benign shape (an intermediate/ancestor
+//     junction whose real target is INSIDE root) with an identical
+//     error -- containment was never actually verified for C2/C3 either;
+//     the pre-existing behavior was an unrelated path-walk error, not a
+//     resolved-and-compared verdict. canonicalizeReparse's terminal-
+//     handle resolution (014.003-T/014.004-T) incidentally corrects this
+//     side effect for C2/C3 as well: it now accepts the previously
+//     falsely-rejected in-root intermediate/ancestor-junction shape while
+//     still correctly rejecting the out-of-root one -- an uncredited but
+//     verified-correct side benefit of the C1 fix, not a change this
+//     entry's closure claim depends on. Only C1 (the junction as the
 //     exact terminal argument passed to EvalSymlinks/Lstat, gated on a
 //     ModeSymlink check that a junction's ModeIrregular never satisfies)
-//     was a live, exploitable bypass on this toolchain. C2/C3's tests
+//     was a live, exploitable CONTAINMENT bypass on this toolchain; C2/C3
+//     were a false-rejection usability defect, never a bypass, both
+//     before and incidentally improved after 013-S. C2/C3's tests
 //     (junction_windows_test.go) remain in the suite as non-regression
 //     locks proving canonicalizeReparse continues to handle them
-//     correctly, not as evidence that 013-S fixed three separate bugs.
+//     correctly (now WITHOUT the prior false-rejection side effect for
+//     the in-root shape), not as evidence that 013-S fixed three
+//     separate containment bugs.
 //     This closure explicitly does NOT cover: case-folding (5FE4A7BE-a /
 //     5FE4A7BE-b, untouched), hardlinks (SEC-5, untouched), or the
 //     Resolve -> use TOCTOU window (untouched) -- those remain separately
@@ -169,22 +192,32 @@ import (
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
-// uncPrefix is the volume-path prefix Go's filepath.EvalSymlinks emits on
-// Windows. This is Go's OWN standard-library internal implementation
-// detail (package path/filepath's Windows-specific EvalSymlinks calls
-// GetFinalPathNameByHandleW to resolve the input path and construct its
-// return value, which is where this prefix in EvalSymlinks' OUTPUT comes
-// from) -- it is used exclusively by NewRoot's one-time root
-// canonicalization above, NOT by checkSymlinkEscape.
+// uncPrefix is the volume-path prefix that GetFinalPathNameByHandleW
+// (VOLUME_NAME_DOS mode, the default) emits on Windows, stripped by
+// stripUNCPrefix (below) before a resolved path is compared against
+// root or returned to a caller.
 //
-// F8 (014.008-T): this is a DISTINCT attribution from
-// canonicalizeReparse's (reparse_windows.go, 014.003-T) own, separate,
-// DIRECT GetFinalPathNameByHandleW call, which this package's own code
-// makes explicitly (via syscall.NewLazyDLL, not through
-// filepath.EvalSymlinks) as part of checkSymlinkEscape's per-Resolve-call
-// containment check. The two call sites both ultimately reach the same
-// underlying Win32 API, but for different callers, at different times,
-// for different purposes -- do not conflate them.
+// F8 (014.008-T, corrected during review after an inaccurate first
+// draft of this comment claimed uncPrefix was NOT used by
+// checkSymlinkEscape -- it is): stripUNCPrefix, the sole consumer of
+// this constant, is called from BOTH of this package's two independent
+// GetFinalPathNameByHandleW call sites, which is exactly why they share
+// one prefix constant rather than each needing their own:
+//  1. NewRoot's one-time root canonicalization (this file), via Go's
+//     OWN standard-library filepath.EvalSymlinks, whose Windows-specific
+//     implementation internally calls GetFinalPathNameByHandleW to
+//     construct its return value.
+//  2. checkSymlinkEscape's per-Resolve-call containment check
+//     (pathsafe.go), via canonicalizeReparse's own, separate, DIRECT
+//     GetFinalPathNameByHandleW call (reparse_windows.go, 014.003-T,
+//     invoked through syscall.NewLazyDLL, not through
+//     filepath.EvalSymlinks).
+//
+// Both call sites reach the identical underlying Win32 API in
+// VOLUME_NAME_DOS mode and therefore emit the identical `\\?\` prefix
+// convention, which is the whole reason a single stripUNCPrefix
+// helper correctly serves both callers -- do not read this as evidence
+// that only one of the two call sites exists or matters.
 const uncPrefix = `\\?\`
 
 // Root is a canonicalized workspace root. Construct with NewRoot; the zero
