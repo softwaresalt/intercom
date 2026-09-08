@@ -52,9 +52,14 @@ conditions:
   determination. Verified via a direct read of
   `FilesystemTopologyReaders.closure_complete("013-S")`: `None` before the
   rename, `False` after the pure rename, `True` after the `conditions:`
-  block was added. No other tracked file referenced the old filename except
-  one memory checkpoint (`docs/memory/2026-09-08-013-s-session-end-summary.md`),
-  repointed to this canonical path in the same PR.
+  block was added. One other tracked file referenced the old filename as a
+  live pointer — `docs/memory/2026-09-08-013-s-session-end-summary.md` —
+  and was repointed to this canonical path in the same PR. A second tracked
+  file, `.autoharness/continuous-learning/observations/2026-09-08.jsonl`,
+  also contains the old filename string; it is an append-only historical
+  audit-trail entry citing evidence as it existed at observation time, not a
+  live pointer, and was intentionally left unmodified rather than omitted
+  from this accounting.
 - Compaction status (P-020): `done` — `compact-context` invoked (target: all) after this closure artifact was created; bounded Tier-1 consolidation of this release unit's own memory checkpoints (Stage's `013-s-memory.md` + Ship's pre-PR checkpoint) into `docs/memory/compacted/2026-09-08-013-s-014-f-pathsafe-reparse-containment-compacted.md`, verbose originals moved to `docs/archive/memory/`. No other memory/plan/closure artifacts in the repository qualified for compaction under this invocation's candidate rules (closure records for this release unit are 0 days old, below the 14-day threshold; other shipments' memory files are out of this bounded invocation's scope).
 
 ## Summary of the change
