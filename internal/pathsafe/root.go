@@ -194,10 +194,31 @@ func stripUNCPrefix(p string) string {
 
 func isWindowsAbsolutePath(p string) bool {
 	if len(p) >= 2 && p[0] == '\\' && p[1] == '\\' {
-		return true
+		return hasUNCHostAndShare(p[2:])
 	}
 	if len(p) < 3 {
 		return false
 	}
 	return ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) && p[1] == ':' && p[2] == '\\'
+}
+
+// hasUNCHostAndShare reports whether rest (the portion following a leading
+// \\) contains both a non-empty host segment and a non-empty share segment
+// -- the minimum structure required for a well-formed, addressable UNC path
+// (\\host\share[\...]). A host-only remainder, or one with an empty share
+// segment (e.g. "server" or "server\"), is not a complete UNC path and must
+// not be accepted as Windows-absolute: stripUNCPrefix's fail-closed
+// postcondition requires rejecting (not merely lexically prefix-matching)
+// a malformed re-formed UNC result.
+func hasUNCHostAndShare(rest string) bool {
+	sep := strings.IndexByte(rest, '\\')
+	if sep <= 0 {
+		return false
+	}
+	afterHost := rest[sep+1:]
+	share := afterHost
+	if shareEnd := strings.IndexByte(afterHost, '\\'); shareEnd >= 0 {
+		share = afterHost[:shareEnd]
+	}
+	return share != ""
 }

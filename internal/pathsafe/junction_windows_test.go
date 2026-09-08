@@ -17,6 +17,10 @@ const junctionCreateTimeout = time.Minute
 func createDirectoryJunction(t *testing.T, linkPath, targetPath string) {
 	t.Helper()
 
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh not available on PATH")
+	}
+
 	helperScript := filepath.Join(t.TempDir(), "create-junction.ps1")
 	helperContent := strings.Join([]string{
 		"param(",
