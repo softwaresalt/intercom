@@ -1,6 +1,8 @@
 package pathsafe
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -222,11 +224,36 @@ func pathHasPrefix(path, p string) bool {
 // workspace silently pass validation whenever the leaf does not yet exist.
 // On failure it emits "symlink target escapes workspace".
 //
-// os.Stat (not os.Lstat) gates each existence probe, matching the oracle's
-// Path::exists(), which follows symlinks — a broken symlink at the final
-// component is therefore treated as non-existent and, once no existing
-// ancestor remains to check beyond the root itself, takes the lexical-only
-// branch (finding GO-14, documented, not silently inherited).
+// The first probe (resolved itself, i.e. the final path component) uses
+// os.Stat to preserve the documented GO-14 lexical-only acceptance for a
+// dangling final symlink. Every strict ancestor above the leaf uses
+// os.Lstat so a dangling intermediate symlink or junction entry is caught
+// (Lstat reports the reparse-point entry itself rather than following it,
+// and a non-directory, non-symlink Lstat result is rejected outright).
+//
+// KNOWN LIMITATION, NOT closed by this function (see stash-tracked follow-up
+// referenced from the package risk register): on Windows, a Lstat result for
+// a directory junction (IO_REPARSE_TAG_MOUNT_POINT) is neither ModeDir nor
+// ModeSymlink, so any live (non-dangling) junction used as a strict ancestor
+// is unconditionally rejected here without its target ever being resolved
+// or compared against root -- this is a false-rejection (fails closed), not
+// an escape, but it is NOT "re-resolved" despite what an earlier draft of
+// this comment claimed. Separately and more importantly: a LIVE junction
+// used as resolved itself (the final component) is NOT caught by this
+// function at all -- os.Stat transparently follows the junction to its
+// target and succeeds, so the loop breaks on the very first iteration
+// before any ancestor logic runs, and the post-loop filepath.EvalSymlinks
+// call does not resolve IO_REPARSE_TAG_MOUNT_POINT either, so containment
+// is never actually checked against the junction's real target. This is a
+// pre-existing gap (present before this function's dangling-symlink fix,
+// unchanged by it) and is out of this shipment's chartered scope
+// (011-S/012-F closes the DANGLING intermediate case only); it is not the
+// same defect as the accepted, unrelated GO-14 dangling-final-symlink
+// acceptance and must not be conflated with it in future risk-register work.
+//
+// Ascent is limited to fs.ErrNotExist. Any other probe error — for example
+// permission denial, a symlink cycle, or a malformed reparse point — is
+// rejected with the OS cause wrapped for errors.Is/errors.As inspection.
 //
 // Known limitations (both oracle-parity, see the package doc comment):
 // the TOCTOU window between this check and actual filesystem use, and the
@@ -235,10 +262,19 @@ func pathHasPrefix(path, p string) bool {
 // validation (finding SEC-5).
 func checkSymlinkEscape(root Root, resolved string) (string, error) {
 	ancestor := resolved
+	probe := os.Stat
+	finalProbe := true
 	for {
-		if _, err := os.Stat(ancestor); err == nil {
+		info, err := probe(ancestor)
+		if err == nil {
+			if !finalProbe && !info.IsDir() && info.Mode()&fs.ModeSymlink == 0 {
+				return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
+			}
 			break
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
 		}
+
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
 			// DOCUMENTED-UNREACHABLE, coverage-excluded (011.006-T item
@@ -258,11 +294,13 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 			return resolved, nil
 		}
 		ancestor = parent
+		probe = os.Lstat
+		finalProbe = false
 	}
 
 	real, err := filepath.EvalSymlinks(ancestor)
 	if err != nil {
-		return "", apperr.New(apperr.KindPathViolation, symlinkEscapeMsg)
+		return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkEscapeMsg)
 	}
 	real = stripUNCPrefix(real)
 

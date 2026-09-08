@@ -14,10 +14,23 @@
 // entry names its current mitigation status and the concrete condition
 // that would force mitigation:
 //
-//   - GO-14 (write-through-dangling-symlink): checkSymlinkEscape treats a
-//     dangling symlink at the FINAL path component as the lexical-only
-//     accept branch (matching the oracle's Path::exists() semantics, which
-//     follows symlinks and reports false for a dangling link). STATUS:
+//   - GO-14 (write-through-dangling-symlink): checkSymlinkEscape's
+//     documented lexical-only acceptance is bounded to a dangling symlink
+//     at the FINAL path component only, including a transitively dangling
+//     final link whose chain ends unresolved. 012.003-T narrows, but does
+//     not remove, the same write-through-outside-workspace primitive:
+//     under the identical attacker capability, a strict-ancestor dangling
+//     link or junction is now rejected, but Resolve("link") still accepts
+//     the final-component form with one fewer path component. Intermediate
+//     directory entries that exist but are not statable as contained
+//     directories are rejected regardless of target because the target is
+//     not yet verifiably contained; that class includes dangling links,
+//     cycles, EACCES, and unresolvable reparse points.
+//     symlinkEscapeMsg deliberately covers both genuine escape and
+//     unverifiable-target rejections. A future shipment may flip the GO-14
+//     regression lock only if it explicitly reconsiders this final-
+//     component acceptance, updates the lock, and lands the replacement
+//     boundary in the same change (see stash F133AB7E). STATUS:
 //     accepted, oracle-parity. TRIGGER: mitigation is forced the moment any
 //     caller uses a Resolve()'d path to WRITE through a dangling symlink
 //     whose target is outside the workspace — i.e. the first real
@@ -31,6 +44,40 @@
 //     real write path exists.
 //   - SEC-5 (EvalSymlinks ignores hardlinks, see "Known limitations"
 //     above). STATUS: accepted, oracle-parity. TRIGGER: same as GO-14.
+//   - 5FE4A7BE (012.007-T; case-folding risk register, not a BF5DE670
+//     item): darwin currently under-folds because pathEqual/pathHasPrefix
+//     fold on Windows only, while darwin is a shipped target and is
+//     case-insensitive by default on APFS/HFS+. STATUS: accepted,
+//     fail-closed, plausible/unconfirmed. TRIGGER: reproduce a legitimate
+//     in-root darwin path rejected solely because the volume is case-
+//     insensitive and the only difference is casing. Extending the fold to
+//     darwin was rejected because a case-sensitive APFS volume would turn
+//     that rejection into an acceptance, i.e. fail-open. The already-
+//     enabled Windows fold is itself not the safe baseline: NTFS supports
+//     per-directory case sensitivity, and WSL enables it on the
+//     directories it creates, so a symlink resolving to a case-variant
+//     sibling can be folded into acceptance. STATUS: accepted, fail-open
+//     risk. TRIGGER: a workspace root on a case-sensitivity-enabled NTFS
+//     or WSL-created tree.
+//   - 700B41CE (discovered by adversarial review during 011-S/012-F,
+//     NOT a 012-F chartered finding, NOT closed by 012.003-T): on
+//     Windows, a LIVE (non-dangling) directory junction used as the FINAL
+//     path component is accepted by checkSymlinkEscape regardless of its
+//     target, because os.Stat transparently follows
+//     IO_REPARSE_TAG_MOUNT_POINT and filepath.EvalSymlinks never resolves
+//     it -- containment is never actually checked against the junction's
+//     real target. Confirmed pre-existing in this package before 011-S
+//     (main's original checkSymlinkEscape used os.Stat unconditionally for
+//     every ancestor including the final component, so the identical
+//     bypass mechanism already existed) and empirically reproduced.
+//     Requires no elevated privilege. STATUS: accepted (unresolved,
+//     tracked), NOT oracle-parity -- this is a Go/Windows-runtime-specific
+//     gap with no equivalent finding in the oracle port record. TRIGGER:
+//     mitigation is forced by the same real-write-call-site trigger as
+//     GO-14 above, or sooner if this package is asked to certify
+//     containment for a workspace root known to contain live junctions.
+//     See docs/closure/2026-09-07-011-s-012-f-pathsafe-containment-adversarial-review.md
+//     (finding F0) for the full trace and remediation options.
 //
 // RETIREMENT PROCEDURE when a real write path arrives (C4-C6): each finding
 // above must be re-evaluated against the concrete write call site before
@@ -119,7 +166,9 @@ func wrapRootInvalid(err error) error {
 }
 
 // stripUNCPrefix removes a leading \\?\ prefix, which Go's EvalSymlinks
-// emits on Windows.
+// emits on Windows. Extended-UNC paths are re-formed as ordinary UNC paths
+// (\\server\share\...), and any stripped result that is not a Windows-
+// absolute path is rejected by keeping the original extended-path input.
 //
 // Provenance note: this mirrors src/config.rs:24 strip_unc_prefix, which the
 // oracle applies to default_workspace_root at src/config.rs:546 — it is NOT
@@ -129,5 +178,47 @@ func wrapRootInvalid(err error) error {
 // string-based, not an oracle-faithful port of path_safety.rs (findings
 // SEC-4 / ARCH-4).
 func stripUNCPrefix(p string) string {
-	return strings.TrimPrefix(p, uncPrefix)
+	if !strings.HasPrefix(p, uncPrefix) {
+		return p
+	}
+
+	remainder := p[len(uncPrefix):]
+	if len(remainder) >= len("UNC\\") && strings.EqualFold(remainder[:len("UNC\\")], "UNC\\") {
+		remainder = `\\` + remainder[len("UNC\\"):]
+	}
+	if !isWindowsAbsolutePath(remainder) {
+		return p
+	}
+	return remainder
+}
+
+func isWindowsAbsolutePath(p string) bool {
+	if len(p) >= 2 && p[0] == '\\' && p[1] == '\\' {
+		return hasUNCHostAndShare(p[2:])
+	}
+	if len(p) < 3 {
+		return false
+	}
+	return ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) && p[1] == ':' && p[2] == '\\'
+}
+
+// hasUNCHostAndShare reports whether rest (the portion following a leading
+// \\) contains both a non-empty host segment and a non-empty share segment
+// -- the minimum structure required for a well-formed, addressable UNC path
+// (\\host\share[\...]). A host-only remainder, or one with an empty share
+// segment (e.g. "server" or "server\"), is not a complete UNC path and must
+// not be accepted as Windows-absolute: stripUNCPrefix's fail-closed
+// postcondition requires rejecting (not merely lexically prefix-matching)
+// a malformed re-formed UNC result.
+func hasUNCHostAndShare(rest string) bool {
+	sep := strings.IndexByte(rest, '\\')
+	if sep <= 0 {
+		return false
+	}
+	afterHost := rest[sep+1:]
+	share := afterHost
+	if shareEnd := strings.IndexByte(afterHost, '\\'); shareEnd >= 0 {
+		share = afterHost[:shareEnd]
+	}
+	return share != ""
 }

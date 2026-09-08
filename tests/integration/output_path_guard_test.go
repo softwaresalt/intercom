@@ -75,17 +75,33 @@ func inRepoGuardDir(t *testing.T, root string) string {
 	return dir
 }
 
+// createDirectorySymlink mirrors internal/pathsafe's fail-closed helper
+// locally. The predicate is not merely unexported there; it lives in
+// _test.go files and is therefore unimportable even if exported. A shared
+// internal/testsupport package was rejected as disproportionate for two call
+// sites, so this helper duplicates the build-tagged privilege predicate and
+// accepts the small drift risk.
 func createDirectorySymlink(t *testing.T, linkPath, targetPath string) {
 	t.Helper()
 
-	if err := os.Symlink(targetPath, linkPath); err != nil {
-		t.Skipf("directory symlink creation unavailable (missing symbolic-link privilege / Developer Mode?): %v", err)
+	err := os.Symlink(targetPath, linkPath)
+	if err == nil {
+		t.Cleanup(func() {
+			if err := os.Remove(linkPath); err != nil && !os.IsNotExist(err) {
+				t.Fatalf("removing directory symlink %q: %v", linkPath, err)
+			}
+		})
+		return
 	}
-	t.Cleanup(func() {
-		if err := os.Remove(linkPath); err != nil && !os.IsNotExist(err) {
-			t.Fatalf("removing directory symlink %q: %v", linkPath, err)
-		}
-	})
+	if runtime.GOOS != "windows" {
+		t.Skipf("skipping: no symlink privilege in this environment: %v", err)
+		return
+	}
+	if isSymlinkPrivilegeError(err) {
+		t.Skipf("skipping (enumerated privilege case, 012.008-T): ERROR_PRIVILEGE_NOT_HELD -- SeCreateSymbolicLinkPrivilege not held; enable Developer Mode or run elevated: %v", err)
+		return
+	}
+	t.Fatalf("directory symlink creation failed on windows for a reason OTHER than ERROR_PRIVILEGE_NOT_HELD (012.008-T requires failure, not a silent skip): %v", err)
 }
 
 func createDirectoryJunction(t *testing.T, linkPath, targetPath string) {

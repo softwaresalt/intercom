@@ -131,3 +131,33 @@ func TestNewRootIsIdempotent(t *testing.T) {
 		t.Fatalf("NewRoot is not idempotent: %q != %q", r1.Path(), r2.Path())
 	}
 }
+
+// TestStripUNCPrefixWindowsTransformVerdicts verifies stripUNCPrefix's pure
+// string transforms for Windows extended-path inputs without relying on
+// host-dependent filepath helpers.
+func TestStripUNCPrefixWindowsTransformVerdicts(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "unc share root", in: `\\?\UNC\server\share`, want: `\\server\share`},
+		{name: "unc share subpath", in: `\\?\UNC\server\share\ws\file`, want: `\\server\share\ws\file`},
+		{name: "drive path", in: `\\?\C:\path`, want: `C:\path`},
+		{name: "lowercase unc prefix", in: `\\?\unc\server\share`, want: `\\server\share`},
+		{name: "unc near miss", in: `\\?\UNCfoo`, want: `\\?\UNCfoo`},
+		{name: "bare unc marker", in: `\\?\UNC`, want: `\\?\UNC`},
+		{name: "volume guid", in: `\\?\Volume{GUID}\path`, want: `\\?\Volume{GUID}\path`},
+		{name: "globalroot", in: `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`, want: `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`},
+		{name: "unc host only, no share", in: `\\?\UNC\server`, want: `\\?\UNC\server`},
+		{name: "unc host only, trailing separator, empty share", in: `\\?\UNC\server\`, want: `\\?\UNC\server\`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripUNCPrefix(tc.in); got != tc.want {
+				t.Fatalf("stripUNCPrefix(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
