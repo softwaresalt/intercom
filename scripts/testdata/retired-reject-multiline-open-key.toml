@@ -1,0 +1,11 @@
+# retired-reject-multiline-open-key.toml (015.009-T, V6): the KEY is
+# written on the line that OPENS a multiline basic string. That line
+# starts OUTSIDE any multiline construct, so its own LHS key must remain
+# eligible for inspection even though processing this same line flips
+# the lexer into a multiline state. The pre-change fallback used
+# POST-line state to decide suppression, so it wrongly skipped this
+# line's own key (falsely CLEAN); tomllib is unaffected since it parses
+# the whole document up front regardless of value shape.
+host_cli = """
+inert content
+"""

@@ -599,10 +599,20 @@ def scan_toml_with_fallback(path: Path):
         'in_multiline_literal': False,
     }
     for line_no, raw_line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1):
+        # 015.009-T (V6): capture the multiline flags BEFORE
+        # strip_toml_comment mutates them for THIS line, and use that
+        # pre-line state for the suppression decision below. A line that
+        # starts OUTSIDE a multiline string remains eligible for LHS
+        # inspection even though processing it OPENS one (the key is
+        # legitimately written on this same line); a line that starts
+        # INSIDE a multiline string remains suppressed even though
+        # processing it CLOSES one (a delimiter-only closing line is
+        # never itself a real key=value assignment).
+        pre_line_multiline = state['in_multiline_basic'] or state['in_multiline_literal']
         line = strip_toml_comment(raw_line, state).strip()
         if not line:
             continue
-        if not (state['in_multiline_basic'] or state['in_multiline_literal']) and line.startswith('[') and line.endswith(']'):
+        if not pre_line_multiline and line.startswith('[') and line.endswith(']'):
             header = line.strip('[]').strip()
             current_table = bare_key_re.findall(header)
             # 015.008-T (V5): check the header's OWN path as one composed
@@ -613,7 +623,7 @@ def scan_toml_with_fallback(path: Path):
                 token, model = result
                 findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML table key {'.'.join(current_table)!r} (via {model} model)")
             continue
-        if state['in_multiline_basic'] or state['in_multiline_literal'] or '=' not in line:
+        if pre_line_multiline or '=' not in line:
             continue
         lhs = line.split('=', 1)[0]
         keys = current_table + bare_key_re.findall(lhs)
