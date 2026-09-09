@@ -5,5 +5,13 @@
   "retired-accept-interpreted-string-escaped-quote.go": "accept",
   "retired-accept-raw-string-multiline.go": "accept",
   "retired-reject-after-rune-literal.go": "reject",
-  "retired-reject-channel-ids.go": "reject"
+  "retired-reject-channel-ids.go": "reject",
+  "retired-reject-team-ids.go": "reject",
+  "retired-reject-ipc-names.go": "reject",
+  "retired-reject-socket-modes.go": "reject",
+  "retired-reject-host-clis.go": "reject",
+  "retired-reject-socketmode-lower.go": "reject",
+  "retired-reject-socketmode-mixed.go": "reject",
+  "retired-reject-team-ids-cache.go": "reject",
+  "retired-accept-token-corpus.go": "accept"
 }
