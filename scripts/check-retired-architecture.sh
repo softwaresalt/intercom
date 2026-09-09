@@ -676,7 +676,18 @@ def scan_path(path: Path):
         return scan_go(path)
     if engine_name == 'toml':
         return scan_toml(path)
-    return []
+    # 015.010-T (V7 fix): fail CLOSED via a synthetic finding, never a bare
+    # `raise`/`SystemExit` here. run_repo_scan collects findings across a
+    # loop over every selected repo path; raising mid-iteration would abort
+    # the loop, discard every finding already collected, print a raw
+    # traceback instead of the gate's normal reporting, and escape the
+    # advisory/blocking toggle entirely (the toggle only governs the exit
+    # code this function's caller produces via the normal findings path, not
+    # an uncaught exception). A synthetic finding travels through the exact
+    # same reporting and toggle machinery as any real finding, so an
+    # unmapped extension can never silently resolve to "no findings" (the
+    # prior fail-open behavior) and can never crash the run either.
+    return [f"{path.as_posix()}: no scan engine registered for this file type (fail-closed synthetic finding)"]
 
 
 def select_repo_paths():
@@ -817,7 +828,25 @@ def run_repo_selection_self_test():
         failures,
     )
 
+    # 015.010-T: prove the fail-closed synthetic finding in scan_path() is
+    # unreachable for the CURRENT selection set -- every path
+    # select_repo_paths() actually returns must resolve to a known engine.
+    # select_repo_paths() returns `str`, not `Path`, so engine_for_path must
+    # be called on `root / p` here to match how run_repo_scan() calls it.
+    unmapped = sorted(p for p in rel_paths if engine_for_path(root / p) is None)
+    report_assertion(
+        'selection dispatch coverage',
+        not unmapped,
+        'every selected repo path resolves to a known scan engine',
+        f"selected path(s) with no known engine (would hit the fail-closed synthetic finding): {unmapped}",
+        failures,
+    )
+
     if failures:
+        # A self-test assertion is allowed to raise/exit directly: it runs
+        # under controlled test conditions, never mid-iteration over a real
+        # findings collection loop, so none of the run_repo_scan() concerns
+        # above (discarded findings, an escaped toggle) apply here.
         raise SystemExit(1)
 
 
