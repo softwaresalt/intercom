@@ -108,7 +108,9 @@ fixture_suites = [
 
 go_identifier_re = re.compile(r'\b[A-Za-z_][A-Za-z0-9_]*\b')
 bare_key_re = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
-component_re = re.compile(r'[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|[0-9]+')
+# component_re removed by 015.005-T: split_camel_acronym() replaces the
+# regex-based acronym/camelCase splitter (V1 fix -- see split_camel_acronym
+# docstring for the acronym+plural-suffix disambiguation it now performs).
 
 
 def should_scan_repo_path(path: str) -> bool:
@@ -133,20 +135,165 @@ def engine_for_path(path: Path):
     return None
 
 
+def split_camel_acronym(chunk: str):
+    """Segment one underscore-delimited chunk into camelCase/acronym
+    components.
+
+    015.005-T (V1 fix): a maximal uppercase run of length >= 2 immediately
+    followed by lowercase letters is ambiguous between two cases:
+      (a) genuine acronym-then-new-word, e.g. 'IPCNames' -> ['IPC', 'Names']
+          (the last uppercase letter of the run starts the new word); and
+      (b) acronym-then-bare-plural-suffix, e.g. 'ChannelIDs' -> keep 'IDs'
+          together as ONE token rather than peeling the run's last letter
+          into a spurious one-character token ('channel', 'i', 'ds') that
+          can never match a 2-part forbidden sequence.
+    The two are disambiguated by checking whether the lowercase tail
+    following the run is EXACTLY 's' or 'es' (case (b), glue) or something
+    longer (case (a), split before the last uppercase letter). This check
+    is intentionally NOT anchored to end-of-string: 'TeamIDsCache' must
+    still glue 'IDs' even though 'Cache' follows, because the plural-tail
+    rule fires the moment the lowercase run itself is exactly 's'/'es',
+    regardless of what comes after it.
+    """
+    n = len(chunk)
+    tokens: list[str] = []
+    i = 0
+    while i < n:
+        ch = chunk[i]
+        if ch.isdigit():
+            j = i
+            while j < n and chunk[j].isdigit():
+                j += 1
+            tokens.append(chunk[i:j])
+            i = j
+            continue
+        if ch.isupper():
+            j = i
+            while j < n and chunk[j].isupper():
+                j += 1
+            run_len = j - i
+            if run_len == 1:
+                k = j
+                while k < n and chunk[k].islower():
+                    k += 1
+                tokens.append(chunk[i:k])
+                i = k
+                continue
+            if j < n and chunk[j].islower():
+                k = j
+                while k < n and chunk[k].islower():
+                    k += 1
+                tail = chunk[j:k]
+                if tail in ('s', 'es'):
+                    tokens.append(chunk[i:k])
+                else:
+                    tokens.append(chunk[i:j - 1])
+                    tokens.append(chunk[j - 1:k])
+                i = k
+                continue
+            tokens.append(chunk[i:j])
+            i = j
+            continue
+        j = i
+        while j < n and chunk[j].islower():
+            j += 1
+        tokens.append(chunk[i:j])
+        i = j
+    return tokens
+
+
 def split_identifier(name: str):
     parts = []
     for chunk in name.split('_'):
-        parts.extend(m.group(0).lower() for m in component_re.finditer(chunk))
+        parts.extend(token.lower() for token in split_camel_acronym(chunk))
     return parts or [name.lower()]
 
 
-def matches_forbidden_parts(parts):
-    for token, want in forbidden_parts.items():
-        if len(parts) < len(want):
+_VOCAB_WORDS = sorted(
+    {word for parts in forbidden_parts.values() for word in parts},
+    key=len,
+    reverse=True,
+)
+
+
+def segment_whole(word: str):
+    """Whole-part decomposition (015.005-T, V3 / P3 concat model): return
+    every way `word` can be segmented EXACTLY and COMPLETELY into known
+    vocabulary words (`_VOCAB_WORDS`), or [] if no complete segmentation
+    exists. This is deliberately NOT a substring search: a word like
+    'hostclient' is never treated as containing 'host'+'cli' because the
+    leftover 'ent' can never be covered by a vocabulary word, so no
+    complete segmentation exists and segment_whole returns [].
+    """
+    n = len(word)
+    dp: list[list[list[str]]] = [[] for _ in range(n + 1)]
+    dp[0] = [[]]
+    for end in range(1, n + 1):
+        segmentations: list[list[str]] = []
+        for tok in _VOCAB_WORDS:
+            start = end - len(tok)
+            if start >= 0 and dp[start] and word[start:end] == tok:
+                for prefix in dp[start]:
+                    segmentations.append(prefix + [tok])
+        dp[end] = segmentations
+    return dp[n]
+
+
+def window_matches(parts, want):
+    """Shared window/suffix rule for both matching models (015.005-T): a
+    forbidden sequence `want` matches `parts` if some contiguous window of
+    `parts` equals `want`, EXCEPT that the final element of the window may
+    carry a plural 's'/'es' suffix relative to the final element of
+    `want`. The suffix check is scoped to the matched WINDOW, not the end
+    of the whole identifier -- e.g. 'TeamIDsCache' matches the
+    ['team','id'] window even though 'Cache' follows."""
+    span = len(want)
+    for i in range(len(parts) - span + 1):
+        window = parts[i:i + span]
+        if window[:-1] != want[:-1]:
             continue
-        for i in range(len(parts) - len(want) + 1):
-            if parts[i:i + len(want)] == want:
-                return token
+        last, want_last = window[-1], want[-1]
+        if last == want_last:
+            return True
+        for suffix in ('es', 's'):
+            if last.endswith(suffix) and last[:-len(suffix)] == want_last:
+                return True
+    return False
+
+
+def matches_forbidden_sequence(parts):
+    """Camel/acronym-boundary model: matches a forbidden sequence against
+    the case-boundary-derived component list produced by split_identifier
+    (covers V1, V2)."""
+    for token, want in forbidden_parts.items():
+        if len(parts) >= len(want) and window_matches(parts, want):
+            return token
+    return None
+
+
+def matches_forbidden_concat(parts):
+    """No-separator concat model (covers V3): for each individual
+    component that split_identifier could not further decompose by case
+    boundary (e.g. the whole of 'socketmode'), attempt a full whole-part
+    decomposition and re-apply the same window/suffix rule to it."""
+    for component in parts:
+        for segmentation in segment_whole(component):
+            for token, want in forbidden_parts.items():
+                if len(segmentation) >= len(want) and window_matches(segmentation, want):
+                    return token
+    return None
+
+
+def matches_forbidden_parts(parts):
+    """Single dispatch point (015.005-T) for the two separately named
+    matching models. Returns (token, model_name) so findings can report
+    which model fired, or None."""
+    token = matches_forbidden_sequence(parts)
+    if token:
+        return token, 'sequence'
+    token = matches_forbidden_concat(parts)
+    if token:
+        return token, 'concat'
     return None
 
 
@@ -336,16 +483,17 @@ def scan_go(path: Path, mask: bool = True):
     masked = mask_go_non_code(text) if mask else text
     for line_no, line in enumerate(masked.splitlines(), start=1):
         for match in go_identifier_re.finditer(line):
-            token = matches_forbidden_parts(split_identifier(match.group(0)))
-            if token:
-                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in Go identifier {match.group(0)!r}")
+            result = matches_forbidden_parts(split_identifier(match.group(0)))
+            if result:
+                token, model = result
+                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in Go identifier {match.group(0)!r} (via {model} model)")
     return findings
 
 
-def report_toml_key(path: Path, key_path: list[str], segment: str, token: str) -> str:
+def report_toml_key(path: Path, key_path: list[str], segment: str, token: str, model: str) -> str:
     return (
         f"{path.as_posix()}: retired token {token!r} in TOML key path "
-        f"{'.'.join(key_path)!r} (segment {segment!r})"
+        f"{'.'.join(key_path)!r} (segment {segment!r}) (via {model} model)"
     )
 
 
@@ -353,9 +501,10 @@ def walk_toml_value(path: Path, prefix: list[str], value, findings: list[str]):
     if isinstance(value, dict):
         for key, child in value.items():
             key_path = prefix + [key]
-            token = matches_forbidden_parts(key.lower().split('_'))
-            if token:
-                findings.append(report_toml_key(path, key_path, key, token))
+            result = matches_forbidden_parts(key.lower().split('_'))
+            if result:
+                token, model = result
+                findings.append(report_toml_key(path, key_path, key, token, model))
             walk_toml_value(path, key_path, child, findings)
         return
 
@@ -397,18 +546,20 @@ def scan_toml_with_fallback(path: Path):
             header = line.strip('[]').strip()
             current_table = bare_key_re.findall(header)
             for key in current_table:
-                token = matches_forbidden_parts(key.lower().split('_'))
-                if token:
-                    findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML table key {key!r}")
+                result = matches_forbidden_parts(key.lower().split('_'))
+                if result:
+                    token, model = result
+                    findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML table key {key!r} (via {model} model)")
             continue
         if state['in_multiline_basic'] or state['in_multiline_literal'] or '=' not in line:
             continue
         lhs = line.split('=', 1)[0]
         keys = current_table + bare_key_re.findall(lhs)
         for key in keys:
-            token = matches_forbidden_parts(key.lower().split('_'))
-            if token:
-                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML key {key!r}")
+            result = matches_forbidden_parts(key.lower().split('_'))
+            if result:
+                token, model = result
+                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML key {key!r} (via {model} model)")
 
     # Fail closed (AC-6): an unterminated string at EOF (single-line basic/
     # literal OR multi-line basic/literal) means this lexer's simplified
