@@ -842,6 +842,84 @@ def run_repo_selection_self_test():
         failures,
     )
 
+    # 015.011-T (AG-5/D4): cmd/ is a DELIBERATE coverage decision -- unlike
+    # internal/**, cmd/**'s selection predicate does NOT exclude *_test.go
+    # or testdata/ paths. This assertion guards that decision from being
+    # silently narrowed by a future should_scan_repo_path edit that copies
+    # the internal/** exclusion pattern onto cmd/ without an explicit
+    # scope decision to do so.
+    cmd_test_probe = should_scan_repo_path('cmd/x/y_test.go')
+    cmd_testdata_probe = should_scan_repo_path('cmd/x/testdata/z.go')
+    cmd_test_files_selected = [p for p in rel_paths if p.startswith('cmd/') and p.endswith('_test.go')]
+    report_assertion(
+        'selection cmd/ coverage (AG-5/D4)',
+        cmd_test_probe and cmd_testdata_probe and len(cmd_test_files_selected) > 0,
+        f"cmd/ deliberately includes *_test.go and testdata/ paths ({len(cmd_test_files_selected)} tracked cmd/**/*_test.go file(s) selected)",
+        (
+            'AG-5/D4 violation: this assertion guards the DELIBERATE decision that cmd/ '
+            'selection coverage includes test and testdata paths (unlike internal/**) -- '
+            f"should_scan_repo_path('cmd/x/y_test.go')={cmd_test_probe}, "
+            f"should_scan_repo_path('cmd/x/testdata/z.go')={cmd_testdata_probe}, "
+            f"tracked cmd/**/*_test.go selected={len(cmd_test_files_selected)}"
+        ),
+        failures,
+    )
+
+    # 015.011-T (AC-6/AG-1): pin the git ls-files pathspec and the
+    # should_scan_repo_path prefix set by READING THIS SCRIPT FROM DISK and
+    # extracting the two functions' own regions, so the pin is falsifiable
+    # against an actual future pathspec/prefix edit. A module-constant
+    # self-comparison would be self-referential (nothing outside this
+    # process could ever disagree with it), and a whole-file containment
+    # check is vacuous because the asserted literals also appear in THIS
+    # very assertion's own source text below. __file__ and
+    # inspect.getsource() are unavailable (this interpreter is fed the
+    # script body on stdin via a heredoc), so the script is located by its
+    # known, fixed path relative to the repo root instead.
+    script_path = root / 'scripts' / 'check-retired-architecture.sh'
+    try:
+        script_source = script_path.read_text(encoding='utf-8')
+    except OSError:
+        script_source = None
+
+    def extract_function_region(source: str, func_name: str):
+        # Anchor on the FIRST occurrence of 'def <func_name>(' only -- the
+        # anchor string recurs later in this file inside this very
+        # function's own failure-message f-strings, so a last-match/rfind
+        # implementation would extract THIS assertion's region instead of
+        # the real function definition. str.find() always returns the
+        # first match, which is safe by construction regardless of how
+        # many later mentions exist.
+        anchor = f"def {func_name}("
+        start = source.find(anchor)
+        if start == -1:
+            return None
+        tail_start = start + len(anchor)
+        next_def = re.search(r'^def ', source[tail_start:], re.MULTILINE)
+        end = tail_start + next_def.start() if next_def else len(source)
+        return source[start:end]
+
+    select_region = extract_function_region(script_source, 'select_repo_paths') if script_source is not None else None
+    guard_region = extract_function_region(script_source, 'should_scan_repo_path') if script_source is not None else None
+
+    pathspec_literals = ("'config.toml.example'", "'cmd/**'", "'internal/**'")
+    prefix_literals = ("'cmd/'", "'internal/'")
+    pathspec_ok = select_region is not None and all(lit in select_region for lit in pathspec_literals)
+    prefix_ok = guard_region is not None and all(lit in guard_region for lit in prefix_literals)
+
+    report_assertion(
+        'selection pathspec pin (AC-6/AG-1)',
+        pathspec_ok and prefix_ok,
+        'select_repo_paths pathspec and should_scan_repo_path prefix set pinned via disk-read, region-anchored extraction',
+        (
+            'AC-6/AG-1 pin failed -- region extraction failed (fail-closed) or an expected '
+            f"literal is missing: select_repo_paths region found={select_region is not None}, "
+            f"should_scan_repo_path region found={guard_region is not None}, "
+            f"pathspec literals present={pathspec_ok}, prefix literals present={prefix_ok}"
+        ),
+        failures,
+    )
+
     if failures:
         # A self-test assertion is allowed to raise/exit directly: it runs
         # under controlled test conditions, never mid-iteration over a real
