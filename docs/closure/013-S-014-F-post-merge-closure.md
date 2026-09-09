@@ -16,6 +16,15 @@ merge_commit_sha: 17daffb5614f2f8ed797d7647aeadcc1dc29b1d2
 compaction_status: done
 closure_status: READY_WITH_CONDITIONS
 releasability: READY_WITH_CONDITIONS
+conditions:
+  - id: "runtime-verification-blocked-preexisting"
+    description: "pathsafe.Root.Resolve() has no wired live entrypoint yet (pre-existing project-maturity gap, not introduced by this shipment); informational, non-blocking."
+    satisfied: true
+    evidence: "docs/closure/2026-09-08-013-s-014-f-pathsafe-reparse-containment-runtime-verification.md"
+  - id: "p021-deferred-followups-non-blocking"
+    description: "Three P-021 deferred-scope stash entries (4104AF54, E428AB46, E4C5413F) remain open follow-up work; none P0/P1, all recorded in PR #40's Local Review Readiness follow-up field."
+    satisfied: true
+    evidence: "PR #40 body, 'Review remediation' section; stash entries 4104AF54, E428AB46, E4C5413F"
 ---
 
 # Post-merge closure: 013-S / 014-F — pathsafe reparse-point containment hardening
@@ -24,6 +33,33 @@ releasability: READY_WITH_CONDITIONS
 - PR: #40 (`fix(pathsafe): close Windows directory-junction containment bypass (013-S/014-F)`)
 - Merge commit: `17daffb5614f2f8ed797d7647aeadcc1dc29b1d2` (merge-commit strategy, P-009)
 - Date: 2026-09-08
+- **Closure-evidence repair note**: this artifact was originally authored as
+  `docs/closure/2026-09-08-013-s-014-f-pathsafe-reparse-containment-closure.md`,
+  following the `operational-closure` skill's generic
+  `{YYYY-MM-DD}-{slug}-closure.md` convention instead of the
+  `{shipment_id}-{feature_id}-post-merge-closure.md` convention the
+  `pipeline-topology` gate's `closure_complete()` reader requires (glob:
+  `docs/closure/{shipment_id}-*-post-merge-closure.md`). This repeats the
+  012-S closure-discovery defect repaired by PR #39. Repaired here via pure
+  `git mv` to `docs/closure/013-S-014-F-post-merge-closure.md` (zero
+  narrative content change) plus one additional, same-contract-surface fix:
+  the `READY_WITH_CONDITIONS` `closure_status` had no machine-readable
+  `conditions:` frontmatter block, so `closure_complete()` returned `False`
+  (found, but not registering complete) even after the rename. Added a
+  `conditions:` block transcribing the two conditions already determined
+  non-blocking in the "Releasability evidence" section below (`satisfied:
+  true` plus an `evidence` pointer each) — no new judgment, no reopened
+  determination. Verified via a direct read of
+  `FilesystemTopologyReaders.closure_complete("013-S")`: `None` before the
+  rename, `False` after the pure rename, `True` after the `conditions:`
+  block was added. One other tracked file referenced the old filename as a
+  live pointer — `docs/memory/2026-09-08-013-s-session-end-summary.md` —
+  and was repointed to this canonical path in the same PR. A second tracked
+  file, `.autoharness/continuous-learning/observations/2026-09-08.jsonl`,
+  also contains the old filename string; it is an append-only historical
+  audit-trail entry citing evidence as it existed at observation time, not a
+  live pointer, and was intentionally left unmodified rather than omitted
+  from this accounting.
 - Compaction status (P-020): `done` — `compact-context` invoked (target: all) after this closure artifact was created; bounded Tier-1 consolidation of this release unit's own memory checkpoints (Stage's `013-s-memory.md` + Ship's pre-PR checkpoint) into `docs/memory/compacted/2026-09-08-013-s-014-f-pathsafe-reparse-containment-compacted.md`, verbose originals moved to `docs/archive/memory/`. No other memory/plan/closure artifacts in the repository qualified for compaction under this invocation's candidate rules (closure records for this release unit are 0 days old, below the 14-day threshold; other shipments' memory files are out of this bounded invocation's scope).
 
 ## Summary of the change
