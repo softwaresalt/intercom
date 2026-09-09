@@ -1,0 +1,5 @@
+# retired-reject-hyphenated-key.toml (015.008-T, V5): a hyphenated bare
+# TOML key. Valid TOML syntax (bare keys may contain hyphens). Hyphen
+# normalisation happens inside decompose_toml_key() at the TOML boundary,
+# not inside the shared split_identifier tokenizer.
+channel-id = "value"

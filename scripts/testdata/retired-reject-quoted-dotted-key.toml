@@ -1,0 +1,11 @@
+# retired-reject-quoted-dotted-key.toml (post-015.008-T review, M-1/M-1-fix
+# regression): a QUOTED key containing a literal '.' character is valid TOML
+# per spec and is parsed by tomllib as ONE flat key literally named
+# "channel.id" -- distinct from a bare dotted key (channel.id = 1), which
+# tomllib instead expands into nested tables of plain bare-key segments.
+# Before the split_camel_acronym() non-progress fix, decompose_toml_key()
+# on this literal key would hang forever (infinite loop) rather than
+# detecting the composed forbidden sequence. This fixture proves both: (1)
+# the scan terminates, and (2) the '.' is treated as an inert separator so
+# the composed parts ['channel','id'] are still correctly matched.
+"channel.id" = 1

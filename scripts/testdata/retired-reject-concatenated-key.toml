@@ -1,0 +1,4 @@
+# retired-reject-concatenated-key.toml (015.008-T, V5): a fused,
+# no-separator TOML key. Caught only via the concat model's whole-word
+# decomposition (segment_whole), same as the Go 'socketmode' case.
+channelid = "value"

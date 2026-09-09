@@ -4,5 +4,13 @@
   "retired-positive-after-multiline-close.toml": "reject",
   "retired-negative-nested-inert-delimiters.toml": "accept",
   "retired-positive-escaped-delimiter-close.toml": "reject",
-  "retired-malformed-unparseable.toml": "reject"
+  "retired-malformed-unparseable.toml": "reject",
+  "retired-reject-hyphenated-key.toml": "reject",
+  "retired-reject-concatenated-key.toml": "reject",
+  "retired-reject-table-plus-key.toml": "reject",
+  "retired-reject-dotted-key.toml": "reject",
+  "retired-accept-composed-key-corpus.toml": "accept",
+  "retired-reject-multiline-open-key.toml": "reject",
+  "retired-reject-quoted-dotted-key.toml": "reject",
+  "retired-reject-fused-plural-key.toml": "reject"
 }

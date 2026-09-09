@@ -1,0 +1,19 @@
+# retired-accept-composed-key-corpus.toml (015.008-T): bundled ACCEPT set
+# verifying composed-path matching does not produce false positives for
+# real repo-shaped keys. [copilot].cli_path composes to
+# ['copilot','cli','path'] (no window equals ['host','cli']).
+# [[workspace]].workspace_id composes to ['workspace','workspace','id']
+# (no window equals ['channel','id'] or ['team','id']).
+#
+# Post-015.008-T review (M-1 regression, benign case): a top-level QUOTED
+# key containing a literal '.' that does NOT compose to any forbidden
+# window -- proves decompose_toml_key() terminates and stays clean on a
+# harmless quoted-dotted key, not only on the REJECT case in
+# retired-reject-quoted-dotted-key.toml.
+"a.b" = "value"
+
+[copilot]
+cli_path = "value"
+
+[[workspace]]
+workspace_id = "value"

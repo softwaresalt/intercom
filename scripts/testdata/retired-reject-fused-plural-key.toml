@@ -1,0 +1,6 @@
+# retired-reject-fused-plural-key.toml (post-015.005-T review, M-2
+# regression): a fused, no-separator, PLURAL TOML key -- distinct from
+# retired-reject-concatenated-key.toml's singular fused key (channelid).
+# Proves segment_whole()'s plural-suffix retry closes this combined
+# evasion for the TOML engine, not only the Go engine.
+channelids = "value"

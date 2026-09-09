@@ -21,10 +21,21 @@
 # in the upstream `ci/ci.yml.tmpl` template: the advisory `windows` job
 # (011.009-T/011.010-T), the write-path-precondition lint step (011.004-T,
 # job `lint`), the un-ignore-regression check steps (011.012-T, job
-# `gitignore-append-only`), and the pip/setuptools/wheel bootstrap install
-# step (011.013-T, job `topology-check`). A future `autoharness
-# install`/`tune` regeneration must re-apply all four, not only the
-# `windows` job.
+# `gitignore-append-only`), the pip/setuptools/wheel bootstrap install
+# step (011.013-T, job `topology-check`), and the retired-architecture
+# verdict + integrity steps in job `lint` (015.001-T…015.013-T, shipment
+# 014-S): "Run retired-architecture gate" (toggled via the
+# `RETIRED_ARCH_GATE_ADVISORY` repository variable -- renamed and inverted
+# by `015.013-T`: the step now defaults to BLOCKING and only a
+# case-insensitive `'true'` value (GitHub Actions `==` is case-insensitive
+# for strings -- 'true'/'True'/'TRUE' all qualify) opts it back into
+# advisory; any other value, including unset, stays BLOCKING) and "Run
+# retired-architecture self-test" (unconditionally blocking, runs
+# `--self-test-integrity`). A future `autoharness install`/`tune`
+# regeneration must re-apply all five, not only the `windows` job, and
+# must preserve the `RETIRED_ARCH_GATE_ADVISORY` variable name (not the
+# retired `RETIRED_ARCH_GATE_REQUIRED` name from the now-closed
+# `015.001-T` advisory window).
 #
 # Regular PR/push CI was Linux-only (ubuntu-latest) prior to 010-S; an
 # advisory `windows-latest` job (`windows`, see the LOCAL DIVERGENCE note
@@ -260,10 +271,31 @@ jobs:
           go-version: '1.26.x'
           cache: true
       - name: Run retired-architecture gate
-        continue-on-error: true
+        # Verdict step. The bounded advisory window opened by 015.001-T
+        # (RETIRED_ARCH_GATE_REQUIRED, continue-on-error when NOT 'true')
+        # is now CLOSED by 015.013-T: the toggle is renamed to
+        # RETIRED_ARCH_GATE_ADVISORY and inverted so this step defaults to
+        # BLOCKING. Match semantics (corrected post-review, U-1): GitHub
+        # Actions' `==` expression operator is CASE-INSENSITIVE for
+        # strings, so 'true', 'True', and 'TRUE' all opt into advisory
+        # mode -- this expression does NOT enforce byte-exact
+        # case-sensitivity, and any value spelled some way other than
+        # (case-insensitive) 'true' -- unset, '1', a typo, or the wrong
+        # scope -- stays BLOCKING (continue-on-error: false). This still
+        # discharges H8 (toggle fail-open): the misconfiguration case that
+        # actually matters -- the variable being unset, empty, or any
+        # non-'true'-like value -- fails CLOSED, not open; it only means
+        # the set of values that deliberately opt into advisory mode is
+        # wider (case-insensitive) than a byte-exact comparison would be.
+        continue-on-error: ${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}
         run: bash scripts/check-retired-architecture.sh
       - name: Run retired-architecture self-test
-        run: bash scripts/check-retired-architecture.sh --self-test
+        # Integrity step (015.001-T): fixture + selection self-tests only,
+        # via --self-test-integrity. Deliberately carries NO
+        # continue-on-error -- stays unconditionally blocking (AC-5). The
+        # repo scan itself is NOT run here; it is owned by the toggled
+        # verdict step above.
+        run: bash scripts/check-retired-architecture.sh --self-test-integrity
       - name: Run write-path-precondition self-test (011.004-T)
         run: bash scripts/check-write-path-precondition.sh --self-test
       - name: Install goimports (pinned)

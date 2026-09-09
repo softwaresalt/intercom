@@ -13,6 +13,12 @@ set -euo pipefail
 #     Scans tracked files in internal/** (excluding *_test.go and any
 #     testdata/ directory), config.toml.example, and cmd/**. Exits 0 when no
 #     retired-architecture token is found as a Go identifier or TOML key.
+#     Disclosure (015.012-T): this sentence attaches the *_test.go/testdata
+#     exclusion only to internal/** and lists cmd/** unqualified -- that is
+#     not an oversight in the description. cmd/**'s selection predicate
+#     deliberately does NOT exclude *_test.go or testdata/ paths (unlike
+#     internal/**'s), a decision guarded by the
+#     'selection cmd/ coverage (AG-5/D4)' self-test assertion (015.011-T).
 #   scripts/check-retired-architecture.sh --self-test
 #     Runs three checks: (1) verifies the committed TOML fixture suite in
 #     scripts/testdata/retired-*.toml against scripts/testdata/retired-manifest.json
@@ -22,7 +28,83 @@ set -euo pipefail
 #     file is selected, internal/** test/testdata paths and scripts/ itself are
 #     excluded, selection is non-empty, and config.toml.example dispatches to the
 #     TOML engine); (3) verifies the real tracked tree passes a repo scan. Exits 0
-#     only when all three checks succeed.
+#     only when all three checks succeed. Semantics UNCHANGED by 015.001-T.
+#   scripts/check-retired-architecture.sh --self-test-integrity
+#     Integrity-only mode (added 015.001-T, permanent as of 015.013-T's
+#     window closure): runs ONLY checks (1) and (2) above (the fixture
+#     suites and the selection-logic self-test). Does NOT run the repo
+#     scan (3). Used by ci.yml's integrity step so that step stays
+#     unconditionally blocking while the separately-toggled verdict step
+#     (governed by the `RETIRED_ARCH_GATE_ADVISORY` repository variable,
+#     fail-closed by default since 015.013-T) owns the real repo-scan
+#     enforcement decision.
+#
+# Every invocation emits a GitHub Actions ::notice:: line naming the
+# resolved SCRIPT INVOCATION MODE (repo / self-test / self-test-integrity)
+# so which code path ran is falsifiable from run history. Correction
+# (post-review, U-2): the notice text itself does NOT vary with the
+# RETIRED_ARCH_GATE_ADVISORY toggle's resolved value (the verdict step
+# always invokes this script with no flag, so it always prints
+# mode=repo regardless of advisory/blocking posture) -- H8's actual
+# falsifiability guarantee for the TOGGLE's own outcome comes from the
+# step's pass/fail/continue-on-error result in the run's job summary and
+# the "::notice::retired-arch gate mode=repo" line's mere PRESENCE (proof
+# the verdict step actually executed the real repo scan), not from a
+# toggle-value-specific notice payload.
+#
+# Disclosure (015.012-T) -- verified claims only, no pathspec edits:
+#
+# Residual blind spots (accepted risk, not fixed by this shipment):
+#   - Aliased imports (e.g. `sm "github.com/x/socketmode"`) are not
+#     specially tracked; the alias identifier itself is still scanned like
+#     any other Go identifier, but an import whose PACKAGE PATH names a
+#     retired component while every local alias/reference does not would
+#     not be caught.
+#   - go.mod / go.sum are outside the scan pathspec entirely.
+#   - Non-.go / non-.toml files under internal/** are not scanned (no
+#     engine is registered for other extensions there).
+#   - V10: mask_go_non_code() has no explicit EOF state check for the
+#     string/rune states (only raw_string gained one, in 015.007-T, because
+#     that state's unmask decision specifically depends on knowing the
+#     whole buffered content). An unterminated string or rune literal at
+#     EOF in the `string`/`rune` states masks to the end of the file
+#     silently rather than emitting a finding -- a silent fail-open,
+#     disclosed and not fixed.
+#   - Interpreted-string struct tags (e.g. `"json:\"channel_id\""` as a
+#     Go string literal rather than a raw backtick literal) are missed by
+#     015.007-T's lexer-sourced, raw_string-only capture (H2 residual).
+#     Findings only ever print `match.group(0)` (the matched identifier),
+#     so this residual gap cannot leak any additional payload to CI logs.
+#
+# Unfixtureable malformed-input boundary (relocated from 015.009-T by
+# escalation-adjudicated review): a line that CLOSES a multiline string
+# and then carries an assignment on the same line has its LHS suppressed
+# by the fallback lexer's pre-line-state check (015.009-T). This is NOT
+# fixtureable in the shared dual-engine suite: that construct is invalid
+# TOML, so the tomllib engine fail-closes to a parse-error finding while
+# the fallback engine would report clean -- no single manifest expectation
+# can be green under both engine labels for the same fixture. The
+# behaviour is recorded here, with the reason it is untested, rather than
+# committing a fixture that would be permanently red under one engine.
+#
+# check-write-path-precondition.sh divergence: that script (outside this
+# shipment's pathspec, per AG-3) carries its own independent
+# mask_go_non_code() clone that has NOT been updated with this shipment's
+# raw_string buffering / struct-tag-visibility change (015.007-T). This
+# divergence is CURRENT AND DELIBERATE FOR THIS CYCLE ONLY -- it is not a
+# statement of permanent intent, so the deferred follow-up (stash
+# provenance 6C24E2E4, unification of the two clones) keeps its own
+# decision about whether and when to converge them.
+#
+# Forward-looking guard rail (attributed as such, not yet load-bearing):
+# any future scope expansion of this gate MUST keep the tracked-only
+# `git ls-files` enumeration used by select_repo_paths() and MUST NOT
+# switch to Path.rglob()/os.walk() or any other filesystem-walking
+# enumeration. A filesystem walk would also pick up ignored-but-present
+# files (e.g. a local, gitignored `.env.*`), and this gate's findings are
+# printed to stdout/stderr, which GitHub Actions echoes to a public CI
+# log -- so a filesystem-walk enumeration could turn an ignored secret
+# file into a public-log disclosure vector.
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN=python3
@@ -78,11 +160,29 @@ fixture_suites = [
         "manifest_path": root / "scripts" / "testdata" / "retiredgo-manifest.json",
         "engines": ["go"],
     },
+    {
+        # 015.002-T: masking bypass seam. This suite is SEPARATE from the
+        # shared "go" suite above (untouched, per rev-3 C-P1-2) and is
+        # reject-only (per rev-4 ESC-P2-a). It still declares
+        # engines: ['go'] so the pre-existing `engine_name not in
+        # suite['engines']` guard (engine_for_path always returns 'go' for
+        # a .go file) passes unchanged; only the ENGINE FUNCTION is
+        # overridden via 'engine_override' below to the unmasked scan
+        # (scan_go(path, mask=False)), so suite-to-engine selection is
+        # suite-scoped rather than keyed on engine_for_path.
+        "name": "go-differential",
+        "glob": "retiredgo-differential/*.go",
+        "manifest_path": root / "scripts" / "testdata" / "retiredgo-differential-manifest.json",
+        "engines": ["go"],
+        "engine_override": [("go-unmasked", lambda path: scan_go(path, mask=False))],
+    },
 ]
 
 go_identifier_re = re.compile(r'\b[A-Za-z_][A-Za-z0-9_]*\b')
 bare_key_re = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
-component_re = re.compile(r'[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|[0-9]+')
+# component_re removed by 015.005-T: split_camel_acronym() replaces the
+# regex-based acronym/camelCase splitter (V1 fix -- see split_camel_acronym
+# docstring for the acronym+plural-suffix disambiguation it now performs).
 
 
 def should_scan_repo_path(path: str) -> bool:
@@ -107,27 +207,234 @@ def engine_for_path(path: Path):
     return None
 
 
+def split_camel_acronym(chunk: str):
+    """Segment one underscore-delimited chunk into camelCase/acronym
+    components.
+
+    015.005-T (V1 fix): a maximal uppercase run of length >= 2 immediately
+    followed by lowercase letters is ambiguous between two cases:
+      (a) genuine acronym-then-new-word, e.g. 'IPCNames' -> ['IPC', 'Names']
+          (the last uppercase letter of the run starts the new word); and
+      (b) acronym-then-bare-plural-suffix, e.g. 'ChannelIDs' -> keep 'IDs'
+          together as ONE token rather than peeling the run's last letter
+          into a spurious one-character token ('channel', 'i', 'ds') that
+          can never match a 2-part forbidden sequence.
+    The two are disambiguated by checking whether the lowercase tail
+    following the run is EXACTLY 's' or 'es' (case (b), glue) or something
+    longer (case (a), split before the last uppercase letter). This check
+    is intentionally NOT anchored to end-of-string: 'TeamIDsCache' must
+    still glue 'IDs' even though 'Cache' follows, because the plural-tail
+    rule fires the moment the lowercase run itself is exactly 's'/'es',
+    regardless of what comes after it.
+    """
+    n = len(chunk)
+    tokens: list[str] = []
+    i = 0
+    while i < n:
+        ch = chunk[i]
+        if ch.isdigit():
+            j = i
+            while j < n and chunk[j].isdigit():
+                j += 1
+            tokens.append(chunk[i:j])
+            i = j
+            continue
+        if ch.isupper():
+            j = i
+            while j < n and chunk[j].isupper():
+                j += 1
+            run_len = j - i
+            if run_len == 1:
+                k = j
+                while k < n and chunk[k].islower():
+                    k += 1
+                tokens.append(chunk[i:k])
+                i = k
+                continue
+            if j < n and chunk[j].islower():
+                k = j
+                while k < n and chunk[k].islower():
+                    k += 1
+                tail = chunk[j:k]
+                if tail in ('s', 'es'):
+                    tokens.append(chunk[i:k])
+                else:
+                    tokens.append(chunk[i:j - 1])
+                    tokens.append(chunk[j - 1:k])
+                i = k
+                continue
+            tokens.append(chunk[i:j])
+            i = j
+            continue
+        j = i
+        while j < n and chunk[j].islower():
+            j += 1
+        if j == i:
+            # Fix (post-015.008-T review): `ch` matched none of
+            # digit/upper/lower (e.g. '.', ' ', ':', or another
+            # non-cased character). This is reachable via
+            # decompose_toml_key() on a quoted TOML key, which tomllib
+            # parses verbatim and may legally contain such characters
+            # (e.g. `"a.b" = 1`). Without this guard the run-collection
+            # while-loop above never advances j past i, the appended
+            # token is empty, and i is left unchanged -- a
+            # non-terminating loop. Treat the character as an inert
+            # single-character separator (never part of any vocabulary
+            # word) and always advance i by exactly one.
+            i += 1
+            continue
+        tokens.append(chunk[i:j])
+        i = j
+    return tokens
+
+
 def split_identifier(name: str):
     parts = []
     for chunk in name.split('_'):
-        parts.extend(m.group(0).lower() for m in component_re.finditer(chunk))
+        parts.extend(token.lower() for token in split_camel_acronym(chunk))
     return parts or [name.lower()]
 
 
-def matches_forbidden_parts(parts):
-    for token, want in forbidden_parts.items():
-        if len(parts) < len(want):
+_VOCAB_WORDS = sorted(
+    {word for parts in forbidden_parts.values() for word in parts},
+    key=len,
+    reverse=True,
+)
+
+
+def segment_whole(word: str):
+    """Whole-part decomposition (015.005-T, V3 / P3 concat model): return
+    every way `word` can be segmented EXACTLY and COMPLETELY into known
+    vocabulary words (`_VOCAB_WORDS`), or [] if no complete segmentation
+    exists. This is deliberately NOT a substring search: a word like
+    'hostclient' is never treated as containing 'host'+'cli' because the
+    leftover 'ent' can never be covered by a vocabulary word, so no
+    complete segmentation exists and segment_whole returns [].
+
+    Fix (post-015.005-T review, M-2): a fused, unseparated, PLURAL whole
+    word (e.g. 'socketmodes') has no EXACT full segmentation, because no
+    vocabulary word itself ends in a bare plural suffix -- the DP below
+    can segment the singular prefix 'socketmode' but the trailing 's'/'es'
+    is never covered by any exact vocabulary token, so the full word was
+    previously unsegmentable and window_matches()'s existing plural
+    tolerance never got a chance to run (it only ever sees output THIS
+    function already produced). Mirror that same tolerance HERE, at the
+    whole-word level, by retrying the exact segmentation against the word
+    with a trailing 's'/'es' stripped when the exact attempt on the full
+    word fails -- so 'socketmodes' still segments as ['socket','mode']
+    (the singular form), which the caller's window_matches then matches
+    directly against the singular forbidden sequence with no further
+    tolerance needed there.
+    """
+    exact = _segment_whole_exact(word)
+    if exact:
+        return exact
+    for suffix in ('es', 's'):
+        if word.endswith(suffix) and len(word) > len(suffix):
+            stripped = _segment_whole_exact(word[:-len(suffix)])
+            if stripped:
+                return stripped
+    return []
+
+
+def _segment_whole_exact(word: str):
+    """Exact-match DP core for segment_whole() -- no plural tolerance."""
+    n = len(word)
+    dp: list[list[list[str]]] = [[] for _ in range(n + 1)]
+    dp[0] = [[]]
+    for end in range(1, n + 1):
+        segmentations: list[list[str]] = []
+        for tok in _VOCAB_WORDS:
+            start = end - len(tok)
+            if start >= 0 and dp[start] and word[start:end] == tok:
+                for prefix in dp[start]:
+                    segmentations.append(prefix + [tok])
+        dp[end] = segmentations
+    return dp[n]
+
+
+def window_matches(parts, want):
+    """Shared window/suffix rule for both matching models (015.005-T): a
+    forbidden sequence `want` matches `parts` if some contiguous window of
+    `parts` equals `want`, EXCEPT that the final element of the window may
+    carry a plural 's'/'es' suffix relative to the final element of
+    `want`. The suffix check is scoped to the matched WINDOW, not the end
+    of the whole identifier -- e.g. 'TeamIDsCache' matches the
+    ['team','id'] window even though 'Cache' follows."""
+    span = len(want)
+    for i in range(len(parts) - span + 1):
+        window = parts[i:i + span]
+        if window[:-1] != want[:-1]:
             continue
-        for i in range(len(parts) - len(want) + 1):
-            if parts[i:i + len(want)] == want:
-                return token
+        last, want_last = window[-1], want[-1]
+        if last == want_last:
+            return True
+        for suffix in ('es', 's'):
+            if last.endswith(suffix) and last[:-len(suffix)] == want_last:
+                return True
+    return False
+
+
+def matches_forbidden_sequence(parts):
+    """Camel/acronym-boundary model: matches a forbidden sequence against
+    the case-boundary-derived component list produced by split_identifier
+    (covers V1, V2)."""
+    for token, want in forbidden_parts.items():
+        if len(parts) >= len(want) and window_matches(parts, want):
+            return token
     return None
+
+
+def matches_forbidden_concat(parts):
+    """No-separator concat model (covers V3): for each individual
+    component that split_identifier could not further decompose by case
+    boundary (e.g. the whole of 'socketmode'), attempt a full whole-part
+    decomposition and re-apply the same window/suffix rule to it."""
+    for component in parts:
+        for segmentation in segment_whole(component):
+            for token, want in forbidden_parts.items():
+                if len(segmentation) >= len(want) and window_matches(segmentation, want):
+                    return token
+    return None
+
+
+def matches_forbidden_parts(parts):
+    """Single dispatch point (015.005-T) for the two separately named
+    matching models. Returns (token, model_name) so findings can report
+    which model fired, or None."""
+    token = matches_forbidden_sequence(parts)
+    if token:
+        return token, 'sequence'
+    token = matches_forbidden_concat(parts)
+    if token:
+        return token, 'concat'
+    return None
+
+
+#
+# Fix (post-015.007-T review, Copilot): the original `(\s*\w+:"[^"]*")+`
+# was more permissive than Go's actual struct tag grammar in two ways --
+# (a) `\w+` allowed a key to start with a digit, which is not a valid Go
+# identifier and never appears as a real struct tag key; and (b) `\s*`
+# before every repetition (including between pairs) allowed adjacent
+# `key1:"v1"key2:"v2"` with zero separating whitespace, whereas Go's real
+# struct tag format requires pairs to be whitespace-separated. Both gaps
+# let non-tag raw string literals that merely look tag-like be classified
+# as a struct tag and unmasked, increasing false-positive scan exposure.
+# The tightened pattern below requires each key to start with a letter or
+# underscore, and requires at least one whitespace character between
+# successive pairs (only the very first pair may be preceded by optional
+# leading whitespace, matching Go's own leading-space-trim behavior).
+struct_tag_re = re.compile(
+    r'^\s*[A-Za-z_]\w*:"[^"]*"(?:\s+[A-Za-z_]\w*:"[^"]*")*\s*$'
+)
 
 
 def mask_go_non_code(text: str) -> str:
     code, line_comment, block_comment, string, raw_string, rune = range(6)
     state = code
     out = []
+    raw_buf: list[str] = []
     i = 0
     while i < len(text):
         ch = text[i]
@@ -153,6 +460,7 @@ def mask_go_non_code(text: str) -> str:
                 out.append(' ')
                 i += 1
                 state = raw_string
+                raw_buf = []
                 continue
             if ch == "'":
                 out.append(' ')
@@ -194,10 +502,28 @@ def mask_go_non_code(text: str) -> str:
             continue
 
         if state == raw_string:
-            out.append('\n' if ch == '\n' else ' ')
-            i += 1
             if ch == '`':
+                # 015.007-T (V4): decide whole-content struct-tag visibility
+                # only now that the ENTIRE raw_string content is known --
+                # this is why the content must be buffered rather than
+                # masked char-by-char as it streams past. Only a literal
+                # whose entire content matches the tag grammar is unmasked;
+                # everything else (multiline strings, SQL/template
+                # backtick literals, doc-comment-quoted backticks that
+                # never reach this state at all) keeps the prior
+                # fully-masked behavior unchanged.
+                content = ''.join(raw_buf)
+                if struct_tag_re.match(content):
+                    out.append(content)
+                else:
+                    out.append(''.join('\n' if c == '\n' else ' ' for c in raw_buf))
+                out.append(' ')
+                i += 1
                 state = code
+                raw_buf = []
+                continue
+            raw_buf.append(ch)
+            i += 1
             continue
 
         if state == rune:
@@ -211,7 +537,15 @@ def mask_go_non_code(text: str) -> str:
                 state = code
             continue
 
+    if state == raw_string and raw_buf:
+        # Unterminated raw string at EOF: fail closed by masking the
+        # buffered content exactly as the pre-015.007-T behavior did --
+        # never unmask a literal whose content could not be fully
+        # determined to be (or not be) a complete struct tag.
+        out.append(''.join('\n' if c == '\n' else ' ' for c in raw_buf))
+
     return ''.join(out)
+
 
 
 # Defensive fallback when tomllib is unavailable. The primary path uses the
@@ -299,21 +633,57 @@ def strip_toml_comment(line: str, state: dict[str, bool]):
     return ''.join(out)
 
 
-def scan_go(path: Path):
+def scan_go(path: Path, mask: bool = True):
+    # 015.002-T: mask=True (default) is the real, unchanged production and
+    # self-test path. mask=False is a masking-bypass seam used ONLY by the
+    # go-differential fixture suite's engine_override to prove the masked
+    # path is not false-green on content that hides a retired token behind
+    # comment/string masking.
     findings = []
-    masked = mask_go_non_code(path.read_text(encoding='utf-8'))
+    text = path.read_text(encoding='utf-8')
+    masked = mask_go_non_code(text) if mask else text
     for line_no, line in enumerate(masked.splitlines(), start=1):
         for match in go_identifier_re.finditer(line):
-            token = matches_forbidden_parts(split_identifier(match.group(0)))
-            if token:
-                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in Go identifier {match.group(0)!r}")
+            result = matches_forbidden_parts(split_identifier(match.group(0)))
+            if result:
+                token, model = result
+                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in Go identifier {match.group(0)!r} (via {model} model)")
     return findings
 
 
-def report_toml_key(path: Path, key_path: list[str], segment: str, token: str) -> str:
+def decompose_toml_key(segment: str):
+    """015.008-T (V5): decompose a single raw TOML key/table-header
+    segment string into split_identifier-style component tokens. Hyphen
+    normalisation lives HERE, at the TOML boundary -- not inside the
+    shared split_identifier tokenizer -- because bare TOML keys may use
+    hyphens (TOML bare-key charset is [A-Za-z0-9_-]) that Go identifiers
+    never do. In the fallback lexer, bare_key_re ([A-Za-z_][A-Za-z0-9_]*)
+    already splits a hyphenated key like 'channel-id' into two separate
+    regex matches before this function ever sees either half, so the
+    hyphen never actually reaches this normalisation there -- that
+    fixture is caught by composed-path matching instead. This function
+    still performs the replace defensively for the tomllib site, where a
+    hyphenated key arrives as one whole dict-key string."""
+    return split_identifier(segment.replace('-', '_'))
+
+
+def compose_toml_parts(path_segments: list[str]):
+    """015.008-T (V5): flatten decompose_toml_key() over every segment of
+    a composed TOML key path (table prefix segments plus the leaf key)
+    into ONE parts list, so matches_forbidden_parts can see a forbidden
+    sequence that only appears once the path is composed -- e.g.
+    [channel] + id, or a top-level dotted channel.id key -- neither of
+    which contains the forbidden pair within a single segment alone."""
+    parts: list[str] = []
+    for segment in path_segments:
+        parts.extend(decompose_toml_key(segment))
+    return parts
+
+
+def report_toml_key(path: Path, key_path: list[str], segment: str, token: str, model: str) -> str:
     return (
         f"{path.as_posix()}: retired token {token!r} in TOML key path "
-        f"{'.'.join(key_path)!r} (segment {segment!r})"
+        f"{'.'.join(key_path)!r} (segment {segment!r}) (via {model} model)"
     )
 
 
@@ -321,9 +691,10 @@ def walk_toml_value(path: Path, prefix: list[str], value, findings: list[str]):
     if isinstance(value, dict):
         for key, child in value.items():
             key_path = prefix + [key]
-            token = matches_forbidden_parts(key.lower().split('_'))
-            if token:
-                findings.append(report_toml_key(path, key_path, key, token))
+            result = matches_forbidden_parts(compose_toml_parts(key_path))
+            if result:
+                token, model = result
+                findings.append(report_toml_key(path, key_path, key, token, model))
             walk_toml_value(path, key_path, child, findings)
         return
 
@@ -358,25 +729,43 @@ def scan_toml_with_fallback(path: Path):
         'in_multiline_literal': False,
     }
     for line_no, raw_line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1):
+        # 015.009-T (V6): capture the multiline flags BEFORE
+        # strip_toml_comment mutates them for THIS line, and use that
+        # pre-line state for the suppression decision below. A line that
+        # starts OUTSIDE a multiline string remains eligible for LHS
+        # inspection even though processing it OPENS one (the key is
+        # legitimately written on this same line); a line that starts
+        # INSIDE a multiline string remains suppressed even though
+        # processing it CLOSES one (a delimiter-only closing line is
+        # never itself a real key=value assignment).
+        pre_line_multiline = state['in_multiline_basic'] or state['in_multiline_literal']
         line = strip_toml_comment(raw_line, state).strip()
         if not line:
             continue
-        if not (state['in_multiline_basic'] or state['in_multiline_literal']) and line.startswith('[') and line.endswith(']'):
+        if not pre_line_multiline and line.startswith('[') and line.endswith(']'):
             header = line.strip('[]').strip()
             current_table = bare_key_re.findall(header)
-            for key in current_table:
-                token = matches_forbidden_parts(key.lower().split('_'))
-                if token:
-                    findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML table key {key!r}")
+            # 015.008-T (V5): check the header's OWN path as one composed
+            # unit (covers a dotted header like [channel.id]), not each
+            # header segment in isolation.
+            result = matches_forbidden_parts(compose_toml_parts(current_table))
+            if result:
+                token, model = result
+                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML table key {'.'.join(current_table)!r} (via {model} model)")
             continue
-        if state['in_multiline_basic'] or state['in_multiline_literal'] or '=' not in line:
+        if pre_line_multiline or '=' not in line:
             continue
         lhs = line.split('=', 1)[0]
         keys = current_table + bare_key_re.findall(lhs)
-        for key in keys:
-            token = matches_forbidden_parts(key.lower().split('_'))
-            if token:
-                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML key {key!r}")
+        # 015.008-T (V5): the fallback must ALSO match over the composed
+        # path (current_table + this line's own key segments), exactly
+        # like the tomllib site, or a [channel] + id fixture is REJECT
+        # under tomllib and CLEAN under fallback -- a dual-engine
+        # self-test failure that can never converge.
+        result = matches_forbidden_parts(compose_toml_parts(keys))
+        if result:
+            token, model = result
+            findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML key {'.'.join(keys)!r} (via {model} model)")
 
     # Fail closed (AC-6): an unterminated string at EOF (single-line basic/
     # literal OR multi-line basic/literal) means this lexer's simplified
@@ -417,7 +806,18 @@ def scan_path(path: Path):
         return scan_go(path)
     if engine_name == 'toml':
         return scan_toml(path)
-    return []
+    # 015.010-T (V7 fix): fail CLOSED via a synthetic finding, never a bare
+    # `raise`/`SystemExit` here. run_repo_scan collects findings across a
+    # loop over every selected repo path; raising mid-iteration would abort
+    # the loop, discard every finding already collected, print a raw
+    # traceback instead of the gate's normal reporting, and escape the
+    # advisory/blocking toggle entirely (the toggle only governs the exit
+    # code this function's caller produces via the normal findings path, not
+    # an uncaught exception). A synthetic finding travels through the exact
+    # same reporting and toggle machinery as any real finding, so an
+    # unmapped extension can never silently resolve to "no findings" (the
+    # prior fail-open behavior) and can never crash the run either.
+    return [f"{path.as_posix()}: no scan engine registered for this file type (fail-closed synthetic finding)"]
 
 
 def select_repo_paths():
@@ -558,12 +958,117 @@ def run_repo_selection_self_test():
         failures,
     )
 
+    # 015.010-T: prove the fail-closed synthetic finding in scan_path() is
+    # unreachable for the CURRENT selection set -- every path
+    # select_repo_paths() actually returns must resolve to a known engine.
+    # select_repo_paths() returns `str`, not `Path`, so engine_for_path must
+    # be called on `root / p` here to match how run_repo_scan() calls it.
+    unmapped = sorted(p for p in rel_paths if engine_for_path(root / p) is None)
+    report_assertion(
+        'selection dispatch coverage',
+        not unmapped,
+        'every selected repo path resolves to a known scan engine',
+        f"selected path(s) with no known engine (would hit the fail-closed synthetic finding): {unmapped}",
+        failures,
+    )
+
+    # 015.011-T (AG-5/D4): cmd/ is a DELIBERATE coverage decision -- unlike
+    # internal/**, cmd/**'s selection predicate does NOT exclude *_test.go
+    # or testdata/ paths. This assertion guards that decision from being
+    # silently narrowed by a future should_scan_repo_path edit that copies
+    # the internal/** exclusion pattern onto cmd/ without an explicit
+    # scope decision to do so.
+    cmd_test_probe = should_scan_repo_path('cmd/x/y_test.go')
+    cmd_testdata_probe = should_scan_repo_path('cmd/x/testdata/z.go')
+    cmd_test_files_selected = [p for p in rel_paths if p.startswith('cmd/') and p.endswith('_test.go')]
+    report_assertion(
+        'selection cmd/ coverage (AG-5/D4)',
+        cmd_test_probe and cmd_testdata_probe and len(cmd_test_files_selected) > 0,
+        f"cmd/ deliberately includes *_test.go and testdata/ paths ({len(cmd_test_files_selected)} tracked cmd/**/*_test.go file(s) selected)",
+        (
+            'AG-5/D4 violation: this assertion guards the DELIBERATE decision that cmd/ '
+            'selection coverage includes test and testdata paths (unlike internal/**) -- '
+            f"should_scan_repo_path('cmd/x/y_test.go')={cmd_test_probe}, "
+            f"should_scan_repo_path('cmd/x/testdata/z.go')={cmd_testdata_probe}, "
+            f"tracked cmd/**/*_test.go selected={len(cmd_test_files_selected)}"
+        ),
+        failures,
+    )
+
+    # 015.011-T (AC-6/AG-1): pin the git ls-files pathspec and the
+    # should_scan_repo_path prefix set by READING THIS SCRIPT FROM DISK and
+    # extracting the two functions' own regions, so the pin is falsifiable
+    # against an actual future pathspec/prefix edit. A module-constant
+    # self-comparison would be self-referential (nothing outside this
+    # process could ever disagree with it), and a whole-file containment
+    # check is vacuous because the asserted literals also appear in THIS
+    # very assertion's own source text below. __file__ and
+    # inspect.getsource() are unavailable (this interpreter is fed the
+    # script body on stdin via a heredoc), so the script is located by its
+    # known, fixed path relative to the repo root instead.
+    script_path = root / 'scripts' / 'check-retired-architecture.sh'
+    try:
+        script_source = script_path.read_text(encoding='utf-8')
+    except OSError:
+        script_source = None
+
+    def extract_function_region(source: str, func_name: str):
+        # Anchor on the FIRST occurrence of 'def <func_name>(' only -- the
+        # anchor string recurs later in this file inside this very
+        # function's own failure-message f-strings, so a last-match/rfind
+        # implementation would extract THIS assertion's region instead of
+        # the real function definition. str.find() always returns the
+        # first match, which is safe by construction regardless of how
+        # many later mentions exist.
+        anchor = f"def {func_name}("
+        start = source.find(anchor)
+        if start == -1:
+            return None
+        tail_start = start + len(anchor)
+        next_def = re.search(r'^def ', source[tail_start:], re.MULTILINE)
+        end = tail_start + next_def.start() if next_def else len(source)
+        return source[start:end]
+
+    select_region = extract_function_region(script_source, 'select_repo_paths') if script_source is not None else None
+    guard_region = extract_function_region(script_source, 'should_scan_repo_path') if script_source is not None else None
+
+    pathspec_literals = ("'config.toml.example'", "'cmd/**'", "'internal/**'")
+    prefix_literals = ("'cmd/'", "'internal/'")
+    pathspec_ok = select_region is not None and all(lit in select_region for lit in pathspec_literals)
+    prefix_ok = guard_region is not None and all(lit in guard_region for lit in prefix_literals)
+
+    report_assertion(
+        'selection pathspec pin (AC-6/AG-1)',
+        pathspec_ok and prefix_ok,
+        'select_repo_paths pathspec and should_scan_repo_path prefix set pinned via disk-read, region-anchored extraction',
+        (
+            'AC-6/AG-1 pin failed -- region extraction failed (fail-closed) or an expected '
+            f"literal is missing: select_repo_paths region found={select_region is not None}, "
+            f"should_scan_repo_path region found={guard_region is not None}, "
+            f"pathspec literals present={pathspec_ok}, prefix literals present={prefix_ok}"
+        ),
+        failures,
+    )
+
     if failures:
+        # A self-test assertion is allowed to raise/exit directly: it runs
+        # under controlled test conditions, never mid-iteration over a real
+        # findings collection loop, so none of the run_repo_scan() concerns
+        # above (discarded findings, an escaped toggle) apply here.
         raise SystemExit(1)
 
 
 def run_fixture_self_test():
     failures = []
+
+    # 015.004-T: framework invariants. Sequenced to run before the
+    # per-fixture verdict loop below so a broken suite (empty, or missing
+    # accept/reject coverage) is reported clearly rather than only via a
+    # vacuous "0 fixtures checked, 0 failures" pass. The differential suite
+    # is the ONLY reject-only suite, named explicitly here as an allow-list
+    # entry (not a general escape hatch) -- a future all-reject suite that
+    # is NOT named here still trips 'suite has accept and reject coverage'.
+    reject_only_suites = {'go-differential'}
 
     for suite in fixture_suites:
         manifest_path = suite['manifest_path']
@@ -571,6 +1076,32 @@ def run_fixture_self_test():
         fixture_dir = manifest_path.parent
         discovered_paths = sorted(fixture_dir.glob(suite['glob']), key=lambda path: path.as_posix())
         discovered = [path.name for path in discovered_paths]
+
+        report_assertion(
+            f"suite {suite['name']} non-empty",
+            len(discovered) > 0,
+            f"suite discovered {len(discovered)} fixture(s)",
+            f"suite {suite['name']} discovered zero fixtures via {suite['glob']}",
+            failures,
+        )
+
+        expectations = {manifest.get(name) for name in discovered}
+        if suite['name'] in reject_only_suites:
+            report_assertion(
+                f"suite {suite['name']} reject-only exemption",
+                len(expectations) > 0 and expectations <= {'reject'},
+                f"suite is a named reject-only exemption and all {len(discovered)} fixture(s) are 'reject'",
+                f"suite {suite['name']} is declared reject-only but manifest expectations are {sorted(e for e in expectations if e is not None)!r}",
+                failures,
+            )
+        else:
+            report_assertion(
+                f"suite {suite['name']} has accept and reject coverage",
+                'accept' in expectations and 'reject' in expectations,
+                "suite has at least one 'accept' and one 'reject' fixture",
+                f"suite {suite['name']} is missing accept and/or reject coverage (found {sorted(e for e in expectations if e is not None)!r})",
+                failures,
+            )
 
         missing_manifest = sorted(set(discovered) - set(manifest))
         extra_manifest = sorted(set(manifest) - set(discovered))
@@ -590,7 +1121,12 @@ def run_fixture_self_test():
                 )
                 continue
 
-            engines = self_test_engines_for_name(engine_name)
+            # 015.002-T: suite-scoped engine override takes precedence over
+            # the engine-name-keyed lookup below, so a suite can exercise a
+            # different engine function (e.g. unmasked scan_go) for .go
+            # fixtures without affecting the shared 'go' suite, which has
+            # no 'engine_override' key and is untouched.
+            engines = suite.get('engine_override') or self_test_engines_for_name(engine_name)
             if not engines:
                 failures.append(f"{name}: no self-test engines configured for {engine_name!r}")
                 continue
@@ -627,6 +1163,14 @@ if mode == 'repo':
 elif mode == 'self-test':
     run_fixture_self_test()
     run_repo_selection_self_test()
+elif mode == 'self-test-integrity':
+    # 015.001-T: additive integrity-only mode -- fixture + selection
+    # self-tests only, deliberately NOT run_repo_scan(). --self-test above
+    # is UNCHANGED (still runs the repo scan); this mode exists so ci.yml's
+    # integrity step can stay unconditionally blocking without also owning
+    # the toggle-governed repo-scan verdict.
+    run_fixture_self_test()
+    run_repo_selection_self_test()
 else:
     raise SystemExit(f'unknown mode: {mode}')
 PY
@@ -634,15 +1178,22 @@ PY
 
 case "${1:-}" in
   "")
+    echo "::notice::retired-arch gate mode=repo"
     scan_with_mode repo
     ;;
   --self-test)
+    echo "::notice::retired-arch gate mode=self-test"
     scan_with_mode self-test
     scan_with_mode repo
     echo "self-test passed: fixtures matched expectations and the tracked tree is clean"
     ;;
+  --self-test-integrity)
+    echo "::notice::retired-arch gate mode=self-test-integrity"
+    scan_with_mode self-test-integrity
+    echo "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 015.001-T)"
+    ;;
   *)
-    echo "usage: scripts/check-retired-architecture.sh [--self-test]" >&2
+    echo "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]" >&2
     exit 2
     ;;
 esac
