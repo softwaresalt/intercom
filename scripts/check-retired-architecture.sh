@@ -597,12 +597,47 @@ def run_repo_selection_self_test():
 def run_fixture_self_test():
     failures = []
 
+    # 015.004-T: framework invariants. Sequenced to run before the
+    # per-fixture verdict loop below so a broken suite (empty, or missing
+    # accept/reject coverage) is reported clearly rather than only via a
+    # vacuous "0 fixtures checked, 0 failures" pass. The differential suite
+    # is the ONLY reject-only suite, named explicitly here as an allow-list
+    # entry (not a general escape hatch) -- a future all-reject suite that
+    # is NOT named here still trips 'suite has accept and reject coverage'.
+    reject_only_suites = {'go-differential'}
+
     for suite in fixture_suites:
         manifest_path = suite['manifest_path']
         manifest = load_fixture_manifest(manifest_path)
         fixture_dir = manifest_path.parent
         discovered_paths = sorted(fixture_dir.glob(suite['glob']), key=lambda path: path.as_posix())
         discovered = [path.name for path in discovered_paths]
+
+        report_assertion(
+            f"suite {suite['name']} non-empty",
+            len(discovered) > 0,
+            f"suite discovered {len(discovered)} fixture(s)",
+            f"suite {suite['name']} discovered zero fixtures via {suite['glob']}",
+            failures,
+        )
+
+        expectations = {manifest.get(name) for name in discovered}
+        if suite['name'] in reject_only_suites:
+            report_assertion(
+                f"suite {suite['name']} reject-only exemption",
+                len(expectations) > 0 and expectations <= {'reject'},
+                f"suite is a named reject-only exemption and all {len(discovered)} fixture(s) are 'reject'",
+                f"suite {suite['name']} is declared reject-only but manifest expectations are {sorted(e for e in expectations if e is not None)!r}",
+                failures,
+            )
+        else:
+            report_assertion(
+                f"suite {suite['name']} has accept and reject coverage",
+                'accept' in expectations and 'reject' in expectations,
+                "suite has at least one 'accept' and one 'reject' fixture",
+                f"suite {suite['name']} is missing accept and/or reject coverage (found {sorted(e for e in expectations if e is not None)!r})",
+                failures,
+            )
 
         missing_manifest = sorted(set(discovered) - set(manifest))
         extra_manifest = sorted(set(manifest) - set(discovered))
