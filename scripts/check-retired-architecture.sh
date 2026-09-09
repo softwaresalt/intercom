@@ -13,6 +13,12 @@ set -euo pipefail
 #     Scans tracked files in internal/** (excluding *_test.go and any
 #     testdata/ directory), config.toml.example, and cmd/**. Exits 0 when no
 #     retired-architecture token is found as a Go identifier or TOML key.
+#     Disclosure (015.012-T): this sentence attaches the *_test.go/testdata
+#     exclusion only to internal/** and lists cmd/** unqualified -- that is
+#     not an oversight in the description. cmd/**'s selection predicate
+#     deliberately does NOT exclude *_test.go or testdata/ paths (unlike
+#     internal/**'s), a decision guarded by the
+#     'selection cmd/ coverage (AG-5/D4)' self-test assertion (015.011-T).
 #   scripts/check-retired-architecture.sh --self-test
 #     Runs three checks: (1) verifies the committed TOML fixture suite in
 #     scripts/testdata/retired-*.toml against scripts/testdata/retired-manifest.json
@@ -33,6 +39,60 @@ set -euo pipefail
 # Every invocation emits a GitHub Actions ::notice:: line naming the
 # resolved mode (repo / self-test / self-test-integrity) so enforcement
 # posture is falsifiable from run history (H8).
+#
+# Disclosure (015.012-T) -- verified claims only, no pathspec edits:
+#
+# Residual blind spots (accepted risk, not fixed by this shipment):
+#   - Aliased imports (e.g. `sm "github.com/x/socketmode"`) are not
+#     specially tracked; the alias identifier itself is still scanned like
+#     any other Go identifier, but an import whose PACKAGE PATH names a
+#     retired component while every local alias/reference does not would
+#     not be caught.
+#   - go.mod / go.sum are outside the scan pathspec entirely.
+#   - Non-.go / non-.toml files under internal/** are not scanned (no
+#     engine is registered for other extensions there).
+#   - V10: mask_go_non_code() has no explicit EOF state check for the
+#     string/rune states (only raw_string gained one, in 015.007-T, because
+#     that state's unmask decision specifically depends on knowing the
+#     whole buffered content). An unterminated string or rune literal at
+#     EOF in the `string`/`rune` states masks to the end of the file
+#     silently rather than emitting a finding -- a silent fail-open,
+#     disclosed and not fixed.
+#   - Interpreted-string struct tags (e.g. `"json:\"channel_id\""` as a
+#     Go string literal rather than a raw backtick literal) are missed by
+#     015.007-T's lexer-sourced, raw_string-only capture (H2 residual).
+#     Findings only ever print `match.group(0)` (the matched identifier),
+#     so this residual gap cannot leak any additional payload to CI logs.
+#
+# Unfixtureable malformed-input boundary (relocated from 015.009-T by
+# escalation-adjudicated review): a line that CLOSES a multiline string
+# and then carries an assignment on the same line has its LHS suppressed
+# by the fallback lexer's pre-line-state check (015.009-T). This is NOT
+# fixtureable in the shared dual-engine suite: that construct is invalid
+# TOML, so the tomllib engine fail-closes to a parse-error finding while
+# the fallback engine would report clean -- no single manifest expectation
+# can be green under both engine labels for the same fixture. The
+# behaviour is recorded here, with the reason it is untested, rather than
+# committing a fixture that would be permanently red under one engine.
+#
+# check-write-path-precondition.sh divergence: that script (outside this
+# shipment's pathspec, per AG-3) carries its own independent
+# mask_go_non_code() clone that has NOT been updated with this shipment's
+# raw_string buffering / struct-tag-visibility change (015.007-T). This
+# divergence is CURRENT AND DELIBERATE FOR THIS CYCLE ONLY -- it is not a
+# statement of permanent intent, so the deferred follow-up (stash
+# provenance 6C24E2E4, unification of the two clones) keeps its own
+# decision about whether and when to converge them.
+#
+# Forward-looking guard rail (attributed as such, not yet load-bearing):
+# any future scope expansion of this gate MUST keep the tracked-only
+# `git ls-files` enumeration used by select_repo_paths() and MUST NOT
+# switch to Path.rglob()/os.walk() or any other filesystem-walking
+# enumeration. A filesystem walk would also pick up ignored-but-present
+# files (e.g. a local, gitignored `.env.*`), and this gate's findings are
+# printed to stdout/stderr, which GitHub Actions echoes to a public CI
+# log -- so a filesystem-walk enumeration could turn an ignored secret
+# file into a public-log disclosure vector.
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN=python3
