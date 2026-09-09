@@ -1,4 +1,8 @@
 {
   "retired-accept-comment-only.go": "accept",
-  "retired-reject-slack-team-id.go": "reject"
+  "retired-reject-slack-team-id.go": "reject",
+  "retired-accept-block-comment.go": "accept",
+  "retired-accept-interpreted-string-escaped-quote.go": "accept",
+  "retired-accept-raw-string-multiline.go": "accept",
+  "retired-reject-after-rune-literal.go": "reject"
 }
