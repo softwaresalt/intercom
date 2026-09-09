@@ -297,10 +297,14 @@ def matches_forbidden_parts(parts):
     return None
 
 
+struct_tag_re = re.compile(r'^(\s*\w+:"[^"]*")+\s*$')
+
+
 def mask_go_non_code(text: str) -> str:
     code, line_comment, block_comment, string, raw_string, rune = range(6)
     state = code
     out = []
+    raw_buf: list[str] = []
     i = 0
     while i < len(text):
         ch = text[i]
@@ -326,6 +330,7 @@ def mask_go_non_code(text: str) -> str:
                 out.append(' ')
                 i += 1
                 state = raw_string
+                raw_buf = []
                 continue
             if ch == "'":
                 out.append(' ')
@@ -367,10 +372,28 @@ def mask_go_non_code(text: str) -> str:
             continue
 
         if state == raw_string:
-            out.append('\n' if ch == '\n' else ' ')
-            i += 1
             if ch == '`':
+                # 015.007-T (V4): decide whole-content struct-tag visibility
+                # only now that the ENTIRE raw_string content is known --
+                # this is why the content must be buffered rather than
+                # masked char-by-char as it streams past. Only a literal
+                # whose entire content matches the tag grammar is unmasked;
+                # everything else (multiline strings, SQL/template
+                # backtick literals, doc-comment-quoted backticks that
+                # never reach this state at all) keeps the prior
+                # fully-masked behavior unchanged.
+                content = ''.join(raw_buf)
+                if struct_tag_re.match(content):
+                    out.append(content)
+                else:
+                    out.append(''.join('\n' if c == '\n' else ' ' for c in raw_buf))
+                out.append(' ')
+                i += 1
                 state = code
+                raw_buf = []
+                continue
+            raw_buf.append(ch)
+            i += 1
             continue
 
         if state == rune:
@@ -384,7 +407,15 @@ def mask_go_non_code(text: str) -> str:
                 state = code
             continue
 
+    if state == raw_string and raw_buf:
+        # Unterminated raw string at EOF: fail closed by masking the
+        # buffered content exactly as the pre-015.007-T behavior did --
+        # never unmask a literal whose content could not be fully
+        # determined to be (or not be) a complete struct tag.
+        out.append(''.join('\n' if c == '\n' else ' ' for c in raw_buf))
+
     return ''.join(out)
+
 
 
 # Defensive fallback when tomllib is unavailable. The primary path uses the

@@ -13,5 +13,8 @@
   "retired-reject-socketmode-lower.go": "reject",
   "retired-reject-socketmode-mixed.go": "reject",
   "retired-reject-team-ids-cache.go": "reject",
-  "retired-accept-token-corpus.go": "accept"
+  "retired-accept-token-corpus.go": "accept",
+  "retired-reject-struct-tag.go": "reject",
+  "retired-accept-struct-tag-benign.go": "accept",
+  "retired-accept-struct-tag-non-tag-raw-string.go": "accept"
 }
