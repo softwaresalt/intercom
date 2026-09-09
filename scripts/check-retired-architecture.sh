@@ -411,7 +411,23 @@ def matches_forbidden_parts(parts):
     return None
 
 
-struct_tag_re = re.compile(r'^(\s*\w+:"[^"]*")+\s*$')
+#
+# Fix (post-015.007-T review, Copilot): the original `(\s*\w+:"[^"]*")+`
+# was more permissive than Go's actual struct tag grammar in two ways --
+# (a) `\w+` allowed a key to start with a digit, which is not a valid Go
+# identifier and never appears as a real struct tag key; and (b) `\s*`
+# before every repetition (including between pairs) allowed adjacent
+# `key1:"v1"key2:"v2"` with zero separating whitespace, whereas Go's real
+# struct tag format requires pairs to be whitespace-separated. Both gaps
+# let non-tag raw string literals that merely look tag-like be classified
+# as a struct tag and unmasked, increasing false-positive scan exposure.
+# The tightened pattern below requires each key to start with a letter or
+# underscore, and requires at least one whitespace character between
+# successive pairs (only the very first pair may be preceded by optional
+# leading whitespace, matching Go's own leading-space-trim behavior).
+struct_tag_re = re.compile(
+    r'^\s*[A-Za-z_]\w*:"[^"]*"(?:\s+[A-Za-z_]\w*:"[^"]*")*\s*$'
+)
 
 
 def mask_go_non_code(text: str) -> str:

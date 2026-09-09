@@ -1,3 +1,12 @@
+---
+title: "Adversarial Review — 014-S Retired-Architecture Gate Detection-Quality Hardening"
+date: 2026-09-08
+shipment: 014-S
+feature: 015-F
+mode: report-only
+status: complete
+---
+
 # Adversarial Review — feat/retired-architecture-gate-detection-quality-hardening
 
 * **Scope**: `scripts/check-retired-architecture.sh`, `.github/workflows/ci.yml`, `scripts/testdata/**`
