@@ -26,8 +26,10 @@
 # verdict + integrity steps in job `lint` (015.001-T…015.013-T, shipment
 # 014-S): "Run retired-architecture gate" (toggled via the
 # `RETIRED_ARCH_GATE_ADVISORY` repository variable -- renamed and inverted
-# by `015.013-T`: the step now defaults to BLOCKING and only an exact,
-# case-sensitive `'true'` opts it back into advisory) and "Run
+# by `015.013-T`: the step now defaults to BLOCKING and only a
+# case-insensitive `'true'` value (GitHub Actions `==` is case-insensitive
+# for strings -- 'true'/'True'/'TRUE' all qualify) opts it back into
+# advisory; any other value, including unset, stays BLOCKING) and "Run
 # retired-architecture self-test" (unconditionally blocking, runs
 # `--self-test-integrity`). A future `autoharness install`/`tune`
 # regeneration must re-apply all five, not only the `windows` job, and
@@ -273,11 +275,18 @@ jobs:
         # (RETIRED_ARCH_GATE_REQUIRED, continue-on-error when NOT 'true')
         # is now CLOSED by 015.013-T: the toggle is renamed to
         # RETIRED_ARCH_GATE_ADVISORY and inverted so this step defaults to
-        # BLOCKING. Exact, case-sensitive 'true' match -- unset, any other
-        # value ('True', '1'), or a typo is NOT 'true' and this step stays
-        # BLOCKING (continue-on-error: false); only an explicit 'true'
-        # opts it into advisory. This discharges H8 (toggle fail-open):
-        # misconfiguration now fails closed, not open.
+        # BLOCKING. Match semantics (corrected post-review, U-1): GitHub
+        # Actions' `==` expression operator is CASE-INSENSITIVE for
+        # strings, so 'true', 'True', and 'TRUE' all opt into advisory
+        # mode -- this expression does NOT enforce byte-exact
+        # case-sensitivity, and any value spelled some way other than
+        # (case-insensitive) 'true' -- unset, '1', a typo, or the wrong
+        # scope -- stays BLOCKING (continue-on-error: false). This still
+        # discharges H8 (toggle fail-open): the misconfiguration case that
+        # actually matters -- the variable being unset, empty, or any
+        # non-'true'-like value -- fails CLOSED, not open; it only means
+        # the set of values that deliberately opt into advisory mode is
+        # wider (case-insensitive) than a byte-exact comparison would be.
         continue-on-error: ${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}
         run: bash scripts/check-retired-architecture.sh
       - name: Run retired-architecture self-test

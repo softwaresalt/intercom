@@ -10,5 +10,7 @@
   "retired-reject-table-plus-key.toml": "reject",
   "retired-reject-dotted-key.toml": "reject",
   "retired-accept-composed-key-corpus.toml": "accept",
-  "retired-reject-multiline-open-key.toml": "reject"
+  "retired-reject-multiline-open-key.toml": "reject",
+  "retired-reject-quoted-dotted-key.toml": "reject",
+  "retired-reject-fused-plural-key.toml": "reject"
 }

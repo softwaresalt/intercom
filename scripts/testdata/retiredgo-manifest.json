@@ -16,5 +16,6 @@
   "retired-accept-token-corpus.go": "accept",
   "retired-reject-struct-tag.go": "reject",
   "retired-accept-struct-tag-benign.go": "accept",
-  "retired-accept-struct-tag-non-tag-raw-string.go": "accept"
+  "retired-accept-struct-tag-non-tag-raw-string.go": "accept",
+  "retired-reject-socketmode-plural-fused.go": "reject"
 }

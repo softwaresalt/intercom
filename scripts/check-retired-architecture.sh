@@ -40,8 +40,17 @@ set -euo pipefail
 #     enforcement decision.
 #
 # Every invocation emits a GitHub Actions ::notice:: line naming the
-# resolved mode (repo / self-test / self-test-integrity) so enforcement
-# posture is falsifiable from run history (H8).
+# resolved SCRIPT INVOCATION MODE (repo / self-test / self-test-integrity)
+# so which code path ran is falsifiable from run history. Correction
+# (post-review, U-2): the notice text itself does NOT vary with the
+# RETIRED_ARCH_GATE_ADVISORY toggle's resolved value (the verdict step
+# always invokes this script with no flag, so it always prints
+# mode=repo regardless of advisory/blocking posture) -- H8's actual
+# falsifiability guarantee for the TOGGLE's own outcome comes from the
+# step's pass/fail/continue-on-error result in the run's job summary and
+# the "::notice::retired-arch gate mode=repo" line's mere PRESENCE (proof
+# the verdict step actually executed the real repo scan), not from a
+# toggle-value-specific notice payload.
 #
 # Disclosure (015.012-T) -- verified claims only, no pathspec edits:
 #
@@ -260,6 +269,20 @@ def split_camel_acronym(chunk: str):
         j = i
         while j < n and chunk[j].islower():
             j += 1
+        if j == i:
+            # Fix (post-015.008-T review): `ch` matched none of
+            # digit/upper/lower (e.g. '.', ' ', ':', or another
+            # non-cased character). This is reachable via
+            # decompose_toml_key() on a quoted TOML key, which tomllib
+            # parses verbatim and may legally contain such characters
+            # (e.g. `"a.b" = 1`). Without this guard the run-collection
+            # while-loop above never advances j past i, the appended
+            # token is empty, and i is left unchanged -- a
+            # non-terminating loop. Treat the character as an inert
+            # single-character separator (never part of any vocabulary
+            # word) and always advance i by exactly one.
+            i += 1
+            continue
         tokens.append(chunk[i:j])
         i = j
     return tokens
@@ -287,7 +310,35 @@ def segment_whole(word: str):
     'hostclient' is never treated as containing 'host'+'cli' because the
     leftover 'ent' can never be covered by a vocabulary word, so no
     complete segmentation exists and segment_whole returns [].
+
+    Fix (post-015.005-T review, M-2): a fused, unseparated, PLURAL whole
+    word (e.g. 'socketmodes') has no EXACT full segmentation, because no
+    vocabulary word itself ends in a bare plural suffix -- the DP below
+    can segment the singular prefix 'socketmode' but the trailing 's'/'es'
+    is never covered by any exact vocabulary token, so the full word was
+    previously unsegmentable and window_matches()'s existing plural
+    tolerance never got a chance to run (it only ever sees output THIS
+    function already produced). Mirror that same tolerance HERE, at the
+    whole-word level, by retrying the exact segmentation against the word
+    with a trailing 's'/'es' stripped when the exact attempt on the full
+    word fails -- so 'socketmodes' still segments as ['socket','mode']
+    (the singular form), which the caller's window_matches then matches
+    directly against the singular forbidden sequence with no further
+    tolerance needed there.
     """
+    exact = _segment_whole_exact(word)
+    if exact:
+        return exact
+    for suffix in ('es', 's'):
+        if word.endswith(suffix) and len(word) > len(suffix):
+            stripped = _segment_whole_exact(word[:-len(suffix)])
+            if stripped:
+                return stripped
+    return []
+
+
+def _segment_whole_exact(word: str):
+    """Exact-match DP core for segment_whole() -- no plural tolerance."""
     n = len(word)
     dp: list[list[list[str]]] = [[] for _ in range(n + 1)]
     dp[0] = [[]]
