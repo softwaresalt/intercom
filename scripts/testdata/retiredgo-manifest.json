@@ -4,5 +4,6 @@
   "retired-accept-block-comment.go": "accept",
   "retired-accept-interpreted-string-escaped-quote.go": "accept",
   "retired-accept-raw-string-multiline.go": "accept",
-  "retired-reject-after-rune-literal.go": "reject"
+  "retired-reject-after-rune-literal.go": "reject",
+  "retired-reject-channel-ids.go": "reject"
 }
