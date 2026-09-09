@@ -1,0 +1,6 @@
+# retired-reject-dotted-key.toml (015.008-T, V5): a dotted TOML key path
+# expressed on a single line. tomllib expands this into nested tables
+# identically to a [channel] header + id key; the fallback lexer's
+# bare_key_re naturally splits on '.' as a separator, producing the same
+# composed segment list without any extra handling.
+channel.id = "value"

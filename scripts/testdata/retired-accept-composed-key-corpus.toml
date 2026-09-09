@@ -1,0 +1,11 @@
+# retired-accept-composed-key-corpus.toml (015.008-T): bundled ACCEPT set
+# verifying composed-path matching does not produce false positives for
+# real repo-shaped keys. [copilot].cli_path composes to
+# ['copilot','cli','path'] (no window equals ['host','cli']).
+# [[workspace]].workspace_id composes to ['workspace','workspace','id']
+# (no window equals ['channel','id'] or ['team','id']).
+[copilot]
+cli_path = "value"
+
+[[workspace]]
+workspace_id = "value"

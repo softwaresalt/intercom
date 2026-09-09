@@ -521,6 +521,35 @@ def scan_go(path: Path, mask: bool = True):
     return findings
 
 
+def decompose_toml_key(segment: str):
+    """015.008-T (V5): decompose a single raw TOML key/table-header
+    segment string into split_identifier-style component tokens. Hyphen
+    normalisation lives HERE, at the TOML boundary -- not inside the
+    shared split_identifier tokenizer -- because bare TOML keys may use
+    hyphens (TOML bare-key charset is [A-Za-z0-9_-]) that Go identifiers
+    never do. In the fallback lexer, bare_key_re ([A-Za-z_][A-Za-z0-9_]*)
+    already splits a hyphenated key like 'channel-id' into two separate
+    regex matches before this function ever sees either half, so the
+    hyphen never actually reaches this normalisation there -- that
+    fixture is caught by composed-path matching instead. This function
+    still performs the replace defensively for the tomllib site, where a
+    hyphenated key arrives as one whole dict-key string."""
+    return split_identifier(segment.replace('-', '_'))
+
+
+def compose_toml_parts(path_segments: list[str]):
+    """015.008-T (V5): flatten decompose_toml_key() over every segment of
+    a composed TOML key path (table prefix segments plus the leaf key)
+    into ONE parts list, so matches_forbidden_parts can see a forbidden
+    sequence that only appears once the path is composed -- e.g.
+    [channel] + id, or a top-level dotted channel.id key -- neither of
+    which contains the forbidden pair within a single segment alone."""
+    parts: list[str] = []
+    for segment in path_segments:
+        parts.extend(decompose_toml_key(segment))
+    return parts
+
+
 def report_toml_key(path: Path, key_path: list[str], segment: str, token: str, model: str) -> str:
     return (
         f"{path.as_posix()}: retired token {token!r} in TOML key path "
@@ -532,7 +561,7 @@ def walk_toml_value(path: Path, prefix: list[str], value, findings: list[str]):
     if isinstance(value, dict):
         for key, child in value.items():
             key_path = prefix + [key]
-            result = matches_forbidden_parts(key.lower().split('_'))
+            result = matches_forbidden_parts(compose_toml_parts(key_path))
             if result:
                 token, model = result
                 findings.append(report_toml_key(path, key_path, key, token, model))
@@ -576,21 +605,27 @@ def scan_toml_with_fallback(path: Path):
         if not (state['in_multiline_basic'] or state['in_multiline_literal']) and line.startswith('[') and line.endswith(']'):
             header = line.strip('[]').strip()
             current_table = bare_key_re.findall(header)
-            for key in current_table:
-                result = matches_forbidden_parts(key.lower().split('_'))
-                if result:
-                    token, model = result
-                    findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML table key {key!r} (via {model} model)")
+            # 015.008-T (V5): check the header's OWN path as one composed
+            # unit (covers a dotted header like [channel.id]), not each
+            # header segment in isolation.
+            result = matches_forbidden_parts(compose_toml_parts(current_table))
+            if result:
+                token, model = result
+                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML table key {'.'.join(current_table)!r} (via {model} model)")
             continue
         if state['in_multiline_basic'] or state['in_multiline_literal'] or '=' not in line:
             continue
         lhs = line.split('=', 1)[0]
         keys = current_table + bare_key_re.findall(lhs)
-        for key in keys:
-            result = matches_forbidden_parts(key.lower().split('_'))
-            if result:
-                token, model = result
-                findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML key {key!r} (via {model} model)")
+        # 015.008-T (V5): the fallback must ALSO match over the composed
+        # path (current_table + this line's own key segments), exactly
+        # like the tomllib site, or a [channel] + id fixture is REJECT
+        # under tomllib and CLEAN under fallback -- a dual-engine
+        # self-test failure that can never converge.
+        result = matches_forbidden_parts(compose_toml_parts(keys))
+        if result:
+            token, model = result
+            findings.append(f"{path.as_posix()}:{line_no}: retired token {token!r} in TOML key {'.'.join(keys)!r} (via {model} model)")
 
     # Fail closed (AC-6): an unterminated string at EOF (single-line basic/
     # literal OR multi-line basic/literal) means this lexer's simplified
