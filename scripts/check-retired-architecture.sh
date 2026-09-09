@@ -22,7 +22,17 @@ set -euo pipefail
 #     file is selected, internal/** test/testdata paths and scripts/ itself are
 #     excluded, selection is non-empty, and config.toml.example dispatches to the
 #     TOML engine); (3) verifies the real tracked tree passes a repo scan. Exits 0
-#     only when all three checks succeed.
+#     only when all three checks succeed. Semantics UNCHANGED by 015.001-T.
+#   scripts/check-retired-architecture.sh --self-test-integrity (015.001-T)
+#     Additive integrity-only mode: runs ONLY checks (1) and (2) above (the
+#     fixture suites and the selection-logic self-test). Does NOT run the
+#     repo scan (3). Used by ci.yml's integrity step so that step stays
+#     unconditionally blocking while the separately-toggled verdict step
+#     (see below) owns the real repo-scan enforcement decision.
+#
+# Every invocation emits a GitHub Actions ::notice:: line naming the
+# resolved mode (repo / self-test / self-test-integrity) so enforcement
+# posture is falsifiable from run history (H8).
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN=python3
@@ -627,6 +637,14 @@ if mode == 'repo':
 elif mode == 'self-test':
     run_fixture_self_test()
     run_repo_selection_self_test()
+elif mode == 'self-test-integrity':
+    # 015.001-T: additive integrity-only mode -- fixture + selection
+    # self-tests only, deliberately NOT run_repo_scan(). --self-test above
+    # is UNCHANGED (still runs the repo scan); this mode exists so ci.yml's
+    # integrity step can stay unconditionally blocking without also owning
+    # the toggle-governed repo-scan verdict.
+    run_fixture_self_test()
+    run_repo_selection_self_test()
 else:
     raise SystemExit(f'unknown mode: {mode}')
 PY
@@ -634,15 +652,22 @@ PY
 
 case "${1:-}" in
   "")
+    echo "::notice::retired-arch gate mode=repo"
     scan_with_mode repo
     ;;
   --self-test)
+    echo "::notice::retired-arch gate mode=self-test"
     scan_with_mode self-test
     scan_with_mode repo
     echo "self-test passed: fixtures matched expectations and the tracked tree is clean"
     ;;
+  --self-test-integrity)
+    echo "::notice::retired-arch gate mode=self-test-integrity"
+    scan_with_mode self-test-integrity
+    echo "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 015.001-T)"
+    ;;
   *)
-    echo "usage: scripts/check-retired-architecture.sh [--self-test]" >&2
+    echo "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]" >&2
     exit 2
     ;;
 esac
