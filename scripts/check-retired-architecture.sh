@@ -88,6 +88,22 @@ fixture_suites = [
         "manifest_path": root / "scripts" / "testdata" / "retiredgo-manifest.json",
         "engines": ["go"],
     },
+    {
+        # 015.002-T: masking bypass seam. This suite is SEPARATE from the
+        # shared "go" suite above (untouched, per rev-3 C-P1-2) and is
+        # reject-only (per rev-4 ESC-P2-a). It still declares
+        # engines: ['go'] so the pre-existing `engine_name not in
+        # suite['engines']` guard (engine_for_path always returns 'go' for
+        # a .go file) passes unchanged; only the ENGINE FUNCTION is
+        # overridden via 'engine_override' below to the unmasked scan
+        # (scan_go(path, mask=False)), so suite-to-engine selection is
+        # suite-scoped rather than keyed on engine_for_path.
+        "name": "go-differential",
+        "glob": "retiredgo-differential/*.go",
+        "manifest_path": root / "scripts" / "testdata" / "retiredgo-differential-manifest.json",
+        "engines": ["go"],
+        "engine_override": [("go-unmasked", lambda path: scan_go(path, mask=False))],
+    },
 ]
 
 go_identifier_re = re.compile(r'\b[A-Za-z_][A-Za-z0-9_]*\b')
@@ -309,9 +325,15 @@ def strip_toml_comment(line: str, state: dict[str, bool]):
     return ''.join(out)
 
 
-def scan_go(path: Path):
+def scan_go(path: Path, mask: bool = True):
+    # 015.002-T: mask=True (default) is the real, unchanged production and
+    # self-test path. mask=False is a masking-bypass seam used ONLY by the
+    # go-differential fixture suite's engine_override to prove the masked
+    # path is not false-green on content that hides a retired token behind
+    # comment/string masking.
     findings = []
-    masked = mask_go_non_code(path.read_text(encoding='utf-8'))
+    text = path.read_text(encoding='utf-8')
+    masked = mask_go_non_code(text) if mask else text
     for line_no, line in enumerate(masked.splitlines(), start=1):
         for match in go_identifier_re.finditer(line):
             token = matches_forbidden_parts(split_identifier(match.group(0)))
@@ -600,7 +622,12 @@ def run_fixture_self_test():
                 )
                 continue
 
-            engines = self_test_engines_for_name(engine_name)
+            # 015.002-T: suite-scoped engine override takes precedence over
+            # the engine-name-keyed lookup below, so a suite can exercise a
+            # different engine function (e.g. unmasked scan_go) for .go
+            # fixtures without affecting the shared 'go' suite, which has
+            # no 'engine_override' key and is untouched.
+            engines = suite.get('engine_override') or self_test_engines_for_name(engine_name)
             if not engines:
                 failures.append(f"{name}: no self-test engines configured for {engine_name!r}")
                 continue
