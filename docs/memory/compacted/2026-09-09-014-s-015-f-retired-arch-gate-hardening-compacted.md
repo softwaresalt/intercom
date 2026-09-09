@@ -1,3 +1,16 @@
+---
+title: "Compacted memory — retired-architecture gate detection-quality hardening (014-S)"
+date: 2026-09-09
+shipment: 014-S
+feature: 015-F
+status: shipped
+pr: 46
+merge_commit_sha: d7be7e883f1d309a22037aae97ec769cb647b020
+compacted_from:
+  - docs/archive/memory/2026-09-09-stage-014-s-session.md
+  - docs/archive/memory/2026-09-09-ship-014-s-session.md
+---
+
 # Compacted memory — 014-S / 015-F retired-architecture gate detection-quality hardening
 
 - Release unit: shipment 014-S, feature 015-F, tasks 015.001-T–015.013-T
