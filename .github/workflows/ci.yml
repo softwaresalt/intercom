@@ -23,12 +23,17 @@
 # job `lint`), the un-ignore-regression check steps (011.012-T, job
 # `gitignore-append-only`), the pip/setuptools/wheel bootstrap install
 # step (011.013-T, job `topology-check`), and the retired-architecture
-# verdict + integrity steps in job `lint` (015.001-T, shipment 014-S): "Run
-# retired-architecture gate" (toggled via the `RETIRED_ARCH_GATE_REQUIRED`
-# repository variable) and "Run retired-architecture self-test"
-# (unconditionally blocking, runs `--self-test-integrity`). A future
-# `autoharness install`/`tune` regeneration must re-apply all five, not
-# only the `windows` job.
+# verdict + integrity steps in job `lint` (015.001-T…015.013-T, shipment
+# 014-S): "Run retired-architecture gate" (toggled via the
+# `RETIRED_ARCH_GATE_ADVISORY` repository variable -- renamed and inverted
+# by `015.013-T`: the step now defaults to BLOCKING and only an exact,
+# case-sensitive `'true'` opts it back into advisory) and "Run
+# retired-architecture self-test" (unconditionally blocking, runs
+# `--self-test-integrity`). A future `autoharness install`/`tune`
+# regeneration must re-apply all five, not only the `windows` job, and
+# must preserve the `RETIRED_ARCH_GATE_ADVISORY` variable name (not the
+# retired `RETIRED_ARCH_GATE_REQUIRED` name from the now-closed
+# `015.001-T` advisory window).
 #
 # Regular PR/push CI was Linux-only (ubuntu-latest) prior to 010-S; an
 # advisory `windows-latest` job (`windows`, see the LOCAL DIVERGENCE note
@@ -264,12 +269,16 @@ jobs:
           go-version: '1.26.x'
           cache: true
       - name: Run retired-architecture gate
-        # Verdict step (015.001-T / 015.013-T advisory window): governed
-        # solely by the RETIRED_ARCH_GATE_REQUIRED repository variable.
-        # Exact, case-sensitive 'true' match -- unset, any other value, or a
-        # typo is NOT 'true' and this step stays advisory
-        # (continue-on-error: true) rather than silently going either way.
-        continue-on-error: ${{ vars.RETIRED_ARCH_GATE_REQUIRED != 'true' }}
+        # Verdict step. The bounded advisory window opened by 015.001-T
+        # (RETIRED_ARCH_GATE_REQUIRED, continue-on-error when NOT 'true')
+        # is now CLOSED by 015.013-T: the toggle is renamed to
+        # RETIRED_ARCH_GATE_ADVISORY and inverted so this step defaults to
+        # BLOCKING. Exact, case-sensitive 'true' match -- unset, any other
+        # value ('True', '1'), or a typo is NOT 'true' and this step stays
+        # BLOCKING (continue-on-error: false); only an explicit 'true'
+        # opts it into advisory. This discharges H8 (toggle fail-open):
+        # misconfiguration now fails closed, not open.
+        continue-on-error: ${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}
         run: bash scripts/check-retired-architecture.sh
       - name: Run retired-architecture self-test
         # Integrity step (015.001-T): fixture + selection self-tests only,

@@ -29,12 +29,15 @@ set -euo pipefail
 #     excluded, selection is non-empty, and config.toml.example dispatches to the
 #     TOML engine); (3) verifies the real tracked tree passes a repo scan. Exits 0
 #     only when all three checks succeed. Semantics UNCHANGED by 015.001-T.
-#   scripts/check-retired-architecture.sh --self-test-integrity (015.001-T)
-#     Additive integrity-only mode: runs ONLY checks (1) and (2) above (the
-#     fixture suites and the selection-logic self-test). Does NOT run the
-#     repo scan (3). Used by ci.yml's integrity step so that step stays
+#   scripts/check-retired-architecture.sh --self-test-integrity
+#     Integrity-only mode (added 015.001-T, permanent as of 015.013-T's
+#     window closure): runs ONLY checks (1) and (2) above (the fixture
+#     suites and the selection-logic self-test). Does NOT run the repo
+#     scan (3). Used by ci.yml's integrity step so that step stays
 #     unconditionally blocking while the separately-toggled verdict step
-#     (see below) owns the real repo-scan enforcement decision.
+#     (governed by the `RETIRED_ARCH_GATE_ADVISORY` repository variable,
+#     fail-closed by default since 015.013-T) owns the real repo-scan
+#     enforcement decision.
 #
 # Every invocation emits a GitHub Actions ::notice:: line naming the
 # resolved mode (repo / self-test / self-test-integrity) so enforcement
