@@ -105,6 +105,47 @@ func TestCanonicalizeReparseOutOfRootJunction(t *testing.T) {
 	}
 }
 
+// TestCanonicalizeReparseReturnsNormalizedPath verifies canonicalizeReparse
+// internalizes the stripUNCPrefix postcondition itself (016.003-T, U6): the
+// raw GetFinalPathNameByHandleW result carries a leading `\\?\` extended-path
+// prefix, and every existing caller of this function had to strip it
+// independently. This test asserts the returned value is ALREADY normalized
+// -- no leading `\\?\` -- so the postcondition holds for any caller, not just
+// the ones that remember to call stripUNCPrefix themselves. RED against the
+// current implementation: GetFinalPathNameByHandleW's raw result is returned
+// unmodified today.
+func TestCanonicalizeReparseReturnsNormalizedPath(t *testing.T) {
+	dir := t.TempDir()
+
+	got, err := canonicalizeReparse(dir)
+	if err != nil {
+		t.Fatalf("canonicalizeReparse(%q) returned unexpected error: %v", dir, err)
+	}
+	if strings.HasPrefix(got, uncPrefix) {
+		t.Fatalf("canonicalizeReparse(%q) = %q, want no leading %q prefix (postcondition must be internalized)", dir, got, uncPrefix)
+	}
+	want := canonicalForComparison(t, dir)
+	if !strings.EqualFold(got, want) {
+		t.Fatalf("canonicalizeReparse(%q) = %q, want %q", dir, got, want)
+	}
+}
+
+// TestCanonicalizeReparsePreservesVolumeGUIDPrefix pins D-6: a
+// `\\?\Volume{GUID}\...` result must NOT be stripped, because
+// stripUNCPrefix's own contract only re-forms drive-letter and UNC-share
+// forms -- a Volume{GUID} path has no non-`\\?\` equivalent. This proves
+// U6's internalization does not regress that non-stripping behavior for a
+// path shape canonicalizeReparse cannot itself construct from a real
+// filesystem probe, so it is verified directly against stripUNCPrefix, the
+// function U6 now calls internally.
+func TestCanonicalizeReparsePreservesVolumeGUIDPrefix(t *testing.T) {
+	in := `\\?\Volume{12345678-1234-1234-1234-123456789abc}\some\path`
+	got := stripUNCPrefix(in)
+	if got != in {
+		t.Fatalf("stripUNCPrefix(%q) = %q, want unchanged (Volume{GUID} forms are not strippable)", in, got)
+	}
+}
+
 // TestCanonicalizeReparseNonExistentPathErrors verifies a non-existent path
 // returns an error rather than a zero-value success (014.003-T AC6, case
 // 4).

@@ -84,7 +84,19 @@ func canonicalizeReparse(path string) (string, error) {
 	// keeps identical runtime behavior while satisfying the linter.
 	defer func() { _ = syscall.CloseHandle(handle) }()
 
-	return getFinalPathNameByHandle(handle)
+	resolved, err := getFinalPathNameByHandle(handle)
+	if err != nil {
+		return "", err
+	}
+	// U6 (016.003-T): internalize the stripUNCPrefix postcondition here so
+	// it holds for ANY caller, not just ones that remember to strip it
+	// themselves. GetFinalPathNameByHandleW's raw result always carries a
+	// leading `\\?\` extended-path prefix; stripUNCPrefix is idempotent
+	// (verified: an already-unprefixed input returns unchanged) and
+	// preserves a non-strippable `\\?\Volume{GUID}\...` / `\\?\GLOBALROOT\...`
+	// form unchanged (D-6) -- so this call cannot introduce a new failure
+	// mode for any input this function can produce.
+	return stripUNCPrefix(resolved), nil
 }
 
 // getFinalPathNameByHandle calls GetFinalPathNameByHandleW, growing the
