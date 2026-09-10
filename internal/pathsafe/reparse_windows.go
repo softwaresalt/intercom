@@ -3,6 +3,8 @@
 package pathsafe
 
 import (
+	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -17,6 +19,58 @@ var (
 	modkernel32                   = syscall.NewLazyDLL("kernel32.dll")
 	procGetFinalPathNameByHandleW = modkernel32.NewProc("GetFinalPathNameByHandleW")
 )
+
+// longPathThreshold is the classic MAX_PATH limit (260, including the NUL
+// terminator) that syscall.CreateFile does not itself handle by extending
+// with a `\\?\` prefix -- unlike Go's own os package, which applies
+// equivalent long-path handling internally for its own high-level API
+// (os.Open, os.Mkdir, etc. via the unexported os.fixLongPath). A raw
+// syscall.CreateFile call, as canonicalizeReparse makes below, gets none of
+// that help.
+const longPathThreshold = syscall.MAX_PATH
+
+// addLongPathPrefix prepends the `\\?\` extended-length-path prefix before
+// canonicalizeReparse calls syscall.CreateFile (016.004-T, U5), which --
+// unlike Go's os package -- performs no long-path handling of its own. The
+// prefix is applied only when path is ALL of:
+//   - at or beyond the longPathThreshold (260-char MAX_PATH) -- below that,
+//     ordinary paths need no adjustment;
+//   - absolute (filepath.IsAbs) -- a relative path cannot be meaningfully
+//     extended-prefixed;
+//   - not already `\\?\`-prefixed -- covers both an ordinary extended-length
+//     path and a non-strippable `\\?\Volume{GUID}\...` / `\\?\GLOBALROOT\...`
+//     form; double-prefixing corrupts the path;
+//   - not a `\\.\` device-namespace path -- these already bypass Win32 path
+//     parsing and must never be extended-prefixed;
+//   - not a bare UNC path (`\\server\share\...`) -- converting a UNC path to
+//     its extended form requires the distinct `\\?\UNC\server\share\...`
+//     form, which this shipment deliberately does NOT implement. This is an
+//     explicitly recorded residual (U5/AC5): a long UNC-rooted workspace
+//     path remains subject to the pre-existing MAX_PATH limitation, tracked
+//     in the package risk register.
+//
+// Applying `\\?\` disables Win32 path normalization, so this must only run
+// on an already Abs/Clean'd path -- true at canonicalizeReparse's callers
+// (checkSymlinkEscape in pathsafe.go, and NewRoot as of 016.007-T), both of
+// which pass filepath.Abs'd input.
+func addLongPathPrefix(path string) string {
+	if len(path) < longPathThreshold {
+		return path
+	}
+	if !filepath.IsAbs(path) {
+		return path
+	}
+	if strings.HasPrefix(path, uncPrefix) {
+		return path
+	}
+	if strings.HasPrefix(path, `\\.\`) {
+		return path
+	}
+	if strings.HasPrefix(path, `\\`) {
+		return path
+	}
+	return uncPrefix + path
+}
 
 // canonicalizeReparse resolves path to its true filesystem target using
 // GetFinalPathNameByHandleW semantics (014.003-T). Unlike
@@ -52,7 +106,7 @@ func canonicalizeReparse(path string) (string, error) {
 		return "", apperr.Wrapf(apperr.KindPathViolation, err, "GetFinalPathNameByHandleW unavailable: %s", err.Error())
 	}
 
-	pathPtr, err := syscall.UTF16PtrFromString(path)
+	pathPtr, err := syscall.UTF16PtrFromString(addLongPathPrefix(path))
 	if err != nil {
 		return "", err
 	}

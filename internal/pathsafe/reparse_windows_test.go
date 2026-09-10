@@ -11,6 +11,92 @@ import (
 	"testing"
 )
 
+// TestAddLongPathPrefixVerdicts pins the U5/AC2 prefixing predicate
+// explicitly (016.004-T): a boundary test covering the MAX_PATH threshold,
+// plus the classes review flagged as negative coverage (U5/AC4) -- an
+// already-extended `\\?\Volume{GUID}\...` input must not be double-prefixed,
+// and a `\\.\` device-namespace path must not be prefixed at all. RED
+// against the current package: addLongPathPrefix does not yet exist.
+func TestAddLongPathPrefixVerdicts(t *testing.T) {
+	longSuffix := strings.Repeat("a", 300)
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "short path unaffected",
+			in:   `C:\short\path`,
+			want: `C:\short\path`,
+		},
+		{
+			name: "long absolute path gets prefixed",
+			in:   `C:\` + longSuffix,
+			want: uncPrefix + `C:\` + longSuffix,
+		},
+		{
+			name: "boundary just below threshold unaffected",
+			in:   `C:\` + strings.Repeat("a", longPathThreshold-len(`C:\`)-1),
+			want: `C:\` + strings.Repeat("a", longPathThreshold-len(`C:\`)-1),
+		},
+		{
+			name: "boundary at threshold gets prefixed",
+			in:   `C:\` + strings.Repeat("a", longPathThreshold-len(`C:\`)),
+			want: uncPrefix + `C:\` + strings.Repeat("a", longPathThreshold-len(`C:\`)),
+		},
+		{
+			name: "relative long path is not prefixed",
+			in:   longSuffix,
+			want: longSuffix,
+		},
+		{
+			name: "already-extended volume GUID path is not double-prefixed",
+			in:   `\\?\Volume{12345678-1234-1234-1234-123456789abc}\` + longSuffix,
+			want: `\\?\Volume{12345678-1234-1234-1234-123456789abc}\` + longSuffix,
+		},
+		{
+			name: "already \\?\\-prefixed drive path is not double-prefixed",
+			in:   uncPrefix + `C:\` + longSuffix,
+			want: uncPrefix + `C:\` + longSuffix,
+		},
+		{
+			name: "device namespace path is never prefixed",
+			in:   `\\.\` + longSuffix,
+			want: `\\.\` + longSuffix,
+		},
+		{
+			name: "bare long UNC path is not prefixed (AC5 residual)",
+			in:   `\\server\share\` + longSuffix,
+			want: `\\server\share\` + longSuffix,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := addLongPathPrefix(tc.in)
+			if got != tc.want {
+				t.Fatalf("addLongPathPrefix(len=%d) = %q, want %q", len(tc.in), got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAddLongPathPrefixRoundTripsWithStripUNCPrefix verifies the
+// prefix/strip round-trip required by U5/AC3: prefixing a long path and
+// then stripping it via stripUNCPrefix (U6's internalized postcondition)
+// recovers the original input.
+func TestAddLongPathPrefixRoundTripsWithStripUNCPrefix(t *testing.T) {
+	long := `C:\` + strings.Repeat("a", 300)
+	prefixed := addLongPathPrefix(long)
+	if prefixed == long {
+		t.Fatalf("addLongPathPrefix(%q) did not add a prefix for a long path", long)
+	}
+	got := stripUNCPrefix(prefixed)
+	if got != long {
+		t.Fatalf("stripUNCPrefix(addLongPathPrefix(%q)) = %q, want %q", long, got, long)
+	}
+}
+
 // canonicalForComparison normalizes want through filepath.EvalSymlinks so
 // test assertions are not defeated by an incidental Windows 8.3 short-name
 // alias in a t.TempDir() path (e.g. "DEWILL~1" vs "dewilliams") -- a naming
@@ -143,6 +229,55 @@ func TestCanonicalizeReparsePreservesVolumeGUIDPrefix(t *testing.T) {
 	got := stripUNCPrefix(in)
 	if got != in {
 		t.Fatalf("stripUNCPrefix(%q) = %q, want unchanged (Volume{GUID} forms are not strippable)", in, got)
+	}
+}
+
+// TestCanonicalizeReparseResolvesDeeplyNestedInRootAncestor is the U5/AC1
+// end-to-end long-path fixture: a deeply-nested in-root ancestor exceeding
+// MAX_PATH must resolve successfully through canonicalizeReparse rather than
+// being spuriously rejected by a raw, unprefixed syscall.CreateFile call.
+//
+// Measured residual (U5/AC1, plan H3): on this shipment's verified
+// development environment (Windows 10.0.26200, LongPathsEnabled=0), a raw
+// syscall.CreateFile call already succeeds for a >1000-character absolute
+// path with NO `\\?\` prefix -- so this fixture does not reproduce a
+// pre-fix failure here, and this test cannot serve as a fail-before/
+// pass-after RED proof on this host. This is the exact environment
+// sensitivity the plan's H3 mitigation anticipated for the >MAX_PATH
+// fixture. Per that mitigation, this end-to-end case is retained as a
+// non-regression lock (must pass on every environment, before and after),
+// while the deterministic, OS-independent predicate coverage above
+// (TestAddLongPathPrefixVerdicts, TestAddLongPathPrefixRoundTripsWithStripUNCPrefix)
+// is the covering test for the accepted limitation recorded in the package
+// risk register (016.008-T): environments that DO enforce classic MAX_PATH
+// without the registry opt-in are protected by addLongPathPrefix's
+// predicate, which is proven correct in isolation even though this
+// particular host cannot exercise the failure branch it guards against.
+func TestCanonicalizeReparseResolvesDeeplyNestedInRootAncestor(t *testing.T) {
+	rootDir := t.TempDir()
+	root, err := NewRoot(rootDir)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", rootDir, err)
+	}
+
+	cur := root.Path()
+	seg := strings.Repeat("a", 50)
+	for len(cur) < longPathThreshold+50 {
+		cur = filepath.Join(cur, seg)
+		if err := os.Mkdir(cur, 0o755); err != nil {
+			t.Fatalf("failed to build deeply-nested fixture at len=%d: %v", len(cur), err)
+		}
+	}
+	if len(cur) < longPathThreshold {
+		t.Fatalf("fixture path length %d did not reach longPathThreshold %d", len(cur), longPathThreshold)
+	}
+
+	got, err := canonicalizeReparse(cur)
+	if err != nil {
+		t.Fatalf("canonicalizeReparse(len=%d) returned unexpected error: %v -- want the long in-root ancestor to resolve successfully", len(cur), err)
+	}
+	if !hasPathPrefix(got, root.Path()) {
+		t.Fatalf("canonicalizeReparse(len=%d) = %q, want a path inside root %q", len(cur), got, root.Path())
 	}
 }
 
