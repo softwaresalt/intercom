@@ -3,8 +3,12 @@
 package pathsafe
 
 import (
+	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
+
+	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
 // modkernel32 / procGetFinalPathNameByHandleW resolve GetFinalPathNameByHandleW
@@ -15,6 +19,58 @@ var (
 	modkernel32                   = syscall.NewLazyDLL("kernel32.dll")
 	procGetFinalPathNameByHandleW = modkernel32.NewProc("GetFinalPathNameByHandleW")
 )
+
+// longPathThreshold is the classic MAX_PATH limit (260, including the NUL
+// terminator) that syscall.CreateFile does not itself handle by extending
+// with a `\\?\` prefix -- unlike Go's own os package, which applies
+// equivalent long-path handling internally for its own high-level API
+// (os.Open, os.Mkdir, etc. via the unexported os.fixLongPath). A raw
+// syscall.CreateFile call, as canonicalizeReparse makes below, gets none of
+// that help.
+const longPathThreshold = syscall.MAX_PATH
+
+// addLongPathPrefix prepends the `\\?\` extended-length-path prefix before
+// canonicalizeReparse calls syscall.CreateFile (016.004-T, U5), which --
+// unlike Go's os package -- performs no long-path handling of its own. The
+// prefix is applied only when path is ALL of:
+//   - at or beyond the longPathThreshold (260-char MAX_PATH) -- below that,
+//     ordinary paths need no adjustment;
+//   - absolute (filepath.IsAbs) -- a relative path cannot be meaningfully
+//     extended-prefixed;
+//   - not already `\\?\`-prefixed -- covers both an ordinary extended-length
+//     path and a non-strippable `\\?\Volume{GUID}\...` / `\\?\GLOBALROOT\...`
+//     form; double-prefixing corrupts the path;
+//   - not a `\\.\` device-namespace path -- these already bypass Win32 path
+//     parsing and must never be extended-prefixed;
+//   - not a bare UNC path (`\\server\share\...`) -- converting a UNC path to
+//     its extended form requires the distinct `\\?\UNC\server\share\...`
+//     form, which this shipment deliberately does NOT implement. This is an
+//     explicitly recorded residual (U5/AC5): a long UNC-rooted workspace
+//     path remains subject to the pre-existing MAX_PATH limitation, tracked
+//     in the package risk register.
+//
+// Applying `\\?\` disables Win32 path normalization, so this must only run
+// on an already Abs/Clean'd path -- true at canonicalizeReparse's callers
+// (checkSymlinkEscape in pathsafe.go, and NewRoot as of 016.007-T), both of
+// which pass filepath.Abs'd input.
+func addLongPathPrefix(path string) string {
+	if len(path) < longPathThreshold {
+		return path
+	}
+	if !filepath.IsAbs(path) {
+		return path
+	}
+	if strings.HasPrefix(path, uncPrefix) {
+		return path
+	}
+	if strings.HasPrefix(path, `\\.\`) {
+		return path
+	}
+	if strings.HasPrefix(path, `\\`) {
+		return path
+	}
+	return uncPrefix + path
+}
 
 // canonicalizeReparse resolves path to its true filesystem target using
 // GetFinalPathNameByHandleW semantics (014.003-T). Unlike
@@ -35,7 +91,22 @@ var (
 // The handle opened here is closed on every return path, including error
 // paths (014.003-T AC1 / plan H11), via a single deferred CloseHandle.
 func canonicalizeReparse(path string) (string, error) {
-	pathPtr, err := syscall.UTF16PtrFromString(path)
+	// U7 (016.002-T): resolve procGetFinalPathNameByHandleW's lazy export
+	// explicitly and up front, before syscall.CreateFile ever opens a
+	// handle, so a missing export surfaces as a returned
+	// apperr.KindPathViolation instead of panicking through
+	// LazyProc.Call's internal mustFind. DOCUMENTED-UNREACHABLE on every
+	// supported target: GetFinalPathNameByHandleW has shipped in
+	// kernel32.dll since Windows Vista / Server 2008, and this module's Go
+	// 1.24 floor requires Windows 10 / Server 2016+, so this Find() cannot
+	// fail in practice. Find() transitively covers both the kernel32.dll
+	// load and the export lookup via LazyDLL.Load()'s internal sync.Once,
+	// so no separate modkernel32 guard is required.
+	if err := procGetFinalPathNameByHandleW.Find(); err != nil {
+		return "", apperr.Wrapf(apperr.KindPathViolation, err, "GetFinalPathNameByHandleW unavailable: %s", err.Error())
+	}
+
+	pathPtr, err := syscall.UTF16PtrFromString(addLongPathPrefix(path))
 	if err != nil {
 		return "", err
 	}
@@ -67,7 +138,19 @@ func canonicalizeReparse(path string) (string, error) {
 	// keeps identical runtime behavior while satisfying the linter.
 	defer func() { _ = syscall.CloseHandle(handle) }()
 
-	return getFinalPathNameByHandle(handle)
+	resolved, err := getFinalPathNameByHandle(handle)
+	if err != nil {
+		return "", err
+	}
+	// U6 (016.003-T): internalize the stripUNCPrefix postcondition here so
+	// it holds for ANY caller, not just ones that remember to strip it
+	// themselves. GetFinalPathNameByHandleW's raw result always carries a
+	// leading `\\?\` extended-path prefix; stripUNCPrefix is idempotent
+	// (verified: an already-unprefixed input returns unchanged) and
+	// preserves a non-strippable `\\?\Volume{GUID}\...` / `\\?\GLOBALROOT\...`
+	// form unchanged (D-6) -- so this call cannot introduce a new failure
+	// mode for any input this function can produce.
+	return stripUNCPrefix(resolved), nil
 }
 
 // getFinalPathNameByHandle calls GetFinalPathNameByHandleW, growing the

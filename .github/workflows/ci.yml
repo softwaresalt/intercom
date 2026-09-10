@@ -320,6 +320,21 @@ jobs:
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
       - name: golangci-lint run
         run: golangci-lint run ./...
+      - name: golangci-lint run (GOOS=windows)
+        # 016.001-T (015-S): the repository's only lint gate is GOOS-scoped
+        # via Go file discovery, so the //go:build windows-tagged production
+        # surface under internal/pathsafe (reparse_windows.go and friends)
+        # was never analyzed by the step above. This step re-runs the same
+        # pinned golangci-lint against the Windows build tag set on the
+        # existing ubuntu-latest runner -- no new runner required. Verified
+        # green-on-arrival (AC4) against the pre-015-S tree; the full 015-S
+        # diff (016.001-T through 016.008-T) is required to pass this exact
+        # step, locally and in CI, before merge -- this step lands blocking
+        # (no continue-on-error, AC2) rather than requiring an advisory
+        # window.
+        env:
+          GOOS: windows
+        run: golangci-lint run ./...
       - name: depguard Copilot-SDK-boundary fixture proof (011.014-T)
         run: bash scripts/check-depguard-fixtures.sh
 
