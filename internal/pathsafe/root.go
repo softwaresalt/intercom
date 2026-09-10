@@ -185,6 +185,8 @@
 package pathsafe
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -252,34 +254,62 @@ func (r Root) Path() string {
 }
 
 // NewRoot canonicalizes dir exactly once: filepath.Abs, then
-// filepath.EvalSymlinks, then stripUNCPrefix. Canonicalizing once amortizes
-// what would otherwise be an EvalSymlinks syscall walk on every Resolve
-// call — P10's diff-apply may validate 10-100 paths against one root
-// (finding GO-4).
+// canonicalizeReparse (016.007-T, C2 -- previously filepath.EvalSymlinks;
+// see the risk register above for the 013-S-regression provenance this
+// change closes), then stripUNCPrefix. Canonicalizing once amortizes what
+// would otherwise be a canonicalizeReparse syscall (CreateFile +
+// GetFinalPathNameByHandleW on Windows) on every Resolve call — P10's
+// diff-apply may validate 10-100 paths against one root (finding GO-4).
 func NewRoot(dir string) (Root, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return Root{}, wrapRootInvalid(err)
 	}
 
-	resolved, err := filepath.EvalSymlinks(abs)
+	resolved, err := canonicalizeReparse(abs)
 	if err != nil {
-		return Root{}, wrapRootInvalid(err)
+		// C2/AC3 (016.007-T, Go review P1): canonicalizeReparse's Windows
+		// implementation returns a raw syscall.Errno (from
+		// syscall.CreateFile or the lazy-proc call), unlike
+		// filepath.EvalSymlinks, which returns *fs.PathError.
+		// errors.Is(err, fs.ErrNotExist) still resolves either way
+		// (Windows' Errno.Is maps ERROR_FILE_NOT_FOUND/
+		// ERROR_PATH_NOT_FOUND), but a caller doing
+		// errors.As(err, &*fs.PathError) would silently stop matching on
+		// Windows without this wrap. wrapPathError re-forms the error as
+		// *fs.PathError at this boundary (a no-op on POSIX, where
+		// canonicalizeReparse already returns *fs.PathError), preserving
+		// the observable error surface on both platforms.
+		return Root{}, wrapRootInvalid(wrapPathError("lstat", abs, err))
 	}
 
 	canonical := stripUNCPrefix(resolved)
-	// DOCUMENTED-UNREACHABLE, coverage-excluded (011.006-T item (b),
-	// resolves 8472E0A1 item (b)): this os.Stat call cannot observe a
-	// failure in practice. filepath.EvalSymlinks above already performs an
-	// os.Lstat-based syscall walk over every path component (including the
-	// final one) to resolve symlinks, and it already returned successfully
-	// by this point — so a subsequent os.Stat on that same, just-resolved
+	// DOCUMENTED-UNREACHABLE, RE-DERIVED for 016.007-T (C2, plan AC5, H2)
+	// -- not re-pasted from the pre-C2 filepath.EvalSymlinks-era
+	// justification below, which no longer applies to this call site.
+	// This os.Stat call cannot observe a failure in practice on EITHER
+	// build:
+	//   - Windows: canonicalizeReparse's syscall.CreateFile with
+	//     OPEN_EXISTING has ALREADY proven the resolved target exists by
+	//     the time this line runs -- a stronger existence proof than a
+	//     Stat/Lstat walk, since CreateFile actually opens a handle to the
+	//     entry rather than merely querying its metadata.
+	//   - POSIX (reparse_other.go): canonicalizeReparse IS
+	//     filepath.EvalSymlinks, whose own os.Lstat-based walk over every
+	//     path component already proved existence identically to the
+	//     pre-C2 code path.
+	// On both builds, a subsequent os.Stat on that same, just-canonicalized
 	// path failing would require the filesystem to change between the two
 	// calls (a TOCTOU race), not a normal input-driven code path. Requiring
 	// a "fails before, passes after" test for this branch is unsatisfiable
 	// without an injectable stat seam, which would itself be a production
 	// behavior change inside a tests-only unit (Width Isolation). The
 	// error return remains defensive, not dead, code.
+	//
+	// This os.Stat call now runs on a stripUNCPrefix-normalized form, which
+	// is why D-6's `\\?\Volume{GUID}\...` non-stripping is LOAD-BEARING,
+	// not incidental: os.Stat must still receive a form Win32 APIs accept,
+	// and a Volume{GUID} path has no non-`\\?\` equivalent to strip to.
 	info, err := os.Stat(canonical)
 	if err != nil {
 		return Root{}, wrapRootInvalid(err)
@@ -289,6 +319,25 @@ func NewRoot(dir string) (Root, error) {
 	}
 
 	return Root{path: canonical}, nil
+}
+
+// wrapPathError ensures canonicalizeReparse's error surface always exposes
+// an *fs.PathError to callers, regardless of platform (016.007-T, C2/AC3).
+// On POSIX, canonicalizeReparse delegates to filepath.EvalSymlinks, which
+// already returns *fs.PathError, so this is a no-op (errors.As below
+// succeeds immediately and the original error is returned unchanged). On
+// Windows, canonicalizeReparse's raw syscall.Errno is re-formed into an
+// *fs.PathError here so `errors.As(err, &*fs.PathError)` keeps matching on
+// both platforms, not just POSIX.
+func wrapPathError(op, path string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return err
+	}
+	return &fs.PathError{Op: op, Path: path, Err: err}
 }
 
 // wrapRootInvalid wraps err as a KindPathViolation "workspace root invalid"

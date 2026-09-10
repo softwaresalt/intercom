@@ -1,7 +1,10 @@
 package pathsafe
 
 import (
+	"errors"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -155,4 +158,107 @@ func TestNewRootOnJunctionRootedWorkspaceResolvesNonExistentLeaf(t *testing.T) {
 	if !strings.EqualFold(filepath.Base(got), "new-file.txt") {
 		t.Fatalf("Resolve(\"new-file.txt\") = %q, want a path ending in new-file.txt", got)
 	}
+}
+
+// TestNewRootErrorSurfaceIsPathError pins C2/AC3 (016.007-T, Go review P1):
+// on a missing workspace root, NewRoot's returned error must still expose an
+// *fs.PathError via errors.As, even though canonicalizeReparse's Windows
+// implementation returns a raw syscall.Errno rather than *fs.PathError (what
+// filepath.EvalSymlinks returned pre-C2). wrapPathError re-forms the error
+// at NewRoot's boundary so any caller doing errors.As(err, &pathErr) keeps
+// matching on Windows exactly as it did before this shipment.
+func TestNewRootErrorSurfaceIsPathError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+
+	_, err := NewRoot(missing)
+	if err == nil {
+		t.Fatalf("NewRoot(%q) = nil error, want an error for a missing root", missing)
+	}
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("errors.As(err, &pathErr) = false, want true; err = %v", err)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("errors.Is(err, fs.ErrNotExist) = false, want true; err = %v", err)
+	}
+}
+
+// TestNewRootResolvesEndToEndUnderVolumeGUIDRoot is the C2/AC6 end-to-end
+// volume-GUID coverage (016.007-T, correctness review P2): the existing
+// "volume guid" case in TestStripUNCPrefixWindowsTransformVerdicts is a
+// synthetic table test that never exercises NewRoot/Resolve/hasPathPrefix.
+// Because hasPathPrefix is a plain string comparison, a root/candidate
+// namespace mismatch under a GUID-volume root would be invisible to it.
+// This test constructs a REAL `\\?\Volume{GUID}\...` root (via mountvol's
+// reported GUID for the volume hosting t.TempDir()) and proves Resolve
+// still correctly accepts an in-root candidate and rejects an escape.
+func TestNewRootResolvesEndToEndUnderVolumeGUIDRoot(t *testing.T) {
+	dir := t.TempDir()
+	guidRoot := volumeGUIDPathForTesting(t, dir)
+
+	root, err := NewRoot(guidRoot)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", guidRoot, err)
+	}
+	// Measured finding: GetFinalPathNameByHandleW's default VOLUME_NAME_DOS
+	// behavior normalizes a Volume{GUID} input back to its mounted
+	// drive-letter form whenever the volume HAS one (as this host's does),
+	// so root.Path() here is the ordinary "C:\..." form, NOT the
+	// \\?\Volume{GUID}\... form. D-6's non-stripping guarantee is a
+	// property of stripUNCPrefix as a pure function (pinned by
+	// TestStripUNCPrefixWindowsTransformVerdicts) and matters for a volume
+	// with NO drive-letter mapping, which this fixture (backed by the
+	// drive hosting t.TempDir()) cannot construct. What this test proves
+	// instead is the AC6 gap it was added to close: end-to-end
+	// NewRoot/Resolve/hasPathPrefix correctness when NewRoot's INPUT is a
+	// Volume{GUID}-form path, regardless of what internal form the
+	// canonicalized root ends up in.
+	if !filepath.IsAbs(root.Path()) {
+		t.Fatalf("NewRoot(%q).Path() = %q, want an absolute path", guidRoot, root.Path())
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "in-root.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create in-root file: %v", err)
+	}
+
+	got, err := root.Resolve("in-root.txt")
+	if err != nil {
+		t.Fatalf("Resolve(\"in-root.txt\") returned unexpected error: %v", err)
+	}
+	if !strings.EqualFold(filepath.Base(got), "in-root.txt") {
+		t.Fatalf("Resolve(\"in-root.txt\") = %q, want a path ending in in-root.txt", got)
+	}
+
+	if _, err := root.Resolve(`..\..\escape.txt`); err == nil {
+		t.Fatalf(`Resolve("..\..\escape.txt") = nil error, want rejection`)
+	}
+}
+
+// volumeGUIDPathForTesting re-forms dir (an absolute drive-letter path) as
+// its `\\?\Volume{GUID}\...` equivalent, using the live volume GUID that
+// mountvol reports for dir's drive. Skips (t.Skip, not t.Fatal: this is an
+// environment capability probe, not the behavior under test) if mountvol is
+// unavailable or reports no GUID for dir's drive -- both legitimately
+// possible on a non-NTFS or restricted CI image, unlike the RED-lock
+// junction tests, whose capability (pwsh) is expected to always be present.
+func volumeGUIDPathForTesting(t *testing.T, dir string) string {
+	t.Helper()
+
+	drive := filepath.VolumeName(dir) // e.g. "C:"
+	if drive == "" {
+		t.Skip("cannot determine drive volume name for GUID lookup")
+	}
+
+	out, err := exec.Command("cmd", "/c", "mountvol", drive+`\`, "/L").CombinedOutput()
+	if err != nil {
+		t.Skipf("mountvol unavailable or failed: %v; output: %s", err, out)
+	}
+	guidPath := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(guidPath, uncPrefix+"Volume{") {
+		t.Skipf("mountvol did not report a Volume{GUID} path: %q", guidPath)
+	}
+
+	rest := strings.TrimPrefix(dir, drive)
+	rest = strings.TrimPrefix(rest, `\`)
+	return guidPath + rest
 }
