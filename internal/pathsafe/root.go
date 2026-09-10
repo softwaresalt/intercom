@@ -38,14 +38,17 @@
 //     behavioral oracle this package is obligated to replicate divergence-
 //     for-divergence going forward). TRIGGER: none remaining -- finding
 //     closed. Originating flip procedure: stash F133AB7E.
+//
 //   - Resolve -> use TOCTOU window (see "Known limitations" above): there
 //     is no atomic validate-then-open primitive in this package. STATUS:
 //     accepted, oracle-parity. TRIGGER: forced the moment a real write path
 //     exists (unchanged by 013-S; 013-S's anti-goal excludes this from
 //     scope — see below).
+//
 //   - SEC-5 (EvalSymlinks ignores hardlinks, see "Known limitations"
 //     above). STATUS: accepted, oracle-parity. TRIGGER: same as the
 //     Resolve -> use TOCTOU entry above (unchanged by 013-S).
+//
 //   - 5FE4A7BE-a (012.007-T; case-folding, darwin under-fold): darwin
 //     currently under-folds because pathEqual/pathHasPrefix fold on
 //     Windows only, while darwin is a shipped target and is
@@ -59,6 +62,7 @@
 //     §8 residual "case-folding fail-open" — declared out of scope
 //     because fixing it is not a member of any of 013-S's selected stash
 //     entries and 700B41CE's closure below explicitly does not cover it).
+//
 //   - 5FE4A7BE-b (012.007-T; case-folding, Windows/WSL over-fold — split
 //     out of the single 5FE4A7BE entry by 014.008-T/F9, which previously
 //     paired this with 5FE4A7BE-a under one contradictory STATUS/TRIGGER
@@ -71,6 +75,7 @@
 //     or WSL-created tree. NOT touched by 013-S (same plan §8 residual as
 //     5FE4A7BE-a; the two entries name opposite-direction risks on
 //     opposite platforms and must not be conflated into one).
+//
 //   - 700B41CE: CLOSED for the reparse-point mechanism by 013-S
 //     (commits 0c51669 "feat(014.004-T): GREEN wire canonicalization into
 //     the containment check" and 3e1cb58 "fix(014.005-T): flip the
@@ -134,6 +139,7 @@
 //     (finding F0) for the pre-013-S trace, and
 //     docs/plans/2026-09-08-intercom-go-pathsafe-reparse-containment-plan.md
 //     for the full 013-S remediation record.
+//
 //   - F3 (in-root junction ancestor false-rejection; new entry, 014.008-T
 //     AC 6, plan §8 residual): checkSymlinkEscape's strict-ancestor
 //     rejection for an entry that is neither a directory nor a symlink
@@ -153,6 +159,7 @@
 //     terminal-canonicalization step like canonicalizeReparse) capable of
 //     distinguishing an in-root live junction ancestor from an
 //     out-of-root one without reintroducing A2's bypass.
+//
 //   - GODEBUG-empirical (both-settings empirical proof; new entry,
 //     014.008-T AC 6, plan §8 residual): 014.004-T AC 5 makes the
 //     reparse-point fix GODEBUG-independent BY CONSTRUCTION --
@@ -170,6 +177,65 @@
 //     semantics rather than a direct Win32 call, at which point the
 //     by-construction independence claim above must be re-verified or the
 //     empirical harness must be built.
+//
+//   - Root/candidate canonicalization asymmetry (013-S regression;
+//     CLOSED by 015-S/016.007-T, C2; new entry, 016.008-T AC1): 013-S
+//     (014.003-T/014.004-T) routed checkSymlinkEscape's per-Resolve-call
+//     candidate canonicalization through canonicalizeReparse
+//     (GetFinalPathNameByHandleW semantics, resolving reparse points
+//     including directory junctions at any path position), but left
+//     NewRoot's one-time ROOT canonicalization on filepath.EvalSymlinks,
+//     which does not resolve directory junctions at all (its os.Lstat
+//     walk reports a junction as fs.ModeIrregular and either errors out
+//     on a non-terminal junction or passes a terminal one through
+//     unresolved). A junction-rooted workspace (NewRoot invoked directly
+//     on a directory-junction path) therefore left root.path UNRESOLVED
+//     while every candidate passed through canonicalizeReparse's real-
+//     target resolution -- a root/candidate namespace mismatch that
+//     hasPathPrefix's plain string comparison cannot detect, causing
+//     checkSymlinkEscape to reject legitimate in-root candidates whose
+//     resolved (real-target) form no longer had the raw junction path as
+//     a string prefix (found via 016.005-T's RED regression lock,
+//     TestNewRootOnJunctionRootedWorkspaceResolvesExistingDescendant /
+//     ...ResolvesNonExistentLeaf). This was a FALSE-REJECTION usability
+//     defect for the benign in-root case, not a containment bypass (an
+//     out-of-root candidate under a junction-rooted workspace was still
+//     rejected, just via a different -- also correct -- code path).
+//     016.007-T (C2) closes it by routing NewRoot through the SAME
+//     canonicalizeReparse function checkSymlinkEscape already used,
+//     restoring root/candidate symmetry; 016.004-T's long-path prefixing
+//     landed in the same change per the B3->C2 hard-prerequisite note in
+//     the 015-S plan (docs/plans/2026-09-10-intercom-go-pathsafe-
+//     windows-canonicalization-symmetry-plan.md §7), since routing a raw
+//     syscall.CreateFile through NewRoot without prefix handling would
+//     have regressed long workspace roots that EvalSymlinks previously
+//     tolerated. STATUS: closed. TRIGGER: none remaining for this
+//     specific asymmetry; a related, EXPLICITLY NOT closed residual is
+//     recorded separately below (long-path environment-sensitivity).
+//
+//   - Long-path (>MAX_PATH) prefixing environment-sensitivity (016.004-T,
+//     U5; new entry, 016.008-T AC1, plan §9 H3): measured empirically on
+//     this development host (Windows build 10.0.26200, registry
+//     LongPathsEnabled=0) that a raw syscall.CreateFile call WITHOUT any
+//     `\\?\` prefix does not reproduce the classic MAX_PATH rejection
+//     even for absolute paths well over 260 characters -- the failure
+//     addLongPathPrefix exists to prevent could not be forced to
+//     reproduce as a live RED test on this environment, an outcome the
+//     015-S plan explicitly anticipated (§9 H3) and prescribed landing
+//     the mitigation together with C2 plus a covering test rather than
+//     deferring both. addLongPathPrefix's deterministic, OS-independent
+//     predicate tests (TestAddLongPathPrefixVerdicts,
+//     TestAddLongPathPrefixRoundTripsWithStripUNCPrefix) serve as that
+//     covering test: they lock the prefixing DECISION (threshold,
+//     already-prefixed/device-path/UNC/relative-path exclusions)
+//     independent of whether any given host's CreateFile call actually
+//     rejects an unprefixed long path today. STATUS: accepted, mitigation
+//     landed proactively ahead of confirmed local reproduction. TRIGGER:
+//     a host or Windows configuration (e.g. LongPathsEnabled=1, or a
+//     future toolchain/API change) that DOES reproduce the MAX_PATH
+//     rejection without addLongPathPrefix, at which point an end-to-end
+//     regression test should be added on that environment; none is
+//     currently constructible on this development host.
 //
 // RETIREMENT PROCEDURE when a real write path arrives (C4-C6): each finding
 // above must be re-evaluated against the concrete write call site before
@@ -204,20 +270,24 @@ import (
 // a second draft then claimed filepath.EvalSymlinks "internally calls
 // GetFinalPathNameByHandleW to construct its return value" as a
 // general mechanism -- verified FALSE against this toolchain's actual
-// path/filepath source, corrected below):
+// path/filepath source, corrected below; SUPERSEDED IN PART by
+// 016.007-T/C2, see the trailing note below the two-site breakdown):
 //
 // stripUNCPrefix, the sole consumer of this constant, is called from
-// BOTH of this package's two independent `\\?\`-prefix-emitting call
-// sites, which is exactly why they share one prefix constant rather
-// than each needing their own -- but the two sites reach that shared
-// prefix by DIFFERENT internal mechanisms, verified by reading
-// GOROOT/src/path/filepath/symlink.go, symlink_windows.go, and
-// GOROOT/src/os/file_windows.go for this toolchain:
-//  1. NewRoot's one-time root canonicalization (this file), via Go's
-//     OWN standard-library filepath.EvalSymlinks. Its walkSymlinks
-//     (symlink.go) resolves each path component via plain os.Lstat /
-//     os.Readlink -- NOT GetFinalPathNameByHandleW -- and normally
-//     never touches uncPrefix at all. The ONE narrow exception:
+// BOTH of this package's two `\\?\`-prefix-emitting call sites, which is
+// exactly why they share one prefix constant rather than each needing
+// their own. AS OF 016.007-T (015-S, C2), both sites reach that shared
+// prefix via the SAME mechanism (canonicalizeReparse); PRIOR to that
+// change they were independent, sometimes-divergent code paths, verified
+// by reading GOROOT/src/path/filepath/symlink.go, symlink_windows.go, and
+// GOROOT/src/os/file_windows.go for this toolchain -- retained below as
+// the historical record of what closed the 013-S root/candidate
+// canonicalization asymmetry (see the risk register above):
+//  1. NewRoot's one-time root canonicalization (this file). PRE-016.007-T,
+//     via Go's OWN standard-library filepath.EvalSymlinks. Its
+//     walkSymlinks (symlink.go) resolves each path component via plain
+//     os.Lstat / os.Readlink -- NOT GetFinalPathNameByHandleW -- and
+//     normally never touched uncPrefix at all. The ONE narrow exception:
 //     os.Readlink's Windows implementation (file_windows.go,
 //     normaliseLinkPath) special-cases a symlink target expressed as
 //     an NT-native `\??\Volume{GUID}\...` path, where it either
@@ -226,20 +296,27 @@ import (
 //     Win32 call), or -- only under the legacy winreadlinkvolume="0"
 //     opt-out -- opens the link and calls
 //     windows.GetFinalPathNameByHandle to normalize it. Either way,
-//     this is an edge case (a GUID-only-addressable volume symlink
-//     target), not EvalSymlinks' general resolution mechanism.
+//     this was an edge case (a GUID-only-addressable volume symlink
+//     target), not EvalSymlinks' general resolution mechanism. AS OF
+//     016.007-T, NewRoot instead calls canonicalizeReparse directly (see
+//     entry 2 below), which now applies unconditionally to the root path
+//     too -- this historical EvalSymlinks path no longer executes here.
 //  2. checkSymlinkEscape's per-Resolve-call containment check
 //     (pathsafe.go), via canonicalizeReparse's own, separate, DIRECT,
 //     UNCONDITIONAL GetFinalPathNameByHandleW call for every single
 //     resolution (reparse_windows.go, 014.003-T, invoked through
 //     syscall.NewLazyDLL, not through filepath.EvalSymlinks or
-//     os.Readlink).
+//     os.Readlink). 016.007-T makes NewRoot's root canonicalization
+//     (entry 1) route through this exact same function.
 //
-// The two sites are independent, sometimes-divergent code paths that
-// happen to converge on the same `\\?\` output convention for the
-// specific cases each of them actually emits it -- do not read this as
-// evidence that one call site is a thin wrapper around the other, or
-// that both always take a Win32-call-based path to get there.
+// PRE-016.007-T, the two sites were independent, sometimes-divergent code
+// paths that happened to converge on the same `\\?\` output convention
+// only for the specific cases each of them actually emitted it -- that
+// divergence was the root cause of the 013-S regression this register's
+// asymmetry entry (above) records as closed. AS OF 016.007-T, both sites
+// are the SAME call (canonicalizeReparse), so this divergence no longer
+// exists; do not read the historical breakdown above as still describing
+// current behavior.
 const uncPrefix = `\\?\`
 
 // Root is a canonicalized workspace root. Construct with NewRoot; the zero
