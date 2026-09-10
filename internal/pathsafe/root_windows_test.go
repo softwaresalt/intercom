@@ -83,7 +83,46 @@ func TestNewRootOnJunctionRootedWorkspaceResolvesExistingDescendant(t *testing.T
 	}
 }
 
-// TestNewRootOnJunctionRootedWorkspaceResolvesNonExistentLeaf is the C1 RED
+// TestNewRootOnJunctionRootedWorkspaceRejectsEscapeViaInnerJunction is the
+// C1b containment-preservation lock (016.006-T, security review addition,
+// confidence 0.72): C1 alone proves only that a junction-rooted workspace
+// does not OVER-reject. On a NON-NEGOTIABLE containment control, this test
+// proves the complementary property -- that it does not UNDER-reject either.
+// Under a junction-rooted workspace, an in-root reparse point whose target
+// lies OUTSIDE the resolved root must still be rejected.
+//
+// Unlike C1 (016.005-T), this is NOT a RED->GREEN unit: it is written to
+// PASS both before and after 016.007-T's (C2) GREEN change, because
+// containment is preserved on both sides of that change (pre-C2, the escape
+// is still caught by canonicalizeReparse's own out-of-root resolution
+// compared against the unresolved junction root path; post-C2, the same
+// escape is caught against the now-resolved root path). A regression here at
+// any point is a STOP condition (plan H3b).
+func TestNewRootOnJunctionRootedWorkspaceRejectsEscapeViaInnerJunction(t *testing.T) {
+	trulyOutside := t.TempDir()
+
+	targetDir := t.TempDir()
+	escapeLinkPath := filepath.Join(targetDir, "escape-link")
+	createDirectoryJunction(t, escapeLinkPath, trulyOutside)
+
+	junctionParent := t.TempDir()
+	junctionRootPath := filepath.Join(junctionParent, "workspace-root")
+	createDirectoryJunction(t, junctionRootPath, targetDir)
+
+	root, err := NewRoot(junctionRootPath)
+	if err != nil {
+		t.Fatalf("NewRoot(%q) returned error: %v", junctionRootPath, err)
+	}
+
+	_, err = root.Resolve("escape-link")
+	if err == nil {
+		t.Fatalf("Resolve(\"escape-link\") = nil error, want %q -- an in-root reparse point targeting outside the resolved root must still be rejected", symlinkEscapeMsg)
+	}
+	if !strings.Contains(err.Error(), symlinkEscapeMsg) {
+		t.Fatalf("Resolve(\"escape-link\") error = %q, want to contain %q", err.Error(), symlinkEscapeMsg)
+	}
+}
+
 // regression lock (016.005-T, availability direction, transition (b)): a
 // NON-EXISTENT leaf under a junction-rooted workspace must resolve to an
 // in-root candidate path (the ordinary "create a new file" case), not be
