@@ -5,6 +5,8 @@ package pathsafe
 import (
 	"syscall"
 	"unsafe"
+
+	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
 // modkernel32 / procGetFinalPathNameByHandleW resolve GetFinalPathNameByHandleW
@@ -35,6 +37,21 @@ var (
 // The handle opened here is closed on every return path, including error
 // paths (014.003-T AC1 / plan H11), via a single deferred CloseHandle.
 func canonicalizeReparse(path string) (string, error) {
+	// U7 (016.002-T): resolve procGetFinalPathNameByHandleW's lazy export
+	// explicitly and up front, before syscall.CreateFile ever opens a
+	// handle, so a missing export surfaces as a returned
+	// apperr.KindPathViolation instead of panicking through
+	// LazyProc.Call's internal mustFind. DOCUMENTED-UNREACHABLE on every
+	// supported target: GetFinalPathNameByHandleW has shipped in
+	// kernel32.dll since Windows Vista / Server 2008, and this module's Go
+	// 1.24 floor requires Windows 10 / Server 2016+, so this Find() cannot
+	// fail in practice. Find() transitively covers both the kernel32.dll
+	// load and the export lookup via LazyDLL.Load()'s internal sync.Once,
+	// so no separate modkernel32 guard is required.
+	if err := procGetFinalPathNameByHandleW.Find(); err != nil {
+		return "", apperr.Wrapf(apperr.KindPathViolation, err, "GetFinalPathNameByHandleW unavailable: %s", err.Error())
+	}
+
 	pathPtr, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return "", err
