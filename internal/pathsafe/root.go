@@ -356,10 +356,25 @@ func NewRoot(dir string) (Root, error) {
 		// Windows without this wrap. wrapPathError re-forms the error as
 		// *fs.PathError at this boundary (a no-op on POSIX, where
 		// canonicalizeReparse already returns *fs.PathError), preserving
-		// the observable error surface on both platforms.
-		return Root{}, wrapRootInvalid(wrapPathError("lstat", abs, err))
+		// the observable error surface on both platforms. Op is "open",
+		// not "lstat": canonicalizeReparse's Windows implementation
+		// proves/disproves existence via syscall.CreateFile, not an
+		// Lstat-family call (review finding, adversarial pass 1).
+		return Root{}, wrapRootInvalid(wrapPathError("open", abs, err))
 	}
 
+	// D-2 (plan Sec.4): stripUNCPrefix is called here even though
+	// canonicalizeReparse already applies it internally as of 016.003-T/
+	// U6 (its return value is always already normalized). Retaining this
+	// call is a DELIBERATE belt-and-suspenders decision recorded in the
+	// 015-S plan (C2's own description: "retaining stripUNCPrefix"), not
+	// vestigial dead code: stripUNCPrefix is idempotent (a no-op on an
+	// already-stripped input), so keeping it here costs nothing and
+	// removes any dependency on the internal call graph staying wired
+	// exactly the way it is today. checkSymlinkEscape (pathsafe.go) makes
+	// the identical deliberate retention decision (plan B2/AC3) for the
+	// same reason, plus avoiding coupling pathsafe.go to a Windows-only
+	// internal contract.
 	canonical := stripUNCPrefix(resolved)
 	// DOCUMENTED-UNREACHABLE, RE-DERIVED for 016.007-T (C2, plan AC5, H2)
 	// -- not re-pasted from the pre-C2 filepath.EvalSymlinks-era

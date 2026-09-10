@@ -327,8 +327,11 @@ jobs:
         # was never analyzed by the step above. This step re-runs the same
         # pinned golangci-lint against the Windows build tag set on the
         # existing ubuntu-latest runner -- no new runner required. Verified
-        # 2026-09-10: 0 issues on the unmodified tree, so this step is
-        # green-on-arrival and lands blocking (no continue-on-error).
+        # green-on-arrival (AC4) against the pre-015-S tree; the full 015-S
+        # diff (016.001-T through 016.008-T) is required to pass this exact
+        # step, locally and in CI, before merge -- this step lands blocking
+        # (no continue-on-error, AC2) rather than requiring an advisory
+        # window.
         env:
           GOOS: windows
         run: golangci-lint run ./...

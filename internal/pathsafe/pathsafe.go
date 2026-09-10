@@ -366,6 +366,15 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 		// 2362BBB5(b)). The OS cause is wrapped for errors.Is/errors.As.
 		return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkUnverifiableMsg)
 	}
+	// B2/AC3 (015-S plan): stripUNCPrefix here is retained DELIBERATELY as
+	// belt-and-suspenders even though canonicalizeReparse (016.003-T/U6)
+	// already applies it internally -- stripUNCPrefix is idempotent, so
+	// this is a no-op on the already-normalized return value, not
+	// vestigial dead code. Retaining it here (rather than trusting
+	// canonicalizeReparse's postcondition alone) avoids coupling this
+	// platform-agnostic file to a Windows-only internal contract. D-2
+	// (root.go's NewRoot) makes the identical deliberate retention
+	// decision for its own sibling call, for the same reason.
 	real = stripUNCPrefix(real)
 
 	if !hasPathPrefix(real, root.path) {
