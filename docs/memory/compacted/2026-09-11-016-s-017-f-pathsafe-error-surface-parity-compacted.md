@@ -103,9 +103,12 @@ no grandchildren. Fully verified: empty `returned_ids`, `archived_ids` ==
 `allowed_ids` == `required_ids`, `parent_id` preserved on all tasks. AC-F4
 re-confirmed: `BF5DE670`/`6B751D8B` remain active and untouched.
 
-Runtime verification: `READY` (indirect `cli`-surface touch via
-`internal/config` validation only, same pattern as 015-S). Releasability:
-`READY`, no conditions.
+Runtime verification: `READY` — `internal/pathsafe` has no runtime
+entrypoint of its own, and, as corrected during closure-PR review, no
+`cmd/` entrypoint currently calls `config.Load`/`Validate` at process
+startup, so the changed code is not live on any current runtime path. The
+`internal/pathsafe`/`internal/config` test suites are the evidence.
+Releasability: `READY`, no conditions.
 
 ## Compounding value carried forward
 

@@ -173,16 +173,19 @@ changed paths; see the runtime-verification report for full detail.
 
 Not applicable — internal library correctness/precision-hardening change
 with no runtime service surface, migration, flag, or config-schema change
-of its own. The narrow indirect `cli`-surface touch (config validation) is
-exercised on every `cmd/intercom` / `cmd/intercom-ctl` startup with a config
-file, already covered by existing test suites.
+of its own. As corrected above, no `cmd/` entrypoint currently calls
+`config.Load`/`Validate` at startup, so the changed code is not exercised
+on any current process-startup path; the `internal/pathsafe` and
+`internal/config` test suites are the evidence, already covered by CI.
 
 ## Deployment / rollout path
 
-**Merge-only, immediately active.** The change lands in `main` and takes
-effect the next time `internal/config.Validate` is exercised — no phased
-rollout, canary, or separate release event applies to this internal library
-fix.
+**Merge-only, immediately active.** The change lands in `main`. It has no
+currently-wired runtime entrypoint of its own — it takes effect only once
+some future caller wires `cmd/intercom` or `cmd/intercom-ctl` to
+`internal/config.Load`/`Validate` (not yet implemented) — so no phased
+rollout, canary, or separate release event applies to this internal
+library fix today.
 
 ## Post-deploy checks
 
