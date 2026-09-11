@@ -83,24 +83,26 @@ func TestAddLongPathPrefixVerdicts(t *testing.T) {
 }
 
 // TestAddLongPathPrefixDeviceNamespaceBranchReachability is the 017.002-T
-// characterization/regression lock. It CORRECTS a stale premise recorded in
-// a prior stash entry -- that addLongPathPrefix's `\\.\` device-namespace
-// exclusion branch is "currently unreachable given filepath.IsAbs's own
-// device-path handling". That premise is FALSE: filepath.IsAbs reports true
-// for every `\\.\` form below, so the preceding `!filepath.IsAbs(path)`
-// guard never shadows the `\\.\` branch.
+// characterization lock. It CORRECTS a stale premise recorded in a prior
+// stash entry -- that addLongPathPrefix's `\\.\` device-namespace exclusion
+// branch is "currently unreachable given filepath.IsAbs's own device-path
+// handling". That premise is FALSE: filepath.IsAbs reports true for every
+// `\\.\` form below, so the preceding `!filepath.IsAbs(path)` guard never
+// shadows the `\\.\` branch.
 //
-// This is deliberately a BLACK-BOX, order-independent characterization, not
-// a white-box assertion about which specific guard line executes: it locks
-// the two OBSERVABLE facts (filepath.IsAbs's verdict, and
-// addLongPathPrefix's returned value) rather than internal control flow, so
-// it remains a valid regression lock regardless of how the guard chain
-// inside addLongPathPrefix is ordered or refactored in the future. Per D-4
-// (reparse_windows.go), the `\\.\` branch is reachable but currently
-// redundant with the immediately-following bare `\\` guard -- it is
-// retained as self-documenting defense-in-depth, not deleted, and this test
-// is what makes that retention decision enforceable rather than merely
-// prose.
+// This is deliberately a BLACK-BOX, order-independent characterization: it
+// locks the two OBSERVABLE facts (filepath.IsAbs's verdict, and
+// addLongPathPrefix's returned value) rather than internal control flow.
+// IMPORTANT SCOPE NOTE: because the immediately-following bare `\\`-prefix
+// guard returns the identical "unchanged" value for every `\\.\` input (see
+// D-4, reparse_windows.go), this black-box test CANNOT by itself distinguish
+// which specific guard line handles a given case, and therefore does NOT
+// enforce retention of the dedicated `\\.\` branch -- deleting that branch
+// today would still pass every case here. Its scope is limited to locking
+// the corrected, observable premise (device-namespace paths report
+// filepath.IsAbs == true and are never extended-prefixed); D-4's retention
+// of the currently-redundant branch remains a documented design decision,
+// not a mutation-tested invariant.
 //
 // Per Constitution Principle II's documented deviation (017.002-T,
 // characterization-first posture): this test makes NO production behavior
@@ -109,14 +111,22 @@ func TestAddLongPathPrefixVerdicts(t *testing.T) {
 // phase to drive -- it is a Feathers-style characterization test locking in
 // already-verified-correct behavior, not a bug fix.
 func TestAddLongPathPrefixDeviceNamespaceBranchReachability(t *testing.T) {
+	// Every case below is deliberately extended past longPathThreshold: the
+	// threshold check inside addLongPathPrefix runs FIRST (before
+	// filepath.IsAbs or either namespace guard), so a short `\\.\` input
+	// would return at that threshold short-circuit without ever reaching
+	// the guard chain this test intends to characterize. Crossing the
+	// threshold on every case ensures each one actually exercises
+	// filepath.IsAbs and the `\\.\` guard, not just the trivial
+	// below-threshold early return.
 	longSuffix := strings.Repeat("a", 300)
 	cases := []struct {
 		name string
 		in   string
 	}{
-		{name: "device path to drive-relative file", in: `\\.\C:\foo`},
-		{name: "device path to physical drive", in: `\\.\PhysicalDrive0`},
-		{name: "device path to UNC-style device target", in: `\\.\UNC\srv\sh\x`},
+		{name: "device path to drive-relative file", in: `\\.\C:\foo\` + longSuffix},
+		{name: "device path to physical drive", in: `\\.\PhysicalDrive0\` + longSuffix},
+		{name: "device path to UNC-style device target", in: `\\.\UNC\srv\sh\x\` + longSuffix},
 		{name: "device path at/beyond MAX_PATH threshold", in: `\\.\C:` + longSuffix},
 	}
 

@@ -1,3 +1,13 @@
+---
+title: "Ship Session Checkpoint — 016-S Pre-PR"
+date: 2026-09-10
+agent: Ship
+mode: DARK_MODE_ACTIVE
+shipment: 016-S
+feature: 017-F
+status: pre-pr-checkpoint
+---
+
 # Ship session checkpoint — 016-S pre-PR
 
 **Date**: 2026-09-10
