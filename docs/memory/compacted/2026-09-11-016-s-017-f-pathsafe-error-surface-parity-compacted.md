@@ -121,12 +121,15 @@ per the branch/PR-per-release-unit rule (never committed directly to
   (`chore: post-merge closure for 017-F — pathsafe error-surface parity
   and Windows long-path precision`).
 - Copilot review required **three rounds** (unusual — every other gate on
-  this shipment cleared in one or two): round 1 found a factual
-  runtime-reachability overclaim; the round-2 fix (commit `0749dc7`)
-  corrected only the primary cited occurrence and missed two additional
+  this shipment cleared in one or two): round 1 (review against `f2f7e60`)
+  opened 4 threads, including a factual runtime-reachability overclaim;
+  the fix commit `0749dc7` addressed round 1's threads but corrected only
+  the primary cited occurrence of that overclaim, missing two additional
   verbatim recurrences of the same claim in sibling documents/sections;
-  round 3 (commit `38a45e9`) corrected the remaining recurrences. Gate
-  reached `SATISFIED` with 6 threads resolved across the 2 fix rounds.
+  round 2 (review against `0749dc7`) opened those 2 residual threads; the
+  fix commit `38a45e9` corrected the remaining recurrences; round 3
+  (review against `38a45e9`) opened zero new threads and reached
+  `SATISFIED`. 6 threads resolved in total, across rounds 1 and 2.
 - Reviewed HEAD at merge: `38a45e9`. Merged via merge-commit strategy
   (P-009) at `b7c8678e03d144948509fd8884e09c959a914219`. All applicable CI
   green.
@@ -137,7 +140,8 @@ per the branch/PR-per-release-unit rule (never committed directly to
   pattern before considering the fix complete, rather than fixing only the
   location(s) explicitly cited by the reviewer — fixing only the cited
   location left two sibling recurrences of the same factual error
-  unaddressed into a third review round.
+  unaddressed, requiring a second review round to surface them before a
+  third round could confirm the fix clean.
 
 ## Compounding value carried forward
 
