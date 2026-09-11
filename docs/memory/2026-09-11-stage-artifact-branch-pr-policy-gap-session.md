@@ -30,7 +30,24 @@ deliberate → plan → harden → review → harvest pipeline. No ad hoc tracke
 
 - **`TOOL_DEGRADED`** — no backlogit MCP tools were exposed in this session. Fell back to the
   registry-declared `backlogit` CLI (v1.10.1). All operations below used the CLI fallback.
-- `INDEX_SYNC_OK` at session start (199 artifacts) and at session end (221 artifacts).
+- `INDEX_SYNC_OK` at three distinct phases. The index total is **backlog items + *active* stash
+  entries** (verified against `.backlogit/backlogit.db`: `items` + `stash_entries`), so it moves
+  with intake and stash archival as well as with harvest. Labelled by phase and UTC timestamp:
+
+  | Phase | Timestamp (UTC) | Items | Active stash | Total |
+  |---|---|---|---|---|
+  | Step 0.1 session start — **before** stash intake | before `2026-09-11T16:51:55Z` | 186 | 13 | **199** |
+  | Post-shipment-assembly, **before** Step 5.6 stash archive | `17:26:03Z`–`17:27:26Z` | 207 | 14 | **221** |
+  | True session end — **after** Step 5.6 | from `2026-09-11T17:27:26Z` | 207 | 13 | **220** |
+
+  The 221 reading is the transient peak in the ~83 s window after shipment `017-S` was created
+  (`17:26:03Z`) and before stash entry `638A410B` was archived (`archived_at
+  2026-09-11T17:27:26Z`); the 14th stash entry *is* `638A410B`. **220 is the steady-state count**
+  and the one the PR description reports. Corroboration: the immediately prior session
+  (`docs/memory/2026-09-11-stage-pathsafe-deferred-trigger-reassessment-no-shipment.md`) recorded
+  the same 199 pre-session baseline, the 21 items created here (`018-F`, 11 archived provisional
+  units, 8 atomic tasks, `017-S`) take 186 → 207, and `backlogit sync` re-observed 220 at cycle 2
+  (§10.4) and again at cycle 3 (§11).
 - Checkpoint recovery: zero `stage`-owned active checkpoints, no validation/quarantine anomalies
   → normal startup, not a failure.
 
@@ -295,7 +312,10 @@ rev-3 form covering the preamble surface, and §6.3 already referenced a then-no
 
 ### 10.4 Validation (planning-artifact scope only — no Go build/test, per the Stage role boundary)
 
-- `backlogit sync` → `INDEX_SYNC_OK`, 220 artifacts (start and end)
+- `backlogit sync` → `INDEX_SYNC_OK`, **220** artifacts at cycle-2 start and end — the
+  post-Step-5.6 steady state (207 items + 13 active stash entries), unchanged from the harvest
+  session's true end state. This does **not** conflict with §2's 221, which is the
+  pre-stash-archive transient peak; see the phase/timestamp table in §2.
 - `backlogit doctor` → `No issues found.` (exit 0)
 - `markdownlint` on the plan and on `.backlogit/queue/*.md` → exit 0
 - **Harness eligibility**: 0 of 8 tasks carry `harness-ready` (Stage forges no P-004 postcondition);
@@ -317,3 +337,58 @@ the not-implemented stub script, confirm `go vet ./...` = 0 and `go test ./...` 
 `Compilation: PASS` / `Red Phase: CONFIRMED`, and only then apply `harness-ready` and flip
 `018-F.harness_status`. **Do not** amend P-002, P-004, `_ship.agent.md` Step 2, or the
 `harness-architect` skill — explicitly out of scope.
+
+## 11. Review remediation — PR #54, cycle 3 (final allowed cycle)
+
+Copilot's current-HEAD review of `47ede9a` left exactly one unresolved thread
+(`PRRT_kwDOTPuhps6hm1OQ`, comment 3992616381): the audit counts in this file conflicted — §2
+reported 199 → 221 artifacts while §10.4 reported 220 at both start and end, and the PR
+description reported 220. A **P-021 C1 same-contract** defect (it corrects the session record's
+own accuracy rather than expanding scope), so it was fixed, not deferred. No source, template, or
+CI file was touched; no shipment was claimed; exactly one shipment (`017-S`, 9 items) still exists.
+
+### 11.1 Root cause — three distinct snapshots flattened into two labels
+
+The counts were never wrong; they were **unlabelled**, so two of the three snapshots read as a
+contradiction. The index total is `items + active stash_entries`, which means **stash intake and
+stash archival move the number independently of harvest**. §2's "session end" label was applied to
+a reading actually taken *before* Step 5.6 archived the intake stash entry, while §10.4's 220 was
+the genuine post-Step-5.6 steady state.
+
+### 11.2 Evidence used (no number was inferred or guessed)
+
+| Claim | Evidence |
+|---|---|
+| Total = items + active stash entries | `.backlogit/backlogit.db` read-only: `items` = 207, `stash_entries` = 13, and `backlogit sync` → `Indexed 220 artifacts` |
+| Pre-session items = 186 | `git ls-tree -r --name-only faf828b^ -- .backlogit/queue .backlogit/archive` → 0 + 186 `.md` |
+| Post-harvest items = 207 | same command at `faf828b`/`d6c086c`/`47ede9a` → 10 + 197 `.md`; the 21-item delta matches the 21 IDs created in this session |
+| Pre-session active stash = 13 | `git show faf828b^:.backlogit/stash.jsonl` → 13 non-blank lines |
+| 199 baseline independently corroborated | `docs/memory/2026-09-11-stage-pathsafe-deferred-trigger-reassessment-no-shipment.md` L24 records `INDEX_SYNC_OK — 199 artifacts` for the immediately preceding session |
+| The 14th stash entry is `638A410B` | `.backlogit/archive/stash.jsonl` → `created_at 2026-09-11T16:51:55Z`, `archived_at 2026-09-11T17:27:26Z`, `reason archived` |
+| The 221 window is `17:26:03Z`–`17:27:26Z` | `items.created_at` for `017-S` = `2026-09-11T17:26:03Z`; `638A410B.archived_at` = `17:27:26Z` |
+| 220 is current and stable | `backlogit sync` re-run at cycle 3 → `Indexed 220 artifacts` |
+
+### 11.3 Fix applied
+
+§2 replaced the two-label sentence with a **phase + UTC-timestamp table** carrying all three
+snapshots and their `items` / `active stash` decomposition, plus an explicit note that 220 is the
+steady state the PR description reports. §10.4's bullet now states the phase its 220 belongs to
+and cross-references §2 so the two entries can no longer be read as rival claims about one state.
+No count was changed; only the phase attribution that made them look contradictory.
+
+### 11.4 Validation (planning-artifact scope only — no Go build/test, per the Stage role boundary)
+
+- `backlogit sync` → `INDEX_SYNC_OK`, **220** artifacts (207 items + 13 active stash entries) —
+  the figure now recorded as the steady state
+- `backlogit doctor` → `No issues found.` (exit 0)
+- `markdownlint` on this file → exit 0
+- `backlogit list --type shipment` → exactly one shipment, `017-S`, 9 items, membership unchanged
+- Count sweep: `199`, `220`, and `221` now appear in this file only inside phase-labelled context;
+  no unlabelled "session end" count survives
+- Scope: only `docs/memory/` was modified — no source, template, CI, plan, deliberation, or
+  `.backlogit/` queue artifact changed
+
+### 11.5 Handoff
+
+Unchanged from §10.5. Ship claims `017-S` and starts at `018.004-T`.
+
