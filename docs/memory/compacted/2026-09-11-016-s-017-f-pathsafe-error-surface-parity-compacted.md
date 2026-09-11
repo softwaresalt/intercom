@@ -3,8 +3,10 @@ title: "Compacted session memory: 016-S / 017-F — pathsafe error-surface parit
 date: 2026-09-11
 shipment: 016-S
 feature: 017-F
-status: compacted
-sources:
+status: shipped
+pr: 51
+merge_commit_sha: 75cfe3b1b954c49d149f531464ccd97f1770dd0b
+compacted_from:
   - docs/archive/memory/2026-09-10-stage-016s-pathsafe-error-surface-parity.md
   - docs/archive/memory/2026-09-10-ship-016-s-pre-pr-checkpoint.md
 ---

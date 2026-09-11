@@ -75,10 +75,13 @@ active.
 
 ## CI status and unresolved review items
 
-- All CI checks green at final merge HEAD (`090cbf56fcc916309913430f6a50f0bea57ae0d2`):
+- All CI checks green at the PR HEAD before merge (`090cbf56fcc916309913430f6a50f0bea57ae0d2`):
   13 checks pass (cross-compile ×4, lint, security, test, test (windows,
   advisory), pipeline-topology, ci gate, gitignore regression,
-  detect-changes, load-cross-compile-targets).
+  detect-changes, load-cross-compile-targets). The merge commit itself is
+  `75cfe3b1b954c49d149f531464ccd97f1770dd0b` — CI ran against the PR HEAD
+  prior to the (unmodified-tree) merge commit, per standard GitHub merge
+  semantics.
 - **Local review (pre-PR)**: three independent persona passes (general
   code-review, security-review, Go-idiom review) — all **PASS,
   merge-ready**, zero P0/P1/P2. Two P3s remediated directly (invalid-UTF-8
@@ -128,11 +131,17 @@ active.
 See
 `docs/closure/2026-09-11-016-s-017-f-pathsafe-error-surface-parity-runtime-verification.md`.
 
-**Verdict: `READY`** — same narrow, indirect `cli`-surface touch pattern as
-the immediately preceding shipment (015-S/016-F): `internal/pathsafe` has no
-runtime entrypoint of its own, reached only through `internal/config`
-validation at `cmd/intercom` / `cmd/intercom-ctl` startup. Full green
-build/vet/test evidence plus CLI smoke checks are sufficient.
+**Verdict: `READY`** — `internal/pathsafe` has no runtime entrypoint of its
+own. **Correction (Copilot review, PR #52):** neither `cmd/intercom` nor
+`cmd/intercom-ctl` currently calls `config.Load`/`Validate` at process
+startup (`cmd/intercom`'s `RunE` returns `errNotImplemented` immediately;
+verified by repo-wide search for non-test callers of `config.Load` /
+`(*Config).Validate` — none exist outside `internal/config` itself). The
+substantive evidence is the Go test suite (`internal/pathsafe` and
+`internal/config`, which directly exercise the changed
+`checkSymlinkEscape` / `addLongPathPrefix` code). CLI smoke (`--help`)
+confirms basic process-startup health only and is not evidence for the
+changed paths; see the runtime-verification report for full detail.
 
 ## Invariants to preserve
 

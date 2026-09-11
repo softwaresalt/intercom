@@ -44,21 +44,30 @@ other in general.
    comments" as the authoritative list of findings requiring P-021
    classification, reply, or thread resolution — those are display-only and
    have no thread to resolve.
-2. Always fetch the actual review threads via GraphQL:
+2. Always fetch the actual review threads via GraphQL, using cursor-based
+   pagination and repeating until `hasNextPage` is false — a single
+   unpaginated page (e.g. `first: 20`) can silently miss unresolved threads
+   on a PR with more comments than the page size, which is exactly the
+   failure mode this entry warns against:
    ```
-   query {
+   query($cursor: String) {
      repository(owner: "...", name: "...") {
        pullRequest(number: N) {
-         reviewThreads(first: 20) {
+         reviewThreads(first: 50, after: $cursor) {
+           pageInfo { hasNextPage endCursor }
            nodes { id isResolved path line comments(first: 5) { nodes { id databaseId author { login } body } } }
          }
        }
      }
    }
    ```
-   The `unresolved_thread_ids` field of `autoharness gate copilot-review`'s
-   JSON output is sourced from this same GraphQL surface and is the
-   authoritative list of what actually blocks the P-018 gate.
+   Start with `cursor: null`, and on each response check `pageInfo.hasNextPage`;
+   if true, re-query with `cursor: pageInfo.endCursor` and accumulate nodes
+   until `hasNextPage` is false. The `unresolved_thread_ids` field of
+   `autoharness gate copilot-review`'s JSON output is sourced from this same
+   paginated GraphQL surface and is the authoritative list of what actually
+   blocks the P-018 gate — see the repository's PR automation guidance for
+   the canonical paginated query.
 3. If a "suppressed comment" in the review body still represents a genuine,
    valid, in-scope concern (as both of 016-S's suppressed comments turned
    out to be — a real test-coverage gap and a real PR-description clarity

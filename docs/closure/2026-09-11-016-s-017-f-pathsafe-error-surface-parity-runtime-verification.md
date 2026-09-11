@@ -30,11 +30,19 @@ user-facing behavior surface of its own.
 
 `internal/pathsafe` has no direct runtime entrypoint of its own. Its only
 wired caller in this repository is `internal/config/validate.go`
-(`default_workspace_root` / `[[workspace]].path` validation), which is
-exercised at `cmd/intercom` / `cmd/intercom-ctl` startup whenever a config
-file with workspace paths is loaded. This is the same indirect `cli`-surface
-touch documented by the immediately preceding shipment
-(`docs/closure/2026-09-10-015-s-016-f-pathsafe-windows-canonicalization-symmetry-runtime-verification.md`).
+(`default_workspace_root` / `[[workspace]].path` validation), invoked from
+`internal/config.Load`. **Correction (Copilot review, PR #52):** as of this
+shipment, `cmd/intercom`'s `RunE` does not call `config.Load`/`Validate` at
+all — it returns `errNotImplemented` immediately after logging, and
+`cmd/intercom-ctl` was independently checked and shows the same
+not-yet-wired state. Verified by repo-wide search: no non-test caller of
+`config.Load` or `(*Config).Validate` exists outside `internal/config`
+itself. The prior closure artifact for 015-S/016-F asserted the same
+"reached at cmd startup" framing; that framing was aspirational, not a
+verified current runtime path, and is corrected here rather than repeated.
+The actual current evidence for the changed code paths is the Go test
+suite (`internal/pathsafe` and `internal/config`, which call the changed
+functions directly), not process startup.
 
 ## Evidence
 
@@ -43,12 +51,17 @@ touch documented by the immediately preceding shipment
   built on `main` @ `75cfe3b1`).
 - `go test ./...` — all packages green, including `internal/pathsafe` and
   `internal/config`, which directly exercise the changed
-  `checkSymlinkEscape` / `addLongPathPrefix` code paths.
+  `checkSymlinkEscape` / `addLongPathPrefix` code paths. **This is the
+  primary evidence for the changed code**, since neither `cmd/intercom` nor
+  `cmd/intercom-ctl` currently invokes `config.Load`/`Validate` at process
+  startup (see correction above).
 - `go test ./internal/pathsafe/... -race` — clean (re-verified pre-merge on
   the feature branch; the change set introduces no new goroutines or shared
   mutable state, so this was not re-run again post-merge as no code changed
   between the final race-clean run and the merge commit).
-- CLI smoke: `go run ./cmd/intercom --help` and
+- CLI smoke (basic process-startup sanity check only — does **not**
+  exercise the changed `internal/pathsafe` code, since it never reaches
+  `config.Load`/`Validate`): `go run ./cmd/intercom --help` and
   `go run ./cmd/intercom-ctl --help` both exit 0 with usage text printed, no
   panic, on the post-merge closure branch.
 - Windows-tagged tests (`symlink_windows_test.go`,
@@ -62,7 +75,11 @@ Not applicable — this shipment's diff does not reach any of those surfaces.
 ## Verdict
 
 **READY.** The change is confined to `internal/pathsafe`'s error-wrapping
-and long-path-threshold internals, reached only indirectly through
-`internal/config` validation at process startup. Full green build/vet/test
-evidence plus CLI smoke checks are sufficient for this narrow, indirect
-touch. No conditions.
+and long-path-threshold internals. `internal/pathsafe` has no runtime
+entrypoint of its own and, as of this shipment, no `cmd/` entrypoint
+actually calls `config.Load`/`Validate` at process startup (verified by
+repo-wide search — see correction above), so the changed code is not
+reached at runtime today. Full green build/vet/test evidence — the Go test
+suite directly exercising both changed functions — is the substantive
+evidence. CLI smoke checks (`--help`) confirm basic process-startup health
+only and are not evidence for the changed paths. No conditions.
