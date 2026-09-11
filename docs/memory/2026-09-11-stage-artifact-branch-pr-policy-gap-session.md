@@ -214,3 +214,106 @@ stand, in the order above.
 
 Push, PR creation, and merge between checks 1 and 2 are performed by the **Orchestrator**
 (pipeline invocation) or the **operator** (direct Stage invocation) — never by Stage.
+
+## 10. Review remediation — PR #54, cycle 2
+
+Copilot's current-HEAD review of `a6cf863` opened two unresolved threads. Both are **P-021 C1
+same-contract blockers** — they complete the authorized planning contract rather than expanding it
+— so both were **fixed, not deferred**. No source, template, or CI file was touched; no shipment
+was claimed; exactly one shipment (`017-S`, 9 items) still exists.
+
+### 10.1 Thread `PRRT_kwDOTPuhps6hl8My` — the substitute harness was unexecutable
+
+**Finding**: plan §10.1 (rev 3) declared a P-002/P-004 deviation and asked Ship to apply
+`harness-ready` from a prose label over a bash `--self-test` suite. Ship cannot honour that.
+`_ship.agent.md` Step 2 partitions the queue on the `harness-ready` label, invokes
+`harness-architect` for every task lacking it, and halts unless *every* queued task carries it;
+`harness-architect` emits only Go `_test.go` harnesses and applies the label only after
+`go vet ./...` exits 0 and `go test ./...` is red. A Stage-applied label forges P-004's
+postcondition; withholding it drives `harness-architect` to invent Go scaffolding for markdown and
+bash tasks.
+
+**Investigation performed before choosing**: `_ship.agent.md` Step 2 (L313–330) and Step 3 queue
+derivation; `harness-architect/SKILL.md` Steps 4–6 and Guardrails; `build-feature/SKILL.md`
+(`harness_cmd` is generic, so a non-`go test` command is already supported downstream);
+`workflow-policies.md` P-002 (L36–52) and P-004 (L78–92); and the shell/script-only precedent —
+shipment `015-S` shipped 13 bash/Python gate-script tasks with **no** `harness-ready` label on any
+of them and no recorded P-002/P-004 disposition, i.e. an undocumented de facto bypass rather than
+a contract Stage may cite.
+
+**Resolution — restructure the release unit onto the *existing* harness path (no policy change)**:
+
+- New plan **§5.0** defines the **H0 harness contract**: `harness-architect` produces
+  `tests/integration/directpush_gate_test.go` (eight test functions, one per task) plus
+  `scripts/check-direct-push-language.sh` as a **not-implemented structural stub** — the shell
+  analogue of `panic("not implemented: <reason>")`. `go vet ./...` exits 0, `go test ./...` is red,
+  label applied by the skill in the normal way.
+- **Not invented scaffolding**: `tests/integration/build_script_test.go`, `start_script_test.go`,
+  and `output_path_guard_test.go` are existing tests here whose whole subject is a non-Go script,
+  and `internal/apperr/taxonomy_drift_test.go` is an existing Go drift guard over a non-runtime
+  invariant. Go-test-over-non-Go-artifact is this repository's established pattern.
+- Each task records its **harness function and `harness_cmd`**, giving `build-feature` a one-task
+  boundary with exactly one observable red→green transition. B1/B2/B3 are **per-surface scoped**;
+  a whole-corpus assertion would leave the first two red and trip the 5-attempt circuit breaker.
+- **§5.5 (A2) retargeted to driver-only.** A task whose content is "create the harness" is
+  structurally unreachable in Ship's flow, because Step 2 runs once up front for the whole queue.
+  Retitled *Implement fixture-suite driver over stubbed detector*.
+- **Fail-never-skip** on missing `bash` (§5.0), because a `t.Skip` would make the red phase
+  unobservable and silently satisfy P-004 (P-012).
+- §10.1 rewritten: **no deviation is declared**. §10 Constitution Check rows I and II updated;
+  the stale "7 tasks" count corrected to 8.
+
+**Explicitly rejected — amending the governing workflow.** A first-class non-Go harness route
+needs edits to P-002/P-004, `_ship.agent.md` Step 2, and `harness-architect`. The latter two are
+autoharness-generated from **gitignored** `.tmpl` sources (D2), so the change would be reverted by
+the next render — failure mode R4/R5 — and amending P-002/P-004 is a **workspace-wide weakening of
+test-first** binding every future shipment, outside both this release unit's branch-policy contract
+and the governing deliberation. Recorded in plan §10.1 and added to §11 **Out of scope**.
+
+### 10.2 Thread `PRRT_kwDOTPuhps6hl8Nd` — C2 contract contradiction
+
+**Finding**: `018.011-T`'s AC mandated a **dirty-tree** reintroduction proof while plan §7.2 C2.2
+mandated a **fixture-backed** one, and the two used different C2 numbering — so the PR's
+"all 8 task contracts match" claim was false.
+
+**Resolution**: plan §7.2 rewritten as the single C2 verification contract, renumbered
+**AC-C2.1…AC-C2.7**, with the fixture-backed proof made explicit (both violation shapes are locked
+by committed fixtures: `directpush-reject-attempt-first.md` for the push shape,
+`directpush-reject-commit-on-default.md` for the commit-authorization shape), an explicit
+**no-dirty-tree-edit** rule, and a `git status --porcelain` empty check before and after. The
+dirty-tree form is **rejected inside the criterion text** so it cannot return by paraphrase.
+`018.011-T` now carries that block **byte-identical**; its plain-text rendering is explicitly
+marked non-authoritative. AC-A2.4's non-vacuity proof was aligned to the same rule (temporary
+fixture copy under `t.TempDir()`).
+
+### 10.3 Third instance found by verification sweep, not by review
+
+An AC-ID parity sweep across all eight tasks found the same defect class again: plan §6.1's B1
+criteria still carried the three-criterion rev-2 form while `018.007-T` carried the four-criterion
+rev-3 form covering the preamble surface, and §6.3 already referenced a then-nonexistent
+**AC-B1.4**. §6.1 corrected to the task's form.
+
+### 10.4 Validation (planning-artifact scope only — no Go build/test, per the Stage role boundary)
+
+- `backlogit sync` → `INDEX_SYNC_OK`, 220 artifacts (start and end)
+- `backlogit doctor` → `No issues found.` (exit 0)
+- `markdownlint` on the plan and on `.backlogit/queue/*.md` → exit 0
+- **Harness eligibility**: 0 of 8 tasks carry `harness-ready` (Stage forges no P-004 postcondition);
+  `018-F.custom_fields.harness_status` remains `pending`
+- **Harness-map bijection**: 8 plan functions ↔ 8 task functions, no orphan on either side
+- **AC-ID parity**: 38 plan IDs ↔ 38 task IDs, exact bijection both directions
+- **C2 verbatim check**: all 7 criteria byte-identical between plan §7.2 and `018.011-T`
+- **Dependency graph**: `018.004 → 018.005 → 018.006 → {018.007, 018.008, 018.009} → 018.010 →
+  018.011`, matching plan §4 and the per-task harness transitions
+- **Scope**: exactly one shipment (`017-S`), 9 items, membership unchanged
+- Stale-text sweep: no `Declared deviation`, `Substitute harness`, `label the harness tasks`,
+  `No Go surface is touched`, or dirty-tree mutation language survives anywhere
+
+### 10.5 Handoff delta for Ship
+
+Unchanged: claim `017-S`, execute `018.004-T` first. **New**: Ship's Step 2 now has a real,
+specified harness to build (plan §5.0) — produce `tests/integration/directpush_gate_test.go` and
+the not-implemented stub script, confirm `go vet ./...` = 0 and `go test ./...` red, record
+`Compilation: PASS` / `Red Phase: CONFIRMED`, and only then apply `harness-ready` and flip
+`018-F.harness_status`. **Do not** amend P-002, P-004, `_ship.agent.md` Step 2, or the
+`harness-architect` skill — explicitly out of scope.
