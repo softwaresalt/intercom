@@ -49,12 +49,38 @@ const longPathThreshold = syscall.MAX_PATH
 //     path remains subject to the pre-existing MAX_PATH limitation, tracked
 //     in the package risk register.
 //
+// D-4 (017.002-T): the `\\.\` guard IS reachable -- filepath.IsAbs reports
+// true for every measured `\\.\` form (`\\.\C:\foo`, `\\.\PhysicalDrive0`,
+// `\\.\UNC\srv\sh\x`, and a `\\.\C:`-rooted path past longPathThreshold), so
+// the preceding `!filepath.IsAbs(path)` guard never shadows it. It is,
+// however, currently BEHAVIORALLY REDUNDANT: the immediately-following bare
+// `\\`-prefix guard returns the identical value for any `\\.\` input, so
+// deleting this branch today would be a no-op. It is kept anyway as
+// self-documenting, order-independent defense-in-depth against a future
+// change to the generic `\\` guard -- see
+// TestAddLongPathPrefixDeviceNamespaceBranchReachability
+// (reparse_windows_test.go) for the characterization lock and the measured
+// reachability evidence. Do NOT delete this branch, and do NOT replace it
+// with a panic/unreachability assertion (that option was considered and
+// rejected: the "unreachable" premise it would encode is false).
+//
 // Applying `\\?\` disables Win32 path normalization, so this must only run
 // on an already Abs/Clean'd path -- true at canonicalizeReparse's callers
 // (checkSymlinkEscape in pathsafe.go, and NewRoot as of 016.007-T), both of
 // which pass filepath.Abs'd input.
+//
+// 017.003-T: the threshold comparison uses utf16Len (UTF-16 code-unit
+// count), not len(path) (UTF-8 byte count), because that is what Windows
+// itself measures against MAX_PATH. A UTF-8 byte count is a conservative
+// proxy -- it is always >= the true UTF-16 code-unit count (1-byte ASCII ->
+// 1 unit; 2/3-byte BMP characters -> 1 unit; 4-byte characters -> a 2-unit
+// surrogate pair) -- so the pre-017.003-T proxy could only ever produce a
+// false positive (prefixing a path that did not need it), never a false
+// negative. This is a precision improvement, not a correctness or security
+// fix (plan D-5): framing it as a vulnerability fix is an explicit
+// anti-goal.
 func addLongPathPrefix(path string) string {
-	if len(path) < longPathThreshold {
+	if utf16Len(path) < longPathThreshold {
 		return path
 	}
 	if !filepath.IsAbs(path) {
@@ -70,6 +96,30 @@ func addLongPathPrefix(path string) string {
 		return path
 	}
 	return uncPrefix + path
+}
+
+// utf16Len returns the number of UTF-16 code units path would occupy when
+// encoded for a Win32 call -- the same unit Windows measures MAX_PATH in --
+// without allocating the intermediate []rune / []uint16 slices that
+// len(utf16.Encode([]rune(path))) would (017.003-T, plan O2-b). Every
+// codepoint above U+FFFF requires a 2-unit UTF-16 surrogate pair; every
+// other valid codepoint requires exactly 1 unit. A plain rune count
+// (rejected as plan option O2-a) would UNDER-count any character above
+// U+FFFF and so could introduce a false negative the byte-length proxy
+// this replaces never had -- see
+// TestUTF16LenMatchesStdlibEncoding (reparse_windows_test.go), which pins
+// this function's agreement with the stdlib utf16.Encode reference
+// computation.
+func utf16Len(path string) int {
+	n := 0
+	for _, r := range path {
+		if r > 0xFFFF {
+			n += 2
+		} else {
+			n++
+		}
+	}
+	return n
 }
 
 // canonicalizeReparse resolves path to its true filesystem target using

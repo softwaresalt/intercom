@@ -317,7 +317,14 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 			// Any non-ENOENT probe error (ELOOP, EACCES, a malformed
 			// reparse point) means the entry exists but cannot be
 			// verified (014.006-T); the OS cause is wrapped for
-			// errors.Is/errors.As inspection.
+			// errors.Is/errors.As inspection. wrapPathError is
+			// deliberately NOT used here (asymmetric with the
+			// canonicalizeReparse error branch below, 017.001-T): this
+			// error comes from os.Lstat, which already returns
+			// *fs.PathError natively on every platform, so wrapping it
+			// would be a no-op -- unlike canonicalizeReparse's Windows
+			// path, which returns a raw syscall.Errno that still needs
+			// re-forming.
 			return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkUnverifiableMsg)
 		}
 
@@ -363,8 +370,15 @@ func checkSymlinkEscape(root Root, resolved string) (string, error) {
 		// ELOOP, EACCES, or a malformed reparse point. This is a correct
 		// rejection with an accurate explanation: containment is
 		// unverifiable, not a proven escape (014.006-T, covers
-		// 2362BBB5(b)). The OS cause is wrapped for errors.Is/errors.As.
-		return "", apperr.Wrapf(apperr.KindPathViolation, err, symlinkUnverifiableMsg)
+		// 2362BBB5(b)). wrapPathError (root.go, no build tag -- callable
+		// from this platform-agnostic file) re-forms the error as
+		// *fs.PathError before it reaches apperr.Wrapf, so
+		// errors.As(err, &*fs.PathError) matches here exactly as it
+		// already does for NewRoot's own failure branch (root.go C2/
+		// AC3, 016.007-T); a no-op on POSIX, where canonicalizeReparse
+		// already returns *fs.PathError via filepath.EvalSymlinks
+		// (017.001-T, error-surface parity).
+		return "", apperr.Wrapf(apperr.KindPathViolation, wrapPathError("open", ancestor, err), symlinkUnverifiableMsg)
 	}
 	// B2/AC3 (015-S plan): stripUNCPrefix here is retained DELIBERATELY as
 	// belt-and-suspenders even though canonicalizeReparse (016.003-T/U6)

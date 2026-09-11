@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 // TestAddLongPathPrefixVerdicts pins the U5/AC2 prefixing predicate
@@ -78,6 +79,163 @@ func TestAddLongPathPrefixVerdicts(t *testing.T) {
 				t.Fatalf("addLongPathPrefix(len=%d) = %q, want %q", len(tc.in), got, tc.want)
 			}
 		})
+	}
+}
+
+// TestAddLongPathPrefixDeviceNamespaceBranchReachability is the 017.002-T
+// characterization lock. It CORRECTS a stale premise recorded in a prior
+// stash entry -- that addLongPathPrefix's `\\.\` device-namespace exclusion
+// branch is "currently unreachable given filepath.IsAbs's own device-path
+// handling". That premise is FALSE: filepath.IsAbs reports true for every
+// `\\.\` form below, so the preceding `!filepath.IsAbs(path)` guard never
+// shadows the `\\.\` branch.
+//
+// This is deliberately a BLACK-BOX, order-independent characterization: it
+// locks the two OBSERVABLE facts (filepath.IsAbs's verdict, and
+// addLongPathPrefix's returned value) rather than internal control flow.
+// IMPORTANT SCOPE NOTE: because the immediately-following bare `\\`-prefix
+// guard returns the identical "unchanged" value for every `\\.\` input (see
+// D-4, reparse_windows.go), this black-box test CANNOT by itself distinguish
+// which specific guard line handles a given case, and therefore does NOT
+// enforce retention of the dedicated `\\.\` branch -- deleting that branch
+// today would still pass every case here. Its scope is limited to locking
+// the corrected, observable premise (device-namespace paths report
+// filepath.IsAbs == true and are never extended-prefixed); D-4's retention
+// of the currently-redundant branch remains a documented design decision,
+// not a mutation-tested invariant.
+//
+// Per Constitution Principle II's documented deviation (017.002-T,
+// characterization-first posture): this test makes NO production behavior
+// change (addLongPathPrefix's `\\.\` guard already existed and already
+// passed these cases), so there is no failing-before/passing-after RED
+// phase to drive -- it is a Feathers-style characterization test locking in
+// already-verified-correct behavior, not a bug fix.
+func TestAddLongPathPrefixDeviceNamespaceBranchReachability(t *testing.T) {
+	// Every case below is deliberately extended past longPathThreshold: the
+	// threshold check inside addLongPathPrefix runs FIRST (before
+	// filepath.IsAbs or either namespace guard), so a short `\\.\` input
+	// would return at that threshold short-circuit without ever reaching
+	// the guard chain this test intends to characterize. Crossing the
+	// threshold on every case ensures each one actually exercises
+	// filepath.IsAbs and the `\\.\` guard, not just the trivial
+	// below-threshold early return.
+	longSuffix := strings.Repeat("a", 300)
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{name: "device path to drive-relative file", in: `\\.\C:\foo\` + longSuffix},
+		{name: "device path to physical drive", in: `\\.\PhysicalDrive0\` + longSuffix},
+		{name: "device path to UNC-style device target", in: `\\.\UNC\srv\sh\x\` + longSuffix},
+		{name: "device path at/beyond MAX_PATH threshold", in: `\\.\C:` + longSuffix},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Lock the corrected premise: filepath.IsAbs does NOT exclude
+			// `\\.\` device-namespace paths, so the guard chain's
+			// `!filepath.IsAbs(path)` early return never shadows the
+			// `\\.\` branch for these inputs.
+			if !filepath.IsAbs(tc.in) {
+				t.Fatalf("filepath.IsAbs(%q) = false, want true -- this is the corrected premise: device-namespace paths ARE reported absolute", tc.in)
+			}
+			// Lock the observable verdict: a `\\.\` input is never
+			// extended-prefixed, regardless of length.
+			got := addLongPathPrefix(tc.in)
+			if got != tc.in {
+				t.Fatalf(`addLongPathPrefix(%q) = %q, want the input returned unchanged (device-namespace paths are never \\?\-prefixed)`, tc.in, got)
+			}
+		})
+	}
+}
+
+// TestAddLongPathPrefixIsUTF16CodeUnitAware is the 017.003-T RED/GREEN
+// lock. Windows measures MAX_PATH in UTF-16 code units, not UTF-8 bytes;
+// len(path) (a UTF-8 byte count) is a conservative proxy that can only ever
+// fire AT OR BEFORE the true limit (1 UTF-8 byte -> at most 1 UTF-16 unit;
+// 2/3 bytes -> 1 unit; 4 bytes -> a 2-unit surrogate pair), so it can
+// produce a FALSE POSITIVE (prefixing a path that did not need it) but
+// never a false negative. This is a PRECISION improvement, not a
+// correctness or security fix -- framing it as a vulnerability fix is an
+// explicit anti-goal (plan D-5).
+//
+// RED against pre-017.003-T addLongPathPrefix: the multi-byte cases below
+// have a UTF-8 byte length at/beyond longPathThreshold (260) but a true
+// UTF-16 code-unit count well below it, so the byte-length proxy currently
+// (wrongly, but safely) prefixes them.
+func TestAddLongPathPrefixIsUTF16CodeUnitAware(t *testing.T) {
+	base := `C:\`
+	eAcute := strings.Repeat("\u00e9", 200)    // 200 runes: 400 UTF-8 bytes, 200 UTF-16 units
+	emoji := strings.Repeat("\U0001F600", 100) // 100 runes: 400 UTF-8 bytes, 200 UTF-16 units (surrogate pairs)
+
+	cases := []struct {
+		name       string
+		in         string
+		wantPrefix bool
+	}{
+		{
+			name:       "e-acute run: 403 UTF-8 bytes but 203 UTF-16 units, below threshold -- must NOT be prefixed",
+			in:         base + eAcute,
+			wantPrefix: false,
+		},
+		{
+			name:       "emoji run: 403 UTF-8 bytes but 203 UTF-16 units (100 surrogate pairs), below threshold -- must NOT be prefixed",
+			in:         base + emoji,
+			wantPrefix: false,
+		},
+		{
+			name:       "e-acute run long enough to cross the UTF-16 threshold too -- must still be prefixed",
+			in:         base + strings.Repeat("\u00e9", 260),
+			wantPrefix: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := addLongPathPrefix(tc.in)
+			gotPrefixed := got != tc.in
+			if gotPrefixed != tc.wantPrefix {
+				t.Fatalf("addLongPathPrefix(%q) prefixed=%v, want prefixed=%v (utf16 units=%d, utf8 bytes=%d, threshold=%d)",
+					tc.in, gotPrefixed, tc.wantPrefix, utf16Len(tc.in), len(tc.in), longPathThreshold)
+			}
+			if tc.wantPrefix && !strings.HasPrefix(got, uncPrefix) {
+				t.Fatalf("addLongPathPrefix(%q) = %q, want it to start with the extended-length prefix %q", tc.in, got, uncPrefix)
+			}
+		})
+	}
+}
+
+// TestUTF16LenMatchesStdlibEncoding verifies utf16Len's counting method
+// (rune-by-rune surrogate-pair accumulation, avoiding an intermediate
+// []rune / []uint16 allocation) agrees with the stdlib
+// len(utf16.Encode([]rune(s))) reference computation the plan endorsed
+// (O2-b), across ASCII, 2-3 byte BMP characters, and 4-byte
+// (surrogate-pair) characters. A plain rune count (O2-a, REJECTED in the
+// plan) would UNDER-count the emoji case -- 1 rune is 2 UTF-16 units for
+// any codepoint above U+FFFF -- so this test would catch a regression to
+// that rejected approach.
+func TestUTF16LenMatchesStdlibEncoding(t *testing.T) {
+	cases := []string{
+		"",
+		`C:\short\path`,
+		strings.Repeat("a", 300),
+		strings.Repeat("\u00e9", 200),
+		strings.Repeat("\U0001F600", 100),
+		`C:\` + strings.Repeat("\u00e9", 50) + strings.Repeat("\U0001F600", 25),
+		// Invalid UTF-8 (a lone continuation byte, and a truncated
+		// multi-byte sequence): both range-over-string and []rune(s)
+		// decode each invalid byte to exactly one U+FFFD replacement
+		// rune, so utf16Len's rune-by-rune accumulation and the stdlib
+		// utf16.Encode([]rune(s)) reference necessarily agree here too
+		// (review follow-up, code-review pass).
+		"C:\\" + string([]byte{0xff, 0xfe}) + "\\path",
+	}
+	for _, s := range cases {
+		want := len(utf16.Encode([]rune(s)))
+		got := utf16Len(s)
+		if got != want {
+			t.Fatalf("utf16Len(%q) = %d, want %d (stdlib utf16.Encode reference)", s, got, want)
+		}
 	}
 }
 
