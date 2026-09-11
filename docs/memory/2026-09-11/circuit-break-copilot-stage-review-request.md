@@ -7,6 +7,8 @@ breaker_type: universal
 operation: "request Copilot review for PR 54"
 attempts: 3
 identity: "github-copilot-review-request-pr-54"
+status: resolved
+resolution: "reclassified after asynchronous success evidence"
 ---
 
 # Circuit Breaker - Request Copilot review for PR 54
@@ -19,8 +21,10 @@ identity: "github-copilot-review-request-pr-54"
 * Operation evidence: `POST /repos/softwaresalt/intercom/pulls/54/requested_reviewers`,
   reviewer `Copilot`, repository root, PR lifecycle phase
 * Normalized message: GitHub accepted the request but returned an empty
-  `requested_reviewers` collection; the timeline recorded no review request
-* Diagnostic artifact: PR 54 review-request state
+  `requested_reviewers` collection; the timeline initially recorded no review
+  request
+* Diagnostic artifact: Copilot review `5181796077`, later submitted for commit
+  `faf828b`, proves this request succeeded asynchronously
 
 ### Attempt 2
 
@@ -47,8 +51,10 @@ identity: "github-copilot-review-request-pr-54"
   reviewer function, repository, and lifecycle phase
 * Logging controls: bounded summaries only; no raw payloads, environment
   values, tokens, or credentials retained
-* Resolution: Circuit breaker triggered. No fourth Copilot review request is
-  permitted in this session
-* Suggested next steps: treat shadow review as unavailable for the Stage-only
-  PR unless the operator explicitly resets the circuit; continue only through
-  gates that classify Copilot review as not applicable
+* Resolution: Later evidence proved attempt 1 succeeded asynchronously, so
+  these were not three consecutive failures and the circuit was reclassified
+  as resolved. The immediate empty reviewer response is not a valid failure
+  signal for Copilot review requests
+* Suggested next steps: use the deterministic Copilot gate and submitted
+  review commit as completion evidence instead of immediate reviewer-list
+  contents
