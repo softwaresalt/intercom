@@ -219,7 +219,7 @@
 //     LongPathsEnabled=0) that a raw syscall.CreateFile call WITHOUT any
 //     `\\?\` prefix does not reproduce the classic MAX_PATH rejection
 //     even for absolute paths well over 260 characters -- the failure
-//     addLongPathPrefix exists to prevent could not be forced to
+//     that addLongPathPrefix exists to prevent could not be forced to
 //     reproduce as a live RED test on this environment, an outcome the
 //     015-S plan explicitly anticipated (§9 H3) and prescribed landing
 //     the mitigation together with C2 plus a covering test rather than
