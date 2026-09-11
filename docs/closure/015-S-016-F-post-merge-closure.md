@@ -71,7 +71,7 @@ binding scope contract — it remains active, deferred, evidence-backed):
 ## CI status and unresolved review items
 
 - All CI checks green at merge HEAD
-  (`323e8520cbd5cf15c6b3954018c0d23ef1ff57a3`): all 12 checks pass
+  (`323e8520cbd5cf15c6b3954018c0d23ef1ff57a3`): all 13 checks pass
   (cross-compile ×4, lint, security, test, test (windows, advisory),
   pipeline-topology, ci gate, gitignore regression, detect-changes,
   load-cross-compile-targets).
