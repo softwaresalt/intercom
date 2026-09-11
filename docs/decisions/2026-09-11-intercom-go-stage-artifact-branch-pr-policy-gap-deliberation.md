@@ -115,7 +115,7 @@ Delete 3e, reword the P-010 bullet. Nothing else.
 ### Option 2 — Prose correction + deterministic regression gate (CHOSEN)
 
 Delete 3e; make the P-010 Stage bullet symmetric with the existing Ship prohibition; add
-`scripts/check-direct-push-policy.sh` asserting the invariant over the **installed** contract
+`scripts/check-direct-push-language.sh` asserting the invariant over the **installed** contract
 surface, wired into the existing `lint` job in `.github/workflows/ci.yml`; record the divergence
 in the ci.yml LOCAL DIVERGENCE ledger.
 
@@ -124,7 +124,8 @@ in the ci.yml LOCAL DIVERGENCE ledger.
   `check-gitignore-append-only.sh`, `check-unignore-regression.sh`, `check-depguard-fixtures.sh`).
   Regeneration that restores 3e turns CI red — which is the *only* enforceable coupling available
   given D2. Reuses house conventions rather than inventing a shape, satisfying C1.
-- **Con**: adds one script + fixtures + two CI steps. Accepted as the irreducible cost of C2.
+- **Con**: adds one script + fixtures + **one blocking CI step**. Accepted as the irreducible cost
+  of C2.
 - **Verdict**: **Chosen.**
 
 ### Option 3 — Option 2 + a new dedicated policy ID (e.g. P-022 "Stage Branch-Before-Persist")
@@ -197,7 +198,7 @@ untracked file would be: an untracked edit is invisible to review and erased on 
 the gate detects the reintroduction regardless of which path reintroduces it. The upstream
 template defect is recorded for an upstream report; fixing upstream is out of scope.
 
-### D3 — Detector shape: structural, prohibition-aware, self-exclusion asserted
+### D3 — Detector shape: structural, prohibition-aware, self-exclusion by pathspec
 
 The single highest-risk element. Prior art —
 `docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md` — records a
@@ -214,14 +215,17 @@ Mitigations, all mandatory and all asserted in `--self-test`:
 2. **Prohibition-aware**: a candidate line carrying a negation/prohibition marker
    (`never`, `must not`, `MUST NOT`, `do not`, `forbidden`, `prohibited`) is **not** a finding.
    This is what lets P-010's new prohibition sentence live inside the scanned corpus.
-3. **Path self-exclusion**: the checker itself and `scripts/testdata/**` are excluded from the
-   corpus, and the exclusion is asserted as a selection-logic check, per
-   `check-retired-architecture.sh` check 2.
-4. **Corpus scoped to the contract surface** via `git ls-files` pathspec:
+3. **Corpus scoped to the contract surface** via `git ls-files` pathspec:
    `.github/agents/**`, `.github/policies/**`, `.github/skills/**`, `.github/instructions/**`.
    `docs/**` is deliberately **outside** the corpus, so decision/plan/closure/memory records
-   (including this file, which quotes 3e) never trip the gate.
-5. **Non-vacuity**: `--self-test` fails if the fixture corpus or the selected file set is empty.
+   (including this file, which quotes 3e) never trip the gate. This pathspec is the
+   **authoritative and only** self-exclusion mechanism: because `scripts/**` is not a member of
+   it, the checker itself and `scripts/testdata/**` are excluded **by construction**. Rev 2's
+   separate path-self-exclusion assertion is therefore **withdrawn as vacuous** — asserting that
+   a never-selected path is absent from the selection can never fail, which is precisely the
+   rev-1 vacuity failure mode (§10.1). Non-vacuity of the *selection* is covered by item 4.
+4. **Non-vacuity**: `--self-test` fails if the fixture corpus or the selected file set is empty,
+   and reports the resolved corpus file count.
 
 ### D4 — Task ordering keeps `main` green while remaining test-first
 
@@ -235,7 +239,7 @@ Resolution — ordering alone, with **no advisory-window toggle needed**:
 |---|---|---|
 | 1 | Gate script + fixtures + `--self-test`, **not yet wired to CI**. Real-tree scan **fails** (3e still present) — the intentional red. | green (gate not in CI) |
 | 2 | Delete 3e; make P-010 symmetric + Amendment Log. Gate now passes. | green |
-| 3 | Wire both CI steps + LOCAL DIVERGENCE ledger; verify installed-surface coupling. | green |
+| 3 | Wire the single blocking CI step + LOCAL DIVERGENCE ledger; verify installed-surface coupling. | green |
 
 Because the gate enters CI only *after* the violation is removed, `main` is never wedged and no
 fail-open toggle is introduced. This is strictly safer than the bounded-advisory-window pattern
@@ -272,9 +276,12 @@ artifacts may land*, never *who does what*.
 
 ## 5. Scope boundary
 
-**In scope**: `_orchestrator.agent.md` Step 1.5 3e; `workflow-policies.md` P-010 Stage bullet +
-Amendment Log; `scripts/check-direct-push-policy.sh` + `scripts/testdata/directpush/`;
-`.github/workflows/ci.yml` two steps + ledger.
+**In scope** (four authorization surfaces across three installed files, plus the gate):
+`_orchestrator.agent.md` Step 1.5 **sub-step 3e** *and* the Step 1.5 **preamble** (§9.1);
+`_stage.agent.md` Role Boundary **Git row** — the operative surface role-enforcement actually
+reads (§8.1); `workflow-policies.md` P-010 Stage bullet + Amendment Log;
+`scripts/check-direct-push-language.sh` + `scripts/testdata/directpush/`;
+`.github/workflows/ci.yml` **one blocking `lint` step** + ledger.
 
 **Explicitly out of scope**: reverting/rewriting `fdff9e4` (C5); editing untracked `.copilot/` or
 `.autoharness/staging/` templates (D2); GitHub branch-protection configuration (Option 4); a new

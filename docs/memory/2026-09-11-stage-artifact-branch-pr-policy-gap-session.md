@@ -1,3 +1,13 @@
+---
+title: "Stage session: Stage artifact branch/PR policy gap correction (017-S)"
+date: 2026-09-11
+agent: stage
+shipment: 017-S
+feature: 018-F
+branch: chore/stage-pipeline-policy-gap
+status: complete
+---
+
 # Stage session memory — Stage artifact branch/PR policy gap correction
 
 **Date**: 2026-09-11
@@ -127,14 +137,80 @@ Consequences, both handled:
 provisional sub-epic containers. The authoritative membership is the explicit `items` array
 (9 IDs). This is documented in `018-F`'s goals section so Ship is not misled.
 
-## 8. Next actor
+## 8. Review remediation — PR #54, cycle 1
+
+Copilot reviewed `faf828b` and opened five threads; the review summary surfaced further
+same-contract findings. All were remediated under **P-021 C1** (they complete the exact authorized
+planning contract rather than expanding it) at PR head `c16f673`. No new shipment, no new task,
+no source/template/CI file touched.
+
+| Thread | Fix |
+|---|---|
+| `PRRT_kwDOTPuhps6hk-dz` | AC-A1.2 relocated from `018.004-T` (data-only) to `018.005-T` as **AC-A2.4** (harness owner). A1 keeps a static prefix/verdict-agreement check. |
+| `PRRT_kwDOTPuhps6hk-ee` | Stale `check-direct-push-policy.sh` → `check-direct-push-language.sh` (deliberation L118, L276). |
+| `PRRT_kwDOTPuhps6hk-fA` | "two CI steps" → **one blocking `lint` step** (deliberation L127, L238, L277). |
+| `PRRT_kwDOTPuhps6hk-fa` | Repository-standard YAML frontmatter added to this file. |
+| `PRRT_kwDOTPuhps6hk-f5` | B3 Role Boundary **Allowed** cell now carries the branch create/check-out grant, matching B2's P-010 grant; `018.009-T` aligned and retitled. |
+
+**Suppressed-but-actionable findings, also fixed**: the eight
+`System.Collections.Hashtable[018.xxx-T]` machine-readable AC placeholders (a PowerShell
+interpolation defect) replaced with real criteria; `018.009-T`'s PR-row contradiction resolved by
+explicitly **exempting** the PR row in AC-B3.3; deliberation scope widened to the four surfaces and
+the now-vacuous separate testdata/self-exclusion assertion withdrawn in favour of the authoritative
+pathspec; plan "all three surfaces" → **four**; the chained `gofmt && go vet && go test && go build`
+recipe split into separate commands per terminal policy; the concrete no-shipment persistence route
+documented with per-step actors; and this file's incorrect claim that Step 1.5 must use the
+staging-branch form **instead of** `origin/main` withdrawn (see §9 — both checks stand).
+
+**Dependency integrity after the AC move**: unchanged. The `018.004-T → 018.005-T` edge already
+guaranteed fixtures land before the harness executes them, so relocating an execution criterion
+onto the downstream task required no graph edit. `backlogit doctor` reports no issues.
+
+**Tool hazard recorded**: `backlogit update --description` **destroys** template-backed body
+sections (`implementation-notes`, `acceptance-criteria`) rather than preserving them. Only
+`--section name=value` is body-preserving. The three tasks needing description edits had both
+sections re-applied immediately; all eight tasks were then verified to carry intact, populated
+blocks. Use `--section` for body content.
+
+**Validation run** (planning-artifact scope only; no Go build/test, per the Stage role boundary):
+
+- `backlogit doctor` → `No issues found.` (exit 0)
+- `markdownlint` on the three changed docs → exit 0
+- `backlogit docs lint` → 172 violations before **and** after, byte-identical findings — a
+  pre-existing corpus-wide `doc_type`/`source` gap unrelated to this change, deliberately **not**
+  fixed here to avoid scope creep. Flagged as a follow-up candidate.
+- `backlogit list --type shipment` → exactly one shipment, `017-S`, 9 items unchanged.
+
+## 9. Next actor
 
 **Ship** — claim shipment `017-S` and execute `018.004-T` first (the failing regression harness).
 Do not start at `018.007-T`; the `blocks` edges enforce harness-before-correction.
 
-The Orchestrator's Step 1.5 manifest verification must use the **staging-branch** form, not the
-`origin/main` form — this work exists precisely to forbid the latter for Stage artifacts:
+Step 1.5's verification uses **two distinct checks**; the second is **not** replaced by the first.
 
-```sh
-git show chore/stage-pipeline-policy-gap:.backlogit/queue/017-S.md
-```
+1. **Pre-merge, local evidence only** — confirm the manifest is committed on the staging branch:
+
+   ```sh
+   git show chore/stage-pipeline-policy-gap:.backlogit/queue/017-S.md
+   ```
+
+   This proves the artifact was committed. It proves **nothing** about the default branch.
+
+2. **Post-merge, the authoritative gate — UNCHANGED and still required**:
+
+   ```sh
+   git show origin/main:.backlogit/queue/017-S.md
+   ```
+
+   Step 1.5 step 4 keeps this form byte-identical, and `STAGING_GATE_FAIL` still halts on it
+   (plan task B1, AC-B1.4).
+
+**Correction (review round 3)**: an earlier revision of this file claimed the manifest
+verification "must use the staging-branch form, **not** the `origin/main` form". That was wrong
+and is withdrawn. This work changes **where Stage may write** (a dedicated branch instead of the
+default branch); it does **not** relax **where the Orchestrator must verify**. The post-merge
+`origin/main` gate is the reason the branch route is safe, not a casualty of it. Both checks
+stand, in the order above.
+
+Push, PR creation, and merge between checks 1 and 2 are performed by the **Orchestrator**
+(pipeline invocation) or the **operator** (direct Stage invocation) — never by Stage.

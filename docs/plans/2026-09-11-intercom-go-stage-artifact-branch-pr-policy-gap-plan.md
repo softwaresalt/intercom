@@ -238,8 +238,10 @@ Each fixture carries a single leading H1 so **P-008 markdownlint** (`MD041`/`MD0
 **Acceptance criteria**
 
 - **AC-A1.1** 14 fixtures exist; manifest keys are sorted and in bijection with the directory.
-- **AC-A1.2** Bijection and prefix/manifest-agreement assertions each **fail** when deliberately
-  violated (non-vacuity proven, not asserted).
+- **AC-A1.2** Every manifest verdict agrees with its fixture's filename prefix (`reject-*` /
+  `accept-*`), and both classes are non-empty: 9 reject, 5 accept. **Static data check only** —
+  A1 authors fixture data and owns no executable logic, so the *executed* non-vacuity proof of
+  these assertions is **AC-A2.4 on task A2**, which owns the harness (rev 4 — review round 3).
 - **AC-A1.3** `markdownlint "scripts/testdata/directpush/**"` exits 0.
 
 ### 5.5 Task A2 — harness driver with stub detector (observed red)
@@ -252,6 +254,11 @@ harness, selection assertions; detector is a **stub** classifying everything `ac
 - **AC-A2.2** `--self-test` runs fixtures **before** the real-tree scan, so a broken checker
   reports "self-test failed", never a false violation.
 - **AC-A2.3** `git diff --exit-code -- .github/workflows/ci.yml` is clean (no CI change yet).
+- **AC-A2.4** Bijection and prefix/manifest-agreement assertions each **fail** when deliberately
+  violated — non-vacuity proven by **execution**, not asserted. Relocated here from A1 (rev 4 —
+  review round 3): A1 owns fixture data only and cannot execute an assertion, while this task owns
+  the harness that runs it. The existing A1 → A2 dependency edge already guarantees the fixtures
+  exist before this criterion is evaluated, so execution order is unaffected.
 
 ### 5.6 Task A3 — detector implementation
 
@@ -336,6 +343,30 @@ who creates the branch in the no-shipment case:
 > - Create and check out the dedicated Stage/admin artifact branch (`chore/stage-{shipment_id}`,
 >   or `chore/stage-{chore-slug}` when no shipment is formed, per P-011's existing slug convention)
 
+**Concrete no-shipment persistence route** (rev 4 — review round 3). Stating the actors end to end,
+because "never to the default branch" is only actionable if the alternative route is executable:
+
+| Step | Actor | Action |
+|---|---|---|
+| 1 | **Stage** | Create and check out `chore/stage-{chore-slug}` (grant above; mirrored into the `_stage.agent.md` Git row by B3, which is the cell role enforcement actually reads) |
+| 2 | **Stage** | Commit the backlog/planning artifacts to that branch |
+| 3 | **Orchestrator** (pipeline invocation) or **operator** (direct Stage invocation) | Push the branch, open the PR, merge it |
+| 4 | **Orchestrator** or **operator** | Post-merge verification |
+
+Stage's role ends at step 2. Steps 3–4 are **never** Stage actions — this is what keeps the new
+obligation satisfiable without weakening Stage's standing PR prohibition.
+
+**Verification evidence, pre- vs post-merge** — the two `git show` forms are **not**
+interchangeable and neither replaces the other:
+
+- **Pre-merge**, on the staging branch: `git show {branch}:{path}` is **local evidence only**. It
+  proves the artifact was committed; it proves nothing about the default branch.
+- **Post-merge**, the authoritative gate: `git show origin/main:{path}` **remains unchanged and
+  remains required**. Step 1.5 step 4 keeps this form byte-identical (task B1, AC-B1.4).
+
+Correcting *where Stage may write* does not relax *where the Orchestrator must verify*. The
+post-merge `origin/main` gate is the reason the branch route is safe, not a casualty of it.
+
 **Amendment Log**: append exactly one row, version **1.25.0** (the log stands at 1.24.0 — rev 1
 said only "bump minor"), Change cell "Corrected P-010", body ending "Corrects, and does not delete
 or edit, the 1.5.0 row above".
@@ -353,18 +384,35 @@ Rewrite the **Git** row (deliberation §8.1 — the operative surface):
 
 | Column | New text |
 |---|---|
-| Allowed | Commit backlog/planning artifacts to a **dedicated Stage/admin branch**; create/use an explicit, time-boxed spike/research worktree only for staging investigation |
+| Allowed | Commit backlog/planning artifacts to a **dedicated Stage/admin branch**; **create and check out that dedicated artifact branch** (`chore/stage-{shipment_id}`, or `chore/stage-{chore-slug}` when no shipment is formed); create/use an explicit, time-boxed spike/research worktree only for staging investigation |
 | Forbidden | **Commit or push directly to the default branch**; create or checkout feature/chore branches for code execution; create/use parallel implementation branches or worktrees |
 
-Add a parenthetical to the **PR** row recording that branch push/PR/merge is performed by the
-Orchestrator or operator on Stage's behalf — keeping the prohibition intact while removing the
-apparent deadlock.
+The **branch creation/check-out grant is load-bearing, not decorative** (rev 4 — review round 3).
+`role-enforcement.instructions.md` makes this table — not P-010 — the permission set consulted at
+mutation time (§2). B2 grants Stage `Create and check out the dedicated Stage/admin artifact
+branch`; if that grant appears only in P-010 and not in this cell, role enforcement **fails
+closed** on the very first action the corrected policy requires, and the no-shipment persistence
+route becomes unexecutable. The two surfaces must carry the grant in both places.
+
+Add a parenthetical to the **PR** row recording that branch **push**, PR creation, and merge are
+performed by the **Orchestrator** (pipeline invocation, Step 1.5) or the **operator** (direct Stage
+invocation) on Stage's behalf — keeping the prohibition intact while removing the apparent
+deadlock. The PR row is the **only** row other than Git that this task may touch, and it may gain
+**only** that actor note.
 
 **AC-B3.1** The Git row Allowed cell contains no default-branch allowance.
-**AC-B3.2** The table and P-010 **agree** on Stage's default-branch write permission.
-**AC-B3.3** The PR row's prohibition is unweakened.
-**AC-B3.4** `bash scripts/check-direct-push-language.sh` now exits **0** with **zero findings**
-over the real tree (deliberation D5 zero-findings acceptance, now covering all three surfaces).
+**AC-B3.2** The Git row Allowed cell grants creation and check-out of the dedicated artifact
+branch, so the table and P-010 **agree** — no grant in one that the other omits or forbids.
+**AC-B3.3** The Git row Forbidden cell is unchanged; every other Role Boundary row is unchanged
+**except** the PR row, which is explicitly exempted to carry the actor note. The note attributes
+an actor only — the PR row's prohibition is unweakened and no authority transfers to Stage.
+**AC-B3.4** The file agrees with the corrected P-010 text — no surviving contradiction between
+agent contract and policy, in either direction.
+
+These four criteria are carried verbatim by task `018.009-T`. The post-correction **zero-findings**
+gate run is deliberately **not** duplicated here: it is owned by **AC-C2.1** on `018.011-T`, which
+scans the tree once after *all four* surfaces are corrected. Asserting it at B3 — when only three
+of the four surfaces have landed — would be unsatisfiable.
 
 ---
 
@@ -401,14 +449,22 @@ No `uses:` is added, so `ci-security.instructions.md`'s 40-hex-SHA pinning MUST 
 vacuously; job `lint` already declares `permissions: contents: read` and
 `persist-credentials: false`, so the least-privilege MUSTs need no new work.
 
-**AC-C1.1** The step is present, blocking, and task-ID-suffixed.
-**AC-C1.2** `python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` passes.
+**AC-C1.1** The step is present in job `lint`, **blocking** (no `continue-on-error`, no toggle
+variable), and task-ID-suffixed.
+**AC-C1.2** `.github/workflows/ci.yml` remains valid YAML
+(`python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` passes) **and**
+`ci-gate` still transitively depends on job `lint`, so the new step is genuinely merge-blocking.
 **AC-C1.3** Ledger names the gate, uses the generalized membership rule, carries no magic count,
 and records both the no-toggle decision and the D2 residual.
 **AC-C1.4** CODEOWNERS coverage is asserted **structurally, not by count** (rev 3): every script
 invoked by a step in `.github/workflows/ci.yml` has an owner line in `.github/CODEOWNERS`. The
 header's fixture-data carve-out is generalized from `scripts/testdata/gitignore/**` to
 `scripts/testdata/**` so the new fixture tree is covered by the same stated rationale.
+**AC-C1.5** The script header states **verbatim** that this is an **anti-accident control, not an
+anti-adversary control** (CI runs it from the PR's own head), and discloses the accepted residual
+that a future autoharness render can remove the CI wiring step (deliberation D6). Added at rev 4 —
+review round 3 — to close a plan↔task drift: `018.010-T` already carried this criterion while the
+plan did not state it.
 
 ### 7.2 Task C2 — coupling verification
 
@@ -423,9 +479,11 @@ header's fixture-data carve-out is generalized from `scripts/testdata/gitignore/
   `.github/workflows/**` is never in the corpus.
 - **AC-C2.4** `markdownlint "**/*.md"` exits 0.
 - **AC-C2.5** Branch and PR merge-commit rules intact — P-009, P-011, P-016 textually unchanged.
-- **AC-C2.6** Constitution Quality Gates run **in declared order, none skipped**: `gofmt -l .`
-  empty, then `go vet ./...`, then `go test ./...`, then `go build ./...` — all exit 0. No Go
-  surface is touched, so these are regression checks.
+- **AC-C2.6** Constitution Quality Gates run **in declared order, none skipped, as separate
+  commands** (never chained with `&&`, which would short-circuit and mask which gate failed):
+  `gofmt -l .` empty, then `go vet ./...`, then `go test ./...`, then `go build ./...` — each
+  exits 0 and each result is recorded independently. No Go surface is touched, so these are
+  regression checks.
 
 ## 8. Verification commands
 
@@ -435,7 +493,13 @@ bash scripts/check-direct-push-language.sh               # verdict; expect 0 fin
 markdownlint "**/*.md"
 python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 actionlint .github/workflows/ci.yml   # LOCAL, operator-run — no CI counterpart exists in this repo
-gofmt -l . && go vet ./... && go test ./... && go build ./...   # constitution gate order
+gofmt -l .          # must print nothing
+go vet ./...
+go test ./...
+go build ./...
+# Constitution gate order: run as SEPARATE commands, in this order, none skipped.
+# Do NOT chain with && — a chain masks which gate failed and short-circuits the rest,
+# which is exactly what "in declared order, none skipped" forbids (AC-C2.6).
 ```
 
 `actionlint` is **not** installed or invoked by any workflow here; AC-C1.2 (`yaml.safe_load`) is
