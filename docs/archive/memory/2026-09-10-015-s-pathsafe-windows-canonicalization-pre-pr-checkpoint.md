@@ -1,3 +1,18 @@
+---
+title: "Ship pre-PR checkpoint — 015-S / 016-F pathsafe Windows canonicalization symmetry"
+description: "Ship dark-factory pre-PR checkpoint for shipment 015-S ahead of feature PR creation"
+date: 2026-09-10
+tags:
+  - "ship"
+  - "memory"
+  - "015-S"
+  - "016-F"
+  - "dark-factory"
+mode: DARK_MODE_ACTIVE
+shipment: 015-S
+feature: 016-F
+---
+
 # 015-S Pre-PR Checkpoint — Pathsafe Windows Canonicalization Symmetry
 
 **Date**: 2026-09-10
