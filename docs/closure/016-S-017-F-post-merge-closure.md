@@ -35,6 +35,19 @@ conditions: []
   `docs/memory/` files are all dated 2026-09-04–2026-09-08 (3–7 days old),
   below the 14-day compaction threshold, so they were out of scope for this
   bounded invocation.
+- **Post-merge repair addendum** (`chore/016-s-post-merge-memory-residual-repair`):
+  a Ship-created session-end checkpoint
+  (`docs/memory/2026-09-11-ship-016-s-session-end.md`) was left untracked
+  after this artifact's own delivery vehicle — closure PR #52 (distinct
+  from the `pr: 51` feature PR recorded in this document's frontmatter) —
+  merged, capturing PR #52's own lifecycle facts (merge commit, Copilot
+  rounds) that this artifact does not separately
+  restate (this artifact documents the feature PR #51 by established
+  convention). That checkpoint's unique facts were folded into the
+  compacted summary above (`compacted_from` updated), its inaccurate
+  "working tree clean" claim was corrected, and the verbose original was
+  archived to `docs/archive/memory/` — remaining `compaction_status: done`
+  and truthful.
 
 ## Summary of the change
 
