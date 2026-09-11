@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction"
 date: 2026-09-11
-revision: 4
+revision: 5
 status: reviewed
 agent: Stage
 governs: stash 638A410B
@@ -38,6 +38,16 @@ established `tests/integration/build_script_test.go` precedent of a Go test whos
 a non-Go script. No policy is amended, no test-first requirement is weakened, and no fake
 scaffolding is added. Rev 4 also reconciles §7.2's C2 contract with task `018.011-T` on a single
 **fixture-backed, no-dirty-tree-edit** mutation proof.
+
+**Revision 5** incorporates the PR #54 current-HEAD review, cycle 4 (one finding, thread
+`PRRT_kwDOTPuhps6hnPkD`). Rev 4's **R5 accepted the residual** that a future render could wipe the
+job-`lint` gate step, leaving CI green with the detector never invoked — which directly contradicted
+§1's "cannot **silently** reopen the gap" and the feature DoD. Rev 5 **does not narrow the
+objective**. It instead identifies the tracked enforcement path that already survives the render
+boundary — the §5.0 Go harness, invoked by the **generated-baseline** `go test` step rather than by
+a LOCAL DIVERGENCE step — and makes that path explicit, load-bearing, and mechanically
+self-verifying (§5.0 "Regeneration-resistant enforcement", AC-C1.6, AC-C2.8). R5 is reclassified
+from accepted residual to mitigated; the narrower, genuinely-visible residual is recorded as R12.
 
 **Artifact persistence note (P-010)**: this plan and its deliberation are themselves Stage
 artifacts. They are committed on the dedicated branch `chore/stage-pipeline-policy-gap` and reach
@@ -173,12 +183,63 @@ every task has exactly one observable red→green transition:
 | B1 `018.007-T` | `TestDirectPushGate_OrchestratorSurfaceClean` | scan scoped to `_orchestrator.agent.md` reports 0 findings |
 | B2 `018.008-T` | `TestDirectPushGate_PolicySurfaceClean` | scan scoped to `workflow-policies.md` reports 0 findings **and** the Amendment Log carries row `1.25.0` |
 | B3 `018.009-T` | `TestDirectPushGate_StageAgentSurfaceClean` | scan scoped to `_stage.agent.md` reports 0 findings |
-| C1 `018.010-T` | `TestDirectPushGate_CIWiringIsBlocking` | job `lint` carries the task-ID-suffixed step with no `continue-on-error` and no toggle; `ci-gate` still transitively needs `lint`; every script invoked by a `ci.yml` step has a `CODEOWNERS` owner line |
-| C2 `018.011-T` | `TestDirectPushGate_FullCorpusClean` | bare full-corpus scan exits 0 with 0 findings and the three §5.3 marker-free constructs score **accept** |
+| C1 `018.010-T` | `TestDirectPushGate_CIWiringIsBlocking` | job `lint` carries the task-ID-suffixed step with no `continue-on-error` and no toggle; `ci-gate` still transitively needs `lint`; every script invoked by a `ci.yml` step has a `CODEOWNERS` owner line. **Rev 5**: the step-presence check is **YAML-structural** over `jobs.lint.steps[]` and its non-vacuity is proven (AC-C1.6) |
+| C2 `018.011-T` | `TestDirectPushGate_FullCorpusClean` | bare full-corpus scan exits 0 with 0 findings and the three §5.3 marker-free constructs score **accept**. **Rev 5**: this runs the detector from `go test`, so it keeps executing even if the job-`lint` step is removed by a render (AC-C2.8) |
 
 The per-surface scoping of B1/B2/B3 is what gives each of those three tasks an independent
 transition; a whole-corpus assertion would only go green after all three landed and would trip
 `build-feature`'s 5-attempt circuit breaker on the first two.
+
+**Regeneration-resistant enforcement (rev 5 — R5 closure).** `.github/workflows/ci.yml` is
+autoharness-generated, so the job-`lint` gate step added by C1 is a LOCAL DIVERGENCE sitting
+**inside** the render replacement boundary, exactly like the five divergences already enumerated in
+that file's own ledger. A render can drop it. The control is nevertheless **not** silently
+disableable by regeneration, because enforcement also runs through this harness, and every link in
+that path is either untouched by a render or **re-emitted** by one:
+
+| Link | Artifact | Render behaviour |
+|---|---|---|
+| Detector | `scripts/check-direct-push-language.sh` | **Not generated** — hand-authored, like `check-retired-architecture.sh`, `check-write-path-precondition.sh`, `check-unignore-regression.sh`, `check-depguard-fixtures.sh` (only 5 of the 10 `scripts/*.sh` carry autoharness provenance). Survives |
+| Assertion | `tests/integration/directpush_gate_test.go` | **Not generated** — no autoharness template covers `tests/**`. Survives |
+| Invocation | step `Test (race)` → `go test -race -mod=readonly ./...`, in job `expensive` (`name: test`) | **Generated template baseline** — one of the core four jobs in this file's header, carrying **no** task-ID comment and absent from the LOCAL DIVERGENCE list. A render *re-emits* it |
+| Trigger | job `expensive` runs when `changes.outputs.code == 'true'` | The `code` filter is a **denylist** — `'**'` minus `docs/**`, `.backlogit/**`, `.backlog/**`, `.autoharness/**`. `.github/workflows/**` is not excluded |
+
+The fourth row is what makes this airtight rather than lucky: the *same* edit that removes the
+job-`lint` step is itself a `.github/**` change, so it necessarily sets `code == 'true'` and
+**cannot skip the job that runs the harness**.
+
+Two harness functions carry the invariant, and the pair is precisely what R5 now rests on:
+
+* `TestDirectPushGate_FullCorpusClean` (C2) re-runs the **detector** over the installed surfaces.
+  Requirement **(a)** — forbidden direct-push language is absent — therefore still holds with the
+  job-`lint` step gone.
+* `TestDirectPushGate_CIWiringIsBlocking` (C1) asserts the job-`lint` step **still exists**.
+  Requirement **(b)** — the enforcement invocation itself survives — therefore fails **red** on
+  render removal instead of passing silently.
+
+**The step-presence assertion MUST be YAML-structural, never a text search.** C1 also adds a ledger
+entry to `ci.yml` that *names* `check-direct-push-language.sh` in prose, so a file-wide
+`grep 'check-direct-push-language.sh' .github/workflows/ci.yml` would match that comment and keep
+passing after the step itself was deleted. That is the exact self-matching failure already recorded
+in `docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md` and warned
+about at length in `ci.yml`'s own `011.002-T` step comment. The assertion parses the workflow and
+walks `jobs.lint.steps[]`; its non-vacuity is proven mechanically (AC-C1.6).
+
+**What this does NOT claim.** `CODEOWNERS` is **advisory metadata only** in this repository — its
+own header records that it has no enforcement effect until code-owner review is required on `main`,
+a deliberate operator action explicitly not taken here. It is therefore **not** part of this
+guarantee (R6 continues to name it only as an ownership prerequisite). The guarantee is exactly and
+only §1's: *a regeneration cannot **silently** reopen the gap.* Disabling the control still requires
+editing a non-generated tracked file in a reviewable pull-request diff — a visible act, not a render
+artifact. That narrower residual is recorded as **R12**, not hidden.
+
+**Why not a separate workflow.** `secret-scan-history.yml` is the repo's one hand-authored,
+non-generated workflow and would also survive a render — but it is `schedule`/`workflow_dispatch`
+only and its header declares it **NOT A PR-REQUIRED CHECK** by design, so it cannot carry a blocking
+merge gate without inverting its stated contract. `ci-topology-check.sh` is itself generated
+(`ci/ci-topology-check.sh.tmpl`), so it sits inside the same boundary. The harness route adds **no
+new file, no new workflow, no new CI step, no new ledger entry, and no new CODEOWNERS line** — it
+only strengthens assertions in a file H0 already produces. It is the smallest sufficient mechanism.
 
 **Why not the alternative.** Defining a first-class non-Go harness route would require amending
 P-002 and P-004 in `workflow-policies.md`, Step 2 in `_ship.agent.md`, and the `harness-architect`
@@ -538,7 +599,12 @@ Unconditionally blocking — no `continue-on-error`, no toggle variable. The ste
 literal `011.0xx-T` to "any `NNN.NNN-T` task-ID comment or task-ID-suffixed step name" (already
 stale against the `015.0xx-T` group); **drop the "all five" magic count** in favour of the
 structural membership rule; record that this gate deliberately has **no** toggle variable, so a
-future reader does not add one for false symmetry; and record the D2 residual — `.tmpl` sources
+future reader does not add one for false symmetry; record that removal of this step is **caught,
+not accepted** — `tests/integration/directpush_gate_test.go`
+(`TestDirectPushGate_CIWiringIsBlocking`) is not autoharness-generated and runs from the
+generated-baseline `go test` step in job `expensive`, so a render that drops this step turns CI
+**red** rather than green and the re-apply obligation is discoverable at the point of divergence
+(§5.0); and record the D2 residual — `.tmpl` sources
 are gitignored, so template↔artifact equality is not CI-enforceable; the gate asserts the
 *invariant* over installed artifacts instead.
 
@@ -564,10 +630,24 @@ invoked by a step in `.github/workflows/ci.yml` has an owner line in `.github/CO
 header's fixture-data carve-out is generalized from `scripts/testdata/gitignore/**` to
 `scripts/testdata/**` so the new fixture tree is covered by the same stated rationale.
 **AC-C1.5** The script header states **verbatim** that this is an **anti-accident control, not an
-anti-adversary control** (CI runs it from the PR's own head), and discloses the accepted residual
-that a future autoharness render can remove the CI wiring step (deliberation D6). Added at rev 4 —
-review round 3 — to close a plan↔task drift: `018.010-T` already carried this criterion while the
-plan did not state it.
+anti-adversary control** (CI runs it from the PR's own head), and discloses that the job-`lint`
+wiring step sits **inside** the autoharness render boundary (deliberation D6) **and** that its
+removal is **detected — not accepted — by** `TestDirectPushGate_CIWiringIsBlocking` (§5.0), so the
+disclosure points a future reader at the surviving enforcement path rather than at a silent failure.
+Added at rev 4 — review round 3 — to close a plan↔task drift: `018.010-T` already carried this
+criterion while the plan did not state it. **Rev 5** replaced the "accepted residual" half of the
+disclosure per the R5 reclassification.
+**AC-C1.6** **Render-survival assertion — structural and non-vacuous (rev 5).**
+`TestDirectPushGate_CIWiringIsBlocking` determines step presence by **parsing**
+`.github/workflows/ci.yml` and walking `jobs.lint.steps[]` for a step whose `run` invokes
+`scripts/check-direct-push-language.sh` — **never** by a file-wide text search, which would
+self-match the LOCAL DIVERGENCE ledger comment naming the same script and pass vacuously after the
+step itself was deleted (§5.0; prior art
+`docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md`). Non-vacuity is
+proven by **execution**: the test writes a copy of the current `ci.yml` with that step removed into
+`t.TempDir()` and asserts the same check **fails** against the copy. **No edit is made to the real
+tree** — `git status --porcelain` stays empty — the same no-dirty-tree-edit rule as AC-A2.4 and
+AC-C2.2.
 
 ### 7.2 Task C2 — coupling verification
 
@@ -604,6 +684,14 @@ different numbering for the same criteria).
   exits 0 and each result is recorded independently. **Rev 4**: `go test ./...` is no longer a pure
   regression check — it now includes the `tests/integration/directpush_gate_test.go` harness (§5.0),
   which must be **green** in full, so all eight per-task functions pass here.
+- **AC-C2.8** **Regeneration-resistant enforcement, recorded (rev 5).** The evidence records that
+  the full-corpus scan of AC-C2.1 is executed by `TestDirectPushGate_FullCorpusClean` under
+  `go test ./...` — i.e. from job `expensive`'s **generated-baseline** `Test (race)` step — and
+  **not solely** by the job-`lint` step added in C1. Both halves of the §5.0 invariant are asserted
+  green in the same run: **(a)** zero findings over the installed surfaces, and **(b)** the
+  job-`lint` step still present, structurally and non-vacuously per AC-C1.6. A future render that
+  drops the C1 step therefore fails (b) **loudly** while (a) continues to execute — which is what
+  makes §1's "cannot silently reopen the gap" true as written rather than aspirational.
 
 ## 8. Verification commands
 
@@ -611,6 +699,8 @@ different numbering for the same criteria).
 bash scripts/check-direct-push-language.sh --self-test   # fixtures + selection + real-tree
 bash scripts/check-direct-push-language.sh               # verdict; expect 0 findings
 go test ./tests/integration -run TestDirectPushGate      # the P-002/P-004 harness (§5.0)
+# R5 invariant (§5.0): (b) invocation survives the render boundary + (a) detector still runs
+go test ./tests/integration -run 'TestDirectPushGate_(CIWiringIsBlocking|FullCorpusClean)'
 markdownlint "**/*.md"
 python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 actionlint .github/workflows/ci.yml   # LOCAL, operator-run — no CI counterpart exists in this repo
@@ -717,13 +807,14 @@ P-014 readiness and P-018 thread resolution apply to the staging PR as to any PR
 | R2 | Gate wired while violations present → `main` red | §4 ordering; CI wiring is C1, after B1–B3 |
 | R3 | Detector too narrow → fails open | 9 reject fixtures across push/commit/prose/placeholder/wrapped-lazy/marker-bearing/`rather than`/mixed-block shapes; bijection + non-vacuity assertions |
 | R4 | Regeneration restores a violation | Gate asserts the invariant over installed artifacts (D2) → CI red, scoped to the §5.2 corpus |
-| R5 | Regeneration wipes the CI step → gate silently disabled | **ACCEPTED RESIDUAL**, disclosed in the script header and ledger, matching retired-arch's existing disclosure |
+| R5 | Regeneration wipes the job-`lint` CI step → gate silently disabled | **MITIGATED at rev 5 — no longer an accepted residual.** Enforcement also runs through `tests/integration/directpush_gate_test.go` (not generated → survives a render), invoked by the **generated-baseline** `go test` step in job `expensive` (a render *re-emits* it), and any render that rewrites `ci.yml` sets `changes.code == 'true'` so that job cannot skip. `TestDirectPushGate_FullCorpusClean` keeps executing the detector (requirement **a**); `TestDirectPushGate_CIWiringIsBlocking` fails **red** when the step is gone (requirement **b**). See §5.0, AC-C1.6, AC-C2.8 |
 | R6 | Gate mistaken for a security boundary | Header states verbatim: **anti-accident control, not an anti-adversary control** — CI runs it from the PR head. CODEOWNERS (AC-C1.4) is the named mitigation |
 | R7 | Legitimate line trips the detector | Narrow the **pattern** or document-and-exclude a path; never reduce corpus coverage |
 | R8 | 6th hand-copied gate scaffold (no `scripts/lib` bash helper exists) | **ACCEPTED RESIDUAL**, recorded here with the existing clone-divergence precedent (stash `6C24E2E4`); extracting a shared helper is out of scope under C1 |
 | R9 | A **fifth** authorization surface exists outside the §5.2 corpus | AC-A3.4 records the first full-corpus scan (file count + complete finding list) **before** B1 begins, so an unknown surface surfaces at A3 rather than at C2 |
 | R10 | The §5.0 Go harness makes `go test ./...` depend on `bash` | **ACCEPTED RESIDUAL** (rev 4). CI runs on `ubuntu-latest`; every existing gate script already requires `bash` locally. The harness **fails rather than skips** when `bash` is absent (§5.0), deliberately, so the P-004 red phase can never be satisfied by a silent skip (P-012) |
-| R11 | The §5.0 harness is a sixth CI-relevant surface a future render could disturb | Low: it is a plain `_test.go` file under `tests/integration/`, not autoharness-generated, and `go test -race -mod=readonly ./...` already runs in job `test`. No new CI wiring, no ledger entry, no CODEOWNERS line needed |
+| R11 | The §5.0 harness is a sixth CI-relevant surface a future render could disturb | Low: it is a plain `_test.go` file under `tests/integration/`, not autoharness-generated, and `go test -race -mod=readonly ./...` already runs in job `test`. No new CI wiring, no ledger entry, no CODEOWNERS line needed. **Rev 5** makes both of those properties **load-bearing rather than incidental** — R5's mitigation depends on the harness being non-generated *and* on that `go test` step being generated-baseline, so §5.0 now states and justifies both explicitly |
+| R12 | The harness itself is deleted or neutered, disabling both halves at once | **ACCEPTED — but VISIBLE, not silent (rev 5).** Requires editing non-generated tracked files (`directpush_gate_test.go` and/or the detector) in a reviewable pull-request diff; **no render can do it**. `CODEOWNERS` is deliberately **not** claimed as the mitigation here — its own header records it is advisory-only until code-owner review is required on `main`, an operator action not taken. This is strictly narrower than rev 4's R5: the failure mode moves from *silent regeneration* to *visible human/agent edit*, which is what §1 actually promises to exclude. **If a future autoharness version begins generating `tests/**`, the §5.0 invariant must be re-verified** |
 
 **Known pre-existing defects, recorded and out of scope**: `workflow-policies.md` header
 `**Version**: 1.0.0` is stale against Amendment Log 1.24.0; Step 1.5's a–e sub-steps are lazy
@@ -753,6 +844,7 @@ Constitution, Maintainability, Template Integrity, Schema-CLI-Docs Coupling).
 | 2 | rev 2 | **FAIL** | all round-1 P0s confirmed resolved; 1 new P0 (fourth surface), 5 P1 detector defects |
 | — | rev 3 | **ADVISORY — accepted** | all P0/P1 remediated in rev 3; residual P2/P3 recorded below |
 | — | rev 4 | **PR #54 current-HEAD review, cycle 2** | 2 x P-021 C1 same-contract blockers, both resolved in rev 4 (see below) |
+| — | rev 5 | **PR #54 current-HEAD review, cycle 4** | 1 finding — R5 contradicted §1 and the feature DoD; resolved in rev 5 (see below) |
 
 **Round-1 P0s (resolved in rev 2)**: missing third authorization surface `_stage.agent.md` L42;
 self-deadlocking P-010 wording (mandated "merged via PR" against Stage's "must not create, push,
@@ -793,5 +885,28 @@ rev-2 form while `018.007-T` carried the four-criterion rev-3 form covering the 
 and §6.3 already referenced the then-nonexistent **AC-B1.4**. §6.1 is corrected to the task's form.
 An AC-ID parity sweep across all eight tasks now shows an exact bijection (38 plan IDs ↔ 38 task
 IDs, no orphan on either side), so the PR's "all 8 task contracts match" claim is true as stated.
+
+**Rev 5 — PR #54 current-HEAD review, remediation cycle 4.** Operator-authorized fourth cycle
+beyond the three-cycle cap, scope limited to thread `PRRT_kwDOTPuhps6hnPkD` (comment 3992775719,
+plan L720). No other scope reopened.
+
+| Thread | Finding | Resolution |
+|---|---|---|
+| `PRRT_kwDOTPuhps6hnPkD` (plan L720) | R5 contradicted §1's guarantee and the feature DoD. Because `ci.yml` is itself generated, a future render could both restore the scanned direct-push wording **and** remove the job-`lint` gate step, leaving CI green with the detector never invoked. The plan had to either add a tracked enforcement path surviving regeneration, or narrow the objective and admit silent disablement. | **Enforcement path added; objective NOT narrowed.** The tracked, regeneration-resistant path already existed in the release unit but was never claimed: the §5.0 Go harness is non-generated, and it is invoked by the **generated-baseline** `go test` step in job `expensive` — which a render *re-emits* rather than removes. New §5.0 subsection "Regeneration-resistant enforcement" proves the four-link chain (detector, assertion, invocation, trigger) and shows the trigger link is airtight: the same edit that removes the job-`lint` step is a `.github/**` change, so `changes.code == 'true'` and the harness job cannot skip. **AC-C1.6** makes the step-presence assertion YAML-structural (a text grep would self-match C1's own ledger comment) and proves its non-vacuity by execution against a `t.TempDir()` copy. **AC-C2.8** records that the detector still runs from `go test` with the C1 step gone. R5 reclassified accepted→mitigated; **AC-C1.5** disclosure reworded from "accepted residual" to "detected, not accepted"; ledger wording in §7.1 updated to match. |
+
+**Honest residual, deliberately not fabricated (rev 5).** The guarantee established is exactly
+§1's: *regeneration cannot **silently** reopen the gap*. It is **not** a claim that the control
+cannot be removed at all — deleting the harness in a reviewable PR diff still disables it, recorded
+as **R12**. `CODEOWNERS` is explicitly **not** claimed as mitigation, because this repo's
+`CODEOWNERS` header states it has no enforcement effect until code-owner review is required on
+`main`, which is deliberately not enabled. Two rejected alternatives are recorded in §5.0:
+`secret-scan-history.yml` (non-generated and would survive, but declares itself NOT a PR-required
+check by design) and `ci-topology-check.sh` (itself generated, same boundary).
+
+**Scope discipline**: no new file, workflow, CI step, ledger entry, or CODEOWNERS line was added —
+only two acceptance criteria (AC-C1.6, AC-C2.8), one reworded (AC-C1.5), and strengthened assertions
+in a harness H0 already produces. AC-ID parity re-swept: **40 plan IDs ↔ 40 task IDs**, exact
+bijection maintained. Shipment 017-S remains one shipment with unchanged membership and unchanged
+dependency order (A1→A2→A3→{B1,B2,B3}→C1→C2).
 
 <!-- plan-review-attempt: 2 -->
