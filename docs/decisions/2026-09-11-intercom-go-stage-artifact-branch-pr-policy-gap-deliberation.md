@@ -432,3 +432,86 @@ text (task B2), rather than leaving it as a plan-only assertion.
 The chosen path (Option 2) is unchanged. D1 covers four surfaces instead of three; D4 is
 strengthened with a mechanical surface-enumeration step; D5's P-016 disposition is grounded in
 quoted policy text and promoted into the contract. No decision is reversed.
+
+---
+
+## 10. Revision 6 addendum — authorization without discovery is not a route
+
+**Source**: PR #54 current-HEAD review, cycle 5, thread `PRRT_kwDOTPuhps6hqWDe`
+(comment 3993998429). Operator-authorized, scope limited to this thread. Numbered to match the
+plan revision it grounds (§8 → plan rev 2, §9 → plan rev 3, §10 → plan rev 6).
+
+### 10.1 Withdrawn: "correcting the authorization surfaces completes the route"
+
+D1 framed the problem as a set of **authorization** surfaces — text that permits a Stage artifact
+to reach the default branch without a PR — and §8.2/§9.1 grew that set from two to four. Every
+revision through plan rev 5 worked inside that frame. The frame was **incomplete**.
+
+Correcting authorization *relocates* Stage's commit onto `chore/stage-{shipment_id}` /
+`chore/stage-{chore-slug}`. It does not teach the gate that has to verify that commit where to
+look. Orchestrator Step 1.5 discovers work through exactly two inputs — a `.backlogit/`-only
+dirtiness pathspec and a **default-branch-only** commit range — and after the relocation both are
+blind:
+
+- a no-shipment Stage run writes only `docs/plans/`, `docs/decisions/`, `docs/memory/`, so the
+  dirtiness pathspec reports **clean** — precisely the `fdff9e4` shape this deliberation exists to
+  close;
+- Stage's commit is not on the default branch, so a default-branch-against-its-own-remote range is
+  **empty by construction**.
+
+Both read "synchronized", the gate skips its commit/push/PR step, and its `origin/main`
+verification then fails — or, for a shipment-less run, has no manifest to name at all. The route
+§8.2 made *permissible* was never made *executable*.
+
+### 10.2 The rev-2 self-deadlock lesson generalizes
+
+§8.2 established that a rule is only sound when the **actor** who must satisfy it is authorized to
+act. This finding is the same defect one layer down: a rule is only sound when the actor who must
+**verify** it can **observe** the thing it verifies. §8.2's route table (carried into plan §6.2)
+names the Orchestrator as the actor for push, PR, merge, and post-merge verification of the
+no-shipment branch — while plan rev 2 simultaneously declared Step 1.5, the only Orchestrator gate
+that performs any of those, out of scope for shipment-less runs. That position is **withdrawn**.
+
+### 10.3 Decision — explicit handback, branch-specific discovery, two verification arms
+
+D1 is extended, not reversed. The correction stays inside the existing four surfaces and adds no
+new policy, task, or enforcement mechanism:
+
+1. **Explicit handback.** Stage returns `stage_branch`, `stage_head_commit`, `stage_outcome`, and
+   `stage_artifact_paths`; the Orchestrator requires and records them. Inference is a degraded,
+   loudly-recorded fallback (`STAGING_HANDBACK_DEGRADED`) covering **every** field, so it never
+   halts: branch and commit resolve from `HEAD`, outcome derives from whether a shipment was
+   formed, and paths default to the artifact path set. When the `HEAD` resolution yields the
+   default branch the branch is left **unresolved** and the run routes to the branch-creation
+   sub-step — the pre-change behaviour — rather than substituting the default branch.
+   Defaults-with-a-recorded-degradation rather than hard halt, because a hard halt would
+   reintroduce a deadlock against any Stage invocation predating the fix.
+2. **Branch-specific discovery.** The unpushed-commit range is taken against the resolved staging
+   branch, with a `HEAD`-equals-branch assertion that doubles as the P-016 single-worktree gate.
+   That resolution and its guards sit **above** the dirty/clean split, so they also cover the
+   dirty path — the one on which the gate actually mutates the repository.
+3. **Two verification arms.** The shipment arm keeps the authoritative `origin/main` manifest gate
+   unrelaxed; a second arm keyed on `no-shipment` verifies commit **ancestry** in `origin/main`
+   plus per-path readability there, over a **non-empty** path set — a concrete target requiring no
+   shipment ID. The non-empty guard matters: an empty path loop combined with a trivially-true
+   ancestry check would report success having verified nothing.
+
+D7 (role isolation) is **unchanged and reinforced**: Stage creates, checks out, and commits its
+artifact branch and reports it; the Orchestrator pushes, opens, merges, and verifies. Neither
+gains an action the other's Role Boundary forbids.
+
+### 10.4 D3 is NOT extended to cover this defect
+
+Main-only discovery is neither of D3's two violation shapes — it is not a push to the default
+branch and not a permission to commit on one. Folding it into the detector would mean opening the
+closed construct set and re-deriving the fixture corpus through the whole A→C chain, which is
+materially larger than the finding warrants. The regression is rejected instead by the
+**already-existing** per-surface harness assertions. One consequence is recorded because it is
+easy to get wrong: the corrected instruction must state its prohibition **descriptively** and must
+not quote the forbidden range, or it self-matches the absence assertion and silently vacates it.
+
+### 10.5 Net effect
+
+Option 2 is unchanged. D1 is extended from "authorization surfaces" to "authorization **and
+discovery**"; plan rev 2's no-no-shipment-clause position is withdrawn; D3, D5, and D7 are
+unchanged. No decision is reversed and no new option is opened.

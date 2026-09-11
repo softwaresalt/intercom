@@ -469,3 +469,157 @@ to note both harness properties are now load-bearing rather than incidental.
 
 Unchanged. Ship claims `017-S` and starts at `018.004-T`. H0 (`harness-architect`) must now produce
 `TestDirectPushGate_CIWiringIsBlocking` satisfying AC-C1.6's structural + non-vacuity shape.
+
+---
+
+## 13. PR #54 review remediation cycle 5 — rev 6 (operator-authorized fifth cycle)
+
+**Scope**: thread `PRRT_kwDOTPuhps6hqWDe` (comment 3993998429, plan L517) ONLY. Thread
+`PRRT_kwDOTPuhps6hqWD8` is an Orchestrator-owned incident-record correction and was deliberately
+NOT touched. No push, no PR, no branch switch, no shipment claim, no source/template/CI edit.
+Branch `chore/stage-pipeline-policy-gap`, single worktree, clean tree at start.
+
+### 13.1 Finding
+
+Step 1.5 discovers work through only two inputs — `git status --short -- .backlogit/` and a
+default-branch-only commit range (`_orchestrator.agent.md:274-281`). Neither inspects the
+checked-out branch or HEAD. Once B2/B3 require Stage to commit on `chore/stage-{chore-slug}` and
+leave the worktree there, both inputs read "synchronized": the commit is not on the default branch,
+and a no-shipment run's artifacts are not under `.backlogit/`. The gate skips step 3 and then fails
+its `origin/main` manifest check — and a shipment-less run has no manifest to check at all. The
+no-shipment route documented end to end in plan §6.2 was therefore **unexecutable as written**.
+
+### 13.2 Root cause — the frame, not the wording
+
+Revisions 1–5 all worked inside an **authorization** frame: find text that permits a Stage artifact
+to reach the default branch without a PR, and correct it. That frame grew from two surfaces to four
+and was internally consistent — but correcting authorization only *relocates* the commit. It never
+told the gate that must verify the commit where to look. This is the §8.2 self-deadlock lesson one
+layer down: a rule is sound only when the actor who must **verify** it can **observe** what it
+verifies. Plan rev 2 had even declared Step 1.5 out of scope for shipment-less runs while §6.2's
+own route table assigned the Orchestrator the push/PR/merge/verify duty for exactly that path —
+a duty with no remaining home. That position is now explicitly withdrawn.
+
+### 13.3 Resolution — four corrections, no scope expansion
+
+1. **Explicit handback** — Orchestrator Step 1 requires `stage_branch`, `stage_head_commit`,
+   `stage_outcome`, `stage_artifact_paths` (+ `shipment_id` when formed); Stage's Step 6 emits them.
+   **Every** field has a deterministic default, so the degraded path **never halts**: branch/commit
+   from `HEAD`, outcome from whether a `shipment_id` came back, paths from the step-1 default set,
+   `STAGING_HANDBACK_DEGRADED` recorded once and surfaced. When the `HEAD` resolution yields the
+   default branch, `stage_branch` stays **UNRESOLVED**, no branch assertion is applied, and steps 1
+   and 2 still run unchanged — so any work they find routes to 3a's create-arm, which is
+   exactly the pre-change behaviour — the default branch is never substituted and 3a's create-arm
+   stays live rather than dead prescription. Defaults-with-degradation rather than hard halt,
+   deliberately: a hard halt would wedge every Stage invocation predating B3 — the rev-2 lesson
+   applied preemptively.
+2. **Resolution hoisted above the dirty/clean split, dirtiness pathspec widened** — `$STAGE_BRANCH`
+   resolution, `git rev-parse --verify`, and the HEAD-equality assertion (P-016 single-worktree
+   gate) sit **above** step 1, because step 1 routes a dirty tree straight to step 3 and anything
+   in step 2 is skipped on the very path that mutates the repo. The pathspec widens to the Stage
+   artifact paths (default `.backlogit/ docs/plans/ docs/decisions/ docs/memory/`), so a docs-only
+   no-shipment run is not reported clean.
+3. **Branch-specific discovery** — step 2 compares
+   `origin/main..HEAD`. The two range forms are provably the same range *because* of the hoisted
+   HEAD assertion.
+4. **Second verification arm** — `stage_outcome: no-shipment` verifies
+   `git merge-base --is-ancestor {stage_head_commit} origin/main` plus `git show origin/main:{path}`
+   over a **non-empty** resolved path set, halts with `STAGING_GATE_FAIL` on an empty set or either
+   failure, and terminates without routing to Ship. Ancestry proves the commit landed; per-path
+   `show` proves the artifacts are readable there rather than merely that some merge happened; the
+   non-empty guard stops a zero-run loop from passing the gate having verified nothing. No
+   `shipment_id` is named.
+
+Actor sequence preserved without deadlock: **Stage** creates/checks out/commits and returns
+branch+commit+outcome; **Orchestrator** pushes, opens the PR, waits for merge, verifies on
+`origin/main`. Every command added is a read form (`status`, `rev-parse`, `fetch`, `log`, `show`,
+`merge-base`) or a `checkout` — no direct default-branch push, P-009/P-011/P-016 textually intact.
+
+### 13.4 Self-match hazard caught during drafting, not by review
+
+The natural phrasing of correction 3 is a prohibition quoting the literal forbidden range. But
+`_orchestrator.agent.md` **is** in the scanned corpus, and the B1 harness asserts that literal is
+**absent** from Step 1.5 — so a prohibition quoting it would match itself and vacate the very
+assertion that rejects the regression. Same failure class as
+`docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md`, already
+guarded at plan §5.0 and AC-C2.3. The prohibition is stated **descriptively**, and AC-B1.6 makes
+that contractual rather than incidental. Worth a compound entry if it recurs a third time.
+
+### 13.5 Deliberate non-expansions (the finding did not require them)
+
+- **Detector NOT widened.** Main-only discovery is neither §5.3 violation construct. Adding it
+  would open the closed construct set, add fixtures, and re-derive A1's 14/9/5 counts through
+  A1→A2→A3→C2. Rejection is carried by the **existing** B1 harness function instead — already
+  scoped to `_orchestrator.agent.md`, already B1's red→green boundary.
+- **Fixture corpus unchanged.** `directpush-accept-read-and-pr-forms.md` keeps `origin/main..main`
+  as an **accept** case: it proves the detector does not flag read verbs, which is independent of
+  what the Orchestrator uses.
+- **No new harness function.** A second function on the same file would not give an independent
+  red→green transition (plan §5.0), so the assertions were added to the existing B1 function.
+- **No new task.** Splitting B1 would add a 9th task whose transition could not be observed
+  independently, and would perturb 017-S membership.
+- **P-010 text unchanged.** The handback is a mechanism, not a permission — 018.008-T's ACs are
+  untouched, with only a cross-reference note added.
+
+### 13.6 AC-B1.4 narrowed, on the record
+
+AC-B1.4 previously required step 4's whole block to be byte-identical. That is unsatisfiable once
+step 4 must carry the no-shipment arm — and an unmodified block is exactly what left that path
+unverified. It is narrowed to what it always protected: the shipment arm's lead sentence, `git show`
+command, both bullets, and `STAGING_GATE_FAIL` string preserved verbatim with unchanged semantics;
+the step may gain arm labels and the second arm, and nothing else. Recorded in the plan, the task,
+and the feature DoD rather than applied silently — a weakened criterion with no stated reason is
+indistinguishable from an abandoned one.
+
+### 13.6b Four defects found by internal review before commit
+
+The first draft of the rev-6 corrections was reviewed against the finding and four high-confidence
+problems were fixed rather than shipped. Recorded because a cycle that silently repairs its own
+draft teaches nothing:
+
+1. **A halt that contradicted its own rationale.** The degraded handback halted when the HEAD
+   resolution yielded the default branch — wedging every pre-B3 Stage invocation, the exact
+   deadlock the paragraph three lines below claimed to avoid — and put that halt UPSTREAM of 3a's
+   create-arm, making it dead prescription. Fixed: leave the branch UNRESOLVED and route to 3a.
+2. **Partial defaults and a vacuous verification loop.** `stage_outcome` and
+   `stage_artifact_paths` had no degraded default, leaving step 4's arm selection undefined; and
+   an empty path set made the no-shipment arm pass having verified nothing (zero-run `show` loop
+   plus a trivially-true ancestry check). Fixed: total defaults, empty path set is a hard fail.
+3. **A guard placed on the unreached branch of a fork.** Step 1 routes a dirty tree straight to
+   step 3, so the new verify/HEAD-equality guards sitting in step 2 were skipped on the one path
+   that mutates the repo — falsifying AC-B1.9 as written. Fixed: resolution block hoisted ABOVE
+   step 1.
+4. **Prescribed text that could not satisfy its own AC.** An outer lead sentence replaced step 4's
+   pre-change lead, and the original reappeared lowercased, failing AC-B1.4's verbatim clause.
+   Fixed: arm label on its own line above the byte-verbatim original; AC-B1.4 now forbids an outer
+   lead that replaces or rewords it.
+
+The recurring shapes worth recognizing: a fallback that halts on the population it exists to
+protect, a verification loop that can run zero times, and a guard installed downstream of the fork
+that skips it.
+
+### 13.7 Surfaces reconciled
+
+| Surface | Change |
+|---|---|
+| Plan (rev 5→6) | Front matter; rev-6 header; §3 surface rows B1/B3; §5.0 harness rows B1/B3; §5.4 no-widening note; §6.1 restructured into §6.1.1/§6.1.2; §6.2 handoff note; §6.3 + AC-B3.5; §7.2 AC-C2.4; §11 R13; §12 rev-6 record |
+| `018.007-T` (B1) | Title, description, 5 new ACs (B1.5–B1.9), B1.2 extended, B1.4 narrowed, size S→M, rev-6 reconciliation note |
+| `018.009-T` (B3) | Title, description, AC-B3.5 added, AC-B3.3 scoped to the Role Boundary table, size XS→S, rev-6 note |
+| `018.011-T` (C2) | AC-C2.4 extended in both renderings (handback contract agreement); rev-6 reconciliation note |
+| `018.008-T` (B2) | Cross-reference note only — no AC, scope, or size change |
+| `018-F` | DoD: no-shipment route executability, self-match discipline, AC-B1.4 narrowing; execution-order line |
+| Deliberation | §10 Revision 6 addendum — frame extended from authorization to authorization+discovery |
+| `017-S` | **Unchanged** — one shipment, 9 items, order A1→A2→A3→{B1,B2,B3}→C1→C2 |
+
+### 13.8 Validation (Stage scope — no Go build/test, per the Stage role boundary)
+
+AC-ID parity re-swept: **46 plan IDs ↔ 46 task IDs**, exact bijection (was 40↔40). Dependency
+edges unchanged. Markdownlint clean on all changed markdown. Backlog sync + doctor clean.
+Go build/test deliberately NOT run — Ship's responsibility (P-010).
+
+### 13.9 Handoff
+
+Unchanged: shipment **017-S**, `queued`, 9 items. Ship starts at Step 2 (harness-architect, H0),
+which now produces a B1 function carrying the branch-discovery assertions and a B3 function
+carrying the handback-emission assertion. Cycle budget for PR #54 is exhausted unless the operator
+authorizes another.
