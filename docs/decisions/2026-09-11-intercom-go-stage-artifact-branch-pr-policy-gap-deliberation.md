@@ -1,0 +1,427 @@
+---
+title: "Deliberation — Stage Artifact Branch/PR Policy Gap Correction"
+date: 2026-09-11
+status: accepted
+agent: Stage
+governs: stash 638A410B
+---
+
+# Deliberation — Stage Artifact Branch/PR Policy Gap Correction
+
+- **Date**: 2026-09-11
+- **Agent**: Stage (operator-authorized, interactive)
+- **Stash entry**: `638A410B` (high, feature-shaped)
+- **Planning branch**: `chore/stage-pipeline-policy-gap` (no push, no PR — Stage artifacts only)
+- **Evidence commit**: `fdff9e4` — a Stage no-shipment decision artifact pushed directly to
+  `main`. Treated as **historical evidence only**; not reverted, not rewritten.
+
+---
+
+## 1. Framing — what problem are we actually solving?
+
+A Stage planning artifact reached the default branch without a pull request. That was not an
+agent misbehaviour: **the contract authorized it.** Two coupled surfaces made the direct push
+the compliant reading.
+
+### 1.1 Surface A — the policy root cause
+
+`.github/policies/workflow-policies.md`, **P-010 Agent Role Boundary**, L230:
+
+> **Stage MAY** (within its legitimate scope):
+> - Commit backlog and planning artifacts *(on the default branch or a dedicated chore/admin branch)*
+
+The same policy's Ship column (L258) already reads:
+
+> **Ship MUST NOT**: … Commit or push directly to `main`
+
+So P-010 is **asymmetric**: Ship is forbidden from touching `main` directly, Stage is expressly
+permitted. This clause is the authorization that makes the Orchestrator instruction below
+internally consistent. Fixing the Orchestrator alone would leave the contradiction alive in the
+authoritative policy registry.
+
+### 1.2 Surface B — the Orchestrator instruction
+
+`.github/agents/_orchestrator.agent.md`, **Step 1.5 Staging Artifact Merge Gate**, sub-steps
+3a–3d already mandate the correct behaviour unconditionally:
+
+```text
+a. Commit any uncommitted backlog files to a staging branch: `chore/stage-{shipment_id}`
+b. Push the staging branch and create a PR to `main`
+c. Wait for the staging PR to merge (operator approval required)
+d. After merge, pull `main` and proceed to step 4
+```
+
+Sub-step **3e (L287)** then reverses it — instructing that a direct push to `main` be attempted
+first, with the staging PR used only as a rejection fallback, justified as "deterministic
+regardless of when branch protection was enabled or changed."
+
+Three independent defects in 3e:
+
+1. **It contradicts 3a–3d.** Those steps are unconditional; 3e re-enters them conditionally.
+2. **Its determinism claim is inverted.** 3a–3d are *strictly more* deterministic: they never
+   depend on a server-side rejection whose presence is unverified (see §1.4). 3e's behaviour is
+   a function of remote branch-protection configuration; 3a–3d's is not.
+3. **Its fallback body is a verbatim restatement of 3a–3c.** Deleting 3e therefore loses *no*
+   behaviour — the fallback path it describes is the path 3a–3d already require.
+
+### 1.3 The in-file counter-precedent
+
+`_orchestrator.agent.md`'s own *Elective Agent Behavioral Notes* already state that both agents
+"never commit directly to the default branch." 3e violated a norm asserted elsewhere in the very
+same file. This is a self-inconsistent generated artifact, not a considered design.
+
+### 1.4 Verified blast radius
+
+A scan of the tracked harness contract surface
+(`.github/agents/`, `.github/policies/`, `.github/skills/`, `.github/instructions/`) for
+direct-push-to-default-branch language returns **exactly one hit**:
+`_orchestrator.agent.md:287`. `_stage.agent.md`, the subagents, the skills, and the instructions
+are clean. The correction is therefore genuinely small, and a
+post-fix zero-findings acceptance is achievable (see D5).
+
+**Recorded unknown**: no decision record, closure record, or docs file establishes whether GitHub
+branch protection is actually enabled on `main` for this repository. 3e was written precisely to
+paper over that uncertainty. We do **not** assume protection exists; we remove the dependence on
+it. This is stated rather than assumed.
+
+---
+
+## 2. Constraints carried from the operator
+
+| # | Constraint | Consequence for this deliberation |
+|---|---|---|
+| C1 | Smallest complete contract change | No generalized branch framework, no new policy ID, no waiver mechanism |
+| C2 | Mechanical enforcement, not prose-only | A deterministic CI gate is mandatory, not optional |
+| C3 | Source templates and installed artifacts stay coupled | Must be resolved against the untracked-template finding (D2) |
+| C4 | Preserve role isolation | Orchestrator owns staging branch/PR orchestration; Stage owns planning artifacts; Ship owns implementation delivery |
+| C5 | Do not revert `fdff9e4` | Historical evidence preserved |
+| C6 | Preserve branch and PR merge-commit rules | P-009 merge-commit-only, P-011, P-016 untouched |
+
+---
+
+## 3. Options considered
+
+### Option 1 — Prose-only correction
+
+Delete 3e, reword the P-010 bullet. Nothing else.
+
+- **Pro**: minimal diff; satisfies C1 maximally.
+- **Con**: violates **C2 outright**. Both files carry
+  `Generated by autoharness | Template: …` provenance; a future `install`/`tune` re-render
+  restores 3e silently and no signal fires. The gap reopens undetected. The evidence commit
+  `fdff9e4` proves prose alone did not hold the line even *before* regeneration.
+- **Verdict**: **Rejected** — fails the reliability requirement that motivated the request.
+
+### Option 2 — Prose correction + deterministic regression gate (CHOSEN)
+
+Delete 3e; make the P-010 Stage bullet symmetric with the existing Ship prohibition; add
+`scripts/check-direct-push-policy.sh` asserting the invariant over the **installed** contract
+surface, wired into the existing `lint` job in `.github/workflows/ci.yml`; record the divergence
+in the ci.yml LOCAL DIVERGENCE ledger.
+
+- **Pro**: satisfies C2 with a mechanism the repository already uses five times over
+  (`check-retired-architecture.sh`, `check-write-path-precondition.sh`,
+  `check-gitignore-append-only.sh`, `check-unignore-regression.sh`, `check-depguard-fixtures.sh`).
+  Regeneration that restores 3e turns CI red — which is the *only* enforceable coupling available
+  given D2. Reuses house conventions rather than inventing a shape, satisfying C1.
+- **Con**: adds one script + fixtures + two CI steps. Accepted as the irreducible cost of C2.
+- **Verdict**: **Chosen.**
+
+### Option 3 — Option 2 + a new dedicated policy ID (e.g. P-022 "Stage Branch-Before-Persist")
+
+- **Pro**: maximally explicit; a named policy is greppable.
+- **Con**: **violates C1.** P-010 already *is* the role-boundary policy and already contains the
+  exact parallel prohibition for Ship. The correct change is to make one existing asymmetric
+  bullet symmetric — not to add a second policy that partially duplicates P-010 and creates a new
+  precedence question against it. Rejected as invented framework.
+- **Verdict**: **Rejected.**
+
+### Option 4 — Enforce via GitHub branch protection / ruleset configuration instead
+
+- **Pro**: a true server-side control; unbypassable by a local agent.
+- **Con**: out of repository scope (not a tracked artifact), unverifiable from the repo, and
+  **orthogonal** — it would stop the push but leave the contract still *instructing* the push,
+  so the agent would keep attempting a forbidden action and the contradiction would persist.
+  Also cannot be asserted by CI. Does not address the root cause.
+- **Verdict**: **Rejected as the primary mechanism.** Noted as a complementary operator-side
+  hardening, explicitly out of scope here.
+
+---
+
+## 4. Key decisions
+
+### D1 — Correct both surfaces, not just the Orchestrator
+
+The P-010 bullet is the *authorization*; Step 1.5 3e is the *instruction*. Removing only the
+instruction leaves the authorization standing, and the next regeneration or the next agent
+reading P-010 reopens the gap. Both move together, in one shipment.
+
+The P-010 Stage bullet becomes symmetric with the existing Ship prohibition:
+
+> - Commit backlog and planning artifacts **on a dedicated Stage/admin branch merged via PR —
+>   never directly to the default branch**
+
+and the clause is extended so it binds **even when no shipment is formed** — the exact case that
+produced `fdff9e4`, which was a no-shipment decision artifact and therefore fell outside any
+shipment-keyed staging flow.
+
+An **Amendment Log** row is appended per the registry's own additive convention (new minor
+version; "Corrects, and does not delete or edit, the N.N.N row above"), matching the worked
+precedent of the P-015 1.21.0 supersession note.
+
+### D2 — Template coupling: assert the invariant over installed artifacts
+
+**Investigation finding that changes the shape of scope item 1.** The `.tmpl` sources
+(`.copilot/installed-plugins/autoharness/autoharness/templates/agents/_orchestrator.agent.md.tmpl`
+L287, and the `.autoharness/staging/` mirror) **are not tracked by git**: `.gitignore:60` excludes
+`.copilot/` and `.autoharness/.gitignore:3` excludes `staging/`. Confirmed via
+`git check-ignore -v` and `git ls-files --error-unmatch`.
+
+Consequences, recorded rather than assumed:
+
+- An edit to those templates **cannot be committed, diffed, or reviewed**, and is **overwritten
+  by the next `autoharness install`**, because they are vendored upstream plugin content.
+- Therefore **no CI check can enforce template↔artifact equality** in this repository.
+
+Decision: **do not edit the untracked templates.** Instead, satisfy C3 with the only coupling
+that is actually enforceable here —
+
+1. the gate asserts the **invariant** (absence of the direct-push instruction shape) over the
+   **installed** `.github/**` artifacts, so a regeneration that restores 3e from the upstream
+   template turns CI red; and
+2. the ci.yml **LOCAL DIVERGENCE ledger** is extended to name this change, per the established
+   in-repo convention for generated-file divergence.
+
+This is a deliberate, disclosed narrowing of scope item 1, and it is *stronger* than editing an
+untracked file would be: an untracked edit is invisible to review and erased on reinstall, whereas
+the gate detects the reintroduction regardless of which path reintroduces it. The upstream
+template defect is recorded for an upstream report; fixing upstream is out of scope.
+
+### D3 — Detector shape: structural, prohibition-aware, self-exclusion asserted
+
+The single highest-risk element. Prior art —
+`docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md` — records a
+CI assertion that **permanently self-failed** because a bare-substring match caught the step name,
+comments, and error text that had to mention the forbidden string to be comprehensible. This gate
+is squarely in that class: it must reject direct-push instruction language while its own header,
+fixtures, error strings, CI step name, **and the new P-010 sentence forbidding the practice** all
+necessarily discuss it.
+
+Mitigations, all mandatory and all asserted in `--self-test`:
+
+1. **Match a violation *shape*, not a mention** — an *imperative instruction* to push/attempt a
+   push to the default branch. A descriptive or prohibitive sentence is not a violation.
+2. **Prohibition-aware**: a candidate line carrying a negation/prohibition marker
+   (`never`, `must not`, `MUST NOT`, `do not`, `forbidden`, `prohibited`) is **not** a finding.
+   This is what lets P-010's new prohibition sentence live inside the scanned corpus.
+3. **Path self-exclusion**: the checker itself and `scripts/testdata/**` are excluded from the
+   corpus, and the exclusion is asserted as a selection-logic check, per
+   `check-retired-architecture.sh` check 2.
+4. **Corpus scoped to the contract surface** via `git ls-files` pathspec:
+   `.github/agents/**`, `.github/policies/**`, `.github/skills/**`, `.github/instructions/**`.
+   `docs/**` is deliberately **outside** the corpus, so decision/plan/closure/memory records
+   (including this file, which quotes 3e) never trip the gate.
+5. **Non-vacuity**: `--self-test` fails if the fixture corpus or the selected file set is empty.
+
+### D4 — Task ordering keeps `main` green while remaining test-first
+
+Constitution Principle II requires test-first. Prior art
+(`docs/decisions/2026-09-08-…-retired-arch-gate-detection-quality-deliberation.md`, D2′) records
+that shipping a deliberately-red gate previously **net-downgraded a live merge-blocking control**.
+
+Resolution — ordering alone, with **no advisory-window toggle needed**:
+
+| Order | Task | State of `main` |
+|---|---|---|
+| 1 | Gate script + fixtures + `--self-test`, **not yet wired to CI**. Real-tree scan **fails** (3e still present) — the intentional red. | green (gate not in CI) |
+| 2 | Delete 3e; make P-010 symmetric + Amendment Log. Gate now passes. | green |
+| 3 | Wire both CI steps + LOCAL DIVERGENCE ledger; verify installed-surface coupling. | green |
+
+Because the gate enters CI only *after* the violation is removed, `main` is never wedged and no
+fail-open toggle is introduced. This is strictly safer than the bounded-advisory-window pattern
+and simpler (C1). No toggle variable is added — the gate is **blocking from the moment it is
+wired**, consistent with the post-`015.013-T` fail-closed posture.
+
+### D5 — Zero-findings acceptance at HEAD
+
+Carried from the retired-arch D5 constraint: every detector must be proven against the real tree,
+not merely against fixtures. After task 2, a full corpus scan at HEAD **must report zero
+findings**, and this is a hard acceptance criterion on task 3. If a legitimate line trips the
+detector, the **pattern is narrowed or a path is documented-and-excluded** — coverage is never
+reduced by weakening the corpus (retired-arch D4).
+
+### D6 — Threat-model honesty
+
+The gate is an **anti-accident control, not an anti-adversary control**, and its header must say
+so verbatim in the house style: GitHub's `pull_request` trigger runs the workflow and this script
+from the PR's own head, so a PR that violates the invariant can also edit the gate. It is
+effective against regeneration, drift, and careless reintroduction. The companion residual —
+"the CI workflow is also autoharness-generated and may overwrite the wiring step on a future
+render" — is disclosed in the same header. CODEOWNERS review of the script + workflow is the
+named mitigation; `pull_request_target` re-architecture is explicitly out of scope.
+
+### D7 — Role isolation preserved (C4)
+
+No role boundary moves. Step 1.5 remains the **Orchestrator's** gate — it keeps owning staging
+branch creation, PR, and merge-wait; only its self-contradicting escape hatch is removed. P-010
+continues to describe **Stage's** artifact authorship. Ship's implementation-delivery boundary,
+P-009 merge-commit-only, P-011, and P-016 are untouched. This shipment changes *where Stage
+artifacts may land*, never *who does what*.
+
+---
+
+## 5. Scope boundary
+
+**In scope**: `_orchestrator.agent.md` Step 1.5 3e; `workflow-policies.md` P-010 Stage bullet +
+Amendment Log; `scripts/check-direct-push-policy.sh` + `scripts/testdata/directpush/`;
+`.github/workflows/ci.yml` two steps + ledger.
+
+**Explicitly out of scope**: reverting/rewriting `fdff9e4` (C5); editing untracked `.copilot/` or
+`.autoharness/staging/` templates (D2); GitHub branch-protection configuration (Option 4); a new
+policy ID (Option 3); any unrelated cleanup; the three dangling doc references cited by
+`ci-topology-check.sh`; the missing compound entry on generated-artifact divergence (candidate
+follow-up, not required here).
+
+**P-021 note**: the corpus scan found no second instance of the offending language, so no
+same-contract-surface completion work is pending. Should task 2 surface one, it is **in scope**
+as a same-contract-surface completion; anything else requires a captured deferred-scope-expansion
+stash entry.
+
+---
+
+## 6. Open questions
+
+None blocking. The one recorded unknown — whether branch protection is enabled on `main` — is
+deliberately rendered **irrelevant** by this design: 3a–3d never consult it.
+
+---
+
+## 7. Outcome
+
+Option 2 accepted. Proceed to implementation planning under a single covering chore, ordered
+test-first per D4. **Superseded in scope by §8 below** — the chosen direction stands; the surface
+count and detector design are corrected.
+
+---
+
+## 8. Revision 2 addendum (2026-09-11, post plan-review)
+
+The seven-persona plan review **falsified three claims made above**. They are corrected here
+rather than silently rewritten, per the registry's additive convention.
+
+### 8.1 §1.4 "exactly one hit" is WITHDRAWN
+
+The scan behind §1.4 used a **push-shaped** predicate. It therefore missed a **commit-shaped**
+authorization on a third surface:
+
+`.github/agents/_stage.agent.md` **L42**, Role Boundary (NON-NEGOTIABLE) table, Git row, Allowed
+column:
+
+> Commit backlog/planning artifacts **on default or admin branch**; create/use an explicit,
+> time-boxed spike/research worktree only for staging investigation
+
+`.github/instructions/role-enforcement.instructions.md` makes **that table**, not P-010, the
+authoritative permission set consulted at mutation time. So this — not P-010 — is the surface the
+Stage agent actually read before producing `fdff9e4`. Correcting only P-010 and Step 1.5 would
+have left the operative authorization intact and produced a **false green**: a gate reporting zero
+findings while the gap stayed open.
+
+Under **P-021 C1** this is a *same-contract-surface completion* and is therefore **in scope for
+this shipment**, not a deferrable expansion.
+
+**Consequence for D3**: the detector must match **commit-to-default-branch** authorization
+constructs as well as imperative push constructs, and must scan **table cells**, not just prose.
+
+### 8.2 The D1 P-010 rewrite as drafted was self-deadlocking — CORRECTED
+
+P-010's **Stage MUST NOT** list already forbids Stage to "Create, push, or merge pull requests"
+(mirrored at `_stage.agent.md` L44). A bullet requiring Stage artifacts to be "merged via PR"
+without naming an actor therefore prescribed a path the same policy forbids the actor to walk —
+an unsatisfiable instruction whose Violation Action is *halt*, worst in exactly the no-shipment
+case that produced `fdff9e4`.
+
+**Correction**: the rule must **separate authorship from delivery**. Stage *commits to* the
+dedicated branch; **push, PR creation, and merge are performed by the Orchestrator under
+Step 1.5, or by the operator in a direct Stage invocation — never by Stage.** Stage's PR
+prohibition stays intact and unweakened.
+
+### 8.3 "Deleting 3e loses no behaviour" is WITHDRAWN
+
+3e sub-bullet L288 reads "Create branch `chore/stage-{shipment_id}` **from the current commit**".
+Sub-step 3a (L283) says "Commit any uncommitted backlog files to a staging branch" and specifies
+**no branch point**. Step 1.5 step 2 (L277–281) routes the *already-committed-but-unpushed* case
+into step 3, and 3e's clause was the **only** text telling the agent how to move that work off
+local `main`. Deleting 3e outright would leave that path uninstructed, dead-ending at step 4's
+`STAGING_GATE_FAIL` — fail-closed, but stuck.
+
+**Correction**: fold the branch-point into 3a as part of the deletion.
+
+### 8.4 Corpus scope widened
+
+`AGENTS.md`, `.github/copilot-instructions.md`, and `.github/prompts/**` are tracked,
+autoharness-generated contract surfaces of equal authority and were outside the §D3 corpus. A
+regeneration emitting the instruction into any of them would have passed silently — fail-open on
+the exact threat the gate exists for. The corpus is widened accordingly (never narrowed, per the
+retired-arch D4 rule).
+
+### 8.5 Corrected citation
+
+§1.1 cites the Ship prohibition at "L258". The correct line is **L238**; L258 falls inside the
+P-011 header table. Anchors are switched to quoted text, per the ci.yml ledger's own
+"by description, not line number" rule.
+
+### 8.6 Net effect
+
+The chosen direction (Option 2) is **unchanged and still correct**. What changed is its *scope*:
+**three** authorization surfaces, not two; a **structure-aware** detector covering commit-shaped
+and table-cell constructs; and an explicit **actor attribution** so the new rule is satisfiable.
+
+
+---
+
+## 9. Revision 3 addendum — the fourth authorization surface
+
+Round 2 of the plan-review gate found one further blocking defect in the framing. This addendum is
+**additive**: §1-§7 and §8 stand as written, corrected here rather than rewritten.
+
+### 9.1 Withdrawn: "three authorization surfaces"
+
+§8.1 widened the count from one to three. **Three was still wrong.** A fourth surface exists: the
+**preamble** of Orchestrator Step 1.5, which instructs:
+
+> verify that all staging artifacts (backlog items, shipment manifests) are committed to the
+> default branch and present on the remote.
+
+This is **commit-shaped and marker-free**, so it survives both the original push-shaped grep and
+the commit-shaped sweep that found `_stage.agent.md` L42 — it reads as a verification instruction,
+not an authorization, yet it states the gate's **postcondition** as artifacts being committed *to*
+the default branch. Leaving it intact would keep a compliant reading of direct commit-to-default
+alive in the very step that is supposed to enforce the opposite, and it sits **inside the corpus**
+the new gate scans, so it would also block zero-findings at C2.
+
+**Correction**: D1's scope becomes four surfaces. The preamble is reworded to a
+verification/postcondition form ("**have reached** the default branch **via a merged staging PR**")
+under plan task B1. This form is explicitly outside the detector's construct 2, so no detector
+narrowing is required to accommodate it.
+
+### 9.2 Reinforced: D4's "enforce mechanically, not by prose"
+
+That a fourth surface survived two rounds of deliberate manual search — by an agent that had
+already been corrected once for undercounting — is direct evidence for D4. Manual enumeration of
+contract surfaces is not reliable at this scale. The plan now records the **first full-corpus scan
+output** (AC-A3.4) before any correction begins, so the detector, not a reader, establishes the
+surface count. Risk R9 tracks the possibility of a fifth.
+
+### 9.3 Grounding for the P-016 disposition
+
+§5's claim that a Stage artifact branch does not consume the single-active implementation slot is
+now grounded in P-016's own Statement text, which scopes to "exactly one agent-owned
+**implementation** branch/worktree". A Stage artifact branch carries no source, test, or config
+change. The plan additionally makes this contract-visible by adding the clarification to P-010's
+text (task B2), rather than leaving it as a plan-only assertion.
+
+### 9.4 Net effect
+
+The chosen path (Option 2) is unchanged. D1 covers four surfaces instead of three; D4 is
+strengthened with a mechanical surface-enumeration step; D5's P-016 disposition is grounded in
+quoted policy text and promoted into the contract. No decision is reversed.
