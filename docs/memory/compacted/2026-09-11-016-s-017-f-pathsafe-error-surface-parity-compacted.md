@@ -9,6 +9,7 @@ merge_commit_sha: 75cfe3b1b954c49d149f531464ccd97f1770dd0b
 compacted_from:
   - docs/archive/memory/2026-09-10-stage-016s-pathsafe-error-surface-parity.md
   - docs/archive/memory/2026-09-10-ship-016-s-pre-pr-checkpoint.md
+  - docs/archive/memory/2026-09-11-ship-016-s-session-end.md
 ---
 
 # Compacted session memory: 016-S / 017-F
@@ -109,6 +110,34 @@ entrypoint of its own, and, as corrected during closure-PR review, no
 startup, so the changed code is not live on any current runtime path. The
 `internal/pathsafe`/`internal/config` test suites are the evidence.
 Releasability: `READY`, no conditions.
+
+## Post-merge closure PR (#52)
+
+The post-merge closure itself was delivered via a dedicated closure PR,
+per the branch/PR-per-release-unit rule (never committed directly to
+`main`):
+
+- Branch `post-merge/017-f-pathsafe-error-surface-parity`, PR #52
+  (`chore: post-merge closure for 017-F — pathsafe error-surface parity
+  and Windows long-path precision`).
+- Copilot review required **three rounds** (unusual — every other gate on
+  this shipment cleared in one or two): round 1 found a factual
+  runtime-reachability overclaim; the round-2 fix (commit `0749dc7`)
+  corrected only the primary cited occurrence and missed two additional
+  verbatim recurrences of the same claim in sibling documents/sections;
+  round 3 (commit `38a45e9`) corrected the remaining recurrences. Gate
+  reached `SATISFIED` with 6 threads resolved across the 2 fix rounds.
+- Reviewed HEAD at merge: `38a45e9`. Merged via merge-commit strategy
+  (P-009) at `b7c8678e03d144948509fd8884e09c959a914219`. All applicable CI
+  green.
+- Backlog index resynced twice (`backlogit sync`) — after shipment closure
+  and again after this closure PR merged. Both `CLOSURE_INDEX_SYNC_OK`.
+- **Process learning**: when a correction spans multiple
+  documents/sections, grep the *whole* affected document set for the error
+  pattern before considering the fix complete, rather than fixing only the
+  location(s) explicitly cited by the reviewer — fixing only the cited
+  location left two sibling recurrences of the same factual error
+  unaddressed into a third review round.
 
 ## Compounding value carried forward
 
