@@ -63,7 +63,12 @@ required_ids`), `returned_ids` empty, no archive-file deletions (P-007).
 - Compaction status (P-020): `done`. This release unit's two memory files
   (Stage planning + Ship pre-PR checkpoint) compacted into
   `docs/memory/compacted/2026-09-11-016-s-017-f-pathsafe-error-surface-parity-compacted.md`;
-  verbose originals archived to `docs/archive/memory/`.
+  verbose originals archived to `docs/archive/memory/`. **Addendum
+  (post-merge repair, `chore/016-s-post-merge-memory-residual-repair`):**
+  this sentence described the state at original time of writing only. As
+  of the repair that archived this very file, the compacted summary's
+  `compacted_from` list has three entries — this checkpoint was added as
+  the third, after the original two named above.
 - New compound entry: `docs/compound/2026-09-11-copilot-suppressed-comments-vs-review-threads.md`
   (Copilot review-body "Suppressed comments" text can name findings with no
   corresponding GraphQL thread).
@@ -79,7 +84,11 @@ scope beyond what is already captured in the stash.
 
 ## Branch / workspace state
 
-Returned to `main`, fast-forwarded to `b7c8678`. **Correction (post-merge
+Returned to `main`, which locally fast-forwarded (via `git pull`) to pick up
+`b7c8678` — the merge commit created upstream by PR #52 (not a
+fast-forward merge itself; `main`'s local branch pointer simply advanced,
+with no local divergent commits, to match `origin/main` after that merge
+commit landed). **Correction (post-merge
 repair, `chore/016-s-post-merge-memory-residual-repair`):** the sentence
 originally written here — "working tree clean" — was inaccurate at the
 moment it was written: this very checkpoint file (`docs/memory/2026-09-11-ship-016-s-session-end.md`,
