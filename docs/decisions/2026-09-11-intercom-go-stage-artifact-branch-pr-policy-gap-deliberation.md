@@ -17,7 +17,7 @@ governs: stash 638A410B
   (Rev 8 corrects the header's original "no push, no PR" claim, which was true when written and
   became false once PR #54 was opened — a session record that describes a state the repository has
   left is read as current by the next agent.)
-- **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8)
+- **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8), §13 (rev 9)
 - **Evidence commit**: `fdff9e4` — a Stage no-shipment decision artifact pushed directly to
   `main`. Treated as **historical evidence only**; not reverted, not rewritten.
 
@@ -716,3 +716,112 @@ D2, D3, D4, D5, D6 and D7 are unchanged. No decision is reversed, no new option 
 task, file, fixture, harness function, or dependency edge is added. Shipment `017-S` remains one
 shipment of nine items. The only scope growth is two additional edit sites inside
 `_stage.agent.md`, a file `018.009-T` already owns, which re-sizes that task S→M on volume alone.
+
+---
+
+## 13. Revision 9 addendum — a permission is not an instruction
+
+**Source**: PR #54 current-HEAD review, cycle 7 — one **visible** Copilot finding (thread
+`PRRT_kwDOTPuhps6hrbAk`, comment `3994429008`, on `018.009-T:22`), classified **same-contract
+completion** under P-021.
+
+### 13.1 Withdrawn: "correcting the Role Boundary and emitting the handback completes the Stage side"
+
+Revisions 1–8 treated the Stage side of the route as finished once three things were true: P-010
+**permitted** the branch (rev 3), the Role Boundary cell **granted** it at mutation time (rev 2–3),
+and Step 6 **reported** what happened (rev 6–8). None of the three is an instruction to act. The
+installed `_stage.agent.md` runs triage → grouping → learnings → deliberation → planning → review →
+harvest → shipment assembly → stash archival → summary, and contains **no branch operation and no
+commit operation at any step**; its Step Sequence Contract checklist — the file's own statement of
+what a session MUST execute — names none either.
+
+| What rev 1–8 established | What it does not establish |
+|---|---|
+| Stage **may** create, check out, and commit on the artifact branch | that any step does |
+| Stage **must report** `stage_branch`, `stage_base_commit`, `stage_head_commit`, `stage_artifact_paths` | where those values come from |
+
+So an agent satisfying AC-B3.1–AC-B3.6 exactly can finish a session **on the default branch**, with
+every artifact written there — the `fdff9e4` shape this deliberation exists to eliminate — and then
+emit a handback naming a branch that was never created and commits that were never made. The
+Orchestrator's step-4 arm rejects that handback, which is the gate working; but the artifacts are
+already on the default branch by then. **Detection after the fact is not prevention**, and §1's
+objective is prevention.
+
+### 13.2 The producer/consumer lesson, fourth instance — and its missing clause
+
+§12.2 recorded the discipline this deliberation should carry: *for every value a contract consumes,
+name the surface that emits it, and confirm that surface is **permitted** to.* Rev 9 shows the
+clause is incomplete. `stage_branch` had a named emitting surface (`_stage.agent.md` Step 6) that
+was unambiguously **permitted** to emit it — and the value still had no origin, because permission
+and emission are both satisfied by a surface that never **acts**.
+
+| Instance | Consumer obligation | What was missing |
+|---|---|---|
+| rev 1 | Stage merges the staging PR | Stage was **forbidden** to create one |
+| rev 6 | Orchestrator finds the Stage branch | nothing **announced** it |
+| rev 8 | Orchestrator verifies `no-shipment` | nothing could **emit** it |
+| **rev 9** | Orchestrator consumes `stage_head_commit` | nothing **produced** it |
+
+The extended discipline: **for every value a contract consumes, name the surface that emits it,
+confirm that surface is permitted to, confirm it is *instructed* to, and confirm the instruction is
+*ordered* relative to the state the value describes.** The last clause is not decoration — a branch
+gate placed after harvest and a commit step placed after the summary both satisfy "instructed" and
+both still produce values describing a state that does not exist.
+
+### 13.3 Decision — two operative steps, ordered, in the file B3 already owns
+
+Narrow, and reopening neither Option 2 nor D1–D7.
+
+**(a) A pre-mutation branch gate.** A new Stage step between learnings retrieval and deliberation —
+a **fixed** position, which is also the first point at which a stable scope slug is derivable for
+both intake shapes. Every Stage mutation that would otherwise occur earlier (the Step 1
+deferred-expansion duplicate archival, the session's first memory checkpoint) is **deferred until
+after** it, so nothing writes before the gate. The alternative considered and **rejected** was to
+let the gate fire early against a provisional slug: that contradicts the Step Sequence Contract's
+own execute-in-order semantics, leaves the real position unassertable, and re-admits the
+default-branch write it exists to prevent. The step derives the slug, records `stage_base_commit`
+(echoed from
+the Orchestrator in a pipeline invocation, captured from `HEAD` **before** branch creation in a
+direct invocation), **verifies and uses** an Orchestrator-supplied branch or **creates and checks
+out** its own, refuses to write anything while `HEAD` is the default branch, and switches the single
+existing worktree rather than adding one (P-016 unchanged).
+
+**(b) A post-mutation artifact commit.** A new Stage step between consumed-stash archival and the
+summary. It asserts `HEAD`, stages only the four `STAGE_ARTIFACT_ROOTS`, commits conventionally,
+sets `stage_head_commit` from the **resulting** `HEAD`, derives the aggregate path set over the
+preserved base, and **stops** — Stage neither pushes nor touches a pull request, so D7's role
+isolation and P-010's standing PR prohibition are untouched. Steps 3–4 of §6.2's route table remain
+the Orchestrator's or the operator's, exactly as before.
+
+**(c) The naming dependency this exposed.** `chore/stage-{shipment_id}` is **underivable** once the
+branch must exist before the first artifact write: the shipment is created by Stage's *last*
+mutation. Following the rev-8 wording literally therefore pushed an executor toward deferring the
+branch past the very writes it protects — a second route back to `fdff9e4`. The form becomes
+`chore/stage-{scope-slug}`; a shipment ID stays a **permitted** slug rather than being deleted, so
+an Orchestrator already holding one may still use it.
+
+**What makes (a) and (b) safe rather than authority-expanding.** Neither step grants Stage anything
+P-010 and the Role Boundary did not already grant at rev 3. They convert a standing permission into
+a sequenced obligation. No push, no PR, no merge, no source/test/config write, no second worktree,
+no new policy ID.
+
+### 13.4 D3 is again NOT extended
+
+A missing operative step is neither D3 violation shape — it is not a push to the default branch and
+not a permission to commit on one — so the closed construct set and the fixture corpus stay as they
+are (the §10.4 / §11.4 / §12.4 position, unchanged). Rejection is carried by the existing
+per-surface harness assertion over `_stage.agent.md`, extended to compare **checklist indices and
+heading positions** rather than to search for text. That structural form is required, not stylistic:
+the file names its own steps in its Step 6 gate, so a name search would pass with the step sections
+deleted — the self-matching failure already recorded in
+`docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md`.
+
+### 13.5 Net effect
+
+Option 2 is unchanged. D1's scope is unchanged (authorization **and** discovery); rev 9 supplies the
+**execution** the authorization always presupposed. D2, D3, D4, D5, D6 and D7 are unchanged — D7 in
+particular is *reinforced*, since the commit step ends precisely where Stage's role ends. No
+decision is reversed, no new option is opened, and no task, file, fixture, harness function,
+shipment, or dependency edge is added. Shipment `017-S` remains one shipment of nine items. The only
+scope growth is four further edit sites inside `_stage.agent.md`, a file `018.009-T` already owns,
+which re-sizes that task M→L on volume alone.

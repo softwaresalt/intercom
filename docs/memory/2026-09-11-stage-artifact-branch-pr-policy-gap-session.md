@@ -55,8 +55,8 @@ deliberate → plan → harden → review → harvest pipeline. No ad hoc tracke
 
 | Path | Role |
 |---|---|
-| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum) |
-| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 8**, `status: reviewed` (§9 Plan hardening signals, §10 Constitution Check, §12 plan review record) |
+| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum, §13 rev-9 addendum) |
+| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 9**, `status: reviewed` (§9 Plan hardening signals, §10 Constitution Check, §12 plan review record) |
 | `docs/memory/2026-09-11-stage-artifact-branch-pr-policy-gap-session.md` | This file |
 
 **Cross-reference currency (rev 7, re-verified rev 8).** This table names the plan's **current**
@@ -870,3 +870,146 @@ The B1 harness function now additionally asserts the absence of a **single-commi
 the no-shipment arm; the B3 function additionally asserts the **reachable** `no-shipment` terminal
 alongside the preserved halt clauses. Stage does not push, open, or update PR #54 — the Orchestrator
 owns every GitHub operation on this branch.
+
+---
+
+## 16. PR #54 review remediation cycle 7 — rev 9
+
+**Trigger**: one **visible** Copilot review comment on PR #54 (`3994429008`, thread
+`PRRT_kwDOTPuhps6hrbAk`, on `.backlogit/queue/018.009-T.md:22`), routed by the Orchestrator to
+Stage as a scoped same-contract remediation. Classified **same-contract completion** under P-021 —
+it completes the B3 contract rather than reopening the release unit's scope.
+
+### 16.1 The finding, and why it is correct
+
+> This task updates Stage's authorization and declares a handback, but it does not add any operative
+> Stage step to create/check out the dedicated branch or commit the artifacts. […] Implementing
+> AC-B3.1–B3.5 as written can therefore still leave Stage on the default branch, making the reported
+> `stage_head_commit` and concrete-path contract unverifiable.
+
+Verified against the installed surface rather than accepted on assertion: `_stage.agent.md`'s
+heading list runs Role Boundary → Step Sequence Contract → Steps 0.0, 0.1, 0, 1, 1.5, 1.8, 2, 3,
+3.0–3.3, 4, 5, 5.0–5.3, 5.5, 5.6, 6 → Shipment Context → Session Continuity. **No step in that list
+performs a branch operation or a commit.** The Step Sequence Contract checklist — which the file's
+own preamble makes the definition of what a session MUST execute — lists none either. Revisions 1–8
+gave Stage the *permission* (Role Boundary Git cell, P-010 grant) and the *reporting obligation*
+(Step 6 handback), and stopped.
+
+The consequence is not theoretical. An executor satisfying AC-B3.1–AC-B3.6 to the letter ends the
+session on the default branch with every artifact written there — the `fdff9e4` shape — and then
+emits `stage_branch`/`stage_head_commit`/`stage_artifact_paths` describing a branch never created
+and commits never made. The Orchestrator's step-4 arm *rejects* that handback, so the gate still
+fails closed; but the artifacts are already on the default branch by then, and **detection after
+the fact is not prevention**.
+
+### 16.2 Fourth instance of the producer/consumer failure class
+
+| Rev | Consumer obligation | Missing half |
+|---|---|---|
+| 1 | Stage merges the staging PR | Stage was **forbidden** to create one |
+| 6 | Orchestrator finds the Stage branch | nothing **announced** it |
+| 8 | Orchestrator verifies `no-shipment` | nothing could **emit** it |
+| **9** | Orchestrator consumes `stage_head_commit` | nothing **produced** it |
+
+Deliberation §12.2's rule — *name the emitting surface and confirm it is permitted to emit* — was
+satisfied here and still insufficient: the emitting surface was named (Step 6) and permitted, and
+the value still had no origin. Deliberation §13.2 extends the rule with the two clauses that were
+missing: confirm the surface is **instructed** to produce the value, and that the instruction is
+**ordered** relative to the state the value describes.
+
+### 16.3 Resolution — two operative steps, and one naming correction
+
+Plan §6.3.1 specifies both, with full replacement text:
+
+* **Step 1.9 — Stage Artifact Branch Gate**, between the learnings-retrieval and deliberation
+  steps — a **fixed** position, with every mutation that would otherwise precede it (the Step 1
+  deferred-expansion duplicate archival, the session's first memory checkpoint) **deferred until
+  after** it. Derives `{scope-slug}`; records `stage_base_commit` (echoed from the Orchestrator in a
+  pipeline invocation, captured from `HEAD` **before** branch creation in a direct one); **verifies
+  and uses** an Orchestrator-supplied branch or **creates and checks out** `chore/stage-{scope-slug}`
+  when none was supplied; refuses to write while `HEAD` is the default branch
+  (`STAGE_BRANCH_GATE_FAIL`, P-010 recorded); switches the **single existing** worktree (P-016).
+* **Step 5.7 — Stage Artifact Commit**, between consumed-stash archival and the summary. Asserts
+  `HEAD`; stages only the four `STAGE_ARTIFACT_ROOTS`; commits conventionally; sets
+  `stage_head_commit` from the **resulting** `HEAD`; derives the aggregate path set over the
+  **preserved** base; and **stops** — no push, no PR create/update/merge.
+* Both are **registered in the Step Sequence Contract checklist** and enforced by Step 6's
+  pre-summary gate. A step section the checklist omits is advisory in this file, so registration is
+  not bookkeeping.
+
+**Naming, corrected as a direct consequence.** `chore/stage-{shipment_id}` is **underivable** once
+the branch must precede the first artifact write, because Step 5.5 creates the shipment as the
+session's *last* mutation. Following rev 8 literally would push an executor to defer the branch past
+the writes it protects — a second route back to `fdff9e4`. The form is now
+`chore/stage-{scope-slug}`, with a shipment ID kept as a **permitted** slug value rather than
+deleted. This branch, `chore/stage-pipeline-policy-gap`, is a conforming example — and was already
+conforming, which is why the defect was invisible to a reader checking only the current branch.
+
+**Ordering, not presence, is the contract.** A gate after harvest leaves the artifacts on the
+default branch; a commit after the summary emits a head that does not exist. Plan §6.3.2 therefore
+specifies detection by **checklist-index and heading-position comparison** inside the existing
+`TestDirectPushGate_StageAgentSurfaceClean` — never a text search, because `_stage.agent.md` names
+its own steps in the Step 6 gate and a name search would pass with the sections deleted. That is the
+AC-C1.6 self-match hazard one file over, and the same structural remedy.
+
+### 16.4 One defect found by internal review before commit
+
+The first draft of Step 1.9 gave it a **floating** position — "earliest point a slug is derivable,
+latest immediately before the first artifact write, whichever comes first" — plus a provisional-slug
+escape hatch so it could fire early when a Step 1 deferred-expansion reconciliation needed to
+archive a duplicate stash entry. An adversarial pass over the draft (GPT-5.6 Sol, scoped to the
+diff) rejected it, correctly: `_stage.agent.md`'s **Step Sequence Contract states that a session
+MUST execute its steps in order**, so a step registered between Step 1.8 and Step 2 cannot also be
+specified to run inside Step 1. The contradiction was not cosmetic — it made the gate's real
+position unassertable (AC-B3.7 enforced the ordinal while the prose licensed an earlier run) and
+left a tracked `.backlogit/` write legal on the default branch, which is the defect this whole
+revision exists to close.
+
+The fix inverts the relationship: the ordinal is **fixed**, and the two mutations that would
+otherwise precede it — the Step 1 duplicate archival and the session's first memory checkpoint —
+are **deferred** past it by an explicit rule. Deferral is sound: the gate is at most two steps
+later, nothing downstream consumes either mutation before Step 2, and the archival's *analysis*
+(the read-only half) still completes in Step 1. Recorded rather than silently repaired, per the
+§13.6b precedent — the defect class, *a guard whose stated position contradicts the ordering
+semantics of the contract it is inserted into*, is worth recognizing again.
+
+### 16.5 Scope held
+
+No task, file, fixture, manifest entry, harness function, CI step, ledger entry, CODEOWNERS line,
+policy ID, shipment, or dependency edge added — the finding's "or split that work into an explicit
+task" alternative was **declined** on operator instruction and on merit: the work is four more edit
+sites in the one file `018.009-T` already owns, in the one domain it already works in, and a ninth
+task would need a ninth harness function for assertions the existing B3 function's surface already
+covers. One new criterion (**AC-B3.7**), three strengthened (AC-B2.2, AC-B3.2, AC-B3.5), two
+re-scoped (AC-B3.3, AC-B3.6), one extended (AC-C2.4), two new risk rows (**R17**, **R18**).
+`018.009-T` re-sized **M→L** on volume alone; every other size and complexity value unchanged.
+Shipment **017-S** and feature **018-F** preserved exactly — 9 items, order
+A1→A2→A3→{B1,B2,B3}→C1→C2.
+
+**Rev-8 fixes preserved, verified not assumed**: the aggregate `{stage_base_commit}
+{stage_head_commit}` two-tree derivation, the six-check no-shipment arm, the reachable
+`no-shipment` terminal with its verbatim P-003 guardrail, and the refusal of both the
+single-commit and range derivations are all intact; rev 9 adds the producing steps *behind* them
+and changes none of them.
+
+**Deliberately not swept, recorded rather than hidden**: `chore/stage-{shipment_id}` still appears
+in historical revision narratives (the plan's Revision 6 paragraph, §6.1.1's quotation of the 3e
+text B1 deletes, §12's rev-6 record), in the deliberation's archaeology, and in `018.007-T`'s rev-6
+reconciliation note. Those record what earlier revisions said and what B1 removes; no acceptance
+criterion depends on them. Every **operative** occurrence is corrected.
+
+### 16.6 Validation (Stage scope — no Go build/test, per the Stage role boundary)
+
+`backlogit sync` + `backlogit doctor` clean; AC-ID parity re-swept — **51 plan IDs ↔ 51 task IDs**,
+exact bijection; shipment `017-S` membership (9 items), status, and dependency edges unchanged;
+`markdownlint` clean on every changed markdown file; `git status --porcelain` empty after commit.
+Go build/test deliberately **not** run — Ship's responsibility (P-010). No source, test, script,
+workflow, policy, or agent file was modified by this pass.
+
+### 16.7 Handoff
+
+Unchanged: shipment **017-S**, `queued`, 9 items, Ship starts at Step 2 (harness-architect, H0).
+The B3 harness function additionally asserts that the branch gate and the artifact commit are
+**present and ordered** — checklist entry indices and heading positions, not text matches. Stage
+does not push, open, update, or comment on PR #54, and does not reply to or resolve thread
+`PRRT_kwDOTPuhps6hrbAk` — the Orchestrator owns every GitHub operation on this branch.
