@@ -1531,3 +1531,53 @@ is *remediated, re-review pending* — **not** *cleared*.
 - AC-ID bijection: **PASS**.
 - `markdownlint`, `backlogit sync` / `doctor`, shipment membership and dependency graph, clean
   tree: recorded in the session summary.
+
+---
+
+## 22. Rev-13 remediation and authorized four-model adversarial re-review — NOT READY
+
+### 22.1 Authorization
+
+The operator **explicitly authorized one additional Stage remediation pass plus one adversarial
+re-review**. That authorization is now **consumed**.
+
+### 22.2 Remediation
+
+Rev 13, commit `1e664f680c962e5a631d0c07d80b41eace3d714d`, remediated the **six rev-12 residuals**.
+The **remote PR still remains at rev 10 (`8999867`)** because the authorized review had to pass
+before any push; revs 11–13 stay local-only on `chore/stage-pipeline-policy-gap`.
+
+### 22.3 Review execution
+
+The authorized **four-model** adversarial review **completed with no route degradation**. The
+single authorized re-review is therefore spent.
+
+### 22.4 Verdict — NOT READY
+
+- **P0: 0.**
+- **One LOW-confidence P1 `post_remediation_residual`** — the copied terminal fixture evidence
+  names a bare default-mode `go test` but supplies **no executable fixture-root/child-process
+  mechanism and no bounded re-entry guard**, so it resolves the **real checkout** and cannot
+  produce or prove the required **C1 failure plus C2 execution**.
+
+**Four LOW-confidence P2 residuals**:
+
+1. The **H0 citation** must require **explicit full eight-task input** and must acknowledge the
+   **Step 2 dependency verification**.
+2. The **targeted C2 red** must assert the **named MP2 reason** and **qualify the bookkeeping
+   transition**.
+3. The **memory current index is stale**.
+4. The **deliberation addenda index is stale**.
+
+### 22.5 PR and pipeline state
+
+- **PR #54 body updated to BLOCKED.**
+- **Three existing Copilot threads remain unresolved** because the fixes are unpushed. **No replies
+  or resolutions were posted in this cycle.**
+- Shipment **`017-S` remains queued/unclaimed**; **Ship was not invoked**; **no merge**; **no direct
+  push to `main`**.
+
+### 22.6 Required operator disposition
+
+Either **authorize one narrow remediation + review cycle**, or **accept the named residual risks and
+authorize the push**.
