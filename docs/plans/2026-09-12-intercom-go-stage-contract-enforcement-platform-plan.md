@@ -1,10 +1,10 @@
 ---
 title: "Implementation Plan — Mechanical Enforcement of the Stage Default-Branch Contract (Strand B)"
 date: 2026-09-12
-revision: 1
+revision: 2
 status: scope-defined-not-implementation-ready
 agent: Stage
-governs: feature 020-F, shipment 019-S
+governs: feature 020-F (no shipment)
 source: docs/decisions/2026-09-12-intercom-go-deferred-split-and-readiness-lock-decision.md
 predecessor_plan: docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md
 sibling_plan: docs/plans/2026-09-12-intercom-go-stage-persistence-enforcement-plan.md
@@ -12,14 +12,17 @@ sibling_plan: docs/plans/2026-09-12-intercom-go-stage-persistence-enforcement-pl
 
 # Implementation Plan — Mechanical Enforcement of the Stage Default-Branch Contract (Strand B)
 
-**Feature**: `020-F` · **Shipment**: `019-S` (**blocked**, readiness-locked, **not claimed**)
+**Feature**: `020-F` (**blocked**) · **Shipment**: **none** — the rev-17 candidate `019-S` was archived in rev 18
 **Requires plan hardening**: **yes**
 **Status**: scope and dependencies defined; **NOT implementation-ready**. See §5.
 
-> **Created by the 2026-09-12 rev-17 remediation.** This strand was carved out of the former
-> `019-F`, which mixed persistence semantics with reusable enforcement infrastructure. All five
-> tasks were moved with backlogit's supported `adopt` operation, which re-IDs and records
-> `origin_feature`. Nothing was destructively removed.
+> **Created by the 2026-09-12 rev-17 remediation; corrected by rev 18.** This strand was carved out
+> of the former `019-F`, which mixed persistence semantics with reusable enforcement infrastructure.
+> All five tasks were moved with backlogit's supported `adopt` operation, which re-IDs and re-parents
+> the task. Nothing was destructively removed. **Rev 18 retires the invalid shipment-status readiness
+> lock** — `blocked` is not a valid backlogit shipment status, so candidate shipment `019-S` and
+> lock-token shipment `020-S` were archived and this strand now has **no shipment at all** — and
+> **corrects the adoption-provenance wording** (§8). The rev-1 text is in git at `9e44bfe`.
 
 ## 1. Why this feature exists
 
@@ -105,43 +108,70 @@ Ship intake and P-015; or a reviewed contract amendment making harness selection
 without explicit re-deliberation.** It is non-governing provenance in the predecessor plan's
 historical appendix.
 
-## 6. Mechanical readiness lock
+## 6. No live shipment — this is the enforcement (rev 2)
 
-`019-S` is **not claimable**, and not merely labelled so:
+`020-F` is **`status: blocked` and belongs to no shipment at all.**
 
-* `019-S` is `status: blocked` — Orchestrator Step 2 triggers on `queued` shipments only, and
-  Ship Step 0.5 item 1b rejects a shipment that is neither `queued` nor `active`.
-* `019-S` carries a `blocks` dependency edge to readiness-gate shipment `020-S`, which is itself
-  `blocked` and never executed. Orchestrator Step 2's explicit pre-claim re-check treats an
-  unshipped blocking predecessor as a **hard** eligibility gate regardless of queue position.
+**Why the rev-1 lock was invalid and was retired.** Rev 1 made `019-S` `status: blocked` and gave it
+a `blocks` edge to lock-token shipment `020-S`. **`blocked` is not a valid backlogit shipment
+status** — the enum is exactly `queued | active | shipped | abandoned`
+(`.backlogit/header-def.yaml`; `docs/compound/2026-05-07-backlogit-shipment-status-constraints.md`).
+Verified by execution against backlogit 1.10.1: `backlogit move <shipment> --status blocked` exits
+**0** (the known generic-mover defect that wrote those values), `--status shipped` exits **9**, and
+`--status abandoned` from `queued` is rejected by `validate_status_transition`. A lock token that can
+exist only in an invalid state is not enforcement.
 
-Verified: `backlogit queue view --type shipment` lists only `017-S`.
+**There is no safe valid queued-shipment readiness lock** in current backlogit semantics unless a
+genuine predecessor shipment is actually intended to ship: a `queued` shipment is by definition
+claimable, and `blocked → queued` is not a supported shipment unlock transition. **This supersedes
+the earlier request for a queued future shipment** — the adversarial gate proved no valid safe queued
+representation exists, and reliability and safety take precedence.
 
-**Unlock procedure (Stage only).** After `021.001-T` records a reviewed decision:
-`backlogit dep remove 019-S 020-S` → restructure into the shipment shape that decision requires →
-`backlogit move 019-S --status queued` and re-queue member tasks → run `impl-plan`,
-`plan-harden` (**required**) and `plan-review`. Removing the edge without the review is a P-006
-violation. Ship and the Orchestrator must not remove these edges.
+**What replaces it.** The `019-S → 020-S` edge was removed, then `019-S` and `020-S` were
+**archived** with the official non-destructive `backlogit archive` operation. **Nothing was
+deleted**: the archived records keep their IDs, titles and manifests, and carry
+`archived_status: blocked` as honest provenance of the defect-written value.
+
+With no shipment, there is nothing for Orchestrator Step 2 to select and nothing for Ship Step 0.5
+to claim: both operate on shipments. Verified: `backlogit queue view` lists `017-S` as the only
+shipment in the workspace. Verified by execution that archival costs no future capability —
+`backlogit archive <shipment>` does not cascade to members, and members of an archived shipment are
+freely re-assemblable into a new shipment.
+
+**Reconstitution (Stage only).** After `021.001-T` records a reviewed decision: restructure `020-F`
+into the shape that decision requires → run `impl-plan`, `plan-harden` (**required**) and
+`plan-review` → **only then create a fresh shipment** over the reviewed shape and move its member
+tasks to `queued`. Creating a shipment before plan review is a P-006 violation.
 
 ## 7. Risks
 
 | ID | Risk | Mitigation |
 |---|---|---|
-| R1 | Harness execution model unresolved → repeat of the revs 10–15 failure | §5 is a hard gate; `020-S` enforces it mechanically |
+| R1 | Harness execution model unresolved → repeat of the revs 10–15 failure | §5 is a hard gate; no shipment exists for this feature, so nothing is claimable |
 | R2 | Detector over-generalization — the original scope driver | §4.1: closed construct set, corrected-contract corpus, targeted assertions |
 | R3 | Regex-over-prose detection produces false verdicts on quoted or historical text | `020.003-T` AC-2/AC-4 require structure-aware walking and a corpus fixture proving quoted text does not trigger |
 | R4 | A wiring test that never observes a failure proves nothing | `020.005-T` requires an **executed** revert→fail→restore→pass pair, parsed from a machine-readable event stream, over a workspace copy with byte-identical before/after tree snapshots |
 | R5 | Interim regeneration vulnerability while this strand is deferred | Accepted and tracked; see §R16.9 of the predecessor plan |
 
-## 8. Task provenance
+## 8. Task provenance (corrected rev 18)
 
-| Former ID | New ID | `origin_feature` |
-|---|---|---|
-| `019.001-T` | `020.001-T` | `019-F` |
-| `019.002-T` | `020.002-T` | `019-F` |
-| `019.003-T` | `020.003-T` | `019-F` |
-| `019.005-T` | `020.004-T` | `019-F` |
-| `019.006-T` | `020.005-T` | `019-F` |
+| Former ID | New ID | Structured `origin_feature` | Prose-only re-parent history |
+|---|---|---|---|
+| `019.001-T` | `020.001-T` | `018-F` | `018-F` → `019-F` → `020-F` |
+| `019.002-T` | `020.002-T` | `018-F` | `018-F` → `019-F` → `020-F` |
+| `019.003-T` | `020.003-T` | `018-F` | `018-F` → `019-F` → `020-F` |
+| `019.005-T` | `020.004-T` | `018-F` | `018-F` → `019-F` → `020-F` |
+| `019.006-T` | `020.005-T` | `018-F` | `018-F` → `019-F` → `020-F` |
+
+**`origin_feature` records the ORIGINAL/ROOT origin feature and is preserved across successive
+adoptions** — it is **not** rewritten to the immediate predecessor. The stored value `018-F` is
+therefore **correct**, and the **intermediate** re-parent step through `019-F` is carried in
+**prose only**, here and in each task body, because no structured field records it.
+
+**Two rev-17 provenance claims are WITHDRAWN as inaccurate.** (1) The statement that `adopt`
+"records `origin_feature: 019.001-T -> 020.001-T`" conflated an **ID remap** with a **field value**.
+(2) The rev-17 table asserting `origin_feature` = `019-F` for these five tasks **contradicted the
+stored frontmatter**, which reads `018-F`.
 
 Each task body was **fully rewritten** in the rev-17 remediation. The previous bodies carried the
 retired rev-11..15 machinery as **active acceptance criteria** plus a stale parent (`018-F`),
@@ -152,6 +182,6 @@ stale predecessor IDs and a stale `017-S` composition. All of that is withdrawn 
 ## 9. Next steps
 
 1. Resolve `021.001-T` (harness execution model) under deliberation and plan review.
-2. Restructure `020-F` / `019-S` per that decision.
+2. Restructure `020-F` per that decision.
 3. Run `impl-plan`, then `plan-harden` (**required**) and `plan-review`.
-4. Only then remove the `019-S → 020-S` edge and re-queue.
+4. **Only then** create a fresh shipment over the reviewed shape and move member tasks to `queued`.

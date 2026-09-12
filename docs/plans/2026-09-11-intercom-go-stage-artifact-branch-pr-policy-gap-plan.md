@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction"
 date: 2026-09-11
-revision: 17
+revision: 18
 status: awaiting-review
 agent: Stage
 governs: stash 638A410B
@@ -14,12 +14,15 @@ deferred_plan_strand_b: docs/plans/2026-09-12-intercom-go-stage-contract-enforce
 
 # Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction
 
-> **REVISION 17 (2026-09-12) — §R16 BELOW IS THE WHOLE GOVERNING CONTRACT.**
+> **REVISION 18 (2026-09-12) — §R16 BELOW IS THE WHOLE GOVERNING CONTRACT.**
 > Everything from §1 onward is **HISTORICAL AUDIT APPENDIX** describing the retired
 > eight-task architecture (revisions 1–15). It is **preserved for audit and deliberately
 > not deleted**, but it **no longer governs execution**. Where §R16 and any later section
-> disagree, **§R16 wins without exception**. Revision 17 rewrote §R16 in place rather than
-> appending another revision section; the rev-16 text it replaced is in git at `14d64e4`.
+> disagree, **§R16 wins without exception**. Revisions 17 and 18 rewrote §R16 in place rather
+> than appending further revision sections; the rev-16 text is in git at `14d64e4` and the
+> rev-17 text at `9e44bfe`.
+>
+> **Requires plan hardening**: **yes — applied in rev 18** (see §R16.10).
 
 ## §R16 — Current Contract (authoritative)
 
@@ -44,164 +47,314 @@ in this release unit.
 
 | Item | Value |
 |---|---|
-| Feature | `018-F` (root; no `parent_id`) |
-| Shipment | `017-S` (the only `queued` shipment in the workspace) |
+| Feature | `018-F` (root; no `parent_id`; **not** a shipment member) |
+| Shipment | `017-S` (the only shipment in the workspace; **task-only** 12-entry manifest) |
 | Executable tasks | **1** — `018.008-T` (size **M**, complexity **medium**) |
-| Harness | ONE function `TestStageBranchGate_ContractCorrected` |
+| Harness | ONE function `TestStageBranchGate_ContractCorrected`, ONE expected marker |
 
 `018.008-T` carries exactly three surfaces: **(1)** P-010 in
 `.github/policies/workflow-policies.md`; **(2)** the `.github/agents/_stage.agent.md` Role
 Boundary Git and PR rows; **(3)** the Step 1.9 gate (§R16.4).
 
-### R16.3 Shipment `017-S` manifest and P-015 closure (repaired rev 17)
+### R16.3 Shipment `017-S` manifest and P-015 closure (re-repaired rev 18)
 
-The manifest is the **closure membership record**, never the executable set. It contains **13**
-entries: `018-F` plus its **complete descendant closure at every depth** — `018.008-T` (queued)
-and the 11 pre-archived legacy descendants `018.001-T`, `018.002-T`, `018.003-T` and their eight
-subtasks.
+> **The rev-17 13-entry `CASCADE` shape is WITHDRAWN.** It was closable in principle but
+> **unreachable in practice**, because Ship Step 6 would halt *before* closure ever began.
 
-**This is required, not cosmetic.** With the previous two-entry manifest `[018-F, 018.008-T]`:
+The manifest is the **closure membership record**, never the executable set. It now contains
+**12** entries and is **task-only**: `018.008-T` plus the 11 pre-archived legacy descendants
+`018.001-T`, `018.002-T`, `018.003-T` and their eight subtasks. **`018-F` is deliberately not a
+member.** `018-F` was removed with the registry-declared supported operation
+`backlogit shipment return-blocked` (registry op `return_blocked`, MCP
+`backlogit_return_blocked`), then restored to `queued` with `backlogit move 018-F --status queued`,
+which also cleared the `blocked_reason` the removal stamped. No hand-edit of
+`custom_fields.items` was required or performed.
 
-1. P-015 Step 0(c) classified `017-S` as `SAFE_CLOSE` — `018-F` was **not fully covered**.
-2. Safe-close step 2 then computed the 11 archived non-manifest descendants into the
-   **protected set** (they share the covering feature's hierarchy prefix and are not in the
-   manifest). The sequence-aware exclusion does not apply: it requires a predecessor shipment
-   with verified `archived_status: shipped` provenance, and these tasks were never in a shipment.
-3. Safe-close step 3's **baseline integrity gate** requires every protected-set member to be
-   present in `.backlogit/queue/`, and grants the protected set **no pre-archived exemption**.
-   All 11 are in `.backlogit/archive/`.
-4. Result: `HALT — cascade detected, revert required`. **`017-S` was mechanically unclosable.**
+#### R16.3.1 Why the rev-17 shape failed
 
-With full descendant coverage the classifier returns **`CASCADE`** (root; fully covered at every
-depth; manifest contains nothing else; no torn records), and **a `CASCADE` manifest has no
-protected set by construction**. P-015 exception item 7 expressly tolerates pre-archived manifest
-members — they have no transition to report and are correctly absent from `archived_ids`.
-`required_ids` is exactly `{017-S, 018-F, 018.008-T}`. `018-F` carries no
-`custom_fields.source_deliberation_id` and no ID matching the engine's deliberation matcher, so
-the cascade archives no linked deliberation.
+Ship Step 6 item 1.a invokes `shipment-reconcile` with `mode: pre` and **`expected_status: done`**.
+Pre-mode step 3 checks `.backlogit/queue/` **first** and, when the record is found there, compares
+its declared `status` to `expected_status` with **no artifact-type exemption** (the task-artifact
+filter applies only to step 5's record-status classification).
 
-The members were added with the **supported operation** `backlogit shipment add` (MCP
-`backlogit_add_to_shipment`). Verified: every archived record is **byte-identical** afterwards and
-still declares `status: archived` / `archived_status: queued`. Nothing was unarchived.
+At Step 6, `018-F` is live in `.backlogit/queue/` with `status: active` — `backlogit shipment claim`
+moves the covering feature `queued → active` — and **no Ship step ever moves a covering feature to
+`done`**: Step 4.5 moves *tasks* only. `018-F` would therefore classify **`status-mismatch`**,
+pre-mode would return `HALT — operator reconcile required`, and closure would never start.
 
-**Ship's executable set is exactly `[018.008-T]`** — verified against Ship Step 3 item 1, whose
-positive status rule KEEPs `queued`/`active` and SKIP-AND-REPORTs `archived` as
-`pre_archived_skipped`. The three archived tasks are skipped; the eight subtasks are not task
-artifacts and never enter the derivation. They must not be unarchived, claimed, or executed.
+**Verified by execution** (isolated probe workspace, backlogit 1.10.1): after a claim and a task
+completion, the covering feature remained `status: active` and was never auto-completed. The
+working precedents in this workspace (`006-S`, `009-S`, `014-S`) all had the covering feature
+already `done`/archived before pre-mode — produced by an **undocumented session step that no
+installed contract specifies**. This plan does not rely on it.
+
+#### R16.3.2 The 12-entry task-only shape, proven end to end
+
+| Gate | Input | Outcome |
+|---|---|---|
+| Step 0.5 item 1a (queued-with-active-work) | task-artifact members `018.008-T` (queued), `018.001/2/3-T` (archived) | no `active`/`done` task → **PASS** |
+| Step 0.5 item 2 (membership) | task-only manifest | expressly accepted; covering feature resolved via `parent_id` (097-S precedent) → **PASS** |
+| Step 0.5 item 3 (covering parent) | every member resolves to `018-F` / its tasks | **PASS** |
+| Step 0.5 item 6 (intake pre-mode, `expected_status: queued`) | `018.008-T` `matched`; 11 legacy `pre-archived`; 0 orphans; record `queued` with no active/done task → `record-consistent` | **PROCEED** |
+| Step 2 (harness) | queued tasks of `018-F` = `[018.008-T]` | exactly **1** generated function → P-004 satisfiable |
+| Step 3 item 1 (executable set) | `artifact_type: task` filter, then positive status rule | KEEP `[018.008-T]`; `pre_archived_skipped` `[018.001-T, 018.002-T, 018.003-T]`; `already_done` `[]`; fail-closed halts **none**; the 8 subtasks are excluded at the `artifact_type` filter **before** any status read |
+| Step 6 pre-mode (`expected_status: done`) | `018.008-T` relocated to `archive/` by Step 4.5's `move --status done` → `pre-archived`; 11 legacy → `pre-archived`; 0 orphans; record `active` → `record-consistent` | **PROCEED** — and `018-F` is **never evaluated** |
+
+**Classification.** Safe-close Step 0(c) returns **`SAFE_CLOSE`**, deterministically. The P-015
+exception is quantified over *every feature member of the manifest*; with **zero** feature members
+there are zero qualifying roots, so precondition 4 ("the manifest contains nothing beyond the
+qualifying root feature member(s) and their descendants … a task whose ancestry does not lead back
+to one of the qualifying root features disqualifies the exception for the whole manifest") is
+failed by every member. The skill's default rule reaches the same verdict independently.
+
+**Protected set = `{018-F}` exactly.** Safe-close step 2 derives the covering feature from the
+manifest hierarchy, finds it absent, and classifies `017-S` a partial-feature shipment. Every other
+descendant of `018-F` at every depth — the three legacy tasks and the eight subtasks — **is** a
+manifest member and contributes nothing. The eight subtasks are included precisely so that a
+conservative reading of "every task sharing the covering feature's hierarchy prefix" cannot pull
+them into the protected set.
+
+**Baseline integrity gate (step 3) PASSES**: the sole protected-set member `018-F` is present in
+`.backlogit/queue/`. This is exactly the gate that **halted** under the earlier two-entry manifest,
+where the 11 archived non-members were protected and the protected set has **no** pre-archived
+exemption.
+
+**Archive loop (step 4) mutates nothing**: all 12 members are already in `.backlogit/archive/`, so
+each classifies `pre-archived` and is skipped. The verify-after-each invariant (step 5) and the
+final re-check (step 7) both confirm `{018-F}` intact. Verified by execution: neither
+`backlogit shipment claim` nor a single-artifact archive mutates an archived manifest member
+(byte-identical file hashes before and after), and neither touches a covering feature that is not
+an explicit manifest member.
+
+**Post-close state**: `017-S` archived; `018.008-T` + 11 legacy members archived; `018-F` **still
+live in `.backlogit/queue/`**, protected, `queued`/`active` — which is the stated goal.
+
+#### R16.3.3 Residual closure blocker — P0, pre-existing, shape-independent, **not** remediable here
+
+Safe-close **step 8** closes the shipment record by
+`backlogit move <shipment_id> --status shipped`. **backlogit 1.10.1 refuses that command for
+shipment artifacts with exit code 9**: `shipment must be shipped via ShipShipment, not a direct
+status update`. Verified by execution in this cycle from **both** `queued` and `active` record
+states; already recorded in this workspace by the `009-S` safe-close report ("the generic
+safe-close move path described in this skill's steps 1–10 is not available in `backlogit` 1.10.1
+for shipment records") and by `docs/compound/2026-05-07-backlogit-shipment-status-constraints.md`.
+
+A `SAFE_CLOSE`-classified shipment therefore halts fail-closed at step 8 with
+`RECONCILE_FAIL_SHIPMENT_RECORD_LIVE_STATUS`. The contract's own negative scenarios forbid both
+available substitutes: archiving an `active` record yields `archived_status: active` →
+`RECONCILE_FAIL_SHIPMENT_RECORD_PROVENANCE`, and calling the cascade op after a `SAFE_CLOSE`
+classification is a **P-005 process deviation**.
+
+**No manifest shape avoids this.** The only shape that reaches the *permitted* cascade path is one
+containing `018-F` — and that shape fails pre-mode first (§R16.3.1). The two failures are at
+different gates and are mutually exclusive; there is no third shape.
+
+**Disposition.** This is **out of scope for `018.008-T`** and is **not a defect introduced by this
+release unit**. Resolving it requires either a backlogit change or a separately deliberated and
+reviewed amendment to `shipment-reconcile` step 8 / P-015 — and this cycle is explicitly forbidden
+from amending Ship/reconcile contracts. Recorded as a stash entry for Stage intake. Until it is
+resolved, `017-S` **executes, reviews, and merges normally**, and then **pauses at Ship Step 6
+closure for operator disposition**.
+
+**Ship's executable set is exactly `[018.008-T]`.** The authoritative filter is
+`artifact_type: task`, **never an ID suffix** — subtask IDs end `-ST`, whose final character is also
+`T`, so a suffix test would admit all eight subtasks. With the `artifact_type` filter applied first,
+the three archived tasks are `pre_archived_skipped` and the subtasks never enter the derivation.
 
 ### R16.4 Step 1.9 is an operative mandatory fail-closed gate
 
 Step 1.9 is **not** prose that merely sits before Step 2. It has two mandatory parts:
 
-**(a) Registration.** A new line `[ ] Step 1.9 — Stage artifact branch gate (fail-closed)` is
-inserted into the existing **Step Sequence Contract** fenced checklist, between the `Step 1.8`
-and `Step 2` lines. Without it the gate is not covered by the existing rule that blocks the
-summary until every applicable step completes, so skipping it would not be a P-005 violation.
+**(a) Registration — exact anchors, never line ordinals.** One line is inserted into the single
+fenced `text` block that follows the heading `## Step Sequence Contract (NON-NEGOTIABLE)`. The
+insertion point is located by **two byte-exact anchor lines**, quoted here as they exist in the
+installed file (both separators are **EM DASH U+2014**, bytes `E2 80 94`; note the **three** ASCII
+spaces after `Step 2`):
+
+```text
+[ ] Step 1.8 — Learnings retrieval
+[ ] Step 2   — Deliberation
+```
+
+The new line, inserted strictly between them (one ASCII space after `1.9`, EM DASH U+2014, one
+ASCII space either side):
+
+```text
+[ ] Step 1.9 — Stage artifact branch gate (fail-closed)
+```
+
+*Normalized fallback locator.* If an exact byte match for either anchor is absent, locate — inside
+that same fenced block — the **unique** line whose text, after (1) stripping a leading `[ ] ` or
+`[x] ` marker, (2) replacing every run of EM DASH (U+2014), EN DASH (U+2013) or ASCII hyphen with a
+single ASCII `-`, and (3) collapsing internal whitespace runs to one ASCII space, equals exactly
+`Step 1.8 - Learnings retrieval` (anchor A) or `Step 2 - Deliberation` (anchor B).
+
+*Fail on zero or multiple.* If **either** locator yields **zero** matches or **more than one**
+match, halt with `STAGE_BRANCH_GATE_ANCHOR_FAIL` and record P-005. Never insert by line ordinal,
+never guess a position, never insert into a second fenced block. Without this registration the gate
+is not covered by the existing rule that blocks the summary until every applicable step completes,
+so skipping it would not be a P-005 violation.
 
 **(b) Section.** `Step 1.9: Stage Artifact Branch Gate (NON-NEGOTIABLE)`, strictly after Step 1.8
-and strictly before Step 2, specifying all of:
+and strictly before Step 2, specifying (i)–(vii) **in this order**:
 
-1. **Deterministic `{scope-slug}` derivation available before the first tracked mutation** —
-   feature-shaped intake from the Step 1 classification subject, task-shaped intake from the
-   Step 1.5 selected grouping's covering-feature title, with a concrete normalization rule. A
-   shipment ID MAY be used when already known but is **never required**, because Step 5.5 creates
-   the shipment as the session's **last** mutation.
-2. **Create-or-select/resume** for `chore/stage-{scope-slug}` — select when already checked out;
-   create from the default-branch tip when absent; check out and **resume** when the branch
-   already exists (collision is a resumption case, not a failure), after a clean-worktree check.
-3. **Symbolic HEAD equality** — `git symbolic-ref --short HEAD` must equal the expected branch;
-   a detached HEAD fails.
-4. **Default-branch inequality** — the expected branch must differ from the configured default
-   branch.
-5. **Named fail-closed halt** — `STAGE_BRANCH_GATE_FAIL`, with a P-005 record and **no** tracked
-   mutation, placed before **every categorically enumerated** tracked-mutation site.
-6. **Categorical deferral rule** — the gate precedes every tracked Stage artifact mutation of the
-   session without exception; anything otherwise scheduled earlier is deferred until it passes.
-   The enumeration is categorical; the two named write halves (late-identifier reconciliation,
-   duplicate-scan archival) are **illustrative, not a closed list**.
+1. **Worktree topology precheck (P-016) — runs first, before any branch create/select/resume.**
+   Run `git worktree list --porcelain` and classify **every** attached worktree into exactly one of:
+   (1) the current worktree; (2) an **explicit, time-boxed Stage spike/research worktree** whose
+   spike context is recorded for this session, per the P-016 paragraph beginning
+   `**Allowed exception (Stage spike/research only)**`; (3) prohibited/ambiguous. Class (2)
+   **passes** — the precheck must not narrow, qualify or supersede the P-016 exception. Any class-(3)
+   worktree, and any worktree that cannot be positively classified into (1) or (2), halts with
+   `STAGE_BRANCH_GATE_FAIL` plus a P-016/P-005 record, **before** any branch operation and **before**
+   any tracked mutation.
+2. **Deterministic slug derivation — exact source fields.** Feature-shaped intake: the `title` field
+   of the Step 1 classified feature/epic/chore artifact, or the verbatim stash-entry title text used
+   as the Step 1 classification subject when no artifact exists yet. Task-shaped intake: the
+   **`Proposed covering feature title`** string of the Step 1.5 grouping the operator **selected**.
+   Shipment-shaped (**optional, never required**): the `title` field of an already-known shipment
+   record — usable on resumption, never required, because Step 5.5 creates the shipment as the
+   session's **last** mutation.
+   *Normalization, in this exact order*: (1) NFC-normalize; (2) lowercase by **ASCII case folding
+   only**; (3) replace every maximal run of characters outside `[a-z0-9]` with a single `-`;
+   (4) trim leading/trailing `-`; (5) **truncate to at most 48 bytes**, then trim any trailing `-`
+   the truncation produced. The 48-byte bound keeps `chore/stage-` (12 bytes) + slug within the
+   workspace's configured `max_slug_length: 60`.
+   *Empty fallback*: if the result is the empty string, use the literal `stage-session`. The gate
+   must **not** halt on an empty slug and must not invent a slug from any other source.
+3. **Base-ref resolution — never assumed.** `git symbolic-ref --short refs/remotes/origin/HEAD`,
+   stripping the leading `origin/`; on failure `git rev-parse --abbrev-ref origin/HEAD`, same strip.
+   If **both** fail, halt with `STAGE_BRANCH_GATE_FAIL`. The gate must not assume the literal name
+   `main`.
+4. **Create-or-select/resume with an ownership / base-identity / collision discriminator.**
+   (a) Branch absent (`git rev-parse --verify --quiet refs/heads/{expected}` non-zero): require a
+   clean worktree (`git status --porcelain=v1` empty), then create and check out from
+   `refs/remotes/origin/{base_ref}` — the ownership-establishing case, no discriminator.
+   (b) Branch already checked out: select, **after** the discriminator.
+   (c) Branch exists but not checked out: require a clean worktree, check out, resume, **after** the
+   discriminator.
+   *Discriminator (cases b and c only), both conditions required*: (1) **base identity** —
+   `git merge-base refs/heads/{expected} refs/remotes/origin/{base_ref}` succeeds and returns a
+   non-empty SHA; (2) **content ownership** —
+   `git diff --name-only refs/remotes/origin/{base_ref}...refs/heads/{expected}` is empty or lists
+   **only** paths under `.backlogit/`, `docs/plans/`, `docs/decisions/`, `docs/memory/`. A single
+   path outside those roots proves the branch is not a Stage artifact branch. If either condition
+   fails, the name match is a **collision, not a resumption**: halt with `STAGE_BRANCH_GATE_FAIL`,
+   record P-005, perform no tracked mutation, and do not create, rename, delete, force-update or
+   reuse the colliding branch. **Branch resume is permitted only when identity matches; otherwise
+   the gate halts.**
+5. **Symbolic HEAD equality** — `git symbolic-ref --short HEAD` must equal the expected branch; a
+   detached HEAD (non-zero exit) fails.
+6. **Default-branch inequality** — the expected branch must differ from the resolved `base_ref`.
+   Retained even though the `chore/stage-` prefix makes equality structurally unreachable today, so
+   a future prefix change cannot silently defeat the gate.
+7. **Named fail-closed halt and categorical deferral rule** — `STAGE_BRANCH_GATE_FAIL` (or
+   `STAGE_BRANCH_GATE_ANCHOR_FAIL` for the (a) locator), a P-005 record, and **no** tracked mutation.
+   The gate precedes every tracked Stage artifact mutation of the session without exception; anything
+   otherwise scheduled earlier is deferred until it passes. The enumeration is **categorical**; the
+   two named write halves (late-identifier reconciliation, duplicate-scan archival) are
+   **illustrative, not a closed list**.
 
 **P-016 preservation (non-negotiable).** The P-016 paragraph beginning
 `**Allowed exception (Stage spike/research only)**` must remain **byte-for-byte identical**. The
-word "only" in the new commit grant constrains **which branch** Stage may commit on; it must not
-be drafted so as to narrow, qualify, supersede or delete that exception.
+word "only" in the new commit grant constrains **which branch** Stage may commit on; it must not be
+drafted so as to narrow, qualify, supersede or delete that exception. Item 1 above explicitly
+**passes** the spike/research class for the same reason.
 
-### R16.5 Interim persistence — honest statement, no automation claimed
+### R16.5 Interim persistence — operator-only after Stage handback
 
-This unit delivers the **branch gate only**. It delivers **no** Stage commit step
-(`019.009-T`), **no** handback record (`019.007-T`), **no** no-shipment terminal (`019.008-T`)
-and **no** Orchestrator branch discovery (`019.004-T`). Therefore:
+This unit delivers the **branch gate only**. It delivers **no** Stage commit step (`019.009-T`),
+**no** handback record (`019.007-T`), **no** no-shipment terminal (`019.008-T`) and **no**
+Orchestrator branch discovery (`019.004-T`). The honest consequence:
 
-* **Stage terminus.** Stage creates or selects `chore/stage-{scope-slug}` at Step 1.9, performs
-  bounded tracked mutations under the Stage artifact roots (`.backlogit/`, `docs/plans/`,
-  `docs/decisions/`, `docs/memory/`), and **ends the session with those artifacts uncommitted on
-  that branch**. Stage commit production is explicitly **outside** `018.008-T`.
-* **The installed Orchestrator Step 1.5 is main-scoped.** Its step 2 evaluates
-  `git log origin/main..main`, which is empty whenever Stage worked on a side branch. It can
-  neither discover `chore/stage-{scope-slug}` nor guarantee PR-only persistence on its own.
-* **Fail-closed terminal.** Absent a manual sequence, Step 1.5 step 4
-  (`git show origin/main:.backlogit/queue/{shipment_id}.md`) fails and halts with
-  `STAGING_GATE_FAIL`. **That halt is the intended interim behaviour** — the pipeline stops
-  rather than silently persisting to the default branch.
-* **The only reachable interim sequence** (this staging cycle and every future reduced-policy
-  cycle):
-  1. Stage hands back the branch name and the uncommitted artifact set.
-  2. The **Orchestrator** (pipeline invocation, acting under its own installed Step 1.5 item 3
-     authority) **or the operator** (direct invocation) verifies branch and worktree state.
-  3. Commits the Stage artifact roots on that branch.
-  4. Pushes the branch.
-  5. Opens and merges the staging PR into the default branch.
-  6. Pulls the default branch.
-  7. Re-runs Step 1.5 step 4 and confirms the shipment manifest is on `origin/main`.
-  Only then may Ship be routed.
+* **Stage branch gate.** Step 1.9 prevents any tracked Stage artifact mutation on the default
+  branch. All bounded Stage mutations happen on `chore/stage-{scope-slug}`.
+* **Stage terminus.** Stage ends its session at a **named fail-closed handback**,
+  `STAGE_ARTIFACTS_UNCOMMITTED`, with its bounded artifacts **uncommitted** on that branch under the
+  four Stage artifact roots (`.backlogit/`, `docs/plans/`, `docs/decisions/`, `docs/memory/`). They
+  are uncommitted **because commit and handback automation is deferred** (`019.009-T` / `019.007-T`),
+  not because leaving them uncommitted is desirable.
+* **The Orchestrator MUST HALT here.** The Orchestrator **MUST NOT** execute Step 1.5 item 3 (its
+  uncommitted/unpushed arm) for this interim route. That arm commits Stage artifacts, and its
+  sub-item **3(e) instructs a direct push to `main` to be attempted first**. Both contradict the
+  Orchestrator's own installed Role statement — *"You do NOT triage stash entries yourself. You do
+  NOT write code or create PRs yourself."* — and a direct-`main` attempt is precisely the behaviour
+  this release unit exists to prohibit.
+* **Operator-only completion sequence.** **Only the operator** may: (1) verify the branch, worktree
+  topology and the uncommitted artifact set; (2) commit **only** the four allowed Stage artifact
+  roots on that branch; (3) push the side branch; (4) open and approve a **merge-commit** staging PR
+  (P-009: no squash, no rebase); (5) update the default branch; (6) re-verify that the shipment
+  manifest is present on `origin/main`. No agent performs any of these steps under this contract.
+* **The current dark run pauses at that operator checkpoint.** Because the operator is AFK, current
+  automation **may not proceed past it** until the staging-automation work in `019-F` ships. **This
+  means the dark pipeline cannot finish autonomously after this release unit is implemented.** That
+  is stated plainly rather than papered over.
 
-**Authority note — no new grant is created.** The Orchestrator's authority to commit, push and
-open the staging PR is the one already written in **its own** installed agent contract at
-Step 1.5 item 3 (*Staging Artifact Merge Gate (NON-NEGOTIABLE)*). P-010 enumerates no Orchestrator
-MAY/MUST NOT bullets beyond "must not perform Stage or Ship work directly". This release unit
-grants the Orchestrator **nothing new** and does not amend P-010's Orchestrator statement. If an
-operator judges Step 1.5's commit arm to exceed the Orchestrator role boundary, **the operator
-performs steps 2–7 directly** — that substitution is always available under installed permissions
-and needs no contract change. A safe manual path therefore exists and this plan is not blocked.
+**No Orchestrator authority is created, and none is claimed to pre-exist.** The rev-17 assertions
+that Orchestrator Step 1.5 is "naturally fail-closed" for this route and that item 3 supplies
+pre-existing authority to commit Stage artifacts are **factually wrong and are withdrawn**: item 3's
+dirty-artifact arm contains a direct-`main` attempt and a commit action, both outside the
+Orchestrator's orchestration-only boundary. This release unit grants the Orchestrator **nothing**,
+amends **nothing** in P-010's Orchestrator statement, and routes the entire interim sequence to the
+operator.
 
 **Withdrawn overclaim.** The rev-16 assertion that this is "exactly the interim behaviour already
-in use" is **false and withdrawn**: the behaviour in use before this unit permitted Stage to
-commit on the default branch — the very defect being closed.
+in use" is **false and withdrawn**: the behaviour in use before this unit permitted Stage to commit
+on the default branch — the very defect being closed.
 
-### R16.6 Harness footprint (recalculated rev 17)
+### R16.6 Harness footprint — P-004 compliant unconditionally (rev 18)
 
 The production contract surfaces are **two Markdown files**:
 `.github/policies/workflow-policies.md` and `.github/agents/_stage.agent.md`. **No Go production
-code implements this contract**, so the harness is a characterization harness that reads those
-two installed files directly. **No companion Go production stub is created**, and no new package,
-file or exported function is added outside the single test file. harness-architect's
-"matching production stub" instruction exists so the module *compiles* while a test calls
-not-yet-existing production code; a file-reading test compiles with no stub, so the instruction
-has no object here and inventing one would leave an orphaned production file with no final state.
+code implements this contract**, so the harness is a characterization harness that reads those two
+installed files directly. **No companion Go production stub is created**, and no new package, file
+or exported function is added outside the single test file: a file-reading test compiles with no
+stub, so harness-architect Step 4 item 3's "matching production stub" instruction — which exists so
+the *module compiles* while a test calls not-yet-existing production code — has no object here.
 
-*Fallback, only if harness-architect insists on a callable panic marker for its step 5.2 check*:
-the marker must be an **unexported helper inside** `tests/integration/stage_branch_gate_test.go`
-with body `panic("not implemented: stage branch gate contract")`, whose final state is an ordinary
-test helper holding the contract assertions. Never a new file, package, or anything under
-`internal/` or `cmd/`. The file count is the same either way.
+**The expected marker is mandatory, not conditional.** P-004's precondition is
+`go test ./...` exiting non-zero **with expected failure markers in the output for every test
+function**, and harness-architect Step 5.2 requires **all** harness tests to fail with the expected
+marker `panic("not implemented: <reason>")`. Both are unconditional. **The rev-17 "*fallback, only
+if harness-architect insists*" framing was P-004-noncompliant and is WITHDRAWN.**
+
+The harness therefore carries, at H0, **exactly one expected marker**: an **unexported helper
+declared inside** `tests/integration/stage_branch_gate_test.go` with body
+`panic("not implemented: stage branch gate contract")`, invoked **unconditionally** by
+`TestStageBranchGate_ContractCorrected`. Never a new file, package, or anything under `internal/` or
+`cmd/`. Its final state after the task is an ordinary test helper carrying the contract assertions,
+with no panic.
+
+**H0 evidence — explicit and captured, before any implementation:**
+
+| # | Check | Required result |
+|---|---|---|
+| 1 | `go vet ./...` | exit 0 |
+| 2 | `go test ./tests/integration/ -run TestStageBranchGate_ContractCorrected` | exit **non-zero** |
+| 3 | captured output | contains the literal `not implemented: stage branch gate contract`, attributed to `TestStageBranchGate_ContractCorrected` |
+| 4 | H0 red count over this unit's generated functions | literally **1 of 1** |
+
+After the **sole** task completes: the marker is gone, the function passes, `go vet ./...` exits 0,
+and the **full** `go test ./...` exits 0 — Ship Step 4.3 is green immediately because `018-F` has
+exactly one queued task.
 
 | Metric | Value |
 |---|---|
 | Files | **3** — 2 edited contract files + 1 generated test file |
 | New production files | **0** |
-| Functions | 1 test function + at most 2 unexported helpers in the same file |
+| Functions | 1 generated test function + at most 2 unexported helpers in the same file, one carrying the H0 marker |
 | Test scenarios | 1 scenario group |
 | Skill domains | 1 (policy/contract text) |
 
 **Within the 2-hour rule. `018.008-T` stays atomic and is not split.** Every edit is a named,
-quoted, pre-located textual insertion or replacement in two files; no design work, no discovery,
-no build-system or schema change.
+quoted, pre-located textual insertion or replacement in two files; no design work, no discovery, no
+build-system or schema change.
 
 **Locator precision.** The Ship mirror bullet is located by its exact Markdown text
 ``- Commit or push directly to `main` `` (with `main` in backticks), never by line ordinal. If an
 exact match is absent, the documented normalized locator applies — the unique Markdown list item
-under the `**Ship MUST NOT**:` heading whose text, after stripping backticks and collapsing
-internal whitespace, equals `Commit or push directly to main` — and the executor **halts** if that
-normalized match is also absent or non-unique.
+under the `**Ship MUST NOT**:` heading whose text, after stripping backticks and collapsing internal
+whitespace, equals `Commit or push directly to main` — and the executor **halts** if that normalized
+match is also absent or non-unique.
 
 **Scoped zero-skip claim.** `TestStageBranchGate_ContractCorrected` and every assertion inside it
 execute unconditionally — no `t.Skip`/`t.Skipf`, no build tag, no env-var or platform gate, no
@@ -214,15 +367,16 @@ neither introduced nor modified. The rev-16 claim of "no skipped, pending, or
 conditionally-activated assertions **anywhere in the suite**" was factually unsatisfiable —
 14 existing test files already call `t.Skip` — and is **withdrawn**.
 
-### R16.7 Deferred work — two strands, both readiness-locked
+### R16.7 Deferred work — two feature strands, no live shipment (rev 18)
 
 The former single deferred feature mixed **persistence semantics** with **reusable enforcement
-infrastructure**. Revision 17 split it:
+infrastructure**. Revision 17 split it; revision 18 removed the invalid shipment representation.
 
 | Strand | Feature | Shipment | Plan |
 |---|---|---|---|
-| A — Stage handback / Orchestrator PR persistence / no-shipment semantics | `019-F` | `018-S` | `docs/plans/2026-09-12-intercom-go-stage-persistence-enforcement-plan.md` |
-| B — detector / fixture corpus / event parser / CI / regeneration proof | `020-F` | `019-S` | `docs/plans/2026-09-12-intercom-go-stage-contract-enforcement-platform-plan.md` |
+| A — Stage handback / staging-PR persistence / no-shipment semantics | `019-F` (blocked) | **none** | `docs/plans/2026-09-12-intercom-go-stage-persistence-enforcement-plan.md` |
+| B — detector / fixture corpus / event parser / CI / regeneration proof | `020-F` (blocked) | **none** | `docs/plans/2026-09-12-intercom-go-stage-contract-enforcement-platform-plan.md` |
+| Readiness decision (not a delivery strand) | `021-F` (blocked) | **none** | `021.001-T` decision artifact |
 
 Deferred: handback emission · `stage_artifact_paths` derivation · no-shipment terminal
 reachability · the Stage artifact commit step · out-of-root path safety · Orchestrator Step 1.5
@@ -232,39 +386,91 @@ and divergence-ledger updates · the MP-series mutation proofs · regeneration p
 
 **A reviewer MUST NOT fail the current unit for the absence of any of the above.**
 
-Both shipments are **mechanically non-claimable**, not merely prose-labelled: each is
-`status: blocked` **and** carries a `blocks` dependency edge to the readiness-gate shipment
-`020-S` (`021-F` / `021.001-T`, both `blocked`, in no other shipment). Orchestrator Step 2
-triggers on `queued` shipments only and treats an unshipped blocking predecessor as a **hard**
-eligibility gate; Ship Step 0.5 item 1b independently rejects a non-`queued`/`active` shipment.
-Verified: `backlogit queue view --type shipment` lists only `017-S` as queued.
+#### R16.7.1 Why the rev-17 readiness lock was invalid and was retired
+
+The rev-17 lock made `018-S` and `019-S` `status: blocked` and gave each a `blocks` edge to a
+lock-token shipment `020-S`. **`blocked` is not a valid backlogit shipment status.** The shipment
+status enum is exactly `queued | active | shipped | abandoned` (`.backlogit/header-def.yaml`;
+`docs/compound/2026-05-07-backlogit-shipment-status-constraints.md`). Verified by execution against
+backlogit 1.10.1: `backlogit move <shipment> --status blocked` exits **0** — the generic mover
+validates against the *generic* status enum, which is the known CLI defect that wrote those values
+— while `backlogit move <shipment> --status shipped` exits **9**, and
+`backlogit move <shipment> --status abandoned` from `queued` is rejected by
+`validate_status_transition`. A lock token that can exist **only** in an invalid state is not
+enforcement.
+
+**There is no safe valid queued-shipment readiness lock in current backlogit semantics** unless a
+genuine predecessor shipment is actually intended to ship: a `queued` shipment is by definition
+claimable, and `blocked → queued` as an "unlock transition" is unsupported for shipments. Leaving
+implementation-unready future shipments claimable is therefore unacceptable.
+
+**This supersedes the earlier request for a queued future shipment.** The adversarial gate proved no
+valid safe queued representation exists; **reliability and safety take precedence** over having a
+shipment record present.
+
+#### R16.7.2 What replaces it
+
+`018-S`, `019-S` and `020-S` were **archived** with the official non-destructive
+`backlogit archive` operation, after their `blocks` edges were removed. **Nothing was deleted**; the
+archived records preserve their manifests, IDs and titles, and carry `archived_status: blocked` —
+an honest provenance record of the defect-written value, and a value the `shipment-reconcile`
+contract already enumerates and handles (`archived_status: active|queued|blocked|abandoned`).
+
+Both deferred features and **all** their tasks remain `status: blocked` and belong to **no
+shipment**. Orchestrator Step 2 and Ship Step 0.5 both operate on **shipments**: with no shipment
+there is nothing to list, select, claim or mis-route. **It is acceptable — and safer — to retain
+blocked future features and tasks without any live shipment until implementation readiness.**
+
+Verified by execution that archival costs no future capability: members of an archived shipment are
+freely re-assemblable into a new shipment, and `backlogit archive <shipment>` does not cascade to
+its members.
+
+**Stage creates fresh shipment(s) only after P-006 plan review** selects one of `021.001-T`'s three
+admissible options: (1) single-task features/shipments; (2) proven one-queued-child serialization;
+(3) a reviewed shipment-scoped harness contract amendment. **No deferred shipment is eligible or
+claimable now, because none exists.**
 
 ### R16.8 Single-shipment boundary and dependency direction
 
-Only the reduced `017-S` proceeds after the staging PR merges. Dependency direction is
-**future → current** and is verified to contain **no `current → future` edge and no cycle**:
-`019.007-T`, `019.009-T`, `019.004-T`, `020.001-T`, `020.004-T` each block on `018.008-T`;
-`018-F`, `018.008-T` and `017-S` depend on nothing. After the split, Strand A and Strand B are
+`017-S` is the **only** shipment in the workspace and the **only** P-017 in-scope item; future work
+is outside that scope. Dependency direction is **future → current** and is verified to contain **no
+`current → future` edge and no cycle**: `019.007-T`, `019.009-T`, `019.004-T`, `020.001-T`,
+`020.004-T` each depend on `018.008-T`; `018-F`, `018.008-T` and `017-S` depend on nothing. The two
+readiness-lock edges (`018-S → 020-S`, `019-S → 020-S`) were removed in rev 18 before archival, so
+no dependency now references an archived shipment. After the split, Strand A and Strand B are
 independent of each other.
+
+`018.008-T` carries one `related_to` **semantic link** to `019.007-T`. That is traceability, not a
+dependency edge: it is not a `blocks` relation, it does not appear in `backlogit dep list`, and it
+does not create a `current → future` dependency.
 
 ### R16.9 Accepted residual risk (interim)
 
 | Risk | Disposition |
 |---|---|
 | No mechanical CI enforcement until Strand B lands | **Accepted.** The corrected contract is regeneration-vulnerable in the interim; the prohibition still binds the agent contract, which is what role enforcement reads at mutation time. Tracked by `020-F`. |
-| No automated persistence route until Strand A lands | **Accepted, fail-closed.** The pipeline halts at `STAGING_GATE_FAIL` rather than persisting silently; the manual sequence in §R16.5 is the only completion path. Tracked by `019-F`. |
-| Deferred work cannot be scheduled until the harness execution model is decided | **Accepted, locked.** `021.001-T` is the decision gate; both deferred shipments are blocked behind `020-S` until it is resolved under plan review. |
+| No automated persistence route until Strand A lands | **Accepted, operator-only.** Stage halts at `STAGE_ARTIFACTS_UNCOMMITTED`; the Orchestrator must halt and must not run Step 1.5 item 3; only the operator may commit, push, open/approve the merge-commit staging PR and re-verify. **The dark run cannot finish autonomously past that checkpoint while the operator is AFK.** Tracked by `019-F`. |
+| Deferred work cannot be scheduled until the harness execution model is decided | **Accepted.** `021.001-T` is the decision; both deferred features are `blocked` with no shipment, so nothing is claimable. |
+| `SAFE_CLOSE` shipment-record close is tool-blocked (backlogit exit 9) | **P0, pre-existing, out of scope for this unit** — see §R16.3.3. `017-S` executes, reviews and merges normally, then pauses at Ship Step 6 closure for operator disposition. Recorded as a stash entry. |
 
-Neither capability risk is a regression: both describe capability **not yet added**, not
-protection removed.
+Neither capability risk is a regression: both describe capability **not yet added**, not protection
+removed. The closure blocker is **not** a regression either — it predates this unit and affects
+every partial-feature shipment in the workspace.
 
 ### R16.10 Plan hardening status
 
-The current reduced unit is **text-only, single-task, single-domain, with no destructive or
-irreversible operation**; its hardening obligation is discharged by the reduction itself, by
-§R16.1's root-cause analysis, and by the §R16.3 closure proof. **Each deferred strand is
-intrinsically more complex and requires its own `impl-plan`, `plan-harden` and `plan-review`
-before its shipment is unlocked** — see each strand's plan and `021.001-T`.
+Plan hardening was **applied** in this revision, not merely asserted. The hardening actions of
+rev 18 are: (1) replacing the unreachable `CASCADE` manifest with the proven task-only shape and
+tracing **every** pre/post gate (§R16.3.2); (2) surfacing the step-8 closure conflict as a named P0
+with executed evidence instead of an unexamined assumption (§R16.3.3); (3) removing the invalid
+shipment-status lock and replacing it with a representation that has no claimable surface at all
+(§R16.7); (4) making the P-004 red phase unconditional with explicit H0 evidence (§R16.6); and
+(5) replacing an asserted Orchestrator authority with an operator-only halt contract (§R16.5).
+
+The current reduced unit remains **text-only, single-task, single-domain, with no destructive or
+irreversible operation**. **Each deferred strand is intrinsically more complex and requires its own
+`impl-plan`, `plan-harden` and `plan-review` before any shipment is created for it** — see each
+strand's plan and `021.001-T`.
 
 ---
 
