@@ -1,14 +1,111 @@
 ---
 title: "Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction"
 date: 2026-09-11
-revision: 15
-status: reviewed
+revision: 16
+status: awaiting-review
 agent: Stage
 governs: stash 638A410B
 source: docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md
+re_plan_decision: docs/decisions/2026-09-12-intercom-go-stage-policy-gap-re-plan-decision.md
+deferred_plan: docs/plans/2026-09-12-intercom-go-stage-persistence-enforcement-plan.md
 ---
 
 # Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction
+
+> **REVISION 16 (2026-09-12) — RE-PLAN. READ §R16 BELOW BEFORE ANY OTHER SECTION.**
+> Everything from §1 onward is **HISTORICAL AUDIT APPENDIX** describing the retired
+> eight-task architecture (revisions 1–15). It is **preserved for audit and deliberately
+> not deleted**, but it **no longer governs execution**. Where §R16 and any later section
+> disagree, **§R16 wins without exception**.
+
+## §R16 — Current Contract (authoritative)
+
+### R16.1 What changed and why
+
+Revisions 10–15 failed adversarial plan review repeatedly. The root cause was **not** any
+individual revision's defect — it was a **structural impossibility** that each revision tried
+to bridge with more machinery:
+
+* **P-004** requires *every* generated test function to be RED before implementation begins.
+* **Ship Step 4.3** requires the *full* `go test ./...` to be GREEN after *every* task.
+
+For any shipment containing **more than one test-bearing task**, these are **jointly
+unsatisfiable**: task 1 going green still leaves the remaining functions red, Step 4.3 fails,
+build-feature burns its five attempts trying to implement unrelated future work, and **no task
+can ever complete**. Rev 10 answered with surface predicates (self-disarming — confirmed P0 by a
+four-model panel); revs 11–15 answered with a harness-state manifest, a terminal witness, a
+`-gatetask` selector, and an MP0–MP6 mutation-proof series. All of that machinery existed **only**
+to work around the eight-task batch.
+
+**Revision 16 removes the cause instead of bridging it**: the release unit is reduced to
+**exactly one queued task**, which yields exactly one red function and one red→green transition,
+after which the full suite is green. **No activation manifest, terminal witness, selector flag,
+surface predicate, or MP-series check is required or permitted in this release unit.**
+
+### R16.2 The reduced release unit
+
+| Item | Value |
+|---|---|
+| Feature | `018-F` |
+| Shipment | `017-S` (queued) |
+| Manifest | `[018-F, 018.008-T]` — exactly two entries |
+| Executable tasks | **1** — `018.008-T` (size **M**, complexity **medium**) |
+| Harness | ONE function `TestStageBranchGate_ContractCorrected` over a `panic("not implemented: …")` stub |
+
+`018.008-T` — *Gate Stage artifact mutation behind a dedicated branch* — carries three surfaces:
+
+1. **P-010** (`.github/policies/workflow-policies.md`): dedicated-branch-only commit grant;
+   actor-named Stage MUST NOT bullet forbidding direct commit/push to the default branch
+   (symmetric with the existing Ship bullet, located **by quoted text, never by line ordinal**);
+   explicit grant to create/check out `chore/stage-{scope-slug}`; the P-016/P-001 clarifier;
+   Amendment Log entry 1.25.0.
+2. **Role Boundary** (`.github/agents/_stage.agent.md`): narrow the Git row Allowed cell to the
+   dedicated artifact branch only; add the create/checkout grant in the same cell; add the PR-row
+   actor note. **The PR-row prohibition is unweakened.**
+3. **Step 1.9 — Stage Artifact Branch Gate (NON-NEGOTIABLE)**: a new section strictly between
+   Step 1.8 and Step 2, carrying the **categorical deferral rule** that no tracked Stage artifact
+   mutation may precede it. This surface is **load-bearing**: surfaces 1–2 only establish what
+   Stage *may* do, and the installed `_stage.agent.md` contains no branch or commit operation at
+   any step, so without Step 1.9 an executor can satisfy the grants and still finish the whole
+   session on the default branch.
+
+### R16.3 Explicitly deferred to `019-F` / shipment `018-S`
+
+Handback record emission · `stage_artifact_paths` derivation · no-shipment terminal reachability ·
+the Stage artifact commit step (Step 5.7) · out-of-root path safety · Orchestrator Step 1.5
+branch-discovery and post-merge verification arms · the generalized structure-aware direct-push
+detector · the fixture corpus and harness-state manifest · regeneration-resistant CI wiring ·
+CODEOWNERS and divergence-ledger updates · the MP-series mutation proofs.
+
+**A reviewer MUST NOT fail the current unit for the absence of any of the above.** Deferred work
+is planned in `docs/plans/2026-09-12-intercom-go-stage-persistence-enforcement-plan.md`.
+
+### R16.4 Single-shipment boundary
+
+Only the reduced `017-S` proceeds after the staging PR merges. `018-S` is **queued future work**
+and is **not claimed in the current run**. Dependency direction is **future → current**
+(`019.001-T`, `019.007-T`, `019.009-T` each block on `018.008-T`); **`018-F` depends on nothing
+in `019-F`.**
+
+### R16.5 Accepted residual risk (interim)
+
+Until `019-F` lands there is **no mechanical CI enforcement**, so the corrected contract is
+**regeneration-vulnerable**, and Stage has **no automated persistence route** — the operator or
+Orchestrator pushes the branch and opens the PR manually. This is exactly the interim behaviour
+already in use and is strictly safer than the gap being closed. Both limitations are **known,
+accepted, and tracked by `019-F`**.
+
+### R16.6 Plan hardening status
+
+The current reduced unit is **text-only, single-task, single-domain, with no destructive or
+irreversible operation**; its hardening obligation is discharged by the reduction itself and by
+§R16.1's root-cause analysis. **`019-F` is intrinsically more complex and requires its own
+`impl-plan` and `plan-review` before `018-S` is claimed** — see its plan's harness-lifecycle
+prerequisite.
+
+---
+
+## Historical audit appendix (revisions 1–15 — non-governing)
 
 **Source document**:
 `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md`
