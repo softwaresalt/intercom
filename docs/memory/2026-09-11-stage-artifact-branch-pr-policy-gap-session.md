@@ -55,16 +55,18 @@ deliberate → plan → harden → review → harvest pipeline. No ad hoc tracke
 
 | Path | Role |
 |---|---|
-| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum) |
-| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 7**, `status: reviewed` (§9 Plan hardening signals, §10 Constitution Check, §12 plan review record) |
+| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum) |
+| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 8**, `status: reviewed` (§9 Plan hardening signals, §10 Constitution Check, §12 plan review record) |
 | `docs/memory/2026-09-11-stage-artifact-branch-pr-policy-gap-session.md` | This file |
 
-**Cross-reference currency (rev 7).** This table names the plan's **current** revision and only
-sections that exist in it. The `§10a` label it previously carried was a rev-3 heading that later
-revisions renamed to **§9 Plan hardening signals**; the plan's own front matter still carried the
-stale `§9/§10a` form and §5.3 still cited a nonexistent `§10a.1`, both corrected in rev 7. A
-session record that points at an obsolete revision and a nonexistent section is not a cosmetic
-defect — it is the artifact a future agent reads *first* to locate the authoritative contract.
+**Cross-reference currency (rev 7, re-verified rev 8).** This table names the plan's **current**
+revision and only sections that exist in it. The `§10a` label it previously carried was a rev-3
+heading that later revisions renamed to **§9 Plan hardening signals**; the plan's own front matter
+still carried the stale `§9/§10a` form and §5.3 still cited a nonexistent `§10a.1`, both corrected
+in rev 7. A session record that points at an obsolete revision and a nonexistent section is not a
+cosmetic defect — it is the artifact a future agent reads *first* to locate the authoritative
+contract. Re-swept at rev 8: every `§N` reference in this file resolves against the plan's and the
+deliberation's current heading lists, including the deliberation's new **§12**.
 
 ## 4. Decision summary
 
@@ -666,6 +668,12 @@ any text changed:
 
 ### 14.3 Resolution — structural rejection, not a bigger checklist
 
+> **Superseded in part at rev 8 — see §15.1.** The concrete-file and `cat-file -t` decisions below
+> **stand**. The scoping of the set to `stage_head_commit` alone does **not**: rev 8 replaced it
+> with the aggregate `{stage_base_commit}`→`{stage_head_commit}` two-tree diff, and the arm now runs
+> **six** ordered checks, not five. This block is retained as the rev-7 record, not as the current
+> contract.
+
 `stage_artifact_paths` is redefined as a **non-empty set of concrete repository-relative file paths
 tied to `stage_head_commit`**, never a directory list. The no-shipment arm became five ordered
 checks: commit existence, **ancestry**, derivation of a non-empty changed-file set, `VERIFY_SET`
@@ -755,3 +763,110 @@ The B1 harness function now additionally asserts the **absence** of the `git sho
 loop and of any directory-prefix default in the no-shipment arm. Per the operator's standing
 instruction, if this cycle does not achieve Copilot convergence the next step is an Orchestrator-run
 adversarial review round, **not** another self-directed Stage cycle.
+
+---
+
+## 15. PR #54 adversarial review remediation — rev 8
+
+**Trigger**: the §14.8 escalation condition fired. The Orchestrator convened an **adversarial
+review** — anchor **GPT-5.6 Sol** with **GPT-5.4-mini**, **Claude Sonnet 5**, and **Claude Opus 5**;
+**no route degradation** — and routed the verdict back to Stage for a scoped remediation pass on
+this branch. All nine findings were classified **same-contract completion** under P-021; none
+reopened the release unit's scope. Concurrent Copilot review `5184453325` (one visible inline
+comment, six suppressed) raised no concern outside this set.
+
+### 15.1 The two P1 blockers that mattered
+
+**Blocker 1 — the verified set stopped at the tip commit.** Rev 7 derived the no-shipment arm's
+path set from `stage_head_commit`'s **single-commit** diff. On a multi-commit Stage branch — the
+ordinary case, and the shape of this very branch — artifacts written in earlier commits were never
+read on `origin/main`; they rested on **commit ancestry**, which is exactly the property rev 7's own
+§11.1 had judged insufficient when it introduced the per-file check. Rev 7 relocated the gap instead
+of closing it.
+
+Rev 8 introduces **`stage_base_commit`**, captured and retained by the **Orchestrator immediately
+before it invokes Stage**, and derives the set from a **two-tree** diff:
+
+```text
+git diff --name-only -z --diff-filter=d {stage_base_commit} {stage_head_commit} -- {STAGE_ARTIFACT_ROOTS}
+```
+
+Two properties make this the right form, and both were checked rather than assumed:
+
+* A two-tree diff is a property of the two trees, so it reads **identically before and after the
+  merge** — the post-merge-stability requirement that made rev 7 reject the range form. The range
+  form `origin/main..{stage_head_commit}` remains **refused**: it is empty by construction once the
+  head is an ancestor of `origin/main`, which is precisely the state the arm runs in.
+* It covers **every** commit of the session, not just the last.
+
+The arm grows from five to **six** ordered checks (base resolution and base→head ancestry are new).
+Step 3a **preserves** the base across its own commit — re-recording it would collapse the range, and
+re-recording it to the pre-commit `HEAD` would silently drop already-committed unpushed commits, the
+very population that path exists to handle.
+
+**Blocker 2 — `no-shipment` was unreachable.** Rev 6 declared the no-shipment route "executable end
+to end" and neither rev 6 nor rev 7 tested that claim against the **producer**. The installed
+`_stage.agent.md` Step 5.5 declares shipment assembly mandatory, and Step 6's pre-summary gate halts
+without a `shipment_id` — so `stage_outcome: no-shipment` could never be emitted, and B1's entire
+second arm, the 018-F DoD bullet depending on it, and the 018.011-T coupling criterion checking it
+were all gated on an outcome nothing could produce.
+
+This is the **third instance of one failure class**: rev 1 obliged Stage to merge a PR it was
+forbidden to create; rev 6 obliged the Orchestrator to find a branch nothing told it about; rev 8
+found a verification keyed on an outcome nothing could emit. Each time a *consumer* obligation was
+specified without confirming a permitted *producer* existed. Recorded as deliberation §12.2.
+
+B3 gains **AC-B3.6** and two additional edit sites in a file it already owns. The load-bearing
+constraint is stated three times across the surfaces, deliberately: **failures stay failures.**
+P-003 lineage violations, harvest failures, and a missing required shipment after a **non-empty**
+harvest still **halt** and are never recorded as `no-shipment`. Step 5.5's existing empty-harvest /
+unresolved-P-003 guardrail is preserved **verbatim** because it is already the correct discriminator
+between "nothing to ship" and "failed to ship". Without that, the fix would have traded an
+unreachable verification for a silent failure channel — worse than the defect. Recorded as **R15**.
+
+### 15.2 The other two P1s, and the five precision findings
+
+| # | Finding | Fix |
+|---|---|---|
+| 3 | `018.007-T`'s description still stated the rev-6 algorithm (root-default path set, `git show` loop) as operative-looking instructions, with rev 7 layered on as an addendum — two contradictory contracts in one task body | Description **rewritten** to state the current contract once. Superseded algorithms are recorded as an explicit **FORBIDDEN FORMS** clause rather than as competing prose; all archaeology moved to implementation notes |
+| 4 | Plan §6.2 and `018.008-T` carried **two divergent five-criterion** B2 lists — symmetry in one, the P-016/P-001 clarification in the other — with AC-B2.3/B2.4/B2.5 bound to **different** criteria on each surface | Reconciled to one identical **six**-criterion contract (AC-B2.1–AC-B2.6), carried verbatim on both surfaces. A count-only parity check would have passed this: both sides had five |
+| 5 | Brittle `workflow-policies.md` **L238** locators for the Ship prohibition in plan §2, §5.3, §7.2/AC-C2.3, `018.011-T`, and deliberation §1.1 | Replaced with the structural anchor: P-010's **Ship MUST NOT** bullet "Commit or push directly to `main`". Deliberation §8.5 *announced* this switch at rev 2 and never applied it to §1.1; it is applied now. The ordinals were not merely brittle — **B2 appends an Amendment Log row to that file**, shifting them as a direct consequence of this shipment |
+| 6 | "The `go test` step in job `expensive`" names no step in `ci.yml` | Cites job `expensive` (`name: test`) step **`Test (race)`**, command `go test -race -mod=readonly ./...`. AC-C2.7's constitutional `go test ./...` is stated as **separate and still required**; per-task `harness_cmd` values stay narrow and unchanged |
+| 7 | AC-A1.2 named the prefixes `reject-*` / `accept-*`; the files are `directpush-reject-*` / `directpush-accept-*` | Corrected in plan §5.4 and `018.004-T`, both renderings |
+| 8 | AC-A2.1 demanded the **bare** scan exit non-zero — unsatisfiable, because A2's stub classifies every construct `accept`, so a bare scan correctly exits **0** | Non-zero scoped to **`--self-test` only**; bare-mode red reserved for **AC-A3.3**, after a real detector exists. The A2→A3 dependency edge already orders them |
+| 9 | Stale references: Constitution Check row XI cited AC-C2.5 (markdownlint) not AC-C2.6; §12's rev-7 row promised "(see below)" with no rev-7 block; the deliberation header claimed the branch had "no push, no PR" | All corrected. The rev-7 record block is added; the deliberation header now names its five addenda and PR #54 |
+
+### 15.3 Scope held
+
+No task, file, fixture, manifest entry, harness function, CI step, ledger entry, CODEOWNERS line,
+policy ID, or dependency edge added. Two new criteria (**AC-B2.6**, **AC-B3.6**), six strengthened,
+four corrected in place, one reconciled ID set, two new risk rows (**R15**, **R16**). Shipment
+**017-S** and feature **018-F** are preserved exactly — 9 items, order
+A1→A2→A3→{B1,B2,B3}→C1→C2. `018.009-T` re-sized **S→M** on volume alone (five edit sites, one file,
+one domain, fully-specified text); every other size and complexity value is unchanged.
+
+**Deferred, on the operator's instruction**: the pre-existing backlog-registry complexity/sizing
+schema drift (panel finding F12) is **not** repaired here. The degradation note carried by every
+task remains the accurate record of it.
+
+**Not swept, recorded rather than hidden**: `_stage.agent.md` **L42** still appears as a
+line-ordinal anchor in the plan's narrative (§2, §5.3, §5.4, §12 round-1 record) and the
+deliberation's archaeology. Finding 5 was scoped to the **Ship prohibition** locators, and those
+narrative uses are historical rather than operative — no acceptance criterion depends on them. They
+are a candidate for a future sweep, not a defect this pass left in an executable surface.
+
+### 15.4 Validation (Stage scope — no Go build/test, per the Stage role boundary)
+
+`backlogit sync` + `backlogit doctor` clean; AC-ID parity re-swept to an exact plan↔task bijection;
+shipment membership, item count, and dependency edges unchanged; markdownlint clean on every
+changed markdown file; `git diff` reviewed file by file. Go build/test deliberately **not** run —
+Ship's responsibility (P-010). No source, test, script, workflow, policy, or agent file was
+modified by this pass; those remain Ship's execution surfaces.
+
+### 15.5 Handoff
+
+Unchanged: shipment **017-S**, `queued`, 9 items, Ship starts at Step 2 (harness-architect, H0).
+The B1 harness function now additionally asserts the absence of a **single-commit** derivation in
+the no-shipment arm; the B3 function additionally asserts the **reachable** `no-shipment` terminal
+alongside the preserved halt clauses. Stage does not push, open, or update PR #54 — the Orchestrator
+owns every GitHub operation on this branch.

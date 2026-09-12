@@ -11,7 +11,13 @@ governs: stash 638A410B
 - **Date**: 2026-09-11
 - **Agent**: Stage (operator-authorized, interactive)
 - **Stash entry**: `638A410B` (high, feature-shaped)
-- **Planning branch**: `chore/stage-pipeline-policy-gap` (no push, no PR — Stage artifacts only)
+- **Planning branch**: `chore/stage-pipeline-policy-gap` — Stage artifacts only. **Stage commits on
+  this branch and does nothing else with it**; push, PR **#54**, and merge are performed by the
+  Orchestrator or the operator, which is the exact route this deliberation exists to install.
+  (Rev 8 corrects the header's original "no push, no PR" claim, which was true when written and
+  became false once PR #54 was opened — a session record that describes a state the repository has
+  left is read as current by the next agent.)
+- **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8)
 - **Evidence commit**: `fdff9e4` — a Stage no-shipment decision artifact pushed directly to
   `main`. Treated as **historical evidence only**; not reverted, not rewritten.
 
@@ -25,12 +31,12 @@ the compliant reading.
 
 ### 1.1 Surface A — the policy root cause
 
-`.github/policies/workflow-policies.md`, **P-010 Agent Role Boundary**, L230:
+`.github/policies/workflow-policies.md`, **P-010 Agent Role Boundary**, the **Stage MAY** block:
 
 > **Stage MAY** (within its legitimate scope):
 > - Commit backlog and planning artifacts *(on the default branch or a dedicated chore/admin branch)*
 
-The same policy's Ship column (L258) already reads:
+The same policy's **Ship MUST NOT** block already reads:
 
 > **Ship MUST NOT**: … Commit or push directly to `main`
 
@@ -38,6 +44,12 @@ So P-010 is **asymmetric**: Ship is forbidden from touching `main` directly, Sta
 permitted. This clause is the authorization that makes the Orchestrator instruction below
 internally consistent. Fixing the Orchestrator alone would leave the contradiction alive in the
 authoritative policy registry.
+
+**Anchoring note (rev 8).** Both bullets above were originally cited by line ordinal (`L230`,
+`L258`). They are now anchored by **block lead-in plus quoted text**, which is what §8.5 said it
+was switching to and did not. The line numbers were not merely brittle — B2 appends an Amendment
+Log row to this very file, so every ordinal below the insertion point shifts as a direct result of
+the change this deliberation governs.
 
 ### 1.2 Surface B — the Orchestrator instruction
 
@@ -373,9 +385,13 @@ retired-arch D4 rule).
 
 ### 8.5 Corrected citation
 
-§1.1 cites the Ship prohibition at "L258". The correct line is **L238**; L258 falls inside the
-P-011 header table. Anchors are switched to quoted text, per the ci.yml ledger's own
-"by description, not line number" rule.
+§1.1 originally cited the Ship prohibition at "L258". The correct line was **L238**; L258 falls
+inside the P-011 header table. Anchors are switched to quoted text, per the ci.yml ledger's own
+"by description, not line number" rule. **Rev 8 note**: the switch was *recorded* here at rev 2 but
+not *applied* to §1.1, which continued to carry `L230`/`L258` as current evidence for six
+revisions. It is applied now, in §1.1 and in every plan and task surface that cited the Ship
+bullet by ordinal (plan §2, §5.3, §7.2/AC-C2.3; `018.011-T`). A correction that is announced but
+never performed is indistinguishable from one that was not made.
 
 ### 8.6 Net effect
 
@@ -578,6 +594,9 @@ Three design choices carry the decision and each rejects a plausible alternative
   a property of the commit object and reads identically before and after the merge. The narrowing
   to the tip commit is sound because ancestry already covers earlier commits on the branch; the
   per-file check closes a different gap (files readable on the default branch), not the same one.
+  **[Withdrawn at rev 8 — see §12.1. The last sentence is a category error: ancestry proves the
+  *commit* landed, which is precisely the property §11.1 judged insufficient when it introduced the
+  per-file check. The range-form rejection stands; the tip-only narrowing does not.]**
 
 ### 11.4 D3 is again NOT extended
 
@@ -593,3 +612,107 @@ Option 2 is unchanged. D1's scope is unchanged from rev 6 (authorization **and**
 rev-6 *shape* of the discovery verification is corrected, not its existence. D3, D5, and D7 are
 unchanged. No decision is reversed, no new option is opened, and no task, fixture, harness
 function, or dependency edge is added.
+
+---
+
+## 12. Revision 8 addendum — a verification nobody can trigger, and a set that stops at the tip
+
+**Source**: PR #54 **adversarial review** — anchor **GPT-5.6 Sol** with **GPT-5.4-mini**,
+**Claude Sonnet 5**, and **Claude Opus 5**; **no route degradation**. Convened per the operator's
+standing instruction (recorded at session memory §14.8) that a non-converging cycle escalates to an
+adversarial round rather than a seventh self-directed one. All findings were classified
+**same-contract completion** under P-021.
+
+### 12.1 Withdrawn: "scoping the verified set to the tip commit loses nothing"
+
+§11.3 argued that deriving the per-file check from `stage_head_commit`'s own diff was sufficient,
+because commit **ancestry** already covered earlier commits on the branch. That argument is a
+**category error**, and §11.1 had already refuted it two sections earlier:
+
+| Property | What it proves | What it does not |
+|---|---|---|
+| `merge-base --is-ancestor {head} origin/main` | the **commit** reached the default branch | that any **file** is readable there |
+| `cat-file -t origin/main:{path}` = `blob` | the **file** is readable there, as a file | anything about commits that did not change it |
+
+§11.1 introduced the per-file check **precisely because ancestry is insufficient**. Applying that
+check to the tip alone then left every artifact written in an earlier commit of the same session
+resting on the insufficient property — the exact gap the check exists to close, relocated rather
+than removed. A Stage session that writes its deliberation in commit 1 and its plan in commit 2 —
+the ordinary shape; this very branch has many commits — had the deliberation verified by nothing
+stronger than ancestry.
+
+**The generalized lesson, fourth instance.** Rev 6 fixed *"the loop can run zero times"*. Rev 7
+fixed *"the loop can run only over things that are always there"*. Rev 8 fixes *"the loop runs over
+the right kind of thing, but not over all of them."* Each revision corrected the **shape** of a
+verification while leaving its **extent** unexamined. The recurring failure is not carelessness
+about any one predicate; it is checking that a verification *can fail* without checking that it
+*covers everything it claims to cover*.
+
+### 12.2 Withdrawn: "the no-shipment route is now executable end to end"
+
+Rev 6 declared the no-shipment route executable once the Orchestrator could discover and verify the
+branch. It is not, and rev 6 through rev 7 never tested the claim against the **producer**. The
+installed `_stage.agent.md` makes `stage_outcome: no-shipment` **unreachable**:
+
+* **Step 5.5** declares shipment assembly "MANDATORY — not optional" whenever the registry
+  advertises `features.shipments: true`, and calls ending a session without a `shipment_id` a
+  **P-005 violation**.
+* **Step 6**'s pre-summary verification gate says that if no `shipment_id` exists, **HALT** and
+  return to Step 5.5 — so the summary, which is where the handback line lives, is never reached.
+
+A Stage run with nothing to ship therefore cannot terminate compliantly, cannot emit a handback,
+and cannot set the outcome the Orchestrator's second arm is keyed on. Everything rev 6, rev 7 and
+rev 8 built on the consumer side was gated on an outcome **no producer could emit**.
+
+This is the **rev-2 self-deadlock lesson (§10.2) in its third instance**: rev 1 obliged Stage to
+merge a PR it was forbidden to create; rev 6 obliged the Orchestrator to find a branch nothing told
+it about; rev 8 finds a verification arm keyed on an outcome nothing can produce. In each case a
+*consumer* obligation was specified without checking that a *producer* existed. The general
+discipline this deliberation should have carried from §10.2 onward: **for every value a contract
+consumes, name the surface that emits it, and confirm that surface is permitted to.**
+
+### 12.3 Decision — bind the set to a commit *pair*, and make the terminal outcome reachable
+
+Two decisions, both narrow, neither reopening Option 2 or D1–D7.
+
+**(a) `stage_base_commit`.** The Orchestrator captures `git rev-parse HEAD` **immediately before it
+invokes Stage** and **retains** it; the retained value is authoritative over any Stage-reported one,
+which exists only so a *direct* Stage invocation still yields a usable base. The verified set
+becomes the **two-tree** diff `{stage_base_commit} {stage_head_commit}`, bounded by the
+`STAGE_ARTIFACT_ROOTS` pathspec. This keeps §11.3's post-merge-stability property — a two-tree diff
+reads identically before and after the merge, so the range-form rejection **stands** — while
+covering every commit the session made. Base→head ancestry is asserted, so the pair is a range
+rather than two unrelated commits. Step 3a **preserves** the base across its commit; re-recording it
+would collapse the range, and re-recording it to the pre-commit `HEAD` would discard the
+already-committed unpushed commits that path exists to handle.
+
+**(b) A reachable `no-shipment` terminal.** B3 scopes Step 5.5's mandatory rule to a harvest that
+**produced items**, requires `shipment_id` in Step 6's gate **only** for
+`stage_outcome: shipment`, and lets a reviewed, valid **empty** harvest emit the complete handback
+and stop without routing to Ship.
+
+**The constraint that makes (b) safe.** Step 5.5's existing guardrail — *do not assemble a shipment
+if the harvest produced no items or produced items with unresolved P-003 violations; halt and
+report* — is preserved **verbatim** and is exactly the discriminator between the two cases. P-003
+lineage violations, harvest failures, and a missing required shipment after a **non-empty** harvest
+continue to **halt** and are **never** recorded as `no-shipment`. Without that, this decision would
+trade an unreachable verification for a **silent failure channel** — strictly worse than the defect
+it fixes, and the reason the change is scoped to two clauses rather than to Step 5.5 as a whole.
+
+### 12.4 D3 is again NOT extended
+
+Neither an under-scoped verified set nor an unreachable outcome is a D3 violation shape: neither is
+a push to the default branch, and neither is a permission to commit on one. The closed construct
+set and the fixture corpus stay as they are (the §10.4 / §11.4 position, unchanged). Rejection is
+carried by the existing per-surface harness assertions, which additionally assert the **absence** of
+a single-commit derivation in the Orchestrator's no-shipment arm and the **presence** of the
+reachable terminal in the Stage surface.
+
+### 12.5 Net effect
+
+Option 2 is unchanged. D1's scope is unchanged (authorization **and** discovery); rev 8 corrects
+the **extent** of the discovery verification and supplies the **producer** the route always assumed.
+D2, D3, D4, D5, D6 and D7 are unchanged. No decision is reversed, no new option is opened, and no
+task, file, fixture, harness function, or dependency edge is added. Shipment `017-S` remains one
+shipment of nine items. The only scope growth is two additional edit sites inside
+`_stage.agent.md`, a file `018.009-T` already owns, which re-sizes that task S→M on volume alone.
