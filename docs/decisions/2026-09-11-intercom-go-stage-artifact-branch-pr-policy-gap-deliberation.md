@@ -17,7 +17,8 @@ governs: stash 638A410B
   (Rev 8 corrects the header's original "no push, no PR" claim, which was true when written and
   became false once PR #54 was opened — a session record that describes a state the repository has
   left is read as current by the next agent.)
-- **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8), §13 (rev 9)
+- **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8), §13 (rev 9),
+  §14 (rev 10)
 - **Evidence commit**: `fdff9e4` — a Stage no-shipment decision artifact pushed directly to
   `main`. Treated as **historical evidence only**; not reverted, not rewritten.
 
@@ -825,3 +826,109 @@ decision is reversed, no new option is opened, and no task, file, fixture, harne
 shipment, or dependency edge is added. Shipment `017-S` remains one shipment of nine items. The only
 scope growth is four further edit sites inside `_stage.agent.md`, a file `018.009-T` already owns,
 which re-sizes that task M→L on volume alone.
+
+---
+
+## 14. Revision 10 addendum — an obligation is not a mechanism
+
+**Source**: PR #54 **second adversarial review** (anchor **GPT-5.6 Sol** with **GPT-5.4-mini**,
+**Claude Sonnet 5**, and **Claude Opus 5**; **no route degradation**) — four visible Copilot threads
+(`PRRT_kwDOTPuhps6hsPRZ` / `3994747640`, `PRRT_kwDOTPuhps6hsPRq` / `3994747663`,
+`PRRT_kwDOTPuhps6hsPR5` / `3994747682`, `PRRT_kwDOTPuhps6hsPSJ` / `3994747702`) plus one
+adversarial-only finding on the harness lifecycle. All classified **same-contract completion**
+under P-021.
+
+### 14.1 Withdrawn: "every MUST in the contract is now backed by a producing surface"
+
+Rev 9 closed the *permission without instruction* gap and recorded the extended discipline:
+name the emitting surface, confirm it is permitted, confirm it is instructed, confirm the
+instruction is ordered. Rev 10 finds that three of the rev-9/rev-8 clauses satisfy all four
+conditions and are **still** inert, because the operation each names **cannot observe what the
+clause is about**:
+
+| Clause | Instructed? | Ordered? | Why it could not fire |
+|---|---|---|---|
+| "halt on a change outside `STAGE_ARTIFACT_ROOTS`" (Step 5.7) | yes | yes | the only prescribed operation was a **root-scoped `git add`**, which *ignores* out-of-root paths rather than reporting them. There was nothing to halt *on* |
+| "defer the mutations that would otherwise precede the gate" (Step 1.9) | yes | yes | stated as an **enumeration of two**, while the contract schedules **five or more** tracked writes earlier. The rule bound the two it named and left the rest legal |
+| "`go test ./...` is red after H0 and each task goes green in turn" (§5.0) | yes | yes | red was specified as **simultaneous across all eight**, which Ship's Step 4.3 full-suite gate re-reads after *every* task — so the second task could never pass its own gate |
+
+This is a **different failure class** from the producer/consumer one, and conflating them would
+lose it. The producer/consumer class is about a **value** with no origin. This class is about an
+**obligation** with no instrument: the actor is named, the order is right, and the operation named
+is simply incapable of producing the observation the obligation depends on.
+
+**The discipline, stated so it can be applied:** *for every MUST, name the operation that
+discharges it, and confirm that operation can observe the thing the MUST is about.* A halt needs a
+detector that sees the condition. A deferral needs a rule that ranges over the whole set, not a
+list of examples. A red phase needs to be compatible with every gate that will read it.
+
+### 14.2 The producer/consumer class also recurs — in its most dangerous form
+
+Finding 1 is the old class, fifth instance, and worse than its predecessors. Rev 1, 6, 8 and 9
+were all **absences**: a value nobody could create, emit, or produce. Rev 10 is a **substitution**
+— the consumer had a correct reported value and **overwrote it** with a derived default whose
+fallback (`no-shipment`) is a **success terminal**. An absence is loud at the point of use; a
+substitution is silent by construction, and this one converted the pipeline's loudest failure —
+a shipment formed but never handed off — into a clean pass.
+
+The sixth clause of the discipline: *a default must never be able to overwrite a reported value,
+and a derivation whose fallback is a success terminal must be validated before it is acted on.*
+
+### 14.3 Decision — four narrow corrections and one mechanism, reopening nothing
+
+**(a) Preserve, then validate.** `stage_outcome` is preserved when reported and derived only when
+absent; the outcome/`shipment_id` pair is validated fail-closed **before** arm selection. The two
+halves sit at deliberately different points — preservation in **defaulting** (a strictly weaker
+rule, so the never-halts invariant is untouched), validation in **verification** (where every
+other `STAGING_GATE_FAIL` already lives). The producer emits the pair explicitly, because an
+agreement check needs two parties. Rejected: a third verification arm for the inconsistent case —
+an inconsistent pair is not an outcome, it is evidence the handback is untrustworthy, and every
+downstream check reads that same handback.
+
+**(b) A categorical deferral rule.** Step 1.9 precedes **every** tracked Stage artifact mutation;
+the classes are enumerated as illustration, not as the closed set. Read-only classification and
+grouping still run first — they are what make the slug derivable, so deferring them would make the
+gate's own position underivable. Gitignored disposables are **expressly excluded** rather than
+silently claimed: overclaiming them would overstate the gate's reach and would wrongly forbid the
+index sync every later query depends on. Honesty about what a control does *not* cover is part of
+the control.
+
+**(c) A detector for the out-of-root halt.** An explicit NUL-safe full-tree inspection before
+staging, with both rename endpoints checked, and **fail-closed halting that leaves pre-existing
+unrelated dirt exactly as found**. Rejected: cleaning or stashing the offending change — it may be
+a human operator's in-flight work, and discarding it is a destructive act without approval (D7's
+role isolation and Constitution VII both point the same way). Stage halts and hands the decision
+back; it does not tidy up after an actor whose intent it cannot know.
+
+**(d) Per-task harness activation.** One selector flag and one table, with four executed
+mutation-proof checks. Rejected: amending Ship's Step 4.3 — that is a generated file with a
+gitignored template (D2), and narrowing a full-suite quality gate to fix one shipment's harness
+would weaken test-first for every future shipment, which is the same trade rev 4 refused.
+
+**What makes (a)–(d) safe rather than scope-expanding.** None grants Stage or the Orchestrator any
+authority they did not already hold. (a) narrows a defaulting rule and adds a halt; (b) widens a
+deferral that was already mandatory; (c) supplies the instrument an existing halt lacked; (d)
+changes when assertions run, not what they assert. No push, no PR, no merge, no source write, no
+second worktree, no new policy ID.
+
+### 14.4 D3 is again NOT extended
+
+None of the four is a D3 violation shape — none is a push to the default branch and none is a
+permission to commit on one — so the closed construct set and the 14-fixture corpus stay exactly as
+they are (the §10.4 / §11.4 / §12.4 / §13.4 position, unchanged for the fifth time). Rejection is
+carried by the existing per-surface harness assertions, extended to compare an **intra-section**
+clause ordering in addition to the checklist and heading ordinals rev 9 introduced. The prescribed
+replacement text was again checked against the detector rather than assumed safe: the new verbs
+(`status`, `restore`, `stash`) are not push verbs, and the only default-branch tokens introduced
+sit in marker-preceded prohibitive clauses.
+
+### 14.5 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged; D7 is *reinforced* a second time, since (c) stops Stage
+at a halt rather than letting it act on another actor's working tree. No decision is reversed, no
+new option is opened, and no task, file, fixture, harness function, shipment, or dependency edge is
+added. Shipment `017-S` remains one shipment of nine items, and no task is re-sized — rev 10
+reworks clauses inside step sections rev 9 already specified. The deliberation now carries two
+distinct disciplines rather than one: *name the surface that produces each consumed value* (§12.2,
+§13.2, extended in §14.2) and *name the operation that discharges each MUST, and confirm it can
+observe what the MUST is about* (§14.1).

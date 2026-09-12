@@ -55,8 +55,8 @@ deliberate → plan → harden → review → harvest pipeline. No ad hoc tracke
 
 | Path | Role |
 |---|---|
-| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum, §13 rev-9 addendum) |
-| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 9**, `status: reviewed` (§9 Plan hardening signals, §10 Constitution Check, §12 plan review record) |
+| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum, §13 rev-9 addendum, §14 rev-10 addendum) |
+| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 10**, `status: reviewed` (§5.0.1 per-task activation, §9 Plan hardening signals, §10 Constitution Check, §12 plan review record) |
 | `docs/memory/2026-09-11-stage-artifact-branch-pr-policy-gap-session.md` | This file |
 
 **Cross-reference currency (rev 7, re-verified rev 8).** This table names the plan's **current**
@@ -65,8 +65,8 @@ heading that later revisions renamed to **§9 Plan hardening signals**; the plan
 still carried the stale `§9/§10a` form and §5.3 still cited a nonexistent `§10a.1`, both corrected
 in rev 7. A session record that points at an obsolete revision and a nonexistent section is not a
 cosmetic defect — it is the artifact a future agent reads *first* to locate the authoritative
-contract. Re-swept at rev 8: every `§N` reference in this file resolves against the plan's and the
-deliberation's current heading lists, including the deliberation's new **§12**.
+contract. Re-swept at rev 8 and again at rev 10: every `§N` reference in this file resolves against the plan's and the
+deliberation's current heading lists, including the plan's new **§5.0.1** and the deliberation's new **§14**.
 
 ## 4. Decision summary
 
@@ -1013,3 +1013,143 @@ The B3 harness function additionally asserts that the branch gate and the artifa
 **present and ordered** — checklist entry indices and heading positions, not text matches. Stage
 does not push, open, update, or comment on PR #54, and does not reply to or resolve thread
 `PRRT_kwDOTPuhps6hrbAk` — the Orchestrator owns every GitHub operation on this branch.
+
+## 17. PR #54 second adversarial review remediation — rev 10
+
+**Source**: operator-directed **second adversarial round** (anchor **GPT-5.6 Sol** with
+**GPT-5.4-mini**, **Claude Sonnet 5**, and **Claude Opus 5**; **no route degradation**). Four
+**visible** Copilot threads plus one adversarial-only finding, all classified **same-contract
+completion** under P-021. Scope limited to those five; no other scope reopened.
+
+### 17.1 The two defect classes this round separated
+
+Rev 10 is the first round to find **two distinct classes at once**, and flattening them would have
+lost the second.
+
+**Class 1 — producer/consumer, fifth instance, and the worst form yet.** Thread
+`PRRT_kwDOTPuhps6hsPRZ`. Rev 1/6/8/9 were all **absences**: a value nobody could create, announce,
+emit, or produce. This one is a **substitution**. The consumer held a correct reported
+`stage_outcome` and overwrote it with an unconditional derivation whose `otherwise` clause is a
+**success** terminal. So a run that reported `shipment` but whose `shipment_id` did not arrive was
+resolved to `no-shipment`, the shipment arm was skipped, the no-shipment arm **passed** (it
+verifies *files*, not *intent*, and the artifacts genuinely were on `origin/main`), the gate
+reported success, and **Ship was never routed**. An absence is loud at the point of use; a
+substitution is silent by construction — and this one fired on exactly the input class most likely
+to be degraded, since a handback missing its `shipment_id` is by definition one that was not fully
+received.
+
+**Class 2 — an obligation with no instrument.** Threads `PRRT_kwDOTPuhps6hsPRq`,
+`PRRT_kwDOTPuhps6hsPR5`, `PRRT_kwDOTPuhps6hsPSJ`, and the adversarial harness finding. Each names
+an actor, sits at the right ordinal, and is still inert because the operation it prescribes
+**cannot observe the condition**:
+
+| Obligation | Prescribed operation | Why it could never fire |
+|---|---|---|
+| halt on a change outside `STAGE_ARTIFACT_ROOTS` | root-scoped `git add` | a pathspec **ignores** what it excludes; nothing reports it |
+| defer the mutations that precede the branch gate | an **enumeration of two** | the contract schedules five-plus tracked writes earlier; the rest stayed legal on the default branch |
+| `go test ./...` red after H0, green per task | **all eight** red simultaneously | Ship's Step 4.3 re-reads the full suite after *every* task, so task 2 could never pass its own gate |
+
+The discipline this adds, recorded in deliberation §14.1: *for every MUST, name the operation that
+discharges it, and confirm that operation can observe the thing the MUST is about.*
+
+### 17.2 What was verified by execution, not by reading
+
+Four claims in this round are load-bearing and were **run** before being written down:
+
+| Claim | Verification |
+|---|---|
+| A dotted test flag is shell-fragile; a dot-free one is not | `go test . -run '^T$' -directpush.task=alpha` → `flag provided but not defined: -directpush` (PowerShell splits on the dot); `-gatetask=alpha` parses unquoted and reaches the binary |
+| "exits non-zero" alone cannot prove a test ran | `go test -run '^TestNoSuchTest$'` → `ok … [no tests to run]`, exit **0**. Hence AC-A2.5's `--- FAIL:` non-vacuity guard |
+| `git status -z` rename shape | ` D keep.txt\0R  new name.txt\0old name.txt\0?? sub/deep.md\0?? untracked.md\0` — the ORIG_PATH is a **separate NUL record with no `XY` prefix** |
+| `--untracked-files=all` is not optional | default `normal` emits `?? sub/` — a **directory** — which no per-file containment test can evaluate |
+| The disposables really are gitignored | `git check-ignore` confirms `.backlogit/checkpoints/`; `.gitignore` carries `.backlogit/backlogit.db*`, `.backlogit/hooks_queue.jsonl`, `.backlogit/runtime/`. `.backlogit/queue/` and `.backlogit/archive/` are **tracked** (230 files), so stash writes are tracked and the deferral rule does bind them |
+
+### 17.3 Resolution — four corrections and one mechanism
+
+1. **Preserve, then validate** (§6.1.2 correction 6, AC-B1.12, AC-B3.5). The derivation is scoped
+   to the **absent** case; the pair is validated fail-closed before arm selection. The halves sit
+   at deliberately different points — preservation in **defaulting** (strictly weaker, so the
+   never-halts invariant is untouched), validation in **verification** (where every other
+   `STAGING_GATE_FAIL` lives). That placement is the rev-6 lesson applied on purpose rather than
+   rediscovered.
+2. **A categorical deferral rule** (§6.3.1 correction 1, AC-B3.7). "Every tracked Stage artifact
+   mutation", with three classes as illustration. Read-only classification and grouping still run
+   first — they derive the slug, so deferring them would make the gate's own position underivable.
+   Gitignored disposables **expressly excluded**, not silently claimed.
+3. **A detector for the out-of-root halt** (Step 5.7 sub-step 2, AC-B3.7). NUL-safe full-tree
+   inspection before staging; both rename endpoints; halt fail-closed and **leave the dirt exactly
+   as found** — no checkout, restore, stash, revert, or delete (Constitution VII).
+4. **Two exactly-anchored invocations** for AC-A2.5, with the `--- FAIL:` guard.
+5. **Per-task activation** (new §5.0.1): one dot-free selector flag, one eight-row table, an
+   activation-independent A1 anchor that keeps H0's default-suite red literal, and four executed
+   mutation-proof checks (MP0–MP3).
+
+### 17.4 Honesty held, in three places
+
+* **Harness-ready is not redefined.** It still means what `harness-architect` verifies —
+  compilation clean, default suite red. §5.0 now *says* that instead of letting the label imply
+  eight simultaneous reds. The per-task red stays a per-task obligation discharged by Ship at claim
+  time from that task's `harness_cmd`. No label from prose — the rev-4 lesson, held.
+* **The deferral rule does not overclaim.** Gitignored index/checkpoint/hook-queue operations are
+  named as **outside** it. Stating what a control does not cover is part of the control.
+* **R19's residual is recorded, not engineered away.** Between A1 and C1 a landed-then-regressed
+  surface would re-skip rather than fail, because MP2 does not bind until C1's surface exists.
+  Binding it earlier would make the suite red for every not-yet-started task — the deadlock rev 10
+  exists to remove.
+
+### 17.5 One latent defect found by internal review before commit
+
+Requirement (d) of the harness redesign — *the final `go test ./...` runs all eight real assertions
+green* — forced a check revisions 4–9 never made: **is every function's assertion still true at the
+end state?** Seven were. **A2's was not.** Its specified assertion was that `--self-test` reports
+every reject fixture failing **against the all-accept stub**, with a non-zero exit — a property
+true only while A2's stub is the current implementation, and **false the moment A3 installs the
+real detector**. That function would have gone red at A3 and **stayed** red, wedging
+`go test ./...` for the remainder of the shipment.
+
+Activation did not cause this. It made it **visible**, because "all eight green at the end" had
+never been written down as a requirement before rev 10 had to state it. The fix: the function
+asserts the **durable** driver contract A2 actually delivers (enumerate every manifest fixture by
+name, emit a per-fixture verdict, fixtures before the real-tree scan), and the stub-specific
+observations stay in **AC-A2.1**, read from the script's own output at A2's boundary. AC-A2.1 is
+**not weakened** — it still demands the observed red for the detector, still binds `--self-test`
+only, and still reserves bare-mode red for AC-A3.3; only its carrier is named.
+
+Recorded rather than silently repaired, per the rev-6 and rev-9 precedent. The defect class —
+*a regression assertion pinned to a transitional state* — generalizes: a harness written once, up
+front, for a multi-task shipment must assert what is true **when the shipment is done**, not what
+is true at the moment the assertion's task completes.
+
+### 17.6 Scope held
+
+No task, file, fixture, manifest entry, harness function, CI step, ledger entry, CODEOWNERS line,
+policy ID, shipment, or dependency edge added. One new criterion (**AC-B1.12**), four strengthened
+(AC-A2.5, AC-B1.5, AC-B3.5, AC-B3.7), one extended (AC-C2.4), one new plan subsection
+(**§5.0.1**), one new B1 correction (**correction 6**), two new risk rows (**R19**, **R20**), and
+one updated (R18). All eight `harness_cmd` values gain `-gatetask={ID}`; **no harness function is
+added or renamed**. **No task re-sized** — rev 10 reworks clauses inside step sections rev 9
+already specified. Shipment **017-S** and feature **018-F** preserved exactly — 9 items, order
+A1→A2→A3→{B1,B2,B3}→C1→C2.
+
+**Rev-8 and rev-9 fixes preserved, verified not assumed**: the aggregate two-tree derivation, the
+six-check no-shipment arm, the reachable `no-shipment` terminal with its verbatim P-003 guardrail,
+the refusal of the single-commit and range derivations, and the two operative ordered steps are all
+intact. Rev 10 tightens the rules *inside* them and changes none of them.
+
+### 17.7 Validation (Stage scope — no Go build/test, per the Stage role boundary)
+
+`backlogit sync` + `backlogit doctor` clean; AC-ID parity re-swept — **52 plan IDs ↔ 52 task IDs**,
+exact bijection; shipment `017-S` membership (9 items), status, and dependency edges unchanged;
+`markdownlint` clean on every changed markdown file; `git status --porcelain` empty after commit.
+Go build/test deliberately **not** run — Ship's responsibility (P-010). No source, test, script,
+workflow, policy, or agent file was modified by this pass.
+
+### 17.8 Handoff
+
+Unchanged: shipment **017-S**, `queued`, 9 items, Ship starts at Step 2 (harness-architect, H0).
+**New for Ship**: H0 must emit the §5.0.1 activation helper and table alongside the eight
+functions, and every task's `harness_cmd` now carries `-gatetask={ID}`. The default suite is red at
+H0 from the A1 anchor and green between tasks thereafter, so Step 4.3 no longer deadlocks. Stage
+does not push, open, update, or comment on PR #54, and does **not** reply to or resolve threads
+`PRRT_kwDOTPuhps6hsPRZ`, `PRRT_kwDOTPuhps6hsPRq`, `PRRT_kwDOTPuhps6hsPR5`, or
+`PRRT_kwDOTPuhps6hsPSJ` — the Orchestrator owns every GitHub operation on this branch.
