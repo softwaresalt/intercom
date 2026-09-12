@@ -1403,3 +1403,51 @@ Stage does not push, open, update, or comment on PR #54, and does **not** reply 
 comments `3994928139`, `3994928153`, or `3994928163`. Reply text updated to rev 12 is **prepared for
 the operator or Orchestrator to post**; preparing it is not posting it. The Orchestrator owns every
 GitHub operation on this branch.
+## 20. Final session state — BLOCKED handoff (awaiting operator disposition)
+
+### 20.1 Revision / push state
+
+- **Remote PR #54 HEAD**: `8999867ae42dcfa48ec9894a93393c352385ad0b` (**rev 10**).
+- **Local unpushed remediation commits**: `d6c89c8736e449d15a75104a6b45a9939c52244e` (**rev 11**)
+  and `1904df2bf045c970b63c661348d2cf9febf1e32d` (**rev 12**), both on
+  `chore/stage-pipeline-policy-gap`. Stage did not push; the Orchestrator owns GitHub operations.
+
+### 20.2 Final post-remediation adversarial review
+
+- **4 reviewers**, **no route degradation**; hard cap reached at `cycles_run: 2`.
+- **0 P0**. **1 MEDIUM-confidence P1**, **4 LOW-confidence P1 candidates**, **1 LOW-confidence P2** —
+  all marked `post_remediation_residual`.
+- **MEDIUM P1**: terminal witness activation wording conflicts with targeted selector precedence.
+- **LOW P1s**: (1) H0 blocked-task harness eligibility ambiguity; (2) control-state inputs need
+  explicit exemption from substantive-surface independence; (3) plan/task **AC-C1** parity drift;
+  (4) terminal lint-removal evidence is vacuous.
+- **LOW P2**: one remaining generated-baseline provenance overstatement.
+
+### 20.3 PR and thread state
+
+- PR body updated to **BLOCKED**.
+- Three Copilot review threads remain **unresolved** because revs 11-12 are not pushed:
+  `PRRT_kwDOTPuhps6hstWa`, `PRRT_kwDOTPuhps6hstWg`, `PRRT_kwDOTPuhps6hstWn`.
+
+### 20.4 Pipeline state
+
+- Shipment **`017-S` remains queued/unclaimed**. **Ship was not invoked.** No merge occurred, and
+  no direct push to `main` occurred at any point during remediation.
+
+### 20.5 Required operator disposition
+
+The operator must explicitly choose one of:
+
+1. **Authorize one additional Stage remediation + adversarial review cycle**, or
+2. **Explicitly accept the named residual risks in §20.2 and authorize pushing revs 11-12.**
+
+In-scope findings **cannot be silently deferred** solely because the cycle budget is exhausted.
+
+### 20.6 Compaction scan
+
+- `docs/memory/`: **30 files / 227.9 KB**; `docs/plans/`: **18 / 849.6 KB**;
+  closure artifacts: **28 / 419.9 KB**.
+- **Zero** artifacts older than 14 days; **no done features indexed**.
+- Result: **no compaction candidates**; all active artifacts preserved.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
