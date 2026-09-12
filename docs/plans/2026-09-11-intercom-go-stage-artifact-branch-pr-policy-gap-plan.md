@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction"
 date: 2026-09-11
-revision: 14
+revision: 15
 status: reviewed
 agent: Stage
 governs: stash 638A410B
@@ -15,7 +15,8 @@ source: docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-ga
 (including its **§8 Revision 2 addendum**, **§9 Revision 3 addendum**, **§10 Revision 6
 addendum**, **§11 Revision 7 addendum**, **§12 Revision 8 addendum**, **§13 Revision 9
 addendum**, **§14 Revision 10 addendum**, **§15 Revision 11 addendum**, **§16 Revision 12
-addendum**, **§17 Revision 13 addendum**, and **§18 Revision 14 addendum**)
+addendum**, **§17 Revision 13 addendum**, **§18 Revision 14 addendum**, and **§19 Revision 15
+addendum**)
 **Stash entry**: `638A410B`
 **Requires plan hardening**: **yes** — see §9.
 
@@ -474,11 +475,43 @@ accurately, not by amending it:
   harnessed") and is where dependency **readiness** first changes behaviour: item 3 "Sort the queue
   by dependency order (tasks with no unfinished dependencies first)". Claiming happens later still,
   at Step 4.1. **Readiness gates execution ORDER and CLAIM; graph VALIDITY is what Step 2 checks.**
-* **`harness-architect` Step 1** excludes "**blocked**, done, or otherwise non-ready work items" —
-  where `blocked` is a **backlog lifecycle status value**, not a derived dependency state. **All
-  eight tasks of `017-S` are `queued`** (verified in `.backlogit/queue/`); none is `blocked` or
-  `done`, so none is excluded. Step 1 item 2 additionally restricts scope to an explicit
-  `${input:tasks}` set when one is supplied.
+* **`harness-architect` Step 1 — BOTH clauses, reconciled without overstating certainty (rev 15).**
+  Step 1 contains **three** items that bear on selection, and rev 14 cited only the third. Quoted
+  exactly: item 1 "Load the feature or chore and its **ready descendants** through backlog query or
+  queue operations"; item 2 "If `${input:tasks}` is present, **restrict the scope to that explicit
+  task set**"; item 3 "Exclude **blocked, done, or otherwise non-ready** work items". The
+  **plan's reading** is that `${input:tasks}` supplies the scope and that the exclusion in item 3
+  turns on the **lifecycle status values** it names — `blocked`, `done` — so that **all eight tasks
+  of `017-S`, every one of them `queued`** (verified in `.backlogit/queue/`), are in scope. **An
+  unmet task dependency is NOT `status: blocked`**: `blocked` is a value the backlog stores, and
+  `018.005-T`–`018.011-T` do not carry it; they carry `queued` with `dependencies` edges, which is
+  a different thing entirely.
+  **What this plan does NOT claim.** It does **not** claim the phrases "ready descendants" and
+  "otherwise non-ready" are *unambiguous*. They are **not**. A reader may reasonably interpret
+  "otherwise non-ready" as covering **dependency-unready** work, in which case item 1's "ready
+  descendants" and item 2's explicit-set restriction pull in opposite directions and the skill could
+  legitimately refuse seven of the eight. **This plan does not resolve that ambiguity by assertion,
+  does not invent an override, and does not amend the installed skill** (§11 keeps foundational
+  contracts out of scope). It handles the ambiguity **operationally**, fail-closed:
+  1. Ship passes the **exact eight task IDs** as `${input:tasks}` (below) and **verifies all eight
+     are `status: queued`** immediately before invocation.
+  2. If `harness-architect` **accepts** the batch, H0 proceeds and the literal 8/8 red is recorded.
+  3. If it **refuses, drops, or silently omits** any of the eight — i.e. the returned selected set is
+     **not** equal to the eight — **Ship MUST HALT BEFORE ANY MUTATION** and **route to the
+     operator**, reporting the contradiction between that behaviour and Step 2 item 4's
+     all-queued-tasks halt. **Silently proceeding with a partial batch is prohibited**, and so is
+     relaxing the 8/8 red requirement to accommodate it. The set-equality check of the Mechanical
+     check below is what makes a partial batch **detectable** rather than discovered late.
+  **Does this ambiguity require the decomposition or lifecycle to change? No — and the alternatives
+  are worse (rev 15).** The ambiguity lives in the **installed skill's wording**, not in this
+  feature's shape. Removing the dependency edges to make all eight trivially "ready" would
+  **falsify** a real and verified ordering constraint (A1→A2→A3→{B1,B2,B3}→C1→C2) purely to satisfy
+  a tool's parser — the backlog would then misstate the work. Harnessing only the dependency-ready
+  task (A1) would **halt the shipment at Step 2 item 4** anyway, trading a detectable halt for a
+  guaranteed one. Splitting or merging tasks changes nothing, because the ambiguity is about
+  **dependency state**, which any decomposition into ordered work necessarily has. The fail-closed
+  halt above is therefore the **proportionate** response, and no task, dependency edge, or shipment
+  membership changes on account of this finding.
 * **Rev 14 — Ship MUST supply the explicit eight-ID input.** `${input:tasks}` is declared
   **Optional**, and when it is omitted the skill falls back to "all ready tasks under the feature" —
   a selection this plan must not delegate. Ship therefore passes the **exact eight `017-S` task
@@ -913,8 +946,13 @@ untouched because the two are different kinds of input:
 
 The sentinel's **only** effect is to disable the **parent-only fixture-spawn block** inside
 `TestDirectPushGate_FullCorpusClean`, which is what makes the mechanism **non-recursive**: the child
-cannot spawn a grandchild. Three prohibitions are normative, because each of them would convert the
-guard into the very defect class this plan exists to exclude:
+cannot spawn a grandchild. **Rev 15 — this is a PRECONDITION, not a detector.** Recursion is
+**prevented structurally** on the parent side (the block is entered only when the sentinel is
+**unset**, so depth is bounded at exactly one level by construction) and **bounded** by the child's
+explicit `context.WithTimeout`. It is **not** established by any child-side check that the sentinel
+"is already set when the block is reached" — that condition is **unsatisfiable** given this very
+guard, and §5.0.2 item 5 withdraws it as evidence. Three prohibitions are normative, because each of
+them would convert the guard into the very defect class this plan exists to exclude:
 
 * The sentinel **MUST NOT skip C2**. A sentinel-set run executes C2's **full substantive
   assertions** — the default-mode full-corpus scan, MP2 terminal completeness, and the regeneration
@@ -1355,26 +1393,136 @@ new harness function and no new test is added** — the parts below are unexport
 from the existing C2 function:
 
 1. **Deterministic copy helper — `copyTrackedRepoFixture(t)`.** Called by the **parent**
-   `TestDirectPushGate_FullCorpusClean`. It resolves the real root via `repoRoot(t)`, enumerates
-   **tracked files only** with `git ls-files -z` executed in that root, and copies each path,
-   preserving its relative location and mode, into a `t.TempDir()` destination. Tracked-file
-   enumeration is chosen over a hand-listed file set because it is **deterministic**, needs no
-   maintenance as the corpus grows, and is **complete by construction** for everything C1 and C2
-   read — `go.mod`/`go.sum`, `tests/**` (including this harness and the
+   `TestDirectPushGate_FullCorpusClean`. It resolves the real root via `repoRoot(t)` and builds a
+   **self-contained module-and-repository** fixture under `t.TempDir()` in the six ordered
+   sub-steps below. Tracked-file enumeration is chosen over a hand-listed file set because it is
+   **deterministic**, needs no maintenance as the corpus grows, and is **complete by construction**
+   for everything C1 and C2 read — `go.mod`/`go.sum`, `tests/**` (including this harness and the
    `testdata/directpush-gate/` manifest, witness, and fixture corpus), `scripts/**`,
-   `.github/**` (the §5.2 corpus and `ci.yml`), and `AGENTS.md`. It excludes `.git/`, build output,
-   and every gitignored path, so the copy is a **module root** and nothing else. **It never mutates
-   the real tree**: the only writes are into `t.TempDir()`, and `git status --porcelain` over the
-   real checkout is asserted **empty before and after** (the same no-dirty-tree-edit rule as
-   AC-A2.4, AC-C1.6, and AC-C2.2 — and where the harness already owns that evidence, the existing
-   assertion is reused rather than duplicated).
-2. **Fixture preparation.** In the **copy only**: the copied `harness-state.json` and
-   `terminal-witness.json` MUST remain **valid and in agreement** (exact eight-element set,
-   `terminal: true`, `phase: terminal`, matching digest) — otherwise `gate()` Stage 1 fails the
-   child for an **integrity** reason and the observation reverts to vacuous for a second reason.
-   **Only the job-`lint` gate step is removed**, by parsing the copied `.github/workflows/ci.yml`
-   and deleting that one entry from `jobs.lint.steps[]` — the same structural walk AC-C1.6
-   mandates, never a text edit.
+   `.github/**` (the §5.2 corpus and `ci.yml`), and `AGENTS.md`. It excludes the real `.git/`,
+   build output, and every ignored path, so the copy is a **module root** and nothing else.
+
+   **(a) Enumerate the index WITH MODES, and fail closed on anything unsupported (rev 15).** The
+   enumeration is `git ls-files -s -z` executed in the real root — **`-s` is load-bearing**,
+   because the plain `git ls-files -z` form named at rev 14 emits paths only and therefore cannot
+   distinguish a regular file from a symlink or a gitlink, which is precisely the distinction a
+   faithful copy has to make. Each record is parsed NUL-wise (never line-wise: a path may contain a
+   newline) into `mode`, object, stage, and path. Handling is a **closed set**:
+
+   | Index mode | Handling |
+   |---|---|
+   | `100644` regular file | **Copy** with regular permissions |
+   | `100755` executable file | **Copy**, preserving the **executable bit** on platforms that carry one |
+   | `120000` symlink | **FAIL CLOSED** — the harness does not reproduce link semantics |
+   | `160000` gitlink / submodule | **FAIL CLOSED** — no submodule recursion, no network |
+   | any other mode, or any **stage ≠ 0** (unmerged) | **FAIL CLOSED** |
+
+   **Measured against this repository, rev 15 (`git ls-files -s`): all 629 index entries are
+   `100644`. There are ZERO `100755`, ZERO `120000`, and ZERO `160000` entries, and there is no
+   `.gitmodules` file.** Two consequences are stated so neither is assumed. First, **no
+   skip-list carve-out is written for `references/`, because `references/` is not in the index at
+   all** — it holds `references/herdr`, a **nested independent clone** excluded by
+   `.git/info/exclude`, so `git ls-files` never enumerates it and there is nothing for the copy to
+   skip. A plan clause that "skips the `160000 references` gitlink" would describe an index entry
+   this repository does not have. Second, the fail-closed rows are therefore **not dead text but a
+   forward guard**: the table is evaluated on every run, so the day a submodule or symlink is added
+   the fixture **fails loudly** instead of silently producing an incomplete copy. The `100755` row
+   is accepted rather than rejected for the same forward reason, and costs nothing today.
+
+   **(b) Copy the enumerated entries.** Each accepted entry is copied to the same relative path
+   under the destination, creating parent directories as needed. **Only** entries the table accepts
+   are copied; nothing is inferred from the working tree, so ignored and untracked content — the
+   `references/herdr` clone included — is structurally incapable of entering the fixture.
+
+   **(c) Copy the generated terminal witness EXPLICITLY (rev 15).** `tests/integration/testdata/`
+   `directpush-gate/terminal-witness.json` is created by **C2's own completion** (§5.0.1, AC-C2.10)
+   and at the moment this helper runs it may not yet be **in the index** — so sub-step (a) can
+   legitimately fail to enumerate it. Rev 14's index-only copy therefore had a real hole: a fixture
+   missing the witness is a **witness-absent + terminal-manifest** state, which MP6 fails as an
+   **integrity** error, making point 7 vacuous for a reason unrelated to the lint step. The helper
+   therefore copies the **real checkout's current** `terminal-witness.json` **from the working
+   tree**, after sub-step (b) and before sub-step (d), and: **requires it to exist** (absence
+   **fails** the observation — it is never treated as "nothing to copy"); **parses** it; and
+   **validates it against the copied manifest** to the full MP6 standard — exact eight-element set,
+   `terminal: true`, `phase: terminal`, and **matching digest**. **Copied manifest and witness must
+   be valid and in agreement BEFORE sub-step (e) removes the copied lint step.** This ordering is
+   what keeps the child's failure **attributable to the lint removal**: the fixture is proven sound
+   first, and only then is the single intended defect introduced. Copying it here rather than
+   special-casing it in (a) also keeps the index-mode table closed and honest.
+
+   **(d) Make the copy a SELF-CONTAINED Git repository (rev 15).** Sub-steps (a)–(c) produce a
+   module root with **no** repository: the real `.git/` is never copied (that would import the real
+   branch, index, hooks, and `info/exclude`, and is forbidden). But the copied `scripts/**` and the
+   harness itself use tracked-corpus enumeration and `HEAD`, and a Git command run inside a
+   directory that is not a repository **walks upward** — which under `t.TempDir()` could resolve
+   some unrelated ancestor repository, or none. The helper therefore **initializes Git in the
+   copy**, without network and without touching global state: `git init` in the copy root;
+   `git -C {copy} config --local user.email` / `user.name` set to a **non-secret, deterministic,
+   repo-local** identity (local scope only — never `--global`, and no credentials of any kind);
+   `git -C {copy} add -A`; and a **deterministic local commit**. A commit is **preferred over a
+   bare index** so that scripts using the tracked corpus **and** `HEAD` work normally.
+   **Assertion before the child is launched:** `git -C {copy} rev-parse --show-toplevel`, after
+   canonicalization (symlink and `8.3`/case normalization, so the comparison is meaningful on
+   Windows and on macOS `/var`→`/private/var`), **MUST equal the copy root**. A value that resolves
+   to the real checkout, to any ancestor of the temp directory, or to any other repository **fails
+   the observation** — this is the assertion that makes "no nested or sibling repository can be
+   selected" checkable rather than asserted. No submodule recursion and no remote is configured, so
+   nothing in this step can reach the network.
+
+   **(e) Remove only the copied job-`lint` step** — item 2 below.
+
+   **(f) No-mutation evidence — BYTE-IDENTICAL STATUS SNAPSHOTS, not an empty tree (rev 15).**
+   Rev 14 asserted `git status --porcelain` over the real checkout was **empty before and after**.
+   That form is **unsound in this repository for two independent, verified reasons**, and it
+   deadlocks rather than protects. **First**, the observation runs **inside C2**, whose own
+   completion legitimately writes `terminal-witness.json` and the terminal `harness-state.json`
+   (AC-C2.9/AC-C2.10) — and the spawn block is entered **only** in `terminal` phase (item 4), so at
+   the one moment point 7 is meaningful the real tree **necessarily carries** that control-state
+   dirt. An empty-tree precondition is therefore **unsatisfiable exactly when the evidence is
+   required**. **Second**, `references/herdr` is excluded only by **`.git/info/exclude`**, which is
+   **local and not part of the repository** — it does not survive a clone — so on CI or any fresh
+   checkout `git status --porcelain=v1 -z --untracked-files=all` reports that tree as untracked and
+   the "empty" assertion fails for a reason that has nothing to do with this harness.
+
+   The rule is therefore **equality of two snapshots**, which is strictly the **right** predicate:
+   what must be proven is that **the fixture mechanism changed nothing**, not that the checkout was
+   pristine. The helper captures a **full-tree** status snapshot **immediately before** and
+   **immediately after** the copied-fixture child run, using the **same NUL-safe, untracked-
+   inclusive** form this plan already mandates for the Stage commit gate (§5.7):
+
+   ```text
+   git status --porcelain=v1 -z --untracked-files=all
+   ```
+
+   Both snapshots are taken over the **real checkout**, parsed **NUL-wise** (never split on
+   newlines), and compared as **byte-identical** record multisets. `--untracked-files=all` is
+   load-bearing for the same reason §5.7 gives: the default `normal` mode collapses an untracked
+   subtree into a single `?? dir/` entry, which no per-file comparison can evaluate. **The parent
+   fails if and only if the snapshots differ** — i.e. if and only if the fixture mechanism itself
+   changed the real checkout. **Pre-existing dirt is permitted only by being unchanged**: C2's own
+   manifest and witness records, and any `references/herdr` records, appear **identically** in both
+   snapshots and so cancel. **This does not weaken the no-mutation evidence — it strengthens it.**
+   The empty form proved "the tree was clean, and (by inference) we did not dirty it"; the snapshot
+   form proves the load-bearing claim **directly and unconditionally**, and it detects mutations the
+   empty form could never see, including a **modification to an already-dirty file**, a
+   **deletion**, and a **new untracked artifact written beside existing dirt**. A snapshot that
+   differs is a failure **even if the difference is a file returning to a clean state**. This
+   snapshot-equality form is the **canonical** no-mutation evidence for this plan; where AC-A2.4,
+   AC-C1.6, and AC-C2.2 take the same evidence they take it in **this** form, and where the harness
+   already owns it the existing assertion is reused rather than duplicated.
+2. **Fixture preparation — ordered, so the injected defect stays attributable.** In the **copy
+   only**: the copied `harness-state.json` and `terminal-witness.json` MUST be **valid and in
+   agreement** (exact eight-element set, `terminal: true`, `phase: terminal`, matching digest) —
+   otherwise `gate()` Stage 1 fails the child for an **integrity** reason and the observation
+   reverts to vacuous for a second reason. **Rev 15 makes the ordering normative**: that agreement
+   is established and checked in item 1 sub-step (c), and the fixture is committed in sub-step (d),
+   **before** the lint step is removed here. The removal is therefore the **only** divergence
+   between the fixture's `HEAD` and its working tree, which is exactly what makes the child's
+   failure attributable to **it** rather than to a malformed or incomplete copy. **Only the
+   job-`lint` gate step is removed**, by parsing the copied `.github/workflows/ci.yml` and deleting
+   that one entry from `jobs.lint.steps[]` — the same structural walk AC-C1.6 mandates, never a
+   text edit. The removal is left as an **uncommitted worktree edit in the copy**; the copied
+   `ci.yml` stays tracked, so the copied scripts' tracked-corpus enumeration is unaffected.
 3. **Child process — `runFixtureChildGoTest(t, fixtureRoot)`.** The parent launches a **child `go
    test` process**, because that is what makes `repoRoot(t)` resolve the **copy**: the child's
    `exec.Cmd.Dir` is set to the **copied module root**, so the child test binary's working directory
@@ -1422,8 +1570,21 @@ from the existing C2 function:
    * **Expected child exit status is non-zero**, because C1 detects the removed step. A **zero**
      child exit is a failure of this observation. Exit status alone is never sufficient evidence —
      it is checked **in addition to**, never instead of, the two event assertions above.
-   * **No recursion or timeout marker** may appear: no second-level child (detected by the sentinel
-     already being set when the parent block is reached), and no context-deadline termination.
+   * **No recursion and no timeout.** **Rev 15 — stated as a precondition plus a bound, because the
+     rev-14 phrasing named an impossible condition.** Rev 14 required "no second-level child
+     (detected by the sentinel already being set when the parent block is reached)". That detector
+     can **never fire**: item 4's guard means a sentinel-set process **does not reach** the parent
+     block at all, so "sentinel set **when the block is reached**" is unsatisfiable by construction
+     and proves nothing. Recursion is prevented — not detected — on the **parent side**: entering
+     the spawn block **requires** the sentinel to be **unset** (item 4), so the child, which always
+     has it set, cannot spawn a grandchild, and the depth is bounded at exactly **one** level
+     structurally rather than by observation. What the parent **does** check, and what remains
+     genuine evidence, is the **bound**: the child must terminate **within its explicit
+     `context.WithTimeout`**, and a **context-deadline / killed-child termination fails** the
+     observation rather than being read as inconclusive. A defensive assertion that the sentinel
+     **is** set in the child environment the parent constructed is permitted as a cheap
+     self-check on the parent's own `exec.Cmd.Env`, but it is **not** the recursion control and
+     must not be recorded as one.
    * A **malformed event stream** — undecodable JSON, a truncated stream, or a stream containing no
      terminal event for either name — **fails** the observation. It is never treated as an
      inconclusive pass.
@@ -1435,7 +1596,11 @@ from the existing C2 function:
    stays quiet and a failing one stays readable.
 7. **The parent passes only when the child evidence matches.** Every condition in item 5 must hold;
    any one of them failing fails `TestDirectPushGate_FullCorpusClean` in the parent. The **real
-   checkout is unchanged** throughout — only `t.TempDir()` is written.
+   checkout is unchanged** throughout — only `t.TempDir()` is written — and that claim is
+   **discharged by the item 1(f) snapshot equality**, not by an empty-tree assertion: the
+   before/after `git status --porcelain=v1 -z --untracked-files=all` snapshots must be
+   **byte-identical**, so C2's own legitimate manifest and witness dirt is tolerated **only** by
+   being unchanged, and any mutation the mechanism causes fails the parent.
 
 Point **7a** is kept **separate and unchanged in kind**: the targeted `-gatetask=C1` invocation
 against the same fixture is **selector evidence only**. It activates C1 **by construction** and is
@@ -2901,7 +3066,10 @@ vacuously; job `lint` already declares `permissions: contents: read` and
   `docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md`). Non-vacuity
   is proven by **EXECUTION**: the test writes a copy of the current `ci.yml` with that step removed
   into `t.TempDir()` and asserts the same check **FAILS** against the copy. **No edit is made to the
-  real tree** — `git status --porcelain` stays empty — the same no-dirty-tree-edit rule as AC-A2.4
+  real tree** — proven by **byte-identical** `git status --porcelain=v1 -z --untracked-files=all`
+  snapshots taken immediately before and after (rev 15: snapshot **equality**, not an empty tree,
+  because C2's own manifest and witness writes and any locally-excluded path make "empty"
+  unsatisfiable exactly when the evidence is needed) — the same no-dirty-tree-edit rule as AC-A2.4
   and AC-C2.2. **Rev 11 — activation independence (the P0 correction).** This function's
   default-mode activation is derived **solely** from the harness-state manifest (`C1` present in
   `completed`), and **never** from the presence of the job-`lint` step it asserts on. Rev 10 keyed
@@ -2931,10 +3099,19 @@ vacuously; job `lint` already declares `permissions: contents: read` and
   The criterion is therefore satisfied only by the §5.0.2 point-7 **process contract**, implemented
   as unexported helpers in the existing `tests/integration/directpush_gate_test.go` (**no new
   harness function, no new test**): (i) `copyTrackedRepoFixture(t)` builds the fixture from
-  `git ls-files -z` **tracked files only** into `t.TempDir()`, leaving the real tree unwritten and
-  `git status --porcelain` empty before and after; (ii) only the job-`lint` step is removed from the
+  `git ls-files -s -z` **tracked files only** into `t.TempDir()` — **rev 15**: `-s` so index
+  **modes** are read, `100644`/`100755` copied (executable bit preserved) and **every** other mode,
+  including `120000` symlinks and `160000` gitlinks, and every unmerged stage, **failing closed**;
+  the generated `terminal-witness.json` copied **explicitly** from the working tree and validated
+  against the copied manifest; the copy made a **self-contained Git repository** (`git init`,
+  local non-secret identity, `git add`, deterministic local commit, **no** real `.git` copy, **no**
+  submodule recursion, **no** network) with
+  `git -C {copy} rev-parse --show-toplevel` asserted **equal to the copy root**; and the real tree
+  left unwritten, proven by **byte-identical** `git status --porcelain=v1 -z --untracked-files=all`
+  snapshots before and after; (ii) only the job-`lint` step is removed from the
   **copied** `ci.yml`, by the same `jobs.lint.steps[]` structural walk this criterion already
-  mandates, with the copied manifest and witness left **valid and in agreement**; (iii)
+  mandates, **after** the copied manifest and witness are proven **valid and in agreement** (rev 15
+  ordering, so the child's failure stays attributable to the removal); (iii)
   `runFixtureChildGoTest(t, fixtureRoot)` launches a **child `go test` process** whose
   `exec.Cmd.Dir` is the **copied module root** — which is precisely what makes `repoRoot(t)` resolve
   the copy — invoking
@@ -2980,8 +3157,13 @@ different numbering for the same criteria).
   `directpush-reject-attempt-first.md` locks the literal 3e **push** construct and
   `directpush-reject-commit-on-default.md` locks the **default-branch commit authorization**
   construct, and the run reports every fixture **by name** with actual == manifest verdict. **No
-  temporary edit is made to the real tree at any point**; `git status --porcelain` is empty
-  immediately before and after the proof, and the evidence recorded is the `--self-test` output,
+  temporary edit is made to the real tree at any point**; this is proven by **byte-identical**
+  `git status --porcelain=v1 -z --untracked-files=all` snapshots taken immediately before and after
+  the proof (**rev 15**: snapshot **equality**, not an empty tree — C2's own legitimate manifest and
+  witness writes, and any path excluded only by a local non-portable `.git/info/exclude`, make an
+  empty-tree precondition unsatisfiable precisely when this evidence is required; equality is also
+  the **stronger** predicate, catching modification of already-dirty files, deletions, and new
+  artifacts written beside existing dirt), and the evidence recorded is the `--self-test` output,
   not a narrated local edit. A reintroduction proof performed by mutating the committed tree is
   **explicitly rejected**: it is unrecorded, unreproducible in CI, and leaves a window in which the
   repository contains the very construct this gate exists to forbid. **Rev 11 extends this criterion
@@ -3194,17 +3376,32 @@ different numbering for the same criteria).
   checkout**, and the observation lives inside C2 and would recurse. The evidence is produced by the
   §5.0.2 point-7 process contract, implemented as unexported helpers in the existing
   `tests/integration/directpush_gate_test.go` — `copyTrackedRepoFixture(t)` (tracked-file copy via
-  `git ls-files -z` into `t.TempDir()`; real tree never written; `git status --porcelain` empty
-  before and after) and `runFixtureChildGoTest(t, fixtureRoot)` (a **child `go test` process** whose
+  `git ls-files -s -z` into `t.TempDir()`; **rev 15** — index **modes** read, `100644`/`100755`
+  copied with the executable bit preserved and **all** other modes, `120000` and `160000` included,
+  plus any unmerged stage, **failing closed**; the generated `terminal-witness.json` copied
+  **explicitly** from the working tree, **required to exist**, parsed, and **validated against the
+  copied manifest** before the lint step is removed; the copy made a **self-contained Git
+  repository** via `git init` + local non-secret identity + `git add` + a deterministic local
+  commit, with **no** real `.git` copy, **no** submodule recursion and **no** network, and
+  `git -C {copy} rev-parse --show-toplevel` asserted **equal to the canonical copy root** so no
+  nested or sibling repository can be selected; real tree never written, proven by
+  **byte-identical** `git status --porcelain=v1 -z --untracked-files=all` snapshots before and
+  after rather than by an empty-tree assertion)
+  and `runFixtureChildGoTest(t, fixtureRoot)` (a **child `go test` process** whose
   `exec.Cmd.Dir` is the **copied module root**, running
   `go test -json ./tests/integration -run '^TestDirectPushGate_(CIWiringIsBlocking|FullCorpusClean)$' -count=1`
   with **no `-gatetask`** so activation is default mode and `-run` bounds only process scope) —
   guarded by the non-recursive sentinel `DIRECTPUSH_GATE_FIXTURE_CHILD=1`, which disables the
   **parent-only spawn block** and **must not** skip C2 or bypass MP1/MP6. The recorded evidence is
   **parsed `go test -json` events**, never scraped text, and must show the C1 `fail` event with the
-  missing-step reason, the C2 terminal `pass`/`fail` event, a **non-zero child exit**, **no**
-  recursion or timeout marker, and a **well-formed** stream — a malformed or truncated stream
-  **fails** rather than passing as inconclusive. The child is bounded by an explicit
+  missing-step reason, the C2 terminal `pass`/`fail` event, a **non-zero child exit**, **no
+  context-deadline / killed-child termination**, and a **well-formed** stream — a malformed or
+  truncated stream
+  **fails** rather than passing as inconclusive. **Rev 15 — recursion is PREVENTED, not detected**:
+  the spawn block is entered only when the sentinel is **unset**, which bounds depth at exactly one
+  level by construction, so the rev-14 "recursion marker" (a child observing the sentinel already
+  set **when the block is reached**) is **unsatisfiable given that guard** and is **withdrawn** as
+  evidence; the genuine bound is the timeout condition above. The child is bounded by an explicit
   `context.WithTimeout`, invoked through `exec.CommandContext` on the Go binary with **no shell**,
   and its stdout/stderr appear **only** in bounded failure output;
   (7a) the **targeted** `-gatetask=C1` form of the same fixture is recorded **separately and
@@ -3226,7 +3423,10 @@ go test ./tests/integration -run 'TestDirectPushGate_(CIWiringIsBlocking|FullCor
 markdownlint "**/*.md"
 python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 actionlint .github/workflows/ci.yml   # LOCAL, operator-run — no CI counterpart exists in this repo
-git status --porcelain                # MUST be empty around AC-C2.2 — no dirty-tree mutation proof
+git status --porcelain=v1 -z --untracked-files=all   # rev 15 — snapshot taken BEFORE and AFTER;
+# the two must be BYTE-IDENTICAL around AC-C2.2 and around the point-7 fixture-child run. NOT an
+# empty-tree check: C2's own witness/manifest writes, and paths excluded only by the local
+# non-portable .git/info/exclude, make "empty" unsatisfiable exactly when the evidence is needed.
 # Rev 7/8 — the no-shipment arm's primitives, verified against this repository:
 git show origin/main:docs/plans/           # exits 0 on a TREE — why `show` is insufficient (AC-B1.10)
 git cat-file -t origin/main:docs/plans/    # prints `tree`  → rejected
@@ -3268,8 +3468,22 @@ go test -v ./tests/integration -run TestDirectPushGate 2>&1 | Select-String -Pat
 # CANNOT produce it, because repoRoot(t) walks up to go.mod from the process working directory and so
 # resolves the REAL CHECKOUT, and because the observation lives INSIDE C2 and would recurse.
 # It is produced by the PARENT TestDirectPushGate_FullCorpusClean, which:
-#   1. copyTrackedRepoFixture(t)   — `git ls-files -z` tracked-file copy into t.TempDir()
-#   2. removes ONLY the job-`lint` step from the COPIED ci.yml (structural jobs.lint.steps[] walk)
+#   1. copyTrackedRepoFixture(t)   — `git ls-files -s -z` tracked-file copy into t.TempDir().
+#      REV 15: -s reads INDEX MODES. 100644/100755 copied (exec bit preserved); 120000 symlinks,
+#      160000 gitlinks, any other mode and any unmerged stage FAIL CLOSED. Verified on this repo:
+#      all 629 entries are 100644 — zero 100755/120000/160000, no .gitmodules — so NO skip-list is
+#      written: `references/` is NOT in the index at all (it holds the locally-excluded nested clone
+#      references/herdr), and the fail-closed rows are a forward guard, not dead text.
+#   1b. REV 15 — copies the GENERATED terminal-witness.json explicitly from the WORKING TREE (it may
+#      not be indexed yet, since C2's own completion writes it), REQUIRES it to exist, parses it and
+#      validates it against the copied manifest, then makes the copy a SELF-CONTAINED GIT REPO:
+#      git init + local non-secret identity + git add + deterministic local commit; NO real .git
+#      copy, NO submodule recursion, NO network. Asserts, before the child runs:
+#         git -C {copy} rev-parse --show-toplevel  ==  canonical copy root
+#      so no nested/sibling repository can be selected.
+#   2. removes ONLY the job-`lint` step from the COPIED ci.yml (structural jobs.lint.steps[] walk),
+#      AFTER manifest+witness are proven valid and in agreement — so child failure stays
+#      ATTRIBUTABLE to the removal rather than to a malformed or incomplete copy.
 #   3. runFixtureChildGoTest(t, fixtureRoot) — CHILD process, exec.Cmd.Dir = COPIED MODULE ROOT
 #      (which is what makes repoRoot(t) resolve the copy), env + DIRECTPUSH_GATE_FIXTURE_CHILD=1,
 #      exec.CommandContext with an explicit timeout, NO SHELL. The child command is exactly:
@@ -3281,8 +3495,16 @@ go test -v ./tests/integration -run TestDirectPushGate 2>&1 | Select-String -Pat
 #         - terminal "Action":"pass" OR "fail" for TestDirectPushGate_FullCorpusClean
 #           (an "Action":"skip", or NO terminal event for that name, FAILS the observation)
 #         - NON-ZERO child exit (C1 detects the removed step); a zero exit FAILS
-#         - NO recursion marker (sentinel already set) and NO context-deadline/timeout marker
+#         - NO context-deadline / killed-child termination. REV 15: the rev-14 "recursion marker
+#           (sentinel already set)" is WITHDRAWN — the guard means a sentinel-set process never
+#           REACHES the block, so that condition is unsatisfiable and proved nothing. Recursion is
+#           PREVENTED parent-side (block entered only when sentinel is UNSET => depth bounded at 1)
+#           and BOUNDED by the child timeout.
 #         - a WELL-FORMED stream; malformed/truncated FAILS rather than reading as inconclusive
+#   5. REV 15 — real-tree no-mutation evidence is SNAPSHOT EQUALITY, not an empty tree:
+#         git status --porcelain=v1 -z --untracked-files=all   (NUL-parsed, before AND after)
+#      the two snapshots MUST be BYTE-IDENTICAL. Legitimate C2 manifest/witness dirt is tolerated
+#      only by being UNCHANGED; the parent fails iff the mechanism changed the real checkout.
 # The sentinel disables ONLY the parent-only spawn block: it MUST NOT skip C2 and MUST NOT bypass
 # MP1/MP6 (§5.0.1 "The fixture-child sentinel"). Child stdout/stderr appear ONLY in bounded failure
 # output. The whole observation is therefore driven by the default suite:
@@ -3478,7 +3700,8 @@ P-014 readiness and P-018 thread resolution apply to the staging PR as to any PR
 | R21 | The harness-state manifest becomes a **single point of failure**: one tracked file whose corruption, deletion, or rollback could disable all eight assertions at once | **BOUNDED, AND THE TRADE IS DELIBERATE (rev 11).** Centralizing activation state is what makes it *checkable* — the rev-10 alternative distributed the same power across eight surface predicates where it was invisible and, in C1/C2's case, self-referential. The file is bounded four ways. **(1) Fail-closed by default**: MP1 runs inside `gate()`, so a missing, unreadable, malformed, or invalid manifest fails **all eight** functions loudly; the degenerate direction is red, not green. **(2) Not skippable**: no manifest state produces a skip in `red` or `terminal` phase, and targeted mode ignores the manifest for **activation** entirely, so `-gatetask={ID}` still executes the real assertion even against a manifest whose `phase`/`completed` state has been rewound. **Rev 13 precision**: "ignores" is scoped to activation only — a manifest that is *invalid* (malformed, unknown phase, duplicate/unknown ID, non-subsequence, dependency-open, or an illegal triple) still **fails closed in every mode**, because MP1 lives in `gate()`'s mode-independent Stage 1. Tampering therefore either fails the run or fails to suppress the assertion; it cannot do neither. **(3) Outside every render boundary**: it lives under `tests/**`, which no autoharness template covers (§5.0 render table), so — unlike the job-`lint` step — **no regeneration can touch it**. **(4) Executed mutation proof**: MP4/AC-C2.2 prove ten corruption and rollback cases fail rather than skip. **(5) Rev 12 — the terminal claim is no longer single-file**: `terminal-witness.json` is an independent tracked file, and MP6 requires the two to agree **before** activation, so neither a manifest-only nor a witness-only rollback can pass. **Accepted residual, same class as R12**: deleting or rolling back the state files *together with* the surfaces they gate remains possible through a reviewable pull-request diff to non-generated tracked files. That is a **visible human or agent edit, not a silent render**, which is exactly the boundary §1 promises. **If a future autoharness version begins generating `tests/**`, this row and R11/R12/R22 must be re-verified together** |
 | R22 | **Coordinated rollback of BOTH state files in one change** (rev 12) — the witness deleted and the manifest rewound together, reproducing a state that looks exactly like legitimate pre-C2 `build` | **ACCEPTED AND STATED HONESTLY — NOT claimed as runtime-detectable.** MP6 closes the *asymmetric* cases: witness-only and manifest-only rollbacks each fail loudly, which is what a partial write or a single-file edit produces. It does **not** close the symmetric one, and the plan does not pretend otherwise: a validator that reads only the current tree has **no history to compare against**, so a state that is byte-identical to a legal earlier state is, to it, that state. Claiming a stateless validator detects every coordinated rollback would be false, and inventing a runtime history mechanism (a signed log, an append-only ledger, a CI-side cache) is a materially larger control than this release unit's branch-policy contract warrants. What does catch it: **both files are tracked and non-generated**, so the rollback appears as a reviewable diff in a pull request — deleting the witness is a visible file deletion and rewinding the manifest is a visible content change, both under `tests/integration/testdata/directpush-gate/`. Caught by **diff and review**, not by runtime history. Same visible-edit boundary as R12 and R21 |
 | R23 | **A future render narrows the expensive-job test command's package pattern**, so `tests/integration` — and therefore the whole harness — stops running, silently reopening R5 | **BOUNDED BY AN EXPLICIT POST-RENDER CHECK (rev 12), and the previous overstatement withdrawn.** Revisions 5–11 asserted `go test -race -mod=readonly ./...` *was* the generated baseline, which made this risk invisible: if the exact command were render-guaranteed there would be nothing to verify. It is not — the template emits `{{TEST_COMMAND}}` and the recorded render input here is `go test ./...` (§5.0 "Invocation provenance"), so the flags are local and only the **step plus its substitution** is re-emitted. The guarantee is therefore scoped to what the baseline supports — **a full-suite invocation whose package pattern is `./...`** — and **AC-C1.7** makes verifying that pattern a written, standing obligation in the LOCAL DIVERGENCE ledger after every regeneration of `ci.yml`. **Residual**: the check is **procedural, not mechanical** — nothing in CI asserts the rendered pattern, because a check on the rendered file would itself sit inside the render boundary. If the obligation is skipped and a render narrows the pattern, R5 reverts to open. Recorded, not hidden |
-| R24 | **The §5.0.2 point-7 child-process mechanism misbehaves** (rev 14) — it recurses, hangs, floods the log, or passes on an unreadable event stream, turning the R5 evidence into either a CI outage or a false green | **BOUNDED BY FOUR EXPLICIT CONSTRUCTION RULES, each stated normatively in §5.0.2 point 7 rather than left to the implementer.** **(1) Recursion is bounded at exactly one level** by the `DIRECTPUSH_GATE_FIXTURE_CHILD=1` sentinel: the child never enters the parent-only spawn block, and the parent additionally treats an already-set sentinel at that block as a **recursion marker and a failure**, so the degenerate direction is a loud fail, not an unbounded fork. **(2) Hangs are bounded** by an explicit `context.WithTimeout` on `exec.CommandContext`; a deadline termination is a **failure of the observation**, never an inconclusive pass. **(3) Log volume is bounded** — child stdout/stderr are captured and surfaced **only** as a truncated tail **on failure**, so a passing run adds nothing to CI output. **(4) A malformed, truncated, or terminal-event-less `-json` stream FAILS**; the parent never reads an unparsable stream as evidence in either direction, and a **zero** child exit fails too, because C1 must detect the removed step. **Cost, accepted and stated**: the child compiles and runs `tests/integration` a second time against a ~5 MB tracked-file copy, bounded to two test functions by `-run`. That is the price of observing **default-mode** activation at all — an in-process observation is impossible here, because `repoRoot(t)` resolves the real checkout by construction, and the rev-13 attempt to specify the observation without a mechanism is exactly what this row replaces. **Residual, recorded not hidden**: the mechanism asserts activation against a **copy**, so it proves the manifest-derived activation property, not the state of the real `ci.yml` — which is what AC-C1.6's ordinary structural assertion against the real tree covers. The two are complementary and neither is claimed to subsume the other |
+| R24 | **The §5.0.2 point-7 child-process mechanism misbehaves** (rev 14) — it recurses, hangs, floods the log, or passes on an unreadable event stream, turning the R5 evidence into either a CI outage or a false green | **BOUNDED BY FOUR EXPLICIT CONSTRUCTION RULES, each stated normatively in §5.0.2 point 7 rather than left to the implementer.** **(1) Recursion is bounded at exactly one level** by the `DIRECTPUSH_GATE_FIXTURE_CHILD=1` sentinel: the child never enters the parent-only spawn block. **Rev 15 corrects how that bound is EVIDENCED.** Rev 14 additionally claimed the parent "treats an already-set sentinel at that block as a **recursion marker and a failure**" — an **unsatisfiable** condition, because the guard means a sentinel-set process never **reaches** the block, so that detector could never fire and proved nothing. Recursion is therefore **PREVENTED structurally** (entry requires the sentinel to be **unset**), not detected; the **timeout** in rule (2) is the real runtime bound, and a defensive check that the parent's own `exec.Cmd.Env` carries the sentinel is permitted as a self-check but is **not** recorded as recursion control. **(2) Hangs are bounded** by an explicit `context.WithTimeout` on `exec.CommandContext`; a deadline termination is a **failure of the observation**, never an inconclusive pass. **(3) Log volume is bounded** — child stdout/stderr are captured and surfaced **only** as a truncated tail **on failure**, so a passing run adds nothing to CI output. **(4) A malformed, truncated, or terminal-event-less `-json` stream FAILS**; the parent never reads an unparsable stream as evidence in either direction, and a **zero** child exit fails too, because C1 must detect the removed step. **Cost, accepted and stated**: the child compiles and runs `tests/integration` a second time against a ~5 MB tracked-file copy, bounded to two test functions by `-run`. That is the price of observing **default-mode** activation at all — an in-process observation is impossible here, because `repoRoot(t)` resolves the real checkout by construction, and the rev-13 attempt to specify the observation without a mechanism is exactly what this row replaces. **Residual, recorded not hidden**: the mechanism asserts activation against a **copy**, so it proves the manifest-derived activation property, not the state of the real `ci.yml` — which is what AC-C1.6's ordinary structural assertion against the real tree covers. The two are complementary and neither is claimed to subsume the other |
+| R25 | **The point-7 fixture is not a faithful, self-contained subject** (rev 15) — the copy silently omits a file, is not a Git repository, resolves a **different** repository, or its no-mutation evidence deadlocks — so point 7 fails, or passes, for reasons unrelated to the lint step | **FOUR CONSTRUCTION DEFECTS CLOSED EXPLICITLY, each with a fail-closed check rather than an assumption.** **(1) Silent omission by index mode.** Enumeration is `git ls-files -s -z`, and mode handling is a **closed set**: `100644`/`100755` copied (executable bit preserved), while `120000`, `160000`, any other mode, and any **unmerged stage** **fail closed**. Measured on this repository, **all 629 index entries are `100644`** (zero `100755`/`120000`/`160000`, no `.gitmodules`), so **no skip-list is written** — notably **none for `references/`, which is not in the index at all**; it holds the nested independent clone `references/herdr`, excluded by `.git/info/exclude`. The fail-closed rows are a **forward guard** that turns a future symlink or submodule into a loud failure instead of a quietly incomplete fixture. **(2) The untracked terminal witness.** `terminal-witness.json` is written by **C2's own completion** and may not be indexed when the helper runs, so an index-only copy yields a **witness-absent + terminal-manifest** fixture that MP6 fails as an **integrity** error — vacuity for a reason unrelated to the lint step. It is therefore copied **explicitly from the working tree**, **required to exist**, parsed, and **validated against the copied manifest**, **before** the lint step is removed. **(3) Not a repository, or the wrong one.** The real `.git/` is never copied, so the copy would otherwise have no repository and Git commands run inside it would **walk upward** to an unrelated ancestor. The helper runs `git init` + a **local, non-secret** identity + `git add` + a deterministic **local** commit (no network, no submodule recursion, no `--global` state), and asserts `git -C {copy} rev-parse --show-toplevel` **equals the canonical copy root** before the child runs — which is what makes "no nested or sibling repository can be selected" **checkable**. A commit rather than a bare index is preferred so tracked-corpus **and** `HEAD` consumers both work. **(4) The no-mutation evidence deadlocked.** The rev-14 empty-`git status` precondition was **unsatisfiable exactly when needed** (C2's own witness/manifest dirt, plus any path excluded only by the local non-portable `.git/info/exclude`); it is replaced by **byte-identical** `git status --porcelain=v1 -z --untracked-files=all` snapshots before and after. **Residual, recorded not hidden**: the fixture's Git history is **synthetic** — one local commit, not the real branch history — so point 7 proves nothing about real commit ancestry, and any future assertion needing genuine history must say so and build it explicitly |
 
 **Known pre-existing defects, recorded and out of scope**: `workflow-policies.md` header
 `**Version**: 1.0.0` is stale against Amendment Log 1.24.0; Step 1.5's a–e sub-steps are lazy
@@ -4049,3 +4272,120 @@ re-review — that is the next action and it is **pending**. Stage did **not** p
 comment on, or merge PR #54, did **not** reply to or resolve any thread (`PRRT_kwDOTPuhps6hstWa`,
 `PRRT_kwDOTPuhps6hstWg`, `PRRT_kwDOTPuhps6hstWn` remain **unresolved**), and did **not** claim,
 modify, or close shipment `017-S`. **No success is claimed for the re-review that has not yet run.**
+
+### 12.15 Revision 15 — third operator-authorized capped remediation, with a decomposition audit
+
+**Authorization (explicit, recorded, and consumed by this pass).** The rev-14 session ended with the
+authorized adversarial re-review **still pending**. The operator **explicitly authorized ONE narrow
+remediation plus adversarial re-review cycle** for PR #54, and additionally **required a
+decomposition audit** of `018-F`, shipment `017-S`, and tasks `018.004-T`–`018.011-T` — with special
+attention to C2 `018.011-T` — **before** any editing. This revision is that single authorized
+remediation pass. The authorization is **consumed** by it; **the re-review it enables has NOT been
+performed by Stage**, and no outcome for it is claimed.
+
+#### Phase A — decomposition audit (performed BEFORE any edit)
+
+**VERDICT: `SUFFICIENTLY_DECOMPOSED`. No task is split, added, merged, re-parented, or re-sized, and
+`017-S` membership is unchanged at 9 items.** The verdict is evidence-based, and the three questions
+the operator separated are answered separately, because they have different answers' shapes.
+
+**(1) Feature decomposition — eight tasks across three sub-epics.** The dependency graph is explicit,
+acyclic, and recorded in `.backlogit/queue/`: `A1 018.004-T → A2 018.005-T → A3 018.006-T →
+{B1 018.007-T, B2 018.008-T, B3 018.009-T} → C1 018.010-T → C2 018.011-T`. Sizes and complexity are
+assigned on **both** axes and none is derived from the other: `S/low`, `S/medium`, `M/high`,
+`M/medium`, `S/medium`, `L/medium`, `S/medium`, `S/medium`. Every task maps to **exactly one** harness
+function in the §5.0 per-task map, so every task has **exactly one observable red→green transition** —
+the Atomic Milestone criterion, met structurally rather than by assertion. The B-block is deliberately
+**per-surface scoped** precisely so that B1/B2/B3 have independent transitions; §5.0 records that a
+whole-corpus assertion would only go green after all three landed and would trip `build-feature`'s
+5-attempt circuit breaker. That is the signature of decomposition that has **already been tested
+against the execution loop**, not merely partitioned on paper.
+
+**(2) Task C2's implementation width — the operator's specific concern, and the decisive evidence.**
+The concern is that C2 has accumulated a test harness, fixture helpers, and evidence capture. **It has
+not, and §5.0 already settles this in terms that predate this audit.** The H0 deliverable list, item 1,
+states that the fixture helpers `copyTrackedRepoFixture` and `runFixtureChildGoTest` **and** the
+parent-only spawn block are authored **at H0 by `harness-architect`**, that they are **not** gate
+functions, that the function count **stays eight**, that they hold no `gateOrder` entry — and,
+verbatim, that **"no task authors them, and no task is re-sized by them."** The helpers are therefore
+**harness infrastructure produced before any task is claimed**, on the Ship Step 2 boundary, not C2
+implementation work. What C2 itself performs is: **run** the scans, gates, and suite; **capture**
+evidence; and **write two control-state files** (`terminal-witness.json`, then the atomic terminal
+`harness-state.json` replacement). That is **one skill domain — verification/evidence** — and **two
+written files**, inside the fewer-than-three-files heuristic. **This revision's own edits land
+entirely inside those H0-authored helpers and the prose describing them, so they cannot widen C2
+either** — which is why the audit was run **before** the edits rather than after.
+
+**Why AC count is not width, and why the fixture mechanism is ONE atomic verification concern.** C2
+carries 11 acceptance criteria — the second-highest count, behind `018.007-T`'s 12 at size `M`. Criterion
+count measures **how many propositions one milestone asserts**, not how much work it takes; the
+2-Hour Rule governs effort. The fixture mechanism is the clearest case: its multiple helper operations
+— enumerate the index, copy, copy and validate the witness, `git init`/`add`/commit, assert
+`--show-toplevel`, remove the lint step, spawn the bounded child, parse the event stream, compare the
+two status snapshots — are **internal steps of a single assertion**, evaluated in **one** parent
+invocation of `TestDirectPushGate_FullCorpusClean` and yielding **one** verdict (§5.0.2 point 7 item 7:
+"any one of them failing fails `TestDirectPushGate_FullCorpusClean` in the parent"). They produce no
+independent red→green transitions and no separately shippable outcome, which is exactly the test for
+whether work should be a separate task.
+
+**Why splitting C2 would ACTIVELY BREAK the design — the decisive structural argument.** A split is not
+merely unnecessary here; it is **incoherent** with the lifecycle. (a) Every task requires its own harness
+function, and §5.0 fixes the function count at **eight**; a ninth task would need a ninth function,
+which the plan forbids. (b) C2's completion is defined by an **atomic two-file terminal transition** —
+witness written **first**, then the manifest **atomically** replaced (§5.0.1) — and MP6 **fails closed**
+on any witness/manifest disagreement. Splitting C2 across two tasks would necessarily create an
+**intermediate state in which one file has flipped and the other has not**, which is **precisely the
+fail-closed state MP6 exists to reject**. The split would therefore manufacture the defect class the
+mechanism was built to detect. (c) `017-S` must remain **one shipment**; adding tasks to satisfy a
+numeric preference is explicitly declined, per the operator's own instruction not to.
+
+**(3) Shared harness-state edits.** Each task inserts **one line** into `completed` in the shared
+`tests/integration/testdata/directpush-gate/harness-state.json` at its `gateOrder` position. §5.0.2
+already records this as the **completion record, not a second skill domain**, and confirms no task's
+size band changes on account of it. Re-verified at rev 15 and unchanged. This is shared-state
+**coordination**, which the dependency graph serializes, not shared-state **contention**.
+
+**Did the P2 H0 ambiguity itself require restructuring? Explicitly evaluated — NO.** The operator
+required this be decided rather than assumed. The ambiguity lives in the **installed skill's wording**
+(`harness-architect` Step 1 item 1's "ready descendants" and item 3's "otherwise non-ready" versus item
+2's explicit `${input:tasks}` restriction), **not** in this feature's shape. Every restructuring that
+could dissolve it is **worse**: deleting the dependency edges would **falsify a real, verified ordering
+constraint** to satisfy a parser; harnessing only the dependency-ready A1 would **halt at Step 2 item 4**
+anyway; and splitting or merging tasks changes nothing, because any decomposition into ordered work has
+dependency state. §5.0 therefore handles it **operationally and fail-closed** (below) and **no backlog
+artifact changes**.
+
+#### Phase B — the findings and their disposition
+
+| # | Sev. | Finding | Disposition |
+|---|---|---|---|
+| 1 | **P1 MEDIUM** | **Real-tree cleanliness deadlock.** §5.0.2 item 1 asserted `git status --porcelain` over the real checkout was **empty before and after** the fixture run. That precondition is **unsatisfiable exactly when the evidence is required** | **FIXED — replaced by byte-identical full status snapshots, which is the STRONGER predicate.** §5.0.2 item 1**(f)** now takes `git status --porcelain=v1 -z --untracked-files=all` **before and after** the copied-fixture child run — the same NUL-safe, untracked-inclusive form §5.7 already mandates for the Stage commit gate — parses records **NUL-wise**, and requires the two snapshots to be **byte-identical**. **The parent fails if and only if the fixture mechanism changed the real checkout.** Legitimate C2 manifest/witness dirt is tolerated **only by being unchanged**. **Two independent, repository-verified reasons** the old form was unsound are recorded: (a) the spawn block is entered **only** in `terminal` phase, so C2's own witness and manifest writes are **necessarily present**; (b) `references/herdr` is excluded **only** by `.git/info/exclude`, which is **local and does not survive a clone**, so "empty" fails on CI for an unrelated reason. **No weakening**: equality additionally catches modification of an already-dirty file, deletion, and a new artifact written beside existing dirt — none of which an empty-tree check can see. Synchronized into AC-C1.6, AC-C2.2, AC-C2.11 point 7, §8, and **R25** |
+| 2 | **P1 LOW** | **Fixture was not a self-contained Git repository.** The copy excluded the real `.git/`, so Git commands inside it would **walk upward** to an unrelated ancestor repository, or none | **FIXED — deterministic, executable construction.** §5.0.2 item 1**(d)**: `git init` in the copy; **local, non-secret** `user.email`/`user.name` (never `--global`, no credentials); `git add`; a **deterministic local commit** — preferred over a bare index so tracked-corpus **and** `HEAD` consumers both work. **No `.git` copy from the real repo, no submodule recursion, no network.** The binding check is `git -C {copy} rev-parse --show-toplevel`, **canonicalized** (symlink, Windows `8.3`/case, macOS `/var`→`/private/var`) and asserted **equal to the copy root before the child is launched**; resolution to the real checkout, to any ancestor of the temp directory, or to any other repository **fails the observation**. This is what makes "no nested or sibling repo can be selected" **checkable rather than asserted** |
+| 3 | **P1 LOW** | **Untracked terminal witness omitted.** `git ls-files` enumerates the **index**; `terminal-witness.json` is written by **C2's own completion** and may not be indexed when the helper runs, so the fixture could be **witness-absent with a terminal manifest** — an MP6 **integrity** failure, making point 7 vacuous for a reason unrelated to the lint step | **FIXED — copied explicitly, validated, staged, and ORDERED.** §5.0.2 item 1**(c)**: after the indexed copy and **before** the fixture commit, the helper copies the real checkout's **current** `terminal-witness.json` **from the working tree**, **requires it to exist** (absence **fails**; never "nothing to copy"), **parses** it, and **validates it against the copied manifest** to the full MP6 standard (exact eight-element set, `terminal: true`, `phase: terminal`, **matching digest**). It is staged by item 1(d)'s `git add`. Item 2 makes the ordering normative: **agreement is proven BEFORE the copied lint step is removed**, so the child's failure stays **attributable to the lint removal** |
+| 4 | **P2** | **H0 readiness ambiguity.** Rev 14 cited only `harness-architect` Step 1 item 3 and asserted `blocked` is a lifecycle value. Step 1 item 1 **also** speaks of "**ready descendants**", and item 3 of "**otherwise non-ready**" work | **RECONCILED WITHOUT OVERSTATING CERTAINTY, AND WITHOUT INVENTING AN OVERRIDE.** §5.0 now quotes **all three** Step 1 items exactly, states the plan's reading (scope comes from `${input:tasks}`; the exclusion turns on the **status values** named), and records that **an unmet dependency is NOT `status: blocked`** — the seven downstream tasks carry `queued` plus `dependencies` edges, a different thing. It then states plainly what the plan **does not** claim: the phrases **are ambiguous**, and a reader may reasonably read "otherwise non-ready" as covering dependency-unready work. The ambiguity is handled **operationally and fail-closed**: Ship passes the **exact eight task IDs** and **verifies all eight are `queued`** immediately before invocation; if the returned selected set is **not equal** to the eight, **Ship MUST HALT BEFORE ANY MUTATION and route to the operator**, reporting the contradiction with Step 2 item 4's all-queued halt. **Silently proceeding with a partial batch is prohibited**, and relaxing the 8/8 red to accommodate one is prohibited. **No hidden override is invented and the installed skill is not amended** (§11). Decomposition impact **explicitly evaluated and declined** — see Phase A |
+| 5 | **P2/P3** | **Gitlink handling and sentinel wording.** Index-mode handling was unspecified (`git ls-files -z` emits **paths only**); and the "recursion marker (sentinel already set **when the block is reached**)" is **unsatisfiable** given the guard that a sentinel-set process never reaches the block | **BOTH FIXED, AND ONE PREMISE CORRECTED ON EVIDENCE.** **Index modes**: enumeration becomes `git ls-files -s -z` (`-s` is load-bearing), with a **closed table** — `100644`/`100755` **copied** (executable bit preserved); `120000`, `160000`, **any** other mode, and **any unmerged stage** **FAIL CLOSED**. **The premise that a `160000 references` gitlink must be skipped is FALSE for this repository and is NOT written into the plan**: `git ls-files -s` shows **all 629 entries are `100644`** — zero `100755`, zero `120000`, zero `160000` — and **`references/` is not in the index at all**. It holds `references/herdr`, a **nested independent clone** excluded by `.git/info/exclude`, so enumeration never sees it and there is nothing to skip. The fail-closed rows are retained as a **forward guard**, not as dead text. **Sentinel**: the impossible child-side detector is **withdrawn** in §5.0.1, §5.0.2 item 5, §8, and **R24**; recursion is **PREVENTED parent-side** (entry requires the sentinel **unset** ⇒ depth bounded at exactly one **by construction**) and **BOUNDED** by the child's explicit `context.WithTimeout`, whose deadline termination **fails** the observation. A parent-side self-check that its own `exec.Cmd.Env` carries the sentinel is permitted but is **not** recursion control |
+| 6 | **PROCESS** | **Rev 14 commit footer/trailer mismatch** | **RECORDED AS PROCESS HYGIENE; rev 14 is NOT amended** (history stays intact). The rev-14 commit `da38be5` diverged from `commit-message.instructions.md` in four ways: scope `plan` is **not** in the allowed set (`tui, server, hub, tunnel, session, config, ci, docs`); the body far exceeded the **<300 byte** limit; the footer carried **no emoji** and did **not** end with `- Generated by Copilot`; and the trailer used `Copilot <copilot@github.com>` instead of the required `Copilot <223556219+Copilot@users.noreply.github.com>` (which rev 13 had used correctly). **This revision's commit conforms**: allowed type/scope, description **<100 bytes**, body **<300 bytes**, footer after a blank line with an emoji ending exactly `- Generated by Copilot`, and the exact trailer on a later trailer line |
+
+**Invariants explicitly preserved (re-verified at rev 15, not assumed).** The bounded child keeps its
+`exec.Cmd.Dir`, sentinel, and **JSON event** contract; **selector activation precedence** is unchanged;
+**MP5 stays RETIRED** and un-renumbered; **MP6 integrity stays mode-independent**; valid manifest states
+stay **exhaustive at exactly three**; the **literal 8/8 H0** red phase and its set-equality check are
+unchanged in strength; the **default full-suite green** task boundaries are unchanged; the
+**witness-first, then atomic manifest replacement** transition is unchanged; the **aggregate base→head**
+Stage verification, the **no-shipment fail-closed handback pair**, the **branch-before-mutation /
+commit-before-handback** ordering, and the **exact CI provenance distinction** are all untouched. The
+**coordinated two-file rollback residual (R22)** remains stated honestly and is still **not** claimed as
+runtime-detectable.
+
+**Scope discipline (rev 15)**: no new task, sub-epic, fixture, harness **function**, test, file, CI step,
+ledger entry, CODEOWNERS line, policy ID, shipment, or dependency edge. **No new acceptance criterion** —
+AC-C1.6, AC-C2.2, and AC-C2.11 are **clarified in place**. One risk row corrected (**R24**) and one added
+(**R25**). **No task is re-sized**, and no backlog item is split, merged, or re-parented: the point-7
+helpers are authored at **H0** by `harness-architect`, never by C1 or C2. Shipment **`017-S` remains one
+shipment** with unchanged membership (**9 items**) and unchanged dependency order. No production code,
+test, script, workflow, policy, agent, or skill file is modified — those remain Ship's execution surfaces.
+
+**Deliberately not claimed (rev 15).** Stage did **not** perform the authorized adversarial re-review —
+that is the next action and it is **pending**. Stage did **not** push, open, update, comment on, or merge
+PR #54, did **not** reply to or resolve any thread, and did **not** claim, modify, or close shipment
+`017-S`. **No success is claimed for the re-review that has not yet run.**

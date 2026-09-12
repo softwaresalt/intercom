@@ -55,8 +55,8 @@ deliberate → plan → harden → review → harvest pipeline. No ad hoc tracke
 
 | Path | Role |
 |---|---|
-| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum, §13 rev-9 addendum, §14 rev-10 addendum, §15 rev-11 addendum, §16 rev-12 addendum, §17 rev-13 addendum, **§18 rev-14 addendum — latest**) |
-| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 14 (latest)**, `status: reviewed` (§5.0 "H0 eligibility", §5.0.1 per-task activation / two-stage `gate()` / the rev-14 fixture-child sentinel, §5.0.2 lifecycle evidence and the rev-14 point-7 process contract, §9 Plan hardening signals, §10 Constitution Check, §11 risks incl. **R24**, §12 plan review record incl. §12.14) |
+| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum, §13 rev-9 addendum, §14 rev-10 addendum, §15 rev-11 addendum, §16 rev-12 addendum, §17 rev-13 addendum, §18 rev-14 addendum, **§19 rev-15 addendum — latest**) |
+| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 15 (latest)**, `status: reviewed` (§5.0 "H0 eligibility" incl. the rev-15 fail-closed halt, §5.0.1 per-task activation / two-stage `gate()` / the fixture-child sentinel as a rev-15 precondition-not-detector, §5.0.2 lifecycle evidence and the point-7 process contract incl. the rev-15 six-sub-step fixture construction, §9 Plan hardening signals, §10 Constitution Check, §11 risks incl. **R24** and **R25**, §12 plan review record incl. §12.15) |
 | `docs/memory/2026-09-11-stage-artifact-branch-pr-policy-gap-session.md` | This file |
 
 **Cross-reference currency (rev 7, re-verified rev 8, re-swept rev 12, corrected again rev 14).**
@@ -75,10 +75,10 @@ reads *first* to locate the authoritative contract. The recurrence is
 itself the lesson, and it is recorded rather than quietly fixed: **an index is a separate artifact
 from the thing it indexes**, so advancing it must be a **deliberate step** in the remediation
 checklist, never a by-product of editing the indexed document. Nothing here is erased — each
-correction is appended, so the drift history stays legible. Re-swept at rev 8, rev 10, rev 12, and
-rev 14: every `§N` reference in this file resolves against
+correction is appended, so the drift history stays legible. **Rev 15 advanced it as a deliberate checklist step, not a correction**: the table was advanced in the same pass that wrote plan §12.15 and deliberation §19, which is the practice the recurrence above argued for. Re-swept at rev 8, rev 10, rev 12, rev 14, and
+rev 15: every `§N` reference in this file resolves against
 the plan's and the deliberation's current heading lists, including the plan's **§5.0.1** and
-**§5.0.2** and the deliberation's **§17** and **§18**.
+**§5.0.2** and the deliberation's **§17**, **§18**, and **§19**.
 
 ## 4. Decision summary
 
@@ -1706,3 +1706,62 @@ commit-message process hygiene (rev-14 trailer/footer format).
 
 Either (a) authorize **another narrow remediation + review** cycle, or (b) **accept the named
 residuals** and authorize the push.
+
+---
+
+## 25. Revision 15 — third operator-authorized capped remediation, with a mandatory decomposition audit
+
+**Authorization.** The operator authorized **ONE narrow remediation plus adversarial re-review
+cycle** for PR #54 and **required a decomposition audit before any editing**. The remediation is
+done; **the re-review is NOT done** and is the next action. Branch
+`chore/stage-pipeline-policy-gap`, base HEAD `d637f5c`. No push, no GitHub operation, no shipment
+claim.
+
+### 25.1 Phase A — decomposition audit: `SUFFICIENTLY_DECOMPOSED`
+
+Run **before** any edit, deliberately, so the verdict could not be shaped by work already done.
+
+| Dimension | Evidence | Result |
+|---|---|---|
+| Feature (8 tasks, 3 sub-epics) | Acyclic explicit graph `A1→A2→A3→{B1,B2,B3}→C1→C2`; sizes `S/low, S/medium, M/high, M/medium, S/medium, L/medium, S/medium, S/medium` on **two independent axes**; **one harness function per task** ⇒ one observable red→green transition each; B-block **per-surface scoped** specifically to avoid `build-feature` circuit-breaker trips | **Sound — no change** |
+| C2 `018.011-T` implementation width | §5.0 H0 deliverable item 1 states **verbatim** that `copyTrackedRepoFixture`, `runFixtureChildGoTest`, and the spawn block are authored **at H0 by `harness-architect`**, that the function count **stays eight**, and that **"no task authors them, and no task is re-sized by them"**. C2 performs run + capture + **two** control-state file writes. **One** skill domain (verification/evidence); **2** files | **Not over-wide — no split** |
+| Shared harness-state edits | One line inserted into `completed` at each task's `gateOrder` position; §5.0.2 already records this as the completion record, **not a second skill domain**; no size band changes | **Sound — no change** |
+
+**Why the fixture mechanism stays ONE atomic C2 concern despite many helper operations.** Its steps
+— enumerate index, copy, copy+validate witness, `git init`/`add`/commit, assert `--show-toplevel`,
+remove lint step, spawn bounded child, parse events, compare snapshots — are **internal steps of a
+single assertion**, evaluated in **one** parent invocation of
+`TestDirectPushGate_FullCorpusClean`, producing **one** verdict (§5.0.2 point 7 item 7). They yield
+**no** independent red→green transitions and **no** separately shippable outcome.
+
+**Why splitting C2 would actively break the design** (the decisive argument, stronger than sizing):
+C2's completion is an **atomic two-file terminal transition** (witness first, then atomic manifest
+replacement) with **MP6 failing closed** on disagreement. A task boundary through that transition
+**necessarily** creates a one-file-flipped intermediate state — **exactly what MP6 exists to
+reject**. Plus every task needs its own harness function while §5.0 fixes the count at **eight**.
+
+**No task was added to satisfy a numeric preference**, per the operator's explicit instruction.
+
+### 25.2 Phase B — findings and dispositions
+
+| # | Sev. | Disposition |
+|---|---|---|
+| 1 | **P1 MEDIUM** | **Real-tree cleanliness deadlock FIXED.** Empty-`git status` pre/post replaced by **byte-identical** `git status --porcelain=v1 -z --untracked-files=all` snapshots around the copied-fixture child run, NUL-parsed. Parent fails **iff** the mechanism changed the real checkout. Two verified reasons the old form was unsound: (a) the spawn block runs **only** in `terminal` phase, where C2's own witness/manifest writes are **necessarily** present; (b) `references/herdr` is excluded **only** by `.git/info/exclude`, which **does not survive a clone**. **Not a weakening** — equality also catches modification of already-dirty files, deletions, and new artifacts beside existing dirt |
+| 2 | **P1 LOW** | **Self-contained Git fixture FIXED.** `git init` + local non-secret identity + `git add` + deterministic local commit in the copy; **no** real `.git` copy, **no** submodule recursion, **no** network; `git -C {copy} rev-parse --show-toplevel` canonicalized and asserted **equal to the copy root** before the child launches |
+| 3 | **P1 LOW** | **Untracked terminal witness FIXED.** Copied **explicitly from the working tree** after the indexed copy and **before** the fixture commit; **required to exist**, parsed, validated against the copied manifest to full MP6 standard, staged by `git add`; **agreement proven BEFORE the lint step is removed**, keeping child failure attributable |
+| 4 | **P2** | **H0 ambiguity RECONCILED without overstating certainty.** All three `harness-architect` Step 1 items quoted; unmet dependency ≠ `status: blocked` recorded; the ambiguity **acknowledged as genuine**; handled fail-closed — Ship passes the exact eight IDs, verifies all `queued`, and **halts before any mutation and routes to the operator** if the selected set ≠ the eight. No override invented; installed skill not amended. Decomposition impact evaluated → **no restructuring** |
+| 5 | **P2/P3** | **Index modes + sentinel FIXED, one premise corrected on evidence.** `git ls-files -s -z`; closed table: `100644`/`100755` copied (exec bit preserved), `120000`/`160000`/other/unmerged **fail closed**. **The `160000 references` gitlink premise is FALSE here** — all **629** index entries are `100644` and `references/` is **not indexed at all** (it holds the locally-excluded nested clone `references/herdr`), so **no skip-list was written**; fail-closed rows kept as a **forward guard**. Sentinel: the "recursion marker" was **unsatisfiable** given the guard and is **withdrawn**; recursion is **prevented** parent-side and **bounded** by the child timeout |
+| 6 | **PROCESS** | **Rev 14 footer/trailer mismatch RECORDED, not amended.** `da38be5` used disallowed scope `plan`, an over-long body, no emoji / no `- Generated by Copilot` footer, and `Copilot <copilot@github.com>` instead of the required `223556219+Copilot@users.noreply.github.com`. Rev 15's commit conforms |
+
+### 25.3 Validation
+
+markdownlint clean on all changed files; `backlogit sync` + `doctor`; **`017-S` unchanged at 9
+items**; dependency graph intact; **AC-C1 parity 10,837 = 10,837**; **AC-C2 parity 24,362 =
+24,362**; **AC-ID bijection 57 ↔ 57**; no task re-sized, split, merged, or re-parented; no
+implementation surface touched; tree clean after commit.
+
+### 25.4 Next actor
+
+**The single authorized adversarial re-review — NOT performed by Stage, outcome NOT claimed.** Scope
+is the rev-14→rev-15 delta only. Stage did not push, open/update/comment on/merge PR #54, reply to
+or resolve any thread, or claim/modify/close `017-S`.

@@ -18,9 +18,11 @@ governs: stash 638A410B
   became false once PR #54 was opened — a session record that describes a state the repository has
   left is read as current by the next agent.)
 - **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8), §13 (rev 9),
-  §14 (rev 10), §15 (rev 11), §16 (rev 12), §17 (rev 13), **§18 (rev 14) — latest**. This list is
+  §14 (rev 10), §15 (rev 11), §16 (rev 12), §17 (rev 13), §18 (rev 14),
+  **§19 (rev 15) — latest**. This list is
   the **live index** and is advanced with every addendum; rev 14 corrected it after it was found
-  stale at **§16**, two addenda behind the document it indexes.
+  stale at **§16**, two addenda behind the document it indexes, and rev 15 advanced it in the same
+  pass that wrote §19 rather than leaving it to be caught by a later review.
 - **Evidence commit**: `fdff9e4` — a Stage no-shipment decision artifact pushed directly to
   `main`. Treated as **historical evidence only**; not reverted, not rewritten.
 
@@ -1539,3 +1541,148 @@ is not a control until its producer, its root, its re-entry guard and its parser
 §18.2). The eighth is *cite a contract no more strongly than it states itself, and when the citation
 must be weakened, check whether the conclusion still follows — here it did, on a different and more
 accurate premise* (§18.3).
+
+---
+
+## 19. Revision 15 addendum — a cleanliness precondition that could never hold, and a fixture that was not a repository
+
+**Context.** The operator authorized **one narrow remediation plus adversarial re-review cycle** for
+PR #54 and, separately, **required a decomposition audit before any editing**. This addendum records
+the reasoning; plan §12.15 records the dispositions.
+
+### 19.1 The decomposition audit, and why it did not change anything
+
+The audit was run **first**, precisely so its verdict could not be rationalized by edits already
+made. **Verdict: `SUFFICIENTLY_DECOMPOSED`.**
+
+The question worth recording is not the verdict but the **criterion**. The tempting reading is that
+C2 `018.011-T` is over-wide because it carries **11 acceptance criteria**, a fixture mechanism, a
+child process, and an evidence ledger. That reading conflates **how many propositions a milestone
+asserts** with **how much work it takes**, and the two come apart here completely.
+
+The decisive fact was already in §5.0 before this session began, in the H0 deliverable list:
+`copyTrackedRepoFixture`, `runFixtureChildGoTest`, and the parent-only spawn block are authored **at
+H0 by `harness-architect`**, and — verbatim — **"no task authors them, and no task is re-sized by
+them."** The fixture mechanism is **harness infrastructure produced before any task is claimed**, on
+the Ship Step 2 boundary. What C2 performs is: run, capture, and write **two** control-state files.
+One skill domain; two files.
+
+So the helper operations this revision **adds** — index-mode enumeration, witness validation,
+`git init`, a `--show-toplevel` assertion, two status snapshots — do not widen C2 either. They land
+inside the H0 deliverable. This is a case where the honest audit answer is *"the thing you are
+worried about is real, and it lives somewhere other than where you are looking."*
+
+**The structural argument is stronger than the sizing argument, and it runs the other way.** C2's
+completion is an **atomic two-file terminal transition**: witness first, then the manifest replaced
+atomically, with MP6 failing closed on any disagreement between them. A task boundary drawn **through**
+that transition would necessarily produce an intermediate state in which one file has flipped and the
+other has not — **exactly the state MP6 exists to reject**. Splitting C2 would therefore manufacture
+the defect class the mechanism was built to detect. Add that every task needs its own harness function
+while §5.0 fixes the count at **eight**, and a split is not merely unnecessary — it is **incoherent**.
+
+**Recorded as a deliberate non-decision**: no task was added to make the numbers look better. The
+operator explicitly asked that decomposition not be inflated to satisfy a numeric preference, and it
+was not.
+
+### 19.2 A precondition that is unsatisfiable exactly when it is needed
+
+The rev-14 mechanism asserted `git status --porcelain` over the real checkout was **empty before and
+after** the fixture run. This is the most instructive finding of the pass, because the assertion is
+not *wrong about the goal* — it is **wrong about the predicate**, and in a way that is invisible until
+you ask *when* it is evaluated.
+
+The spawn block is entered **only** when the real tree's manifest phase is `terminal` (§5.0.2 item 4).
+But `terminal` is established by **C2's own completion**, which writes the witness and rewrites the
+manifest. So at the one moment point 7 is meaningful, the real tree **necessarily** carries that dirt.
+The precondition is therefore **unsatisfiable precisely when the evidence is required** — a deadlock,
+not a guard.
+
+A second, independent reason emerged from inspecting the repository rather than reasoning about it:
+`references/herdr` is a **nested independent clone** excluded **only** by `.git/info/exclude`, which
+is **local and does not survive a clone**. On CI, or any fresh checkout, `--untracked-files=all`
+reports that tree and the "empty" assertion fails for a reason that has nothing to do with this
+harness at all.
+
+The replacement — **byte-identical before/after snapshots** — is not a relaxation. The claim that
+matters was always *"the fixture mechanism changed nothing"*, and equality asserts that **directly**.
+The empty form only ever established it by **inference** from a stronger premise that happens to be
+false here. Equality is also **strictly more sensitive**: it catches modification of an already-dirty
+file, a deletion, and a new artifact written beside existing dirt — none of which an empty-tree check
+can distinguish, since all three can leave the tree "non-empty either way". Choosing the weaker
+predicate had been costing detection power, not buying it.
+
+### 19.3 A fixture that was a directory, not a repository
+
+Rev 14 copied **tracked files** into `t.TempDir()` and — correctly — never copied `.git/`. The
+consequence was not noticed: the copy was then a module root with **no repository**, so any Git
+command run inside it **walks upward**, resolving some unrelated ancestor or nothing at all. The
+harness and the copied scripts use tracked-corpus enumeration and `HEAD`, so this is load-bearing.
+
+The fix is to **build** a repository rather than import one: `git init`, a **local** non-secret
+identity, `git add`, and a deterministic local commit — no network, no submodule recursion, no global
+state. A commit rather than a bare index, because consumers of `HEAD` should work too. The binding
+check is `git -C {copy} rev-parse --show-toplevel` **equal to the canonical copy root**, asserted
+**before** the child launches. That single assertion is what converts "no nested or sibling repo can
+be selected" from a claim into a **check**.
+
+### 19.4 The untracked witness — an ordering problem wearing a copying problem's clothes
+
+`git ls-files` enumerates the **index**. `terminal-witness.json` is written by **C2's own completion**
+and may not be indexed when the helper runs. An index-only copy therefore yields a fixture that is
+**witness-absent with a terminal manifest** — which MP6 fails as an **integrity** error.
+
+The failure mode is what makes this worth recording: the child would have failed, the observation
+would have been marked "not obtained", and the **reason** would have been an artifact of the fixture
+builder rather than the removed lint step. Point 7 would have become vacuous for the **second** time,
+by a different route than rev 13's.
+
+The fix is therefore not merely "copy one more file" but an **ordering rule**: copy the witness from
+the working tree, **require** it to exist, parse it, validate it against the copied manifest, and only
+**then** remove the lint step. Soundness is proven before the defect is injected, so the child's
+failure stays **attributable**.
+
+### 19.5 Two premises checked against the repository instead of accepted
+
+The operator's instruction described skipping a **`160000 references` gitlink**. Checking rather than
+implementing showed `git ls-files -s` reports **all 629 index entries as `100644`** — zero `100755`,
+zero `120000`, zero `160000`, no `.gitmodules` — and that **`references/` is not in the index at all**.
+Writing the described skip-list would have encoded a carve-out for an entry this repository does not
+have. What the premise was **right** about is the underlying hazard, so the **closed mode table** is
+adopted, with every unsupported mode failing closed as a **forward guard**, and the non-existent
+carve-out is not written. The recorded fact makes the guard auditable instead of speculative.
+
+The second premise was the plan's own: a "recursion marker" defined as the child observing the
+sentinel **already set when the parent block is reached**. Given the guard that a sentinel-set process
+**never reaches** that block, the condition is **unsatisfiable** — a detector that can never fire,
+recorded as though it were evidence. It is withdrawn. Recursion is **prevented** structurally
+(depth bounded at one by construction) and **bounded** by the child timeout, and only the timeout is
+an observation.
+
+### 19.6 The H0 ambiguity — handled, not resolved
+
+`harness-architect` Step 1 says "**ready descendants**" (item 1), "restrict scope to that explicit task
+set" (item 2), and exclude "**blocked, done, or otherwise non-ready**" work (item 3). Rev 14 cited only
+item 3 and asserted the exclusion turns on lifecycle status values.
+
+That reading is **reasonable but not certain**, and rev 15 says so rather than defending it. An unmet
+dependency is genuinely **not** `status: blocked` — the seven downstream tasks carry `queued` plus
+`dependencies` edges. But "otherwise non-ready" **can** be read to cover dependency-unready work, and
+if it is, item 1 and item 2 pull in opposite directions.
+
+The plan therefore stops arguing and becomes **fail-closed**: Ship passes the exact eight IDs, verifies
+all eight are `queued`, and if the returned set is not equal to the eight, **halts before any mutation
+and routes to the operator**. Silent partial batches are prohibited; so is relaxing the 8/8 red to
+accommodate one. **No override is invented and the installed skill is not amended.** This is the
+honest shape for an ambiguity in someone else's contract: make the failure **loud and early** rather
+than choose an interpretation and hope.
+
+**Whether the ambiguity implied restructuring was evaluated explicitly and answered no.** It lives in
+the skill's wording, not the feature's shape, and every restructuring that could dissolve it is worse:
+deleting dependency edges would falsify a real ordering constraint to satisfy a parser; harnessing only
+A1 halts at Step 2 item 4 anyway; splitting or merging changes nothing, because any decomposition into
+ordered work has dependency state.
+
+### 19.7 What this addendum does not claim
+
+The authorized adversarial re-review has **not** been performed, and no outcome for it is claimed. No
+push, no GitHub operation, no thread reply or resolution, no shipment claim or closure.
