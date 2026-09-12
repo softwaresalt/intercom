@@ -1153,3 +1153,107 @@ H0 from the A1 anchor and green between tasks thereafter, so Step 4.3 no longer 
 does not push, open, update, or comment on PR #54, and does **not** reply to or resolve threads
 `PRRT_kwDOTPuhps6hsPRZ`, `PRRT_kwDOTPuhps6hsPRq`, `PRRT_kwDOTPuhps6hsPR5`, or
 `PRRT_kwDOTPuhps6hsPSJ` — the Orchestrator owns every GitHub operation on this branch.
+## 18. PR #54 third adversarial review remediation — rev 11
+
+**Round**: operator-directed third adversarial review of PR #54. Anchor **GPT-5.6 Sol**, with
+**GPT-5.4-mini**, **Claude Sonnet 5**, and **Claude Opus 5**. **4/4 usable, no route degradation.**
+Panel verdict **unanimous** on both P0 findings. Source: Copilot review `5185014458`, three visible
+threads. All classified **same-contract completion** under P-021 — no scope reopened, no new option
+deliberated.
+
+### 18.1 The three findings
+
+| # | Sev | Thread / comment | Finding |
+|---|---|---|---|
+| 1 | **P0** | `PRRT_kwDOTPuhps6hstWa` / `3994928139` | **Self-disarming C1/C2 activation.** Rev-10 C1 activation depended on the lint step it verifies; C2 reused C1's predicate. If regeneration removes the step, both skip and MP2 never executes. |
+| 2 | **P0** | `PRRT_kwDOTPuhps6hstWg` / `3994928153` | **H0 violated the installed P-002/P-004/harness-architect contract.** The contract requires `go test ./...` red with **all** generated tests failing expected not-implemented markers; rev 10 gave one failing A1 plus seven skips. But leaving all future tests red after A1 conflicts with Ship Step 4.3's full-suite green after each task. |
+| 3 | **P2** | `PRRT_kwDOTPuhps6hstWn` / `3994928163` | **Stale deleted-`3e` reference.** Feature DoD still named Step 1.5 sub-step 3e although B1 deletes it. |
+
+### 18.2 Decision — one artifact, and the predicate→activation edge deleted
+
+Adopted the panel's preferred minimal design. **One** tracked, non-generated, fail-closed
+**harness-state manifest** at `tests/integration/testdata/directpush-gate/harness-state.json`
+(JSON — stdlib-parseable; release-specific path; under `tests/**`, which no autoharness template
+covers, so it is outside every render boundary). H0 initializes it to
+`{"phase":"red","completed":[],"terminal":false}`.
+
+**Activation derives only from the manifest and `-gatetask`.** The surface-predicate table is
+**deleted**, not exempted — that is what closes the class rather than the two instances found.
+Three phases:
+
+* **red** — all eight activate, none skips, all eight fail with their **own** task-specific
+  `not implemented: <ID> <surface>` marker. The literal 8/8. Only then may tasks be labelled
+  `harness-ready`.
+* **build** — A1's completion performs the **one-way** `red`→`build` transition; default mode runs
+  the completed set and skips only not-yet-started tasks, so **Step 4.3 is green after every task**.
+* **terminal** — C2's completion sets the exact eight-element ordered set, `terminal: true`, and
+  `phase: terminal` **atomically**; all eight substantive assertions run, **no skip remains**.
+
+Targeted `-gatetask={ID}` always executes the real assertion in every phase, so each task keeps its
+observed red→green boundary. **A test is never green merely because its ID was written** — the
+manifest controls activation only, never the verdict.
+
+**Why the deadlock was never real.** 8/8 red and Step 4.3 conflict *only while activation is a
+static predicate set*. Once it is a phase, they occur at different times and nothing is traded. Rev
+10 weakened the thing the contract specifies (the red phase) instead of the thing nothing specifies
+(the activation lifecycle) — and recorded the deviation honestly, which is how it survived review.
+
+### 18.3 Ordering correction found while specifying
+
+The first draft validated `completed` as a strict **prefix**. Reading the `blocks` edges back from
+`.backlogit/` showed **B1/B2/B3 are parallel** (each depends only on A3; C1 requires all three), so
+a prefix rule would deadlock a legal execution order in which B2 lands first — B2's surface present
+while its ID is barred, which MP5 would then flag as a rollback. Corrected to an **order-preserving
+subsequence closed under the dependency graph**: admits exactly the orders the graph admits, still
+rejects reordering and skipped prerequisites. Recorded, not silently repaired.
+
+### 18.4 Foundational contracts held
+
+**No** modification planned to `.github/skills/harness-architect/SKILL.md`, P-002, P-004, or
+`_ship.agent.md` Step 2 / Step 4.3. The literal-satisfaction argument is recorded in plan §5.0.1:
+harness-architect already emits a non-Go H0 deliverable (the `check-direct-push-language.sh`
+structural stub), so a write-once `testdata/` constant is strictly smaller; P-004's red phase is met
+as the literal 8/8; Step 2's label partition is untouched and Stage applies no label; Step 4.3 keeps
+its **full** `go test ./...` scope, with the rev-10 proposal to narrow it still rejected. Step 4.3's
+scope is added to §11's out-of-scope list explicitly.
+
+### 18.5 Scope held
+
+No task, sub-epic, fixture, harness **function**, CI step, ledger entry, CODEOWNERS line, policy ID,
+shipment, or dependency edge added. **One** new file enters the plan — the harness-state manifest,
+an **H0 deliverable**, not a task deliverable. Two new criteria (**AC-A1.4**, **AC-C2.9**), three
+extended (AC-C1.6, AC-C2.2, AC-C2.8), one clarified (AC-C2.7), §5.0.1 rewritten, **R19** rewritten
+and **R21** added, R5/R12 cross-references corrected, feature DoD corrected (stale 3e) and three
+bullets added. **No task re-sized** — each gains a one-line insertion into a shared state file in a
+domain it already touches; the per-task *skill domain* count stays at one and the 2-hour rule holds.
+Shipment **017-S** and feature **018-F** preserved exactly — 9 items, order
+A1→A2→A3→{B1,B2,B3}→C1→C2.
+
+**Rev-8/9/10 fixes preserved, verified not assumed**: the aggregate two-tree derivation, the
+six-check no-shipment arm, the reachable `no-shipment` terminal with its verbatim P-003 guardrail,
+the two operative ordered steps, the fail-closed outcome/shipment pair, the categorical pre-gate
+deferral rule, and the NUL-safe out-of-root detection are all intact. Rev 11 changes the harness
+activation lifecycle only.
+
+### 18.6 Validation (Stage scope — no Go build/test, per the Stage role boundary)
+
+`backlogit sync` + `backlogit doctor` clean; AC-ID parity re-swept — **54 plan IDs ↔ 54 task IDs**,
+exact bijection; shipment `017-S` membership (9 items), status, and dependency edges unchanged;
+`markdownlint` clean on every changed markdown file; `git status --porcelain` empty after commit.
+Go build/test deliberately **not** run — Ship's responsibility (P-010). No source, test, script,
+workflow, policy, or agent file was modified by this pass.
+
+### 18.7 Handoff
+
+Unchanged: shipment **017-S**, `queued`, 9 items, Ship starts at Step 2 (harness-architect, H0).
+**New for Ship at rev 11**: H0 must additionally emit
+`tests/integration/testdata/directpush-gate/harness-state.json` =
+`{"phase":"red","completed":[],"terminal":false}` alongside the eight functions, the `gate()` helper,
+`gateOrder`, and `gateDeps`; the H0 red-phase evidence is the **literal 8/8** (eight `--- FAIL:`
+lines, each with its own marker) and `harness-ready` may be applied only after it. Every task
+completion must insert its ID into `completed` atomically with its substantive work; A1 flips
+`red`→`build`; C2 closes to the exact eight-element set with `terminal: true`. Stage does not push,
+open, update, or comment on PR #54, and does **not** reply to or resolve threads
+`PRRT_kwDOTPuhps6hstWa`, `PRRT_kwDOTPuhps6hstWg`, or `PRRT_kwDOTPuhps6hstWn` (comments
+`3994928139`, `3994928153`, `3994928163`). No comment on review `5185014458` has been replied to or
+resolved. The Orchestrator owns every GitHub operation on this branch.

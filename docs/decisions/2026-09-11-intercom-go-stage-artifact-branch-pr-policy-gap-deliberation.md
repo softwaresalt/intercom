@@ -932,3 +932,143 @@ reworks clauses inside step sections rev 9 already specified. The deliberation n
 distinct disciplines rather than one: *name the surface that produces each consumed value* (§12.2,
 §13.2, extended in §14.2) and *name the operation that discharges each MUST, and confirm it can
 observe what the MUST is about* (§14.1).
+## 15. Revision 11 addendum — a guard whose trigger is its own subject
+
+Operator-directed **third** adversarial round on PR #54 (anchor **GPT-5.6 Sol**, with
+**GPT-5.4-mini**, **Claude Sonnet 5**, and **Claude Opus 5**; **4/4 usable**, **no route
+degradation**). The panel **unanimously** confirmed two **P0 direct-completion blockers** from
+Copilot review `5185014458`, plus one stale cross-reference. All three are **same-contract
+completion** under P-021: each corrects a mechanism this deliberation already chose, and none
+reopens an option.
+
+### 15.1 Withdrawn: "the rev-10 activation mechanism makes the skip state safe"
+
+§14 accepted a mechanism whose default-mode activation was a **surface predicate** — a function
+activated iff its own deliverable was observably present — and bounded it with four mutation-proof
+checks. Two properties of that design were not examined, and both are fatal.
+
+**(a) For C1 and C2 the predicate *was* the assertion.** C1's predicate was "`jobs.lint.steps[]`
+contains a step invoking `check-direct-push-language.sh`". That is, verbatim, the proposition
+`TestDirectPushGate_CIWiringIsBlocking` exists to verify. C2's predicate was **literally C1's
+predicate**, on the reasoning that C2 produces no file of its own. So a regeneration that dropped
+the job-`lint` step removed the step **and both detectors of its removal** in one act: C1 skipped
+instead of failing, C2 skipped instead of running the detector, MP2 lives inside C2 and therefore
+never executed, and `go test ./...` reported **green**. R5 — the residual this whole enforcement
+path exists to close — was mitigated only on paper from rev 10 onward.
+
+The general shape is worth naming because it survived three review rounds: **a guard whose
+activation condition is the proposition it guards**. It passes "does the assertion exist?", "is it
+structural rather than a text search?", and "is it non-vacuous when the surface is present?" —
+AC-C1.6 asked all three, and all three held. It fails only the question that matters for a
+regression guard: *does it still run when the thing it guards is gone?* This is the mirror of the
+producer/consumer class §12.2–§14.2 kept producing. There, a consumer trusted a value the producer
+might never send. Here, a detector trusted a condition that the defect itself removes.
+
+**(b) The red phase no longer matched the installed contract.** P-004, as installed, requires
+`go test ./...` **red with all generated tests failing their expected not-implemented markers**
+before any task becomes `harness-ready`. Rev 10 produced **one** failing function and **seven
+skips** — and recorded the divergence honestly, which is precisely how it passed review: the caveat
+("it does **not** claim that all eight assertions were simultaneously red") made a contract
+violation read as a documented decision. Honesty about a deviation is not a substitute for not
+deviating.
+
+That is a second class, and it is rev 10's own remedy overshooting: **faced with a genuine
+deadlock, it weakened the thing the contract specifies (the red phase) instead of the thing nothing
+specifies (the activation lifecycle).** The discipline: *when a constraint and a gate appear to
+conflict, first check whether the conflict is between them, or between the gate and an
+implementation choice you are free to change.*
+
+### 15.2 The deadlock was never real — it was an artifact of statelessness
+
+Rev 9 required all eight functions red until their task landed; Ship Step 4.3 runs the full
+`go test ./...` after **every** task; so the shipment wedged on its second gate. Rev 10 read this as
+"8/8 red and Step 4.3 are incompatible" and traded away the red. They are incompatible **only while
+activation is a static predicate set** — a single, timeless answer to "should this run?". Once
+activation is a **phase**, the two requirements simply occur at different times:
+
+* **red** — all eight active, all eight failing with their own marker. The literal P-004
+  postcondition. No task has started, so Step 4.3 has not yet run.
+* **build** — the completed set active and green, not-yet-started tasks skipped. Step 4.3 green
+  after every task.
+* **terminal** — all eight active and green. No skip remains anywhere.
+
+Nothing is traded. The cost is one tracked state file.
+
+### 15.3 Decision — one artifact, and the predicate→activation edge removed
+
+**Chosen (Option 2 unchanged; this refines its harness mechanism only).** A tracked, non-generated,
+fail-closed **harness-state manifest** at
+`tests/integration/testdata/directpush-gate/harness-state.json`, initialized by H0 to
+`{"phase":"red","completed":[],"terminal":false}`. Activation derives **only** from that manifest
+and the `-gatetask` selector. **There is no surface predicate in the activation path at all** — that
+edge is deleted, not exempted, which is what closes the class rather than the two instances the
+reviewers happened to find.
+
+Four properties make it a decision rather than a detail:
+
+1. **Release-specific and render-proof.** It is namespaced to this gate and lives under `tests/**`,
+   which no autoharness template covers — so unlike the job-`lint` step, no regeneration can reach
+   it. This is the property the whole correction rests on.
+2. **Harness state, never backlog status.** It is not derived from, compared against, or
+   synchronized with `.backlogit/` item statuses. §14 already rejected backlog-derived activation;
+   this keeps that rejection intact rather than smuggling it back in through a file.
+3. **Fail-closed everywhere, skip nowhere.** Missing, malformed, unknown-phase, duplicate,
+   unknown-ID, non-subsequence, dependency-open, or inconsistent-triple states **fail**, and the
+   validator runs inside `gate()` on every call, so a corrupt file fails all eight functions rather
+   than disabling them. Skips exist only in `build` phase, only for not-yet-started tasks.
+4. **The manifest is itself proven.** AC-C2.2 executes seven manifest-mutation cases — deletion,
+   malformed JSON, unknown phase, rollback, reordering, skipped prerequisite, duplicate/unknown ID
+   — against a `t.TempDir()` scratch copy, asserting each **fails** rather than skips. An unguarded
+   state file would be a silent off-switch for the whole harness, so it is guarded like one.
+
+**Ordering correction found while specifying this.** The first draft validated `completed` as a
+strict **prefix** of the declared order. Reading the `blocks` edges back from `.backlogit/` showed
+B1, B2, and B3 each depend **only** on A3 and have **no edge among themselves**, so Ship may
+legitimately finish B2 first. A prefix rule would have deadlocked that legal order — B2's surface
+present while its ID was barred from `completed`, which MP5 would then correctly flag as a rollback.
+The rule is therefore an **order-preserving subsequence that is closed under the dependency graph**:
+it admits exactly the orders the graph admits, still rejects reordering, and still rejects a skipped
+prerequisite. Recorded rather than silently repaired, per the rev-6/9/10 precedent — the defect
+class, *a validation rule stricter than the dependency graph it claims to encode*, generalizes.
+
+**Rejected.** (i) *Exempting only C1/C2 from surface predicates* — treats the instance, not the
+class; any future self-referential predicate reintroduces it, and the exemption would itself be an
+untested invariant. (ii) *Deriving the phase from which surfaces exist* — the rev-10 design renamed.
+(iii) *Amending P-002/P-004 or `harness-architect` so "one failure plus seven skips" counts as red*
+— a workspace-wide weakening of test-first for every future shipment, to accommodate one release
+unit. (iv) *Amending Ship Step 4.3* — already rejected at §14 and still rejected. (v) *Eight
+per-task state files* — a set cannot be checked for ordering or dependency closure once it is
+scattered, so "skipped prerequisite" and "reordering" would have no detector. (vi) *Placing the
+manifest under `.backlogit/` or `.autoharness/`* — inside tooling/render boundaries, and an
+invitation to the backlog coupling already rejected.
+
+### 15.4 The stale `3e` reference
+
+`018-F`'s Definition of Done named `_orchestrator.agent.md` Step 1.5 **sub-step 3e** as one of four
+live authorization surfaces that must agree — but D2/D3 **delete** 3e, so the DoD asserted agreement
+across a surface that will not exist. It now names the live pair (the reworded **preamble** and
+**3a**, which absorbs 3e's branch-point instruction) and adds an explicit **3e-absence** clause,
+consistent with AC-B1.1. The plan's *narrative* quotations of the 3e construct (§2, §3, §6.1.1) are
+deliberately retained: they are the historical record of the defect and sit outside the scanned
+corpus (§8.4 self-match discipline), which is exactly why they may quote it freely.
+
+### 15.5 D3 is again NOT extended
+
+None of the three findings is a D3 violation shape — none is a push to the default branch and none
+is a permission to commit on one — so the closed construct set and the 14-fixture corpus stay as
+they are (the §10.4 / §11.4 / §12.4 / §13.4 / §14.4 position, unchanged for the sixth time).
+Rejection is carried by the existing per-surface harness assertions plus the manifest validator.
+
+### 15.6 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged and none is reversed. **No** foundational contract is
+amended: `harness-architect`'s skill file, P-002, P-004, and `_ship.agent.md` Step 2 and Step 4.3 all
+stay exactly as installed, and the argument that the release-specific manifest satisfies each of
+them literally is recorded in the plan (§5.0.1) rather than asserted here. No task, sub-epic,
+fixture, harness **function**, shipment, or dependency edge is added; the only new file is an H0
+deliverable, not a task deliverable. Shipment `017-S` remains one shipment of nine items and no task
+is re-sized — each gains a one-line insertion into a shared state file in a domain it already
+touches. The deliberation now carries three disciplines: *name the surface that produces each
+consumed value* (§12.2, §13.2, §14.2); *name the operation that discharges each MUST, and confirm it
+can observe what the MUST is about* (§14.1); and, new here, *name what activates each guard, and
+confirm the activator is disjoint from the subject* (§15.1).
