@@ -18,7 +18,9 @@ governs: stash 638A410B
   became false once PR #54 was opened — a session record that describes a state the repository has
   left is read as current by the next agent.)
 - **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8), §13 (rev 9),
-  §14 (rev 10), §15 (rev 11), §16 (rev 12)
+  §14 (rev 10), §15 (rev 11), §16 (rev 12), §17 (rev 13), **§18 (rev 14) — latest**. This list is
+  the **live index** and is advanced with every addendum; rev 14 corrected it after it was found
+  stale at **§16**, two addenda behind the document it indexes.
 - **Evidence commit**: `fdff9e4` — a Stage no-shipment decision artifact pushed directly to
   `main`. Treated as **historical evidence only**; not reverted, not rewritten.
 
@@ -1378,3 +1380,162 @@ is not a check* (§16.2); *when a control rests on an observed value, name its p
 only what that producer guarantees* (§16.3); and, new here, *when two rules can match the same
 invocation, state which governs — row order is not precedence* (§17.1), with the corollary that
 *evidence taken in a mode where it cannot fail is not evidence* (§17.3).
+
+---
+
+## 18. Revision 14 addendum — a specified observation nobody can run, and a citation stronger than its source
+
+**Authorization.** The rev-13 session ended **NOT READY**: the single authorized adversarial
+re-review ran (four models, no route degradation) and returned **0 P0**, **one LOW-confidence P1**,
+and **four LOW-confidence P2** `post_remediation_residual` findings. The operator **explicitly
+authorized ONE more Stage remediation plus adversarial re-review cycle** for PR #54. This addendum
+records that single authorized remediation pass. The authorization is **consumed** here; the
+re-review it enables has **not** been run by Stage, and nothing below claims its outcome.
+
+### 18.1 Withdrawn: "specifying the observation and its mode is sufficient"
+
+Rev 13 found that the terminal lint-removal evidence had been taken in a mode where it could not
+fail (§17.3), and replaced it with a **default-mode** observation against a **copied** terminal-state
+repository fixture. That diagnosis was right and the replacement is kept. What rev 13 then wrote was
+a **description of a result**, not a **mechanism that produces it**: "run `go test` unselected
+against a copied terminal repo under `t.TempDir()`".
+
+Two facts, both checkable in the repository rather than matters of opinion, make that unexecutable
+as written:
+
+1. **`repoRoot(t)` resolves the real checkout.** The helper this harness reuses by §5.0's H0
+   contract — `tests/integration/build_script_test.go`'s `repoRoot` — starts at `os.Getwd()` and
+   walks **up** to the nearest `go.mod`. A test running **in process** is rooted in the real
+   checkout's `tests/integration`, so it finds the **real** `go.mod` and reads the **real** tree.
+   Copying files into `t.TempDir()` changes nothing about where the assertions then look. The
+   observation would have been taken against the very tree it was designed to avoid.
+2. **The observation lives inside its own subject.** Point 7 is recorded by C2
+   (`TestDirectPushGate_FullCorpusClean`), and point 7 requires *that function* to be observed
+   executing. Re-running the suite from inside itself without a guard **recurses**, without bound.
+
+So the rev-13 point 7 could neither see the fixture nor run safely. It is worth being precise about
+the failure class, because it is **not** §17.3 repeating: rev 13's evidence was **vacuous** (it
+could not fail); rev 14's was **inert** (it could not run). Both are ways of holding a piece of
+paper instead of a control, and the rev-13 remediation of the first produced the second.
+
+### 18.2 The producer/consumer discipline, now applied to the harness's own evidence
+
+§12.2, §13.2 and §14.2 established *name the surface that produces each consumed value*, and §14.1
+added *name the operation that discharges each MUST, and confirm it can observe what the MUST is
+about*. Rev 13 applied those disciplines diligently to the **contract surfaces** — Step 1.5's
+discovery, the handback fields, the Stage agent's operative steps — and then **exempted its own
+evidence step** from them. An observation is a consumer too: it consumes a repository root, a
+process, and a stream of results, and each of those has a producer that must be named.
+
+The correction is therefore not a new principle but the **existing** one applied one level in:
+
+* the fixture's producer is named — `copyTrackedRepoFixture(t)`, a `git ls-files -z` **tracked-file**
+  copy, chosen over a hand-listed file set because it is deterministic, complete by construction for
+  everything C1 and C2 read, and needs no maintenance as the corpus grows;
+* the **root resolution** is named — the observation runs in a **child `go test` process** whose
+  `exec.Cmd.Dir` is the **copied module root**, which is precisely what makes the existing
+  `repoRoot(t)` walk terminate inside the fixture. No new root helper is introduced and
+  `repoRoot(t)` is not modified; the *process* is moved instead;
+* the **re-entry guard** is named — a single sentinel environment variable
+  `DIRECTPUSH_GATE_FIXTURE_CHILD=1`, set by the parent through `exec.Cmd.Env`, that disables the
+  **parent-only spawn block** and nothing else, bounding recursion at exactly one level;
+* the **evidence parser** is named — `go test -json` events decoded with `encoding/json`, asserted
+  by exact test name, rather than pattern-scraping arbitrary text.
+
+Three prohibitions keep the guard from becoming the next defect, and they are stated normatively
+because each would reproduce a failure this deliberation has already recorded. The sentinel
+**MUST NOT** skip C2 — that would make "C2 executed" unobtainable by construction, which is §17.3's
+vacuity in a new costume. It **MUST NOT** bypass MP1/MP6 — integrity is mode-independent and is now
+environment-independent too. And it **MUST NOT** be read as a substantive-surface predicate — it
+describes *which process this is*, not a proposition any assertion makes about the repository, so
+§17.2's narrowly-bounded control-state exemption is **not** widened: its membership stays exactly
+the manifest and the witness.
+
+**D3 is again NOT extended**, for the ninth time: none of this is a push to the default branch and
+none is a permission to commit on one, so the closed construct set and the 14-fixture corpus are
+untouched.
+
+### 18.3 Withdrawn: "no step of Step 2 consults the dependency graph"
+
+Rev 13 resolved the H0 eligibility question by **citing** the installed contract rather than
+amending it — the right method, and it is kept. But one sentence of that citation was **stronger
+than its source**. `_ship.agent.md` Step 2 closes with: "When dependency operations are supported,
+verify the dependency graph before proceeding rather than assuming the backlog ordering is already
+valid." Rev 13 wrote "**No step of this sequence consults the dependency graph**". That is false,
+and it is withdrawn.
+
+The correction matters more for **method** than for outcome. The outcome is unchanged — all eight
+tasks are still harnessed up front — but it now rests on the distinction the contract actually
+draws:
+
+* Step 2 may verify the graph's **VALIDITY**. A validity check over a set is not a membership
+  filter on it.
+* Dependency **READINESS** is what gates behaviour later: Step 3 sorts the queue by dependency
+  order, Step 4.1 claims.
+* `harness-architect` Step 1 excludes `blocked` as a **lifecycle status value**, not as a derived
+  dependency state, and all eight `017-S` tasks are `queued`.
+
+One genuine gap surfaced while checking this: `${input:tasks}` is declared **Optional**, and when
+omitted the skill falls back to "all ready tasks under the feature" — a selection this plan must not
+delegate, since "ready" is exactly the word under dispute. The plan now **requires Ship to pass the
+exact eight task IDs explicitly**, with set equality against the shipment manifest checked **before**
+invocation and Step 2 item 4's all-queued halt catching omission **after** it. Belt and braces, on
+both sides of one call, and **no behaviour is invented that the installed skill does not have**.
+
+### 18.4 The remaining three, briefly
+
+**Targeted C2 red was under-specified.** §5.0.2 point 4 accepted *any* non-zero exit from
+`-gatetask=C2`. A compile error, a malformed-manifest integrity failure, a missing `bash`, an
+invalid selector, and an unrelated failure all exit non-zero while proving nothing about MP2. The
+point is now anchored to `--- FAIL: TestDirectPushGate_FullCorpusClean` **by exact name** with the
+**MP2 non-terminal-state** reason, and those five impostors are explicitly rejected. This is §17.3's
+lesson generalized: *an exit code is not evidence of the reason for the exit*.
+
+**"Green by assertion, never bookkeeping" needed qualification, not repetition.** Read absolutely,
+it contradicted C2's own contract, because C2's completion legitimately finalizes the terminal
+manifest and witness — and that finalization *is* part of what C2 verifies. The rule is therefore
+qualified precisely: for A1–C1 completion state is bookkeeping only and can never on its own turn an
+assertion green; **C2 is a deliberate exception of SUBJECT, not of rigour**, and still cannot pass
+from bookkeeping alone — its corpus, self-test, mutation-proof, marker-free-construct and
+regeneration assertions must all execute and pass, with MP2 evaluated before any surface-dependent
+assertion. Stating the exception is safer than leaving a rule that the implementation must quietly
+violate.
+
+**Two indexes had gone stale** — the memory record's current-artifact table and this document's own
+`Addenda` line. Rev 7 added the currency note precisely to prevent this, rev 12 found the note's own
+table stale, and rev 14 finds it stale again. The recurrence is itself the finding: an index is a
+**separate artifact from the thing it indexes**, so it must be advanced as a **deliberate step**,
+not as a by-product of editing the indexed document. Both are corrected without erasing history.
+
+### 18.5 D3 is again NOT extended
+
+None of the five findings is a D3 violation shape — none is a push to the default branch and none is
+a permission to commit on one — so the closed construct set and the 14-fixture corpus stay as they
+are (the §10.4 / §11.4 / §12.4 / §13.4 / §14.4 / §15.5 / §16.4 / §17.5 position, unchanged for the
+ninth time).
+
+### 18.6 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged and none is reversed. **No** foundational contract is
+amended: `harness-architect`'s skill file, P-002, P-004, and `_ship.agent.md` Step 2 and Step 4.3
+all stay exactly as installed — and finding 2 is resolved by **citing them more accurately**, which
+is the opposite of touching them. No task, sub-epic, fixture, harness **function**, test, file,
+shipment, or dependency edge is added; **no acceptance criterion is added** — AC-C1.6 and AC-C2.11
+are clarified in place. The point-7 mechanism is implemented as **unexported helpers inside the
+existing `tests/integration/directpush_gate_test.go`**, authored at **H0**, which is why it adds no
+harness function and re-sizes no task. Shipment `017-S` remains one shipment of nine items.
+
+Invariants re-verified rather than assumed: **selector activation precedence** holds; **MP5 stays
+RETIRED**; **MP6 integrity stays mode-independent**; valid manifest states stay **exhaustive at
+three**; the **literal 8/8 H0 red phase** holds and gains a stronger set-equality check; **default
+full-suite green task boundaries** hold; **witness-first then atomic manifest transition** holds;
+the **coordinated two-file rollback residual (R22)** remains stated honestly and unclaimed; the
+**aggregate base→head** verification, the **no-shipment fail-closed pair**, the
+**branch-before-mutation / commit-before-handback** ordering and the **exact CI provenance
+distinction** all stand.
+
+The deliberation now carries eight disciplines. The seventh, added here, is *a specified observation
+is not a control until its producer, its root, its re-entry guard and its parser are named* (§18.1,
+§18.2). The eighth is *cite a contract no more strongly than it states itself, and when the citation
+must be weakened, check whether the conclusion still follows — here it did, on a different and more
+accurate premise* (§18.3).

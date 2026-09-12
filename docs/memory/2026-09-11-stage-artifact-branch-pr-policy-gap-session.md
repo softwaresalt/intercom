@@ -55,11 +55,12 @@ deliberate → plan → harden → review → harvest pipeline. No ad hoc tracke
 
 | Path | Role |
 |---|---|
-| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum, §13 rev-9 addendum, §14 rev-10 addendum, §15 rev-11 addendum, **§16 rev-12 addendum — latest**) |
-| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 12 (latest)**, `status: reviewed` (§5.0.1 per-task activation and the rev-12 terminal witness, §5.0.2 lifecycle evidence, §9 Plan hardening signals, §10 Constitution Check, §12 plan review record) |
+| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum, §12 rev-8 addendum, §13 rev-9 addendum, §14 rev-10 addendum, §15 rev-11 addendum, §16 rev-12 addendum, §17 rev-13 addendum, **§18 rev-14 addendum — latest**) |
+| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 14 (latest)**, `status: reviewed` (§5.0 "H0 eligibility", §5.0.1 per-task activation / two-stage `gate()` / the rev-14 fixture-child sentinel, §5.0.2 lifecycle evidence and the rev-14 point-7 process contract, §9 Plan hardening signals, §10 Constitution Check, §11 risks incl. **R24**, §12 plan review record incl. §12.14) |
 | `docs/memory/2026-09-11-stage-artifact-branch-pr-policy-gap-session.md` | This file |
 
-**Cross-reference currency (rev 7, re-verified rev 8, re-swept rev 12).** This table names the
+**Cross-reference currency (rev 7, re-verified rev 8, re-swept rev 12, corrected again rev 14).**
+This table names the
 plan's **current** revision and only sections that exist in it. The `§10a` label it previously
 carried was a rev-3
 heading that later revisions renamed to **§9 Plan hardening signals**; the plan's own front matter
@@ -67,11 +68,17 @@ still carried the stale `§9/§10a` form and §5.3 still cited a nonexistent `§
 in rev 7. **Rev 12 corrected this table itself**: it named plan **revision 10** and listed the
 deliberation's addenda only through **§14**, three revisions and two addenda behind the artifacts it
 indexes — precisely the "obsolete revision" defect rev 7 added this note to prevent, recurring in
-the note's own table. A session record that points at an obsolete revision is not a
-cosmetic defect — it is the artifact a future agent reads *first* to locate the authoritative
-contract. Re-swept at rev 8, rev 10, and rev 12: every `§N` reference in this file resolves against
+the note's own table. **Rev 14 corrected it a third time**: after the rev-13 pass it named plan
+**revision 12** and addenda through **§16**, two revisions and two addenda behind. A session record
+that points at an obsolete revision is not a cosmetic defect — it is the artifact a future agent
+reads *first* to locate the authoritative contract. The recurrence is
+itself the lesson, and it is recorded rather than quietly fixed: **an index is a separate artifact
+from the thing it indexes**, so advancing it must be a **deliberate step** in the remediation
+checklist, never a by-product of editing the indexed document. Nothing here is erased — each
+correction is appended, so the drift history stays legible. Re-swept at rev 8, rev 10, rev 12, and
+rev 14: every `§N` reference in this file resolves against
 the plan's and the deliberation's current heading lists, including the plan's **§5.0.1** and
-**§5.0.2** and the deliberation's **§15** and **§16**.
+**§5.0.2** and the deliberation's **§17** and **§18**.
 
 ## 4. Decision summary
 
@@ -1581,3 +1588,79 @@ single authorized re-review is therefore spent.
 
 Either **authorize one narrow remediation + review cycle**, or **accept the named residual risks and
 authorize the push**.
+
+---
+
+## 23. Revision 14 — second operator-authorized capped remediation (CURRENT STATE)
+
+### 23.1 Authorization
+
+The operator chose the first option of §22.6 and **explicitly authorized ONE more Stage remediation
+plus adversarial re-review cycle** for PR #54, on the existing branch
+`chore/stage-pipeline-policy-gap` (local HEAD `048448c`, five commits ahead of remote rev 10), with
+**one new local commit, no amend, no push, and no GitHub operations**. Config was freshly reloaded
+before this pass: `schema_version` present, `strict_schema_blockers` empty, Stage escalation route
+`gpt-5.6-sol` / `openai` / `high` (distinct from the Tier-3 role route, so **not**
+`ESCALATION_DEGRADED`).
+
+**The authorization is CONSUMED by this pass.** No further remediation cycle is implied. **The
+adversarial re-review it enables has NOT been performed** — Stage did not review its own
+remediation, and nothing here claims a re-review outcome.
+
+### 23.2 The five findings — all remediated
+
+| # | Conf. | Sev. | Residual | Disposition |
+|---|---|---|---|---|
+| 1 | LOW | **P1** | Copied-fixture default-mode evidence named **no executable mechanism** — `repoRoot(t)` resolves the real checkout, and the observation lives inside C2 and could recurse | **FIXED — one concrete bounded mechanism.** `copyTrackedRepoFixture(t)` (deterministic `git ls-files -z` tracked-file copy into `t.TempDir()`; real tree never written); only the copied job-`lint` step removed via the structural `jobs.lint.steps[]` walk, manifest + witness left valid and in agreement; `runFixtureChildGoTest(t, fixtureRoot)` launching a **child `go test` process** with `exec.Cmd.Dir` = **copied module root** (which is what makes `repoRoot(t)` resolve the copy), running `go test -json ./tests/integration -run '^TestDirectPushGate_(CIWiringIsBlocking\|FullCorpusClean)$' -count=1` with **no `-gatetask`** (default activation mode; `-run` bounds process scope only); non-recursive sentinel `DIRECTPUSH_GATE_FIXTURE_CHILD=1` disabling the **parent-only spawn block** and nothing else (must not skip C2, must not bypass MP1/MP6, no activation effect); **parsed `go test -json` events** — C1 terminal `fail` citing the missing step, C2 terminal `pass`/`fail` (`skip` or absent **fails**), **non-zero** child exit, no recursion/timeout marker, malformed stream **fails**; explicit `context.WithTimeout` via `exec.CommandContext`, no shell, child output only in bounded failure output. Point **7a** kept separate as selector evidence only |
+| 2 | LOW | P2 | **H0 eligibility citation overstated** — "no step of Step 2 consults the dependency graph" is contradicted by Step 2's closing paragraph | **FIXED — faithful citation, nothing invented.** Step 2 may verify dependency-graph **VALIDITY**; harness generation is an **upfront batch over the explicitly selected full shipment task set**; dependency **READINESS** gates execution order (Step 3) and claim (Step 4). Ship must pass the **exact eight task IDs** through `${input:tasks}` (Optional, and its omission falls back to "all ready tasks under the feature"), with **set equality against `017-S`** checked **before** invocation and Step 2 item 4's all-queued postcondition halting on omission **after**. All eight statuses `queued`; `blocked` is a **lifecycle status**, not an unmet dependency |
+| 3 | LOW | P2 | **Targeted C2 red** unanchored, and the bookkeeping rule unqualified | **FIXED — both halves.** Point 4 anchored to `--- FAIL: TestDirectPushGate_FullCorpusClean` **by exact name** with the **MP2 non-terminal-state** reason; five impostor exits rejected (compile error, malformed state, missing `bash`, invalid selector, unrelated non-zero). "Green by assertion, never bookkeeping" **qualified**: absolute for A1–C1; **C2 is the deliberate exception of SUBJECT, not of rigour**, because terminal manifest + witness finalization is itself part of its substantive contract — and it still **cannot pass from bookkeeping alone** |
+| 4 | LOW | P2 | **Memory current index stale** (named plan rev 12, addenda through §16) | **FIXED, HISTORY INTACT.** §3 table now names plan **revision 14** and deliberation **§18**; the currency note records this as the **third** recurrence and adds the rule that an index must be advanced as a deliberate step. No prior text erased |
+| 5 | LOW | P2 | **Deliberation addenda index stale** (stopped at §16) | **FIXED.** The live header `Addenda` line now runs through **§17 (rev 13)** and **§18 (rev 14)**, and is labelled the live index |
+
+### 23.3 Invariants re-verified, not assumed
+
+**Selector activation precedence** holds; **MP5 stays RETIRED** and un-renumbered; **MP6 integrity
+stays mode-independent**; valid manifest states stay **exhaustive at exactly three**; the **literal
+8/8 H0 red phase** holds and gains a stronger both-sides set-equality check; **default full-suite
+green** task boundaries hold; **witness-first then atomic manifest transition** holds; the
+**coordinated two-file rollback residual (R22)** remains honest and unclaimed; the **aggregate
+base→head** Stage verification, the **no-shipment fail-closed handback pair**, the
+**branch-before-mutation / commit-before-handback** ordering, and the **exact CI provenance
+distinction** are untouched; **live 3a / 3e-absence** references preserved.
+
+### 23.4 Scope and sizing
+
+No new task, sub-epic, fixture, harness **function**, test, file, CI step, ledger entry, CODEOWNERS
+line, policy ID, shipment, or dependency edge. **No new acceptance criterion** — AC-C1.6 and
+AC-C2.11 clarified in place. The point-7 mechanism is implemented as **unexported helpers inside
+the existing `tests/integration/directpush_gate_test.go`**, authored at **H0**, which is why it adds
+no harness function. One risk row extended (**R19**), one added (**R24** — the child-process
+mechanism's own failure modes: recursion, hang, log flooding, unreadable stream, plus the accepted
+second-compile cost). **No task re-sized**; every task stays inside the 2-hour rule. Shipment
+`017-S` unchanged — 9 items, dependency order A1→A2→A3→{B1,B2,B3}→C1→C2.
+
+### 23.5 Pipeline and PR state — UNCHANGED by this pass
+
+- Shipment **`017-S` remains queued/unclaimed**. **Ship was not invoked.**
+- **No push occurred and no GitHub operation was performed.** Remote PR #54 HEAD is still
+  `8999867` (**rev 10**); revisions **11, 12, 13, 14** are local-only on
+  `chore/stage-pipeline-policy-gap`.
+- PR #54 was **not** edited, commented on, reviewed, or merged. Threads
+  `PRRT_kwDOTPuhps6hstWa`, `PRRT_kwDOTPuhps6hstWg`, `PRRT_kwDOTPuhps6hstWn` remain **unresolved**.
+- **No direct push to `main`** occurred at any point.
+- **No implementation surface was touched**: no production code, test, script, workflow, policy,
+  agent, or skill file was modified. Stage artifacts only (P-010 boundary held).
+
+### 23.6 Next action — PENDING
+
+**The one authorized adversarial re-review has not been run.** It is the next action and it is
+**pending**. Stage must not perform it. Until it completes, the correct status of this release unit
+is *remediated, re-review pending* — **not** *cleared*.
+
+### 23.7 Validation performed (Stage scope — no Go build/test, per the Stage role boundary)
+
+- Plan §7.1 ↔ `018.010-T` AC-C1 byte parity: **PASS** (9,753 = 9,753, byte-identical).
+- Plan §7.2 ↔ `018.011-T` AC-C2 byte parity: **PASS** (22,561 = 22,561, byte-identical).
+- AC-ID bijection: **PASS** — 57 unique plan IDs ↔ 57 unique task IDs, no orphan on either side.
+- `markdownlint`, `backlogit sync` / `doctor`, shipment membership and dependency-graph integrity,
+  clean-tree check: recorded in the session summary.
