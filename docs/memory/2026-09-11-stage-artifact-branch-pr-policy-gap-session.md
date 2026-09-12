@@ -1765,3 +1765,40 @@ implementation surface touched; tree clean after commit.
 **The single authorized adversarial re-review — NOT performed by Stage, outcome NOT claimed.** Scope
 is the rev-14→rev-15 delta only. Stage did not push, open/update/comment on/merge PR #54, reply to
 or resolve any thread, or claim/modify/close `017-S`.
+## 26. Blocked handoff — decomposition verdict overturned, authorization consumed
+
+**State.** Operator authorized a narrow remediation + adversarial review with explicit
+decomposition consideration. Rev 15 `eb35135` remains **local and unpushed**; remote PR #54 still
+shows **rev 10 `8999867`**. Local revs **11-15 are unpushed**. PR body updated to **BLOCKED**.
+Three Copilot threads remain **unresolved** — no replies, no resolutions, no merge, no direct push
+to `main`, no Ship invocation or shipment claim.
+
+**Verdict reversal.** Stage's §25.1 conclusion of `SUFFICIENTLY_DECOMPOSED` was **overturned** by
+the authorized four-model adversarial review. Final decomposition verdict: **MUST_SPLIT / NOT
+READY**.
+
+**Key decomposition blockers.**
+
+- **H0 hides substantial working implementation** — fixture-copy, self-contained-Git,
+  child-process spawn, JSON event parsing, and status-integrity logic are authored inside harness
+  generation despite `harness-architect`'s **stub-first** boundary. This makes C2's **S/medium**
+  premise **unsound**, since the sizing assumed that work was already free.
+- **B3 is `L`** and spans role authorization, branch gating, handback/no-shipment production,
+  artifact commit/path safety, and summary sequencing — with **no dedicated two-hour proof** for
+  that combined width.
+
+**Direct P1 residuals** (no P0): incomplete whole-mechanism / content-sensitive no-mutation
+bracketing; non-unique lint-removal attribution; ambient sentinel bypass; pre-mutation H0
+exact-set verification ambiguity; stale rev-15 H0 task wording.
+
+**Concrete next re-plan path.**
+
+1. Separate **fixture infrastructure implementation** from **C2 evidence/terminalization**, while
+   keeping the witness + manifest terminal transition **atomic** (MP6 fail-closed preserved).
+2. Split **B3** into (a) branch/role authorization, (b) handback/no-shipment production,
+   (c) artifact-commit/path-safety — or a reviewed alternative decomposition.
+3. Rebuild task/function mapping, shipment membership, dependency edges, and two-axis sizing.
+4. Run a **fresh adversarial plan review** on the rebuilt plan.
+
+**Authorization consumed.** Further mutation requires **explicit operator authorization for a
+re-plan / decomposition cycle** — not merely another micro-fix.
