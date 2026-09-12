@@ -515,3 +515,81 @@ not quote the forbidden range, or it self-matches the absence assertion and sile
 Option 2 is unchanged. D1 is extended from "authorization surfaces" to "authorization **and
 discovery**"; plan rev 2's no-no-shipment-clause position is withdrawn; D3, D5, and D7 are
 unchanged. No decision is reversed and no new option is opened.
+
+## 11. Revision 7 addendum — a verification that cannot fail is not a verification
+
+Source: PR #54 current-HEAD review, cycle 6 — thread `PRRT_kwDOTPuhps6hrC0c` (comment
+3994280334) on plan L626, and thread `PRRT_kwDOTPuhps6hrC0o` (comment 3994280351) on the session
+memory record.
+
+### 11.1 Withdrawn: "ancestry plus a per-path read proves the artifacts are on origin/main"
+
+§10.3 decided the no-shipment arm as *commit ancestry* + *per-path `git show origin/main:{path}`*
+over a path set defaulting to `.backlogit/ docs/plans/ docs/decisions/ docs/memory/`. That
+conjunction was asserted to be a concrete verification target. It is **not**, and the claim is
+withdrawn:
+
+* `git show` on a **tree** exits **0** and prints a directory listing. Verified against this
+  repository: `git show origin/main:docs/plans/` prints `tree origin/main:docs/plans/`, status 0.
+* All four defaulted entries are **directories that already exist on `origin/main`** in any
+  repository this gate runs in. The loop therefore succeeded over targets that are unconditionally
+  present, reading **no file the Stage run wrote**.
+* The paired ancestry check is *also* routinely satisfied in the degraded case, because
+  `stage_head_commit` defaults to `git rev-parse HEAD` and a post-merge checkout's `HEAD` is
+  commonly already an ancestor of `origin/main`.
+
+Both conjuncts could hold with nothing from the Stage session present, so the arm could report a
+**false pass** — the precise failure §10.3 set out to remove.
+
+### 11.2 The generalized lesson, third instance
+
+Rev 6 caught *"the loop can run zero times"* and added a non-empty guard. The surviving defect is
+the sibling: *"the loop runs only over things that are always there."* Both are instances of one
+shape already twice recorded in this deliberation — a check whose **pass** is not evidence of the
+property it names. §8.2's self-deadlock, §10.1's empty-by-construction commit range, and now the
+always-present path set are the same error in three costumes: **the artifact under test was never
+bound to the run under test.**
+
+The corrective principle, stated once so it generalizes: *a verification must name targets derived
+from the specific run it verifies, and its target set must be capable of being empty or wrong.* A
+target list that is identical for every possible run carries no information about any of them.
+
+### 11.3 Decision — bind the verified set to the commit, structurally
+
+`stage_artifact_paths` becomes a **non-empty set of concrete repository-relative file paths tied to
+`stage_head_commit`**. When the handback supplies it, it is validated (file-ness, root containment,
+set-equality with the commit's changed files); when it does not, it is **derived** from the commit
+itself. The binding is structural rather than procedural, which is the whole point:
+`git diff-tree -r` cannot emit a directory, and `git cat-file -t` must print exactly `blob` — so
+the defect cannot recur through an author forgetting to check.
+
+Three design choices carry the decision and each rejects a plausible alternative:
+
+* **`cat-file -t` over `show`.** Both exit 0 on a tree; only `cat-file -t` reports the object
+  **type**, which is the actual discriminator. Keeping `show` and "just checking the output isn't a
+  listing" is a parse of human-readable text — fragile in exactly the way the gate is not allowed
+  to be.
+* **Set equality over subset.** A subset check rejects an invented path but accepts a handback
+  that silently drops files down to one always-present entry — which reintroduces §11.1's defect
+  through the reported-path branch.
+* **The commit's own changed-file set over a branch range.** A range (`origin/main..
+  {stage_head_commit}`) is **empty by construction** after the merge — the state the gate actually
+  runs in — so it would collapse to the vacuous loop being removed. A commit's changed-file list is
+  a property of the commit object and reads identically before and after the merge. The narrowing
+  to the tip commit is sound because ancestry already covers earlier commits on the branch; the
+  per-file check closes a different gap (files readable on the default branch), not the same one.
+
+### 11.4 D3 is again NOT extended
+
+An always-passing verification loop is neither D3 violation shape — it is not a push to the default
+branch and not a permission to commit on one. The closed construct set and the fixture corpus stay
+as they are (the §10.4 position, unchanged). Rejection is carried by the existing per-surface
+harness assertion, which additionally asserts the **absence** of the `git show origin/main:{path}`
+loop and of any directory-prefix default in the no-shipment arm.
+
+### 11.5 Net effect
+
+Option 2 is unchanged. D1's scope is unchanged from rev 6 (authorization **and** discovery); the
+rev-6 *shape* of the discovery verification is corrected, not its existence. D3, D5, and D7 are
+unchanged. No decision is reversed, no new option is opened, and no task, fixture, harness
+function, or dependency edge is added.

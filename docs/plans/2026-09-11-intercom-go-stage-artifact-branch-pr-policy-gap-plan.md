@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction"
 date: 2026-09-11
-revision: 6
+revision: 7
 status: reviewed
 agent: Stage
 governs: stash 638A410B
@@ -12,10 +12,10 @@ source: docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-ga
 
 **Source document**:
 `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md`
-(including its **§8 Revision 2 addendum**, **§9 Revision 3 addendum**, and **§10 Revision 6
-addendum**)
+(including its **§8 Revision 2 addendum**, **§9 Revision 3 addendum**, **§10 Revision 6
+addendum**, and **§11 Revision 7 addendum**)
 **Stash entry**: `638A410B`
-**Requires plan hardening**: **yes** — see §9/§10a.
+**Requires plan hardening**: **yes** — see §9.
 
 **Revision 2** incorporated the seven-persona plan review. Three rev-1 claims were falsified and
 are corrected here: a **third** authorization surface exists (`_stage.agent.md` L42), the rev-1
@@ -66,6 +66,25 @@ as the P-016 single-worktree gate), widens the dirtiness pathspec to the Stage a
 gives step 4 a **second verification arm** keyed on `no-shipment` that needs no `shipment_id`. No
 task, file, fixture, harness function, or dependency edge is added; 017-S stays one shipment.
 
+**Revision 7** incorporates the PR #54 current-HEAD review, cycle 6 (two findings, threads
+`PRRT_kwDOTPuhps6hrC0c` / comment 3994280334 and `PRRT_kwDOTPuhps6hrC0o` / comment 3994280351).
+Rev 6's no-shipment arm iterated `git show origin/main:{path}` over a path set whose documented
+default was the **directory list** `.backlogit/ docs/plans/ docs/decisions/ docs/memory/`. `git
+show` on a tree **exits 0**, and those four directories already exist on `origin/main` in every
+repository the gate will run in — so the loop could pass having read **no file this Stage run
+wrote**, and paired with the degraded `stage_head_commit` default (`git rev-parse HEAD`, routinely
+already an ancestor of `origin/main`) the arm reported a **false pass**. Rev 6 removed the
+zero-iteration loop and left the always-satisfied one. Rev 7 makes `stage_artifact_paths` a
+**non-empty set of concrete repository-relative file paths tied to `stage_head_commit`**, derived
+deterministically from that commit's own changed-file set when the handback does not supply it,
+validated for file-ness / root-containment / set-equality when it does, and verified with `git
+cat-file -t` = `blob` rather than `git show` (§6.1.2 correction 4). Step 3 re-records the handback
+commit after it creates one (correction 5), so the derived set is taken from the commit that
+actually carries the artifacts. Step 1's dirtiness pathspec is pinned to the **fixed** allowed-root
+constant rather than the handback field, closing the same class of hole one step earlier. Rev 7
+also refreshes the stale plan-revision and section cross-references in the session memory record.
+No task, file, fixture, harness function, or dependency edge is added; 017-S stays one shipment.
+
 **Artifact persistence note (P-010)**: this plan and its deliberation are themselves Stage
 artifacts. They are committed on the dedicated branch `chore/stage-pipeline-policy-gap` and reach
 `main` only via PR — the exact path this shipment installs. This shipment does not reproduce the
@@ -114,9 +133,9 @@ is reversible by a future render with no signal.
 | `tests/integration/directpush_gate_test.go` | **New.** Go regression harness driving the gate; 8 test functions, one per task. Produced by `harness-architect` at **Ship Step 2**, not by a task (§5.0). | H0 |
 | `scripts/testdata/directpush/*.md` + `directpush-manifest.json` | **New.** 14 fixtures + sorted verdict manifest. | A1 |
 | `scripts/check-direct-push-language.sh` | **New.** Not-implemented stub (H0) → driver (A2) → detector (A3). | H0, A2, A3 |
-| `.github/agents/_orchestrator.agent.md` | Reword Step 1.5 preamble; delete 3e; fold its branch-point into 3a. **Rev 6**: require the Stage handback record in Step 1; make Step 1.5 discovery branch-specific; widen the dirtiness pathspec; add step 4's no-shipment arm. | B1 |
+| `.github/agents/_orchestrator.agent.md` | Reword Step 1.5 preamble; delete 3e; fold its branch-point into 3a. **Rev 6**: require the Stage handback record in Step 1; make Step 1.5 discovery branch-specific; widen the dirtiness pathspec; add step 4's no-shipment arm. **Rev 7**: make the no-shipment arm verify concrete files derived from `stage_head_commit` (`cat-file -t` = `blob`), pin step 1's pathspec to the fixed artifact-root constant, and re-record the handback commit in 3a. | B1 |
 | `.github/policies/workflow-policies.md` | P-010 Stage bullets + Amendment Log **1.25.0**. | B2 |
-| `.github/agents/_stage.agent.md` | Role Boundary Git row + PR row note. **Rev 6**: emit the staging handback record in the Step 6 summary contract. | B3 |
+| `.github/agents/_stage.agent.md` | Role Boundary Git row + PR row note. **Rev 6**: emit the staging handback record in the Step 6 summary contract. **Rev 7**: emit `stage_artifact_paths` as concrete file paths derived from `stage_head_commit`. | B3 |
 | `.github/workflows/ci.yml` | One step in job `lint`; LOCAL DIVERGENCE ledger. | C1 |
 | `.github/CODEOWNERS` | Own the new gate + the three unowned gate scripts. | C1 |
 
@@ -197,9 +216,9 @@ every task has exactly one observable red→green transition:
 | A1 `018.004-T` | `TestDirectPushGate_FixtureCorpusIsComplete` | 14 fixtures + manifest exist; manifest keys sorted; bijection with the directory holds; 9 reject / 5 accept |
 | A2 `018.005-T` | `TestDirectPushGate_SelfTestDriverEnumeratesFixtures` | `--self-test` names every manifest fixture and reports every **reject** fixture failing against the stub; exit stays non-zero |
 | A3 `018.006-T` | `TestDirectPushGate_SelfTestPasses` | `--self-test` exits 0: actual == manifest verdict for all 14, plus both default-branch-resolution assertions |
-| B1 `018.007-T` | `TestDirectPushGate_OrchestratorSurfaceClean` | scan scoped to `_orchestrator.agent.md` reports 0 findings **and** (rev 6) Step 1.5's discovery is branch-specific: Step 1 requires the handback fields, the unpushed-commit check resolves the reported branch and compares `origin/main..HEAD`, **no default-branch self-range literal remains in Step 1.5**, and step 4 carries both outcome arms |
+| B1 `018.007-T` | `TestDirectPushGate_OrchestratorSurfaceClean` | scan scoped to `_orchestrator.agent.md` reports 0 findings **and** (rev 6) Step 1.5's discovery is branch-specific: Step 1 requires the handback fields, the unpushed-commit check resolves the reported branch and compares `origin/main..HEAD`, **no default-branch self-range literal remains in Step 1.5**, and step 4 carries both outcome arms. **Rev 7**: the no-shipment arm derives concrete files from `stage_head_commit` and verifies them with `cat-file -t` = `blob`; **no directory-prefix path set and no `git show`-over-`{path}` loop remains in that arm**; step 1's dirtiness pathspec is the fixed artifact-root constant; 3a re-records the handback commit |
 | B2 `018.008-T` | `TestDirectPushGate_PolicySurfaceClean` | scan scoped to `workflow-policies.md` reports 0 findings **and** the Amendment Log carries row `1.25.0` |
-| B3 `018.009-T` | `TestDirectPushGate_StageAgentSurfaceClean` | scan scoped to `_stage.agent.md` reports 0 findings **and** (rev 6) the Step 6 summary contract emits the staging handback record |
+| B3 `018.009-T` | `TestDirectPushGate_StageAgentSurfaceClean` | scan scoped to `_stage.agent.md` reports 0 findings **and** (rev 6) the Step 6 summary contract emits the staging handback record. **Rev 7**: that contract requires `stage_artifact_paths` to be concrete file paths derived from `stage_head_commit`, not directory prefixes |
 | C1 `018.010-T` | `TestDirectPushGate_CIWiringIsBlocking` | job `lint` carries the task-ID-suffixed step with no `continue-on-error` and no toggle; `ci-gate` still transitively needs `lint`; every script invoked by a `ci.yml` step has a `CODEOWNERS` owner line. **Rev 5**: the step-presence check is **YAML-structural** over `jobs.lint.steps[]` and its non-vacuity is proven (AC-C1.6) |
 | C2 `018.011-T` | `TestDirectPushGate_FullCorpusClean` | bare full-corpus scan exits 0 with 0 findings and the three §5.3 marker-free constructs score **accept**. **Rev 5**: this runs the detector from `go test`, so it keeps executing even if the job-`lint` step is removed by a render (AC-C2.8) |
 
@@ -336,7 +355,7 @@ a single cell**, and the governing context is that cell's **column header**.
 
 **Default-branch token** = alternation over: the configured default branch, the literal `main`,
 the literal `{{DEFAULT_BRANCH}}`, and the prose "default branch". The placeholder form closes the
-regeneration-evasion path named in §10a.1.
+regeneration-evasion path named in §5.0 and §9.
 
 **Default-branch resolution must not abort the gate (rev 3).** `git symbolic-ref
 refs/remotes/origin/HEAD` is **not** created by `actions/checkout`, so under the mandated
@@ -481,7 +500,10 @@ specifies no branch point. Revised 3a (rev 6 extends this to reuse the reported 
 > a. Check out the Stage artifact branch `$STAGE_BRANCH` reported by the handback record — or,
 >    when none was reported, create `chore/stage-{shipment_id}` (`chore/stage-{chore-slug}` when
 >    no shipment was formed) **from the current commit** — and commit any uncommitted backlog and
->    planning files to it.
+>    planning files to it. **Then re-record the handback commit** (rev 7 — correction 5, §6.1.2):
+>    set `stage_head_commit` to `git rev-parse HEAD` and discard any `stage_artifact_paths` the
+>    handback reported, so step 4 derives its file set from the commit that actually carries the
+>    artifacts.
 
 **Rewrite the Step 1.5 preamble** (rev 3 — the fourth surface, §2). It currently states the gate's
 postcondition as artifacts being "committed to the default branch", which remains a compliant
@@ -523,8 +545,10 @@ under step 3, and revised step 4:
 
 > * Stage's expected output — the **staging handback record**: `stage_branch` (the dedicated Stage
 >   artifact branch Stage created and committed on), `stage_head_commit`, `stage_outcome`
->   (`shipment` or `no-shipment`), `stage_artifact_paths` (the repo-relative paths Stage wrote),
->   and — when `stage_outcome` is `shipment` — a `shipment_id` in `queued` status.
+>   (`shipment` or `no-shipment`), `stage_artifact_paths` (the **concrete repository-relative file
+>   paths** Stage wrote and committed in `stage_head_commit` — file paths only, never directory
+>   prefixes; rev 7), and — when `stage_outcome` is `shipment` — a `shipment_id` in `queued`
+>   status.
 
 > 4. Receive Stage's output: record the staging handback record, and the `shipment_id` when one
 >    was returned. Apply these defaults for any field Stage did not report, recording
@@ -535,7 +559,19 @@ under step 3, and revised step 4:
 >      branch, leave `stage_branch` **UNRESOLVED** — **never** substitute the default branch for
 >      the Stage artifact branch.
 >    - `stage_outcome`: `shipment` when a `shipment_id` was returned, otherwise `no-shipment`.
->    - `stage_artifact_paths`: `.backlogit/ docs/plans/ docs/decisions/ docs/memory/`.
+>    - `stage_artifact_paths`: leave **empty** here and derive it in step 4 from
+>      `stage_head_commit`'s own changed-file set (correction 4, check 3). It is **never**
+>      defaulted to a directory list (rev 7).
+
+**Two path notions, deliberately distinct (rev 7).** `STAGE_ARTIFACT_ROOTS` is a **fixed constant**
+of the gate — `.backlogit/`, `docs/plans/`, `docs/decisions/`, `docs/memory/` — and is *not* a
+handback field. It serves two roles and only two: it is step 1's dirtiness pathspec, and it is the
+containment allow-list every concrete path in step 4 must lie under. `stage_artifact_paths` is a
+handback field and is always a set of **concrete file paths**. Rev 6 conflated the two, using one
+field for both jobs; that conflation is what let directory prefixes reach a verification loop that
+had no way to reject them. Directory prefixes are correct in step 1 — it runs **before** the commit
+exists, so there is no commit to derive files from — and are rejected in step 4, where a commit
+does exist and the files it changed are knowable exactly.
 
 **The degraded path defaults; it does not halt** (the rev-2 lesson, deliberation §8.2). Every field
 has a deterministic fallback, so a Stage invocation predating B3 — which reports nothing and leaves
@@ -562,9 +598,9 @@ repository. Add this block immediately after the preamble, and revise step 1:
 > still run unchanged, and any work they find routes to step 3a's create-arm, which builds the
 > artifact branch from the current commit.
 
-> 1. Check `git status --short -- {stage_artifact_paths}` — defaulting to
->    `.backlogit/ docs/plans/ docs/decisions/ docs/memory/` when the handback record reported none
->    — for uncommitted staging artifacts:
+> 1. Check `git status --short -- {STAGE_ARTIFACT_ROOTS}` — the **fixed** constant
+>    `.backlogit/ docs/plans/ docs/decisions/ docs/memory/`, never a handback-supplied path list
+>    (rev 7) — for uncommitted staging artifacts:
 >    - If dirty: staging artifacts need to be committed first (proceed to step 3).
 >    - If clean: proceed to step 2.
 
@@ -620,24 +656,105 @@ AC-B1.6.
 >      not found on origin/main`.
 >
 >    **When `stage_outcome` is `no-shipment`:**
->    There is no manifest to name, so verify the **commit** and the **paths** instead:
->    `git merge-base --is-ancestor {stage_head_commit} origin/main`
->    `git show origin/main:{path}` — for every path in `stage_artifact_paths`, defaulting to
->    `.backlogit/ docs/plans/ docs/decisions/ docs/memory/` as in step 1
->    - If the resolved path set is **empty**, halt with `STAGING_GATE_FAIL: no Stage artifact paths
->      to verify on origin/main` — an empty loop is **not** a pass.
->    - If both checks succeed over a non-empty path set: the Stage artifacts are confirmed on the
->      remote. **Stop here — there is no shipment, so there is nothing to route to Ship.**
->    - If either fails: halt with `STAGING_GATE_FAIL: Stage artifacts from {stage_branch} not found
->      on origin/main`.
+>    There is no manifest to name, so verify the **commit** and the **concrete files that commit
+>    changed**. Run these five checks in order; any failure halts the gate.
+>
+>    1. `git rev-parse --verify {stage_head_commit}^{commit}` — halt with
+>       `STAGING_GATE_FAIL: stage_head_commit {stage_head_commit} is not a commit in this
+>       repository`.
+>    2. `git merge-base --is-ancestor {stage_head_commit} origin/main` — halt with
+>       `STAGING_GATE_FAIL: stage commit {stage_head_commit} has not reached origin/main`.
+>    3. Derive the commit's changed Stage artifact files:
+>       `git diff-tree --no-commit-id --name-only -r -z --diff-filter=d {stage_head_commit}`,
+>       keeping only paths under `STAGE_ARTIFACT_ROOTS`. Call the result `DERIVED`. If `DERIVED`
+>       is **empty**, halt with `STAGING_GATE_FAIL: {stage_head_commit} changed no Stage artifact
+>       files under the allowed Stage artifact roots`.
+>    4. Resolve `VERIFY_SET`. When the handback reported a **non-empty** `stage_artifact_paths`,
+>       every reported path MUST be a repository-relative **file** path — no trailing `/`, not a
+>       bare `STAGE_ARTIFACT_ROOTS` entry, no glob or wildcard — and MUST lie under
+>       `STAGE_ARTIFACT_ROOTS`; otherwise halt with `STAGING_GATE_FAIL: stage_artifact_paths
+>       contains a non-file or out-of-root path: {path}`. The reported set MUST then be **equal**
+>       to `DERIVED` (same members, order-insensitive); otherwise halt with
+>       `STAGING_GATE_FAIL: stage_artifact_paths does not match the files changed by
+>       {stage_head_commit}`. `VERIFY_SET` is that set. When no paths were reported — none were
+>       supplied, or step 3a discarded them after creating the artifact commit — set
+>       `VERIFY_SET := DERIVED`.
+>    5. For **every** path in `VERIFY_SET`: `git cat-file -t "origin/main:{path}"` MUST exit 0
+>       **and** print exactly `blob`. Halt with `STAGING_GATE_FAIL: Stage artifact {path} not
+>       found on origin/main` on a non-zero exit, and with `STAGING_GATE_FAIL: Stage artifact
+>       {path} is a {type}, not a file, on origin/main` on any other printed type.
+>
+>    When all five pass: the Stage artifacts are confirmed on the remote **as concrete files**.
+>    **Stop here — there is no shipment, so there is nothing to route to Ship.**
 
 This is the **concrete artifact verification target that requires no shipment ID**: ancestry proves
-the Stage commit reached the default branch, and the per-path `git show` proves the artifacts
-themselves are readable there rather than merely that some merge occurred. The non-empty-path-set
-guard is load-bearing: with an empty path list the `show` loop would run zero times and the
-ancestry check is trivially true whenever `stage_head_commit` was already contained in
-`origin/main`, so the gate would report success having verified nothing. Both checks are read forms
-(§5.3 construct 1 excludes `show`; `merge-base` is not a push verb), so neither trips the detector.
+the Stage commit reached the default branch, and the per-file type check proves the artifacts
+themselves are readable **files** there rather than merely that some merge occurred.
+
+**Why the path set must be concrete files, not directory prefixes (rev 7).** Rev 6 wrote this arm
+as `git show origin/main:{path}` over `stage_artifact_paths`, whose documented default was the
+directory list `.backlogit/ docs/plans/ docs/decisions/ docs/memory/`. `git show` on a **tree**
+exits **0** and prints a directory listing — verified against this repository:
+`git show origin/main:docs/plans/` prints `tree origin/main:docs/plans/` and returns status 0.
+Those four directories already exist on `origin/main` in every repository this gate will ever run
+in, so the loop passed **without reading a single file the Stage run wrote**. Paired with the
+degraded `stage_head_commit` default — `git rev-parse HEAD`, which on a post-merge checkout is
+routinely already an ancestor of `origin/main` — check 2 is trivially true as well, and the arm
+reports a **false pass**. This is rev 6's own defect one layer down: rev 6 fixed *"the loop can run
+zero times"* and left *"the loop can run only over things that are always there."* Three properties
+close it, and all three are load-bearing:
+
+1. **Concreteness is structural, not stylistic.** `git diff-tree -r` recurses into subtrees and
+   therefore emits **only blob paths** — a directory cannot appear in `DERIVED` by construction,
+   so the derived set is concrete whether or not anyone remembers to check it. `-z` NUL-delimits
+   the output so paths are never quoted or backslash-escaped, and `--diff-filter=d` excludes
+   **deletions**, so a Stage artifact the commit *removed* or renamed away is not demanded to be
+   readable on `origin/main` (the `HEAD` of this very branch is a rename of that shape).
+2. **`git cat-file -t` replaces `git show` in this arm.** Both exit 0 on a tree, so the exit code
+   alone can never discriminate a file from a directory; the discriminator is the **printed object
+   type**. Requiring exactly `blob` rejects a directory even if one reached `VERIFY_SET` through
+   the reported-path branch, and `cat-file -t` still exits non-zero (128) when the path is absent,
+   so presence and file-ness are proven by one command.
+3. **Set equality, not subset.** Equality rejects a reported path the commit never touched (an
+   invented or copy-pasted path) **and** a reported set that silently drops files — which would
+   otherwise let a handback shrink the verified set down to one always-present file. A subset check
+   catches only the first.
+
+**Why the set is scoped to `stage_head_commit`'s own changes.** It is the only artifact set
+recoverable **after the merge lands**. A range form such as `origin/main..{stage_head_commit}` is
+**empty by construction** once that commit is an ancestor of `origin/main` — precisely the state
+step 4 runs in — so a range-derived set would collapse to empty and re-create the vacuous-loop
+failure this correction exists to remove. A commit's changed-file list, by contrast, is a property
+of the commit object and its parent: it reads identically before and after the merge. Scoping to
+the tip commit loses nothing, because the two checks cover different gaps — check 2 already proves
+every **ancestor** of `stage_head_commit` reached `origin/main`, so earlier Stage commits on the
+branch are covered by ancestry, while the per-file check closes the gap ancestry cannot: that the
+artifacts exist as readable files on the default branch.
+
+**The handback-resolution no-halt invariant is preserved (AC-B1.5).** Every new halt lives in
+**step 4's verification**, not in the handback defaulting. All fields still resolve to a
+deterministic default without halting; what changed is that a degraded resolution now yields a set
+that is either concretely verifiable or **provably empty**, and an empty one fails loudly instead
+of passing silently. A gate that halts because it could not prove the artifacts are on
+`origin/main` is the gate working, not the degraded path wedging.
+
+**No new command shape enters the corpus.** `diff-tree`, `cat-file`, `rev-parse`, and `merge-base`
+are read forms: none is a push verb, so §5.3 construct 1 cannot match them, and none grants
+permission to commit anywhere, so construct 2 cannot either. The detector's closed construct set
+and the fixture corpus are therefore **not** widened — the rev-6 non-expansion position is
+unchanged. The shipment arm stays byte-verbatim (AC-B1.4), the resolution block's clean-tree and
+single-worktree guards are untouched (AC-B1.9), and P-009, P-011, and P-016 remain textually
+unchanged (AC-C2.6).
+
+**Correction 5 (rev 7) — step 3 re-records the handback commit.** When step 1 finds a dirty tree,
+**3a creates the commit that carries the artifacts** — and the handback's `stage_head_commit` was
+resolved *before* that commit existed. Deriving step 4's file set from the stale value would read a
+commit that changed none of the artifacts, halting the gate at check 3 for the wrong reason on the
+one path Step 1.5 exists to repair. 3a therefore re-records `stage_head_commit` as `git rev-parse
+HEAD` and discards any reported `stage_artifact_paths` (which described the pre-commit intent, not
+this commit) so check 4 falls through to `VERIFY_SET := DERIVED`. When step 3 was entered for
+unpushed commits alone and nothing was uncommitted, `HEAD` is unchanged and the re-record is a
+no-op. AC-B1.3's branch-point text (`from the current commit`) is preserved verbatim.
 
 **The rev-2 "no no-shipment clause here" position is WITHDRAWN.** Rev 2 argued that Step 1.5 is
 scoped "After Stage completes and before routing to Ship" and that step 4 requires a
@@ -646,14 +763,14 @@ instead. That reasoning was internally inconsistent with §6.2's own rev-4 route
 the **Orchestrator (pipeline invocation)** as the actor for pushing, opening, merging, and
 post-merge-verifying the no-shipment branch — and Step 1.5 is the **only** Orchestrator gate that
 does any of those things. Rev 2 thus assigned the Orchestrator a duty and simultaneously declared
-the one place it could discharge it out of scope. Corrections 1–4 give that duty a home; B2/B3 keep
+the one place it could discharge it out of scope. Corrections 1–5 give that duty a home; B2/B3 keep
 the Stage-side obligations they already carry. Nothing is duplicated: B2/B3 say *where Stage may
 write*, §6.1.2 says *how the Orchestrator finds and verifies it*.
 
-**No direct default-branch push is introduced.** Corrections 1–4 add only read forms
-(`status`, `rev-parse`, `fetch`, `log`, `show`, `merge-base`) and one `checkout`; 3b's existing
-push-the-branch-and-open-a-PR form is untouched, and 3e stays deleted. P-009, P-011, and P-016 are
-textually unchanged (AC-C2.6).
+**No direct default-branch push is introduced.** Corrections 1–5 add only read forms
+(`status`, `rev-parse`, `fetch`, `log`, `show`, `merge-base`, and — rev 7 — `diff-tree`,
+`cat-file`) and one `checkout`; 3b's existing push-the-branch-and-open-a-PR form is untouched, and
+3e stays deleted. P-009, P-011, and P-016 are textually unchanged (AC-C2.6).
 
 **AC-B1.1** No direct-push-to-default-branch instruction remains anywhere in Step 1.5.
 **AC-B1.2** The preamble states the postcondition as artifacts having **reached** the default
@@ -676,10 +793,11 @@ second arm, **and nothing else** — no outer lead sentence replaces or rewords 
 `stage_branch`, `stage_head_commit`, `stage_outcome`, and `stage_artifact_paths`. **Every** field
 has a deterministic default, so the degraded path **never halts**: branch/commit resolve from
 `HEAD`; `stage_outcome` derives from whether a `shipment_id` was returned; `stage_artifact_paths`
-defaults to the step-1 path set; `STAGING_HANDBACK_DEGRADED` is recorded once and surfaced. When
-the `HEAD` resolution yields the default branch, `stage_branch` is left **UNRESOLVED** and the run
-routes to step 3a's create-arm. The default branch is **never** substituted for the Stage artifact
-branch.
+is left **empty** and derived in step 4 from `stage_head_commit`'s own changed-file set (rev 7 —
+it is **never** defaulted to a directory list); `STAGING_HANDBACK_DEGRADED` is recorded once and
+surfaced. When the `HEAD` resolution yields the default branch, `stage_branch` is left
+**UNRESOLVED** and the run routes to step 3a's create-arm. The default branch is **never**
+substituted for the Stage artifact branch.
 **AC-B1.6** **Branch-specific discovery.** Step 1.5's unpushed-commit check compares
 `origin/main..HEAD` — equivalently `origin/main..$STAGE_BRANCH` whenever a branch is resolved,
 proven equal by the `git rev-parse --abbrev-ref HEAD` assertion in the resolution block, and
@@ -688,20 +806,44 @@ skipped. The literal default-branch self-range is **absent from the whole of Ste
 from the prohibition sentence, which is phrased descriptively so the absence assertion cannot
 self-match.
 **AC-B1.7** **Dirtiness pathspec covers Stage artifacts.** Step 1's `git status` pathspec is the
-handback's `stage_artifact_paths`, defaulting to `.backlogit/ docs/plans/ docs/decisions/
-docs/memory/` — not `.backlogit/` alone — so a no-shipment run that writes only `docs/**` is not
-reported clean.
+**fixed** `STAGE_ARTIFACT_ROOTS` constant — `.backlogit/ docs/plans/ docs/decisions/
+docs/memory/`, not `.backlogit/` alone — so a no-shipment run that writes only `docs/**` is not
+reported clean. **Rev 7**: the pathspec is that constant and **not** the handback's
+`stage_artifact_paths`, so a handback reporting one narrow path cannot shrink the dirtiness scan
+and hide uncommitted artifacts. Directory prefixes are correct *here* — step 1 runs before the
+artifact commit exists, so there is no commit to derive files from — and are rejected in step 4,
+where a commit does exist.
 **AC-B1.8** **No-shipment verification arm.** Step 4 carries a second arm keyed on
-`stage_outcome: no-shipment` that verifies `git merge-base --is-ancestor {stage_head_commit}
-origin/main` **and** `git show origin/main:{path}` over a **non-empty** resolved path set, halts
-with `STAGING_GATE_FAIL` on an empty path set or on either check failing, and terminates the gate
-without routing to Ship. It names no `shipment_id`.
+`stage_outcome: no-shipment` that runs five ordered checks and halts with `STAGING_GATE_FAIL` on
+any failure: (1) `git rev-parse --verify {stage_head_commit}^{commit}`; (2) `git merge-base
+--is-ancestor {stage_head_commit} origin/main`; (3) derivation of `DERIVED` from
+`git diff-tree --no-commit-id --name-only -r -z --diff-filter=d {stage_head_commit}` filtered to
+`STAGE_ARTIFACT_ROOTS`, halting when it is **empty**; (4) resolution of `VERIFY_SET` per AC-B1.10;
+(5) `git cat-file -t "origin/main:{path}"` for **every** path in `VERIFY_SET`, requiring exit 0
+**and** output exactly `blob`. It terminates the gate without routing to Ship and names no
+`shipment_id`. **Rev 7**: `git show origin/main:{path}` no longer appears in this arm — it exits 0
+on a tree, so it could not reject the directory prefixes rev 6 defaulted to.
 **AC-B1.9** **Clean-tree and single-worktree gates preserved on every path.** The branch-resolution
 block sits **above** step 1's dirty/clean split, so `git rev-parse --verify` and the
 HEAD-equals-`$STAGE_BRANCH` assertion execute on the dirty path too — 3a never checks out an
 unverified branch name. Step 1.5 halts when HEAD is not the resolved staging branch; no new branch
 or worktree is created when the handback reports one; and P-009, P-011, and P-016 remain textually
 unchanged.
+**AC-B1.10** **Concrete-path contract (rev 7).** `stage_artifact_paths` is defined as a **non-empty
+set of concrete repository-relative file paths carried by `stage_head_commit`**. Step 4 rejects, by
+halting: a path with a trailing `/`, a bare `STAGE_ARTIFACT_ROOTS` entry, or any glob/wildcard form
+(not a file path); a path not under `STAGE_ARTIFACT_ROOTS` (outside the allowed Stage artifact
+roots); an **empty** resolved set; any reported set that is not **equal** to the commit's derived
+changed-file set (equality, not subset — a subset check would accept both an invented path and a
+silently shrunken set); and any path that resolves on `origin/main` to an object type other than
+`blob`. No directory prefix can satisfy completion on this arm, by construction: `diff-tree -r`
+emits blob paths only, and `cat-file -t` must print exactly `blob`.
+**AC-B1.11** **Handback commit re-recorded after step 3 commits (rev 7).** 3a sets
+`stage_head_commit` to `git rev-parse HEAD` after committing and discards any reported
+`stage_artifact_paths`, so step 4 derives its file set from the commit that actually carries the
+artifacts rather than from the pre-commit `HEAD` the handback resolved. The re-record is a no-op
+when step 3 was entered for unpushed commits alone. AC-B1.3's `from the current commit` branch-point
+text is preserved verbatim.
 
 **Rev 4 reconciliation**: this list previously carried only three criteria, worded before rev 3
 added the preamble as the fourth authorization surface, while task `018.007-T` already carried the
@@ -713,6 +855,11 @@ reconciled in §7.2, found by the rev-4 AC-ID parity sweep rather than by review
 change, so the plan↔task same-contract invariant holds. AC-B1.4's narrowing is recorded above
 rather than silently applied, because a criterion that is weakened without a stated reason is
 indistinguishable from one that was abandoned.
+
+**Rev 7 reconciliation**: AC-B1.10 and AC-B1.11 are new, and AC-B1.5, AC-B1.7 and AC-B1.8 are
+**strengthened** (never relaxed) — they now reject the directory-prefix path set rev 6 permitted.
+All five are mirrored into `018.007-T` in the same change, preserving the plan↔task same-contract
+invariant.
 
 ### 6.2 Task B2 — P-010 + Amendment Log
 
@@ -810,6 +957,17 @@ one required line emitting the **staging handback record** that the Orchestrator
 requires (§6.1.2, correction 1): `stage_branch`, `stage_head_commit`, `stage_outcome`
 (`shipment` | `no-shipment`), `stage_artifact_paths`, and `shipment_id` when one was formed.
 
+**Path shape is part of that contract (rev 7).** The same line states that `stage_artifact_paths`
+is a **non-empty list of concrete repository-relative file paths** — the files Stage committed in
+`stage_head_commit`, never directory prefixes — and that Stage produces it with the same derivation
+the Orchestrator re-runs:
+`git diff-tree --no-commit-id --name-only -r -z --diff-filter=d {stage_head_commit}` filtered to
+`.backlogit/`, `docs/plans/`, `docs/decisions/`, `docs/memory/`. Naming the producing command here
+is what makes the consumer's **set-equality** check (AC-B1.10) satisfiable by construction rather
+than by coincidence: two surfaces computing the same set from the same commit with the same command
+cannot disagree. A producer left free to emit directory prefixes would either fail that check on
+every run or force it to be weakened back into the always-true form rev 7 removed.
+
 This is the **only** edit B3 makes outside the Role Boundary table, and it is not cosmetic. Without
 a producer, the Orchestrator's handback requirement has no source and every pipeline run falls into
 B1's `STAGING_HANDBACK_DEGRADED` path. It also completes the symmetry the paragraph above rests on:
@@ -832,8 +990,13 @@ agent contract and policy, in either direction.
 **AC-B3.5** **Staging handback emitted (rev 6).** Step 6's session-output contract requires
 `stage_branch`, `stage_head_commit`, `stage_outcome`, `stage_artifact_paths`, and `shipment_id`
 (when formed) — every field the Orchestrator's Step 1 consumes under AC-B1.5, with none required
-there and absent here. This is the only change outside the Role Boundary table; no other section of
-the file is modified.
+there and absent here. **Rev 7**: the contract also fixes the **shape** of
+`stage_artifact_paths` — a non-empty list of concrete repository-relative **file** paths carried by
+`stage_head_commit`, never directory prefixes — and names the derivation
+(`git diff-tree --no-commit-id --name-only -r -z --diff-filter=d {stage_head_commit}` filtered to
+the four Stage artifact roots), so the emitted set satisfies the consumer's set-equality check
+(AC-B1.10) by construction. This is the only change outside the Role Boundary table; no other
+section of the file is modified.
 
 These five criteria are carried verbatim by task `018.009-T`. The post-correction **zero-findings**
 gate run is deliberately **not** duplicated here: it is owned by **AC-C2.1** on `018.011-T`, which
@@ -940,7 +1103,12 @@ different numbering for the same criteria).
   policy agree — no surviving contradiction across the four §2 authorization surfaces. **Rev 6**:
   the **staging handback contract** also agrees across its two surfaces — every field
   `_orchestrator.agent.md` Step 1 requires (AC-B1.5) is emitted by `_stage.agent.md` Step 6
-  (AC-B3.5), with no field required in one and absent from the other.
+  (AC-B3.5), with no field required in one and absent from the other. **Rev 7**: that agreement
+  extends to the **shape** of `stage_artifact_paths` — the producer (`_stage.agent.md` Step 6,
+  AC-B3.5) and the consumer (`_orchestrator.agent.md` Step 1.5 step 4, AC-B1.10) declare the same
+  concrete-file contract and the same derivation command, and **neither** surface retains a
+  directory-prefix default. A field agreeing in name but disagreeing in shape is the same
+  defect class one level down, and passes a name-only comparison.
 - **AC-C2.5** `markdownlint` exits **0** on every changed markdown file (P-008).
 - **AC-C2.6** Branch and PR merge-commit rules intact — P-009, P-011, P-016 textually unchanged.
 - **AC-C2.7** Constitution Quality Gates run **in declared order, none skipped, as separate
@@ -970,6 +1138,10 @@ markdownlint "**/*.md"
 python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
 actionlint .github/workflows/ci.yml   # LOCAL, operator-run — no CI counterpart exists in this repo
 git status --porcelain                # MUST be empty around AC-C2.2 — no dirty-tree mutation proof
+# Rev 7 — the no-shipment arm's primitives, verified against this repository:
+git show origin/main:docs/plans/           # exits 0 on a TREE — why `show` is insufficient (AC-B1.10)
+git cat-file -t origin/main:docs/plans/    # prints `tree`  → rejected
+git diff-tree --no-commit-id --name-only -r -z --diff-filter=d HEAD   # blob paths only, no deletions
 gofmt -l .          # must print nothing
 go vet ./...
 go test ./...
@@ -1081,6 +1253,7 @@ P-014 readiness and P-018 thread resolution apply to the staging PR as to any PR
 | R11 | The §5.0 harness is a sixth CI-relevant surface a future render could disturb | Low: it is a plain `_test.go` file under `tests/integration/`, not autoharness-generated, and `go test -race -mod=readonly ./...` already runs in job `test`. No new CI wiring, no ledger entry, no CODEOWNERS line needed. **Rev 5** makes both of those properties **load-bearing rather than incidental** — R5's mitigation depends on the harness being non-generated *and* on that `go test` step being generated-baseline, so §5.0 now states and justifies both explicitly |
 | R12 | The harness itself is deleted or neutered, disabling both halves at once | **ACCEPTED — but VISIBLE, not silent (rev 5).** Requires editing non-generated tracked files (`directpush_gate_test.go` and/or the detector) in a reviewable pull-request diff; **no render can do it**. `CODEOWNERS` is deliberately **not** claimed as the mitigation here — its own header records it is advisory-only until code-owner review is required on `main`, an operator action not taken. This is strictly narrower than rev 4's R5: the failure mode moves from *silent regeneration* to *visible human/agent edit*, which is what §1 actually promises to exclude. **If a future autoharness version begins generating `tests/**`, the §5.0 invariant must be re-verified** |
 | R13 | A render reverts the rev-6 handback/discovery contract, restoring main-only discovery — a defect the **detector cannot see**, since it is neither §5.3 construct | **MITIGATED, same mechanism as R5 (rev 6).** The two per-surface harness functions carry it: `TestDirectPushGate_OrchestratorSurfaceClean` asserts the branch-specific discovery, the handback requirement, both step-4 arms, and the **absence** of the default-branch self-range literal; `TestDirectPushGate_StageAgentSurfaceClean` asserts the Step 6 emission. Both live in the non-generated `directpush_gate_test.go` and run from the **generated-baseline** `go test` step (§5.0), so a render that reverts either surface fails CI **red**. The literal-absence assertion is sound only because the corrected text states its prohibition descriptively (§6.1.2, self-match hazard; AC-B1.6) — a prohibition quoting the forbidden range would self-match and silently vacate the assertion |
+| R14 | A verification loop passes over targets that are **always present**, proving nothing — the rev-7 finding | **MITIGATED (rev 7).** Structural, not procedural: `diff-tree -r` cannot emit a directory, `cat-file -t` must print `blob`, the derived set must be non-empty, and a reported set must **equal** the commit's changed-file set. `TestDirectPushGate_OrchestratorSurfaceClean` additionally asserts the **absence** of a `git show origin/main:{path}` loop and of any directory-prefix default in the no-shipment arm, so a render or edit that restores the rev-6 form fails CI **red**. **Residual, recorded not hidden**: the derived set is scoped to `stage_head_commit`'s own changes, so a Stage session that spreads artifacts over several commits has only its **tip** commit's files checked per-file; the earlier commits are covered by the ancestry check (check 2), not by a blob read. Widening to a range form is **rejected**, not overlooked — `origin/main..{stage_head_commit}` is empty by construction post-merge, which is exactly the vacuous loop this row exists to close |
 
 **Known pre-existing defects, recorded and out of scope**: `workflow-policies.md` header
 `**Version**: 1.0.0` is stale against Amendment Log 1.24.0; Step 1.5's a–e sub-steps are lazy
@@ -1112,6 +1285,7 @@ Constitution, Maintainability, Template Integrity, Schema-CLI-Docs Coupling).
 | — | rev 4 | **PR #54 current-HEAD review, cycle 2** | 2 x P-021 C1 same-contract blockers, both resolved in rev 4 (see below) |
 | — | rev 5 | **PR #54 current-HEAD review, cycle 4** | 1 finding — R5 contradicted §1 and the feature DoD; resolved in rev 5 (see below) |
 | — | rev 6 | **PR #54 current-HEAD review, cycle 5** | 1 finding — Step 1.5's discovery could not see the Stage branch; resolved in rev 6 (see below) |
+| — | rev 7 | **PR #54 current-HEAD review, cycle 6** | 2 findings — the no-shipment arm verified directory prefixes that always exist (false pass); the session memory cited an obsolete plan revision and a nonexistent section. Both resolved in rev 7 (see below) |
 
 **Round-1 P0s (resolved in rev 2)**: missing third authorization surface `_stage.agent.md` L42;
 self-deadlocking P-010 wording (mandated "merged via PR" against Stage's "must not create, push,

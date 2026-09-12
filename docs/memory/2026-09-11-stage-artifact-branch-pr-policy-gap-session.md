@@ -55,9 +55,16 @@ deliberate → plan → harden → review → harvest pipeline. No ad hoc tracke
 
 | Path | Role |
 |---|---|
-| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum) |
-| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, revision 3, `status: reviewed` (§10a hardening, §10 Constitution Check, §12 review record) |
+| `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md` | Source document / P-003 lineage root (§8 rev-2 addendum, §9 rev-3 addendum, §10 rev-6 addendum, §11 rev-7 addendum) |
+| `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` | Implementation plan, **revision 7**, `status: reviewed` (§9 Plan hardening signals, §10 Constitution Check, §12 plan review record) |
 | `docs/memory/2026-09-11-stage-artifact-branch-pr-policy-gap-session.md` | This file |
+
+**Cross-reference currency (rev 7).** This table names the plan's **current** revision and only
+sections that exist in it. The `§10a` label it previously carried was a rev-3 heading that later
+revisions renamed to **§9 Plan hardening signals**; the plan's own front matter still carried the
+stale `§9/§10a` form and §5.3 still cited a nonexistent `§10a.1`, both corrected in rev 7. A
+session record that points at an obsolete revision and a nonexistent section is not a cosmetic
+defect — it is the artifact a future agent reads *first* to locate the authoritative contract.
 
 ## 4. Decision summary
 
@@ -623,3 +630,128 @@ Unchanged: shipment **017-S**, `queued`, 9 items. Ship starts at Step 2 (harness
 which now produces a B1 function carrying the branch-discovery assertions and a B3 function
 carrying the handback-emission assertion. Cycle budget for PR #54 is exhausted unless the operator
 authorizes another.
+
+## 14. PR #54 review remediation cycle 6 — rev 7 (operator-authorized sixth cycle)
+
+Operator authorized ONE bounded cycle scoped to the two then-unresolved threads, with an explicit
+instruction not to pre-emptively expand scope. Both were fixed; nothing else was touched.
+
+### 14.1 Findings
+
+| Thread | Comment | Target | Finding |
+|---|---|---|---|
+| `PRRT_kwDOTPuhps6hrC0c` | 3994280334 | plan L626 | The no-shipment arm iterates `git show origin/main:{path}`, but the documented default path set is **directory prefixes**. Those directories already exist on `origin/main`, so the loop can succeed without proving this run's files persisted; combined with ancestry of a fallback `HEAD`, it can report a **false pass** |
+| `PRRT_kwDOTPuhps6hrC0o` | 3994280351 | memory L59 | The artifacts table is stale — the plan is revision 6, and its hardening section is **§9**, not §10a. The record points readers at an obsolete revision and a nonexistent section |
+
+### 14.2 Both findings confirmed by execution, not by reading
+
+Neither was accepted on the reviewer's word. Both were reproduced against this repository before
+any text changed:
+
+* `git show origin/main:docs/plans/` → prints `tree origin/main:docs/plans/`, **exit 0**. The
+  directory-prefix pass is real, not theoretical.
+* `git cat-file -t origin/main:docs/plans/` → `tree`, **exit 0**; on a file → `blob`, exit 0; on an
+  absent path → exit 128. So the exit code alone cannot discriminate a file from a directory — the
+  **printed type** is the discriminator. This is why the arm switches command rather than adding a
+  guard around `show`.
+* `git diff-tree --no-commit-id --name-only -r --diff-filter=d <sha>` → blob paths only, zero
+  entries with a trailing `/`, and deletions excluded (confirmed on this branch's `HEAD`, which
+  renames a memory file: the deleted path is correctly absent from the derived set).
+* `git log origin/main..<ancestor-of-origin/main>` → **0 commits**. This is why the derived set is
+  taken from the commit's own changes rather than from a branch range: post-merge, the range form
+  is empty by construction and would re-create the vacuous loop.
+* Plan headings enumerated: the file has `## 9. Plan hardening signals` and `## 10. Constitution
+  Check`; **no `§10a` exists**. Front matter read `revision: 6` at the time of this investigation
+  (it reads `revision: 7` after this cycle's correction).
+
+### 14.3 Resolution — structural rejection, not a bigger checklist
+
+`stage_artifact_paths` is redefined as a **non-empty set of concrete repository-relative file paths
+tied to `stage_head_commit`**, never a directory list. The no-shipment arm became five ordered
+checks: commit existence, **ancestry**, derivation of a non-empty changed-file set, `VERIFY_SET`
+resolution, and a per-file `git cat-file -t` requiring exit 0 **and** output exactly `blob`
+(**readability + file-ness**). Directories, empty sets, out-of-root paths, and any mismatch with the
+commit's changed-file set are all rejected.
+
+Three deliberate choices, each rejecting a weaker alternative:
+
+1. **`cat-file -t` replaces `show` in this arm.** Both exit 0 on a tree; only `cat-file -t` names
+   the object type. Parsing `show`'s human-readable listing would be fragile in exactly the way a
+   gate must not be.
+2. **Set equality, not subset.** A subset check rejects an invented path but still accepts a
+   handback that shrinks the verified set to one always-present file — the same defect through a
+   different door.
+3. **The commit's own changed files, not a branch range.** The range form is empty by construction
+   post-merge (measured above). The tip-commit scope is sound because ancestry already proves every
+   earlier commit reached `origin/main`; the per-file check closes the different gap.
+
+Two second-order defects were found while drafting and fixed before commit, both of the
+"correct rule installed on the unreached path" family this file has now recorded three times:
+
+* **The handback commit predates the commit that carries the artifacts.** On the dirty-tree path,
+  3a *creates* the artifact commit, but `stage_head_commit` was resolved before it existed —
+  so the derivation would have read a commit that changed none of them and halted for the wrong
+  reason on the one path Step 1.5 exists to repair. Fixed by correction 5: 3a re-records
+  `stage_head_commit` and discards the stale reported paths.
+* **`stage_artifact_paths` was doing two incompatible jobs.** It was both step 1's dirtiness
+  pathspec (where directory prefixes are *correct* — step 1 runs before the commit exists) and
+  step 4's verification target (where they are fatal). That conflation is *why* directories reached
+  a loop with no way to reject them. Split: `STAGE_ARTIFACT_ROOTS` is now a **fixed constant** for
+  the pathspec and the containment allow-list; `stage_artifact_paths` is always concrete files.
+  Pinning the pathspec to the constant also closes a hole one step earlier — a handback naming one
+  narrow path could previously have shrunk the dirtiness scan and hidden uncommitted artifacts.
+
+### 14.4 Invariants explicitly preserved
+
+The shipment arm is untouched and stays byte-verbatim (AC-B1.4). The handback-resolution
+**never-halts** invariant (AC-B1.5) is intact: every new halt lives in step 4's *verification*, not
+in field defaulting — a degraded resolution now yields a set that is either concretely verifiable or
+provably empty, and an empty one fails loudly instead of passing silently. Clean-tree and
+single-worktree gates (AC-B1.9), actor ownership (Orchestrator/operator push, open, merge — never
+Stage), and P-009/P-011/P-016 are textually unchanged. Every command added is a read form
+(`diff-tree`, `cat-file`, `rev-parse`, `merge-base`) — none is a push verb and none grants a commit
+permission, so the detector's closed construct set and the fixture corpus are **not** widened.
+
+### 14.5 Stale-reference sweep (finding 2 — file-wide, not line-59-only)
+
+The cited line was the plan row of §3. A sweep of every plan-section and revision reference in this
+file found the defect had **three** instances, two of them in the plan itself — which is why the fix
+is not confined to the cited line:
+
+| Location | Was | Now |
+|---|---|---|
+| memory §3 plan row | `revision 3`, `§10a hardening` | `revision 7`, `§9 Plan hardening signals` |
+| memory §3 deliberation row | `§8`, `§9` addenda only | `§8`, `§9`, `§10`, `§11` |
+| plan front matter L18 | `see §9/§10a` | `see §9` |
+| plan §5.3 | `named in §10a.1` | `named in §5.0 and §9` |
+
+Every remaining `§N` reference in this file was re-checked against the plan's actual heading list
+and the deliberation's; all resolve.
+
+### 14.6 Surfaces reconciled
+
+| Surface | Change |
+|---|---|
+| Plan (rev 6→7) | Front matter `revision: 7` + stale `§10a` refs; rev-7 header; §3 surface rows B1/B3; §5.0 harness rows B1/B3; §6.1.1 3a re-record; §6.1.2 corrections 1, 2, 4, 5 + rationale; AC-B1.5/B1.7/B1.8 strengthened, AC-B1.10/AC-B1.11 added; §6.3 + AC-B3.5; §7.2 AC-C2.4; §8 verification commands; §11 R14; §12 rev-7 record |
+| `018.007-T` (B1) | Description AXIS 2 addendum (corrections 8–10); AC-B1.5/B1.7/B1.8 strengthened, AC-B1.10/AC-B1.11 added in **both** renderings; rev-7 reconciliation note. Size **unchanged** (M) |
+| `018.009-T` (B3) | Description item (5); AC-B3.5 extended in both renderings; rev-7 note. Size **unchanged** (S) |
+| `018.011-T` (C2) | AC-C2.4 extended in both renderings (shape agreement, not name-only); rev-7 note. Remains plan §7.2 **verbatim** |
+| `018-F` | DoD: new concrete-file bullet; rev-6 bullet corrected (pathspec constant, arm text); execution-order line |
+| Deliberation | §11 Revision 7 addendum — the always-passing-verification lesson, generalized |
+| `017-S` | **Unchanged** — one shipment, 9 items, order A1→A2→A3→{B1,B2,B3}→C1→C2 |
+| `018.004-T`, `018.005-T`, `018.006-T`, `018.008-T`, `018.010-T` | **Untouched** |
+
+### 14.7 Validation (Stage scope — no Go build/test, per the Stage role boundary)
+
+Recorded in the cycle-6 reply on each thread. AC-ID parity re-swept to an exact bijection;
+dependency edges, shipment membership and order unchanged; markdownlint clean on changed markdown;
+backlog sync and doctor clean; no stale plan-section reference remains in this file. Go
+build/test deliberately **not** run — Ship's responsibility (P-010).
+
+### 14.8 Handoff
+
+Unchanged: shipment **017-S**, `queued`, 9 items, Ship starts at Step 2 (harness-architect, H0).
+The B1 harness function now additionally asserts the **absence** of the `git show origin/main:{path}`
+loop and of any directory-prefix default in the no-shipment arm. Per the operator's standing
+instruction, if this cycle does not achieve Copilot convergence the next step is an Orchestrator-run
+adversarial review round, **not** another self-directed Stage cycle.
