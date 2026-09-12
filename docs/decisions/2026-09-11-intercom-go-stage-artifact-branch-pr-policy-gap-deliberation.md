@@ -18,7 +18,7 @@ governs: stash 638A410B
   became false once PR #54 was opened — a session record that describes a state the repository has
   left is read as current by the next agent.)
 - **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8), §13 (rev 9),
-  §14 (rev 10)
+  §14 (rev 10), §15 (rev 11), §16 (rev 12)
 - **Evidence commit**: `fdff9e4` — a Stage no-shipment decision artifact pushed directly to
   `main`. Treated as **historical evidence only**; not reverted, not rewritten.
 
@@ -1020,12 +1020,21 @@ Four properties make it a decision rather than a detail:
    malformed JSON, unknown phase, rollback, reordering, skipped prerequisite, duplicate/unknown ID
    — against a `t.TempDir()` scratch copy, asserting each **fails** rather than skips. An unguarded
    state file would be a silent off-switch for the whole harness, so it is guarded like one.
+   **[Rev-12 extension]** the count is now **ten**: §16.2 adds the three witness cases
+   (witness-only, terminal-manifest-only, malformed/mismatched witness), because the terminal claim
+   is carried by **two** files from rev 12 onward.
 
 **Ordering correction found while specifying this.** The first draft validated `completed` as a
-strict **prefix** of the declared order. Reading the `blocks` edges back from `.backlogit/` showed
+strict **prefix** of the declared order. Reading the recorded dependency edges back from
+`.backlogit/` showed
 B1, B2, and B3 each depend **only** on A3 and have **no edge among themselves**, so Ship may
 legitimately finish B2 first. A prefix rule would have deadlocked that legal order — B2's surface
-present while its ID was barred from `completed`, which MP5 would then correctly flag as a rollback.
+present while its ID was not yet in `completed`. **[Rev-12 correction]** the rev-11 sentence
+continued "…which MP5 would then correctly flag as a rollback", and that clause was **wrong** and is
+**withdrawn**: an incomplete task's surface being present is a **legal** mid-shipment state, not a
+rollback, and MP5's treating it as one is exactly the defect §16.1 retires MP5 for. Direction note
+(rev 12): backlogit stores these edges as `item → depends-on` under the type label `blocks`, so the
+recorded edge reads **dependent → prerequisite**; `gateDeps[X]` is therefore **X's prerequisites**.
 The rule is therefore an **order-preserving subsequence that is closed under the dependency graph**:
 it admits exactly the orders the graph admits, still rejects reordering, and still rejects a skipped
 prerequisite. Recorded rather than silently repaired, per the rev-6/9/10 precedent — the defect
@@ -1072,3 +1081,142 @@ touches. The deliberation now carries three disciplines: *name the surface that 
 consumed value* (§12.2, §13.2, §14.2); *name the operation that discharges each MUST, and confirm it
 can observe what the MUST is about* (§14.1); and, new here, *name what activates each guard, and
 confirm the activator is disjoint from the subject* (§15.1).
+
+---
+
+## 16. Revision 12 addendum — a guard that fires on a legal state, and a claim stronger than its evidence
+
+Operator-directed **post-remediation re-review** of the rev-11 remediation on PR #54 (anchor
+**GPT-5.6 Sol**, with **GPT-5.4-mini**, **Claude Sonnet 5**, and **Claude Opus 5**; **4/4 usable**,
+**no route degradation**). Three **P1 residuals** plus a set of direct consistency defects. All are
+**same-contract completion** under P-021: each corrects a mechanism this deliberation already chose,
+and none reopens an option. **Option 2 is unchanged; D1–D7 are unchanged and none is reversed.**
+
+### 16.1 Withdrawn: "inverting the surface probes into a failure-only role makes them safe"
+
+§15.3 removed the predicate→activation edge and, in MP5, **kept the probes** on the reasoning that a
+probe used only to **fail** cannot disarm anything. That reasoning was half right and wholly
+insufficient. A probe used only to fail cannot produce a **false green** — but it can produce a
+**false red**, and a false red on a legal state is not a lesser defect here: it is the **deadlock
+this entire mechanism exists to prevent**.
+
+Concretely: MP5 asserted that any task **outside** `completed` must have its surface **absent**.
+C2's surface probe was C1's old predicate — **the job-`lint` step** — and **C1 creates that step**.
+So in the window after C1 completes and before C2 starts, a window every execution of this shipment
+must pass through, C2's probe read `true`, MP5 failed inside A1, and `go test ./...` went red. Ship's
+Step 4.3 runs the full suite after every task, so the shipment wedges at C1 — the same deadlock
+rev 10 introduced §5.0.1 to remove and rev 11 claimed to have kept removed.
+
+The class generalizes past this instance, which is why it is recorded rather than patched. Rev 11
+named the discipline *"name what activates each guard, and confirm the activator is disjoint from the
+subject"* and then applied it to **activation only**. The prohibited coupling was never about
+activation specifically; it was about **any** dependence of a guard's verdict on the surface it
+guards. Pointed at activation, it disarms the guard; pointed at failure, it misfires the guard. The
+corrected discipline is symmetric: **no part of a guard's verdict — whether it runs, or whether it
+fails — may be derived from the subject it guards.**
+
+**Nothing is lost by retiring MP5**, which is the reason retirement beats repair. Its job was
+rollback detection, and rollback detection was already covered from two directions: a **completed**
+task's surface regression is caught by that task's **own substantive assertion**, which default mode
+runs from its completion onward (MP2's "a post-landing regression in *any* surface is a failure"
+depends on exactly this); and manifest corruption or rewind is caught by MP1. What MP5 added on top
+was a rule about **incomplete** tasks — and that rule was simply **wrong**, because an incomplete
+task legitimately may have prerequisites, and even fragments of its surface, already present. It was
+asserting a property the design never had.
+
+### 16.2 A check inside the thing it checks cannot witness its own absence
+
+MP2 — terminal completeness — lives **inside C2**, and C2's default-mode activation is read from the
+**same manifest MP2 validates**. §15.3 treated the manifest as bounded because MP1 fails closed on
+every *inconsistent* state. The gap is the **consistent** one: rewind `phase`, `completed`, and
+`terminal` **together** and the result is a valid `build` manifest. MP1 passes it, C2 **skips** as a
+not-yet-started task, and MP2 — the check that would have objected — **never runs**. The terminal
+claim is withdrawn and nothing fires.
+
+This is the §15.1 shape one level up, and worth naming as such: there, a guard's *activation*
+depended on its subject; here, a guard's *execution* depends on the same state it exists to
+validate. A check that can be skipped by the very edit it detects is not a check.
+
+**Decision — one independent witness, checked before activation.** A second tracked, non-generated
+file, `tests/integration/testdata/directpush-gate/terminal-witness.json`, **independent of the main
+manifest**, carrying a fixed schema and version, the contract identifier, the exact terminal task
+set, and a digest over that set — and **no timestamps or environment-specific data**, so it is
+byte-reproducible from the contract alone and cannot drift between a local run and CI. **H0 requires
+it absent; every legitimate pre-C2 build state requires it absent.** C2's completion writes **the
+witness first**, then **atomically replaces** the manifest with the exact terminal state; the tests
+are green only when the two **agree**.
+
+The cross-check (**MP6**) runs in `gate()` **before any activation decision**, which is the property
+that closes §16.2's gap: a present witness **forces C2 active** and requires a terminal manifest, and
+a terminal manifest requires a valid witness. Rolling back **only** the manifest fails; rolling back
+**only** the witness fails. Both are loud.
+
+**The residual is stated, not disguised.** Rolling back or deleting **both** files in one change
+produces a state that is, to a stateless validator, **identical to legitimate pre-C2 build** —
+because that is exactly what it is. No runtime check here detects it, and claiming otherwise would
+be false: a validator that reads only the current tree has no history to compare against. It is
+caught by **diff and review** of two tracked, non-generated files, not by runtime history — the
+R12/R21 visible-edit boundary, recorded as **R22**. Building a runtime history mechanism (signed
+log, append-only ledger, CI-side cache) was **rejected**: it is a materially larger control than
+this release unit's branch-policy contract warrants, and it would move state outside the render-proof
+`tests/**` boundary the whole design rests on.
+
+**Rejected.** (i) *Putting the witness inside `harness-state.json` as another field* — a single-file
+rewrite would then move both halves of the terminal claim at once, which is the defect. (ii) *Making
+the witness carry a timestamp or commit SHA* — environment-specific data creates diff churn, makes
+the file non-reproducible, and invites "it differs locally" to be normalized into "ignore the
+mismatch". (iii) *Having C2 write the manifest first* — the crash window would then leave a terminal
+manifest with no witness; witness-first is the ordering whose partial state is the loud one, and it
+guarantees the file `gate()` reads on every call is never terminal without its witness.
+
+### 16.3 Withdrawn: "the race command is the generated baseline"
+
+From §12 onward the deliberation and plan asserted that the harness survives regeneration because it
+runs from the **generated-baseline** step `go test -race -mod=readonly ./...`. The installed
+`.github/workflows/ci.yml` **does** run that command in job `expensive` / step `Test (race)` — that
+part was verified and remains true. What was never verified is the **provenance** claim: the
+generation template emits `{{TEST_COMMAND}}`, and this workspace's recorded render input
+(`.autoharness/harness-manifest.yaml`, corroborated by `.autoharness/workspace-profile.yaml`) is
+`go test ./...`. The `-race` and `-mod=readonly` flags are therefore **local to the installed
+artifact**, not something a render reproduces.
+
+The defect is not that the mitigation fails — it does not. It is that the mitigation was **claimed at
+a strength its evidence never supported**, which is the §15.1(b) class again in a third form: an
+**observed** value promoted to a **guaranteed** one. The correction restates the guarantee at the
+strength it actually has — R5 needs **a full-suite invocation including `./...` that runs the
+integration harness**, and the recorded baseline does provide that — and **adds the check the
+overstatement made look unnecessary**: **post-render verification of the rendered full-suite
+command** (plan AC-C1.7), written into the LOCAL DIVERGENCE ledger. If a future render narrows the
+package pattern, the harness stops running and R5 reverts to open; that residual is **R23**.
+
+The discipline, which is a specialization of §12.2's producer/consumer rule to *provenance*: **when
+a control rests on an observed value, name where that value comes from, and claim only what the
+producer of it guarantees.** An observed command is evidence about the present; a template
+substitution is a claim about the future, and the two are not interchangeable.
+
+### 16.4 D3 is again NOT extended
+
+None of the three findings is a D3 violation shape — none is a push to the default branch and none
+is a permission to commit on one — so the closed construct set and the 14-fixture corpus stay as they
+are (the §10.4 / §11.4 / §12.4 / §13.4 / §14.4 / §15.5 position, unchanged for the seventh time).
+Rejection is carried by the existing per-surface harness assertions plus the manifest and witness
+validators.
+
+### 16.5 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged and none is reversed. **No** foundational contract is
+amended: `harness-architect`'s skill file, P-002, P-004, and `_ship.agent.md` Step 2 and Step 4.3 all
+stay exactly as installed. No task, sub-epic, fixture, harness **function**, shipment, or dependency
+edge is added; the only new file is written by C2's existing completion transaction, not by a new
+task. Shipment `017-S` remains one shipment of nine items and no task is re-sized. One
+mutation-proof check is **retired** (MP5) and one **added** (MP6); the numbering is deliberately
+**not** compacted, because renumbering across six artifacts is churn and would rewrite the
+identifiers under which the retired check was reviewed.
+
+The deliberation now carries four disciplines: *name the surface that produces each consumed value*
+(§12.2, §13.2, §14.2); *name the operation that discharges each MUST, and confirm it can observe what
+the MUST is about* (§14.1); *name what activates each guard, and confirm the activator is disjoint
+from the subject* (§15.1) — **generalized here** to *no part of a guard's verdict, activation or
+failure, may derive from its own subject* (§16.1), with the corollary that *a check that the
+defect can skip is not a check* (§16.2); and, new here, *when a control rests on an observed value,
+name its producer and claim only what that producer guarantees* (§16.3).
