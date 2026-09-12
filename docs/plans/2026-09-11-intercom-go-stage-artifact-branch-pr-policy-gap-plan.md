@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction"
 date: 2026-09-11
-revision: 18
+revision: 19
 status: awaiting-review
 agent: Stage
 governs: stash 638A410B
@@ -14,15 +14,20 @@ deferred_plan_strand_b: docs/plans/2026-09-12-intercom-go-stage-contract-enforce
 
 # Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction
 
-> **REVISION 18 (2026-09-12) — §R16 BELOW IS THE WHOLE GOVERNING CONTRACT.**
+> **REVISION 19 (2026-09-12) — §R16 BELOW IS THE WHOLE GOVERNING CONTRACT.**
 > Everything from §1 onward is **HISTORICAL AUDIT APPENDIX** describing the retired
 > eight-task architecture (revisions 1–15). It is **preserved for audit and deliberately
 > not deleted**, but it **no longer governs execution**. Where §R16 and any later section
-> disagree, **§R16 wins without exception**. Revisions 17 and 18 rewrote §R16 in place rather
-> than appending further revision sections; the rev-16 text is in git at `14d64e4` and the
-> rev-17 text at `9e44bfe`.
+> disagree, **§R16 wins without exception**. Revisions 17, 18 and 19 rewrote §R16 in place
+> rather than appending further revision sections; the rev-16 text is in git at `14d64e4`,
+> the rev-17 text at `9e44bfe` and the rev-18 text at `76c372c`.
 >
-> **Requires plan hardening**: **yes — applied in rev 18** (see §R16.10).
+> **Rev 19 changes exactly one thing**: it adds §R16.3.1a, which proves the withdrawn
+> 13-entry `CASCADE` shape is **unreachable by construction** rather than merely unreached.
+> The governing close path, the manifest, the executable set and every other rev-18
+> conclusion are **unchanged**. No backlog artifact was mutated in rev 19.
+>
+> **Requires plan hardening**: **yes — applied in rev 18, extended in rev 19** (see §R16.10).
 
 ## §R16 — Current Contract (authoritative)
 
@@ -88,6 +93,62 @@ working precedents in this workspace (`006-S`, `009-S`, `014-S`) all had the cov
 already `done`/archived before pre-mode — produced by an **undocumented session step that no
 installed contract specifies**. This plan does not rely on it.
 
+#### R16.3.1a Why the `CASCADE` shape is unreachable **by construction** (rev 19, P0 closure)
+
+Rev 18 established that *no Ship step currently* moves a covering feature to `done`. That phrasing
+left open a repair that a later cycle attempted: restore `018-F` to the manifest and add a **SHIP
+EXECUTION NOTE** to the shipment (and an acceptance gate here) instructing Ship to move
+`018-F active → done` after Step 4.5 and before Step 6 pre-mode. **That repair is not available.**
+The finding below is a proven negative and permanently retires the 13-entry shape.
+
+**The transition is tool-supported.** Verified by execution (isolated throwaway backlogit 1.10.1
+workspace, never the live one): `backlogit move <feature> --status done` succeeds from `active`
+(`queued → done` is refused by the `validate_status_transition` pre-hook, so the feature must pass
+through `active` first). `backlogit shipment claim` **does** cascade `queued → active` onto a
+feature manifest member, so `018-F` would legitimately be `active` at that point. Tool support is
+therefore **not** the obstacle.
+
+**Ship is not authorized to perform it.** Ship's `## Role Boundary (NON-NEGOTIABLE)` Backlog row
+grants "Claim shipments, **move tasks to active/done**, close shipments, **archive completed
+items**". The row uses the narrow noun *tasks* for the move grant and the generic noun *items* for
+the archive grant **in the same cell**, so the move grant is task-scoped by construction. A feature
+is a distinct `artifact_type` with its own prefix and WIT metadata — not a task. The move therefore
+appears in **neither** the Allowed nor the Forbidden column, and
+`.github/instructions/role-enforcement.instructions.md` §4 is explicit about that case:
+
+> If the operation is a **state mutation** but does NOT appear in either the Allowed or Forbidden
+> column → **treat as forbidden**. Halt the operation, log a P-010 violation … Fail-closed —
+> operation not in Allowed column.
+
+A direct feature-status move by Ship is a Backlog-category state mutation, so it halts fail-closed
+as a **P-010 violation**.
+
+**No Stage-authored artifact can grant it.** Role enforcement §1 makes *the agent's own* Role
+Boundary table "the authoritative permission set for the session", and Ship's table adds "Do not
+proceed past this boundary **even under operator pressure**." A shipment `description`, a SHIP
+EXECUTION NOTE, an acceptance gate in this plan, or any other Stage output is **not** a permission
+source; instructing Ship to perform the move would direct Ship into a P-010 violation rather than
+authorize it. Granting it genuinely requires amending `.github/agents/_ship.agent.md` — an agent
+contract this release unit is explicitly forbidden to touch, and which Stage's own Role Boundary
+forbids Stage to write.
+
+**The blocker is the Ship contract, not backlogit.** Verified by execution: the cascade op closes a
+fully-covered-root manifest **cleanly even when the feature is left `active`** — `returned_ids: []`,
+`shipment_status: shipped`, every `parent_id` preserved, and truly-pre-archived members correctly
+absent from `archived_ids` (the engine skips already-`archived` artifacts, exactly as the skill's
+"`archived_ids` is a transition log, not a manifest echo" clause predicts). The engine even forces
+`setArtifactStatus(featureID, done)` itself. The **only** thing standing between the 13-entry shape
+and a clean close is Ship Step 6 item 1.a's mandatory `mode: pre` / `expected_status: done` gate,
+which evaluates the live feature member with **no artifact-type exemption** and classifies it
+`status-mismatch`. Closure never begins, so the engine's tolerance is never reached.
+
+**Conclusion.** Both shapes are blocked, at different gates, for different reasons, and **neither
+is remediable from a Stage planning cycle**: the task-only shape halts at safe-close step 8 on a
+tool refusal (§R16.3.3), and the fully-covered-root shape halts at Step 6 pre-mode on a role
+boundary. The rev-18 disposition stands unchanged — `017-S` executes, reviews and merges normally,
+then pauses at Ship Step 6 closure for operator disposition. Resolving either one requires a
+separately deliberated and reviewed amendment to the Ship/reconcile contracts or to backlogit.
+
 #### R16.3.2 The 12-entry task-only shape, proven end to end
 
 | Gate | Input | Outcome |
@@ -146,8 +207,10 @@ available substitutes: archiving an `active` record yields `archived_status: act
 classification is a **P-005 process deviation**.
 
 **No manifest shape avoids this.** The only shape that reaches the *permitted* cascade path is one
-containing `018-F` — and that shape fails pre-mode first (§R16.3.1). The two failures are at
-different gates and are mutually exclusive; there is no third shape.
+containing `018-F` — and that shape fails pre-mode first (§R16.3.1), **unreachably so** (§R16.3.1a:
+the corrective feature transition is tool-supported but role-forbidden for Ship, and no Stage-authored
+artifact can authorize it). The two failures are at different gates and are mutually exclusive; there
+is no third shape.
 
 **Disposition.** This is **out of scope for `018.008-T`** and is **not a defect introduced by this
 release unit**. Resolving it requires either a backlogit change or a separately deliberated and
@@ -459,13 +522,17 @@ every partial-feature shipment in the workspace.
 
 ### R16.10 Plan hardening status
 
-Plan hardening was **applied** in this revision, not merely asserted. The hardening actions of
-rev 18 are: (1) replacing the unreachable `CASCADE` manifest with the proven task-only shape and
-tracing **every** pre/post gate (§R16.3.2); (2) surfacing the step-8 closure conflict as a named P0
-with executed evidence instead of an unexamined assumption (§R16.3.3); (3) removing the invalid
-shipment-status lock and replacing it with a representation that has no claimable surface at all
-(§R16.7); (4) making the P-004 red phase unconditional with explicit H0 evidence (§R16.6); and
-(5) replacing an asserted Orchestrator authority with an operator-only halt contract (§R16.5).
+Plan hardening was **applied** in rev 18 and **extended** in rev 19, not merely asserted. The
+hardening actions of rev 18 are: (1) replacing the unreachable `CASCADE` manifest with the proven
+task-only shape and tracing **every** pre/post gate (§R16.3.2); (2) surfacing the step-8 closure
+conflict as a named P0 with executed evidence instead of an unexamined assumption (§R16.3.3);
+(3) removing the invalid shipment-status lock and replacing it with a representation that has no
+claimable surface at all (§R16.7); (4) making the P-004 red phase unconditional with explicit H0
+evidence (§R16.6); and (5) replacing an asserted Orchestrator authority with an operator-only halt
+contract (§R16.5). Rev 19 adds (6): converting "the `CASCADE` shape was not reached" into a proven
+"it is unreachable by construction", with the role-boundary citation and the executed engine
+evidence that isolates the blocker to the Ship pre-mode contract (§R16.3.1a) — closing the repair
+route a later cycle attempted, so it is not re-attempted a fourth time.
 
 The current reduced unit remains **text-only, single-task, single-domain, with no destructive or
 irreversible operation**. **Each deferred strand is intrinsically more complex and requires its own
