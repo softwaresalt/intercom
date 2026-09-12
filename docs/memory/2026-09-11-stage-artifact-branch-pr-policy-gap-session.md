@@ -440,6 +440,14 @@ gate without inverting its contract. `ci-topology-check.sh` is itself generated 
 
 ### 12.3 Resolution — objective preserved, not narrowed
 
+> **[Rev-13 label — NON-NORMATIVE HISTORICAL RECORD.]** This subsection records the **rev-5**
+> reasoning as it stood. Its phrase "runs from a generated-baseline invocation" was **superseded at
+> rev 12** and is retained only as archaeology. The normative statement is: the **observed installed**
+> command is `go test -race -mod=readonly ./...` (job `expensive`, step `Test (race)`); the
+> **template** emits `{{TEST_COMMAND}}`; the **recorded render input** is `go test ./...`; and the
+> guarantee is a **rendered full-suite `./...` invocation that includes the integration harness**,
+> with **AC-C1.7** post-render verification. See §19.3 and plan §5.0 "Invocation provenance".
+
 The regeneration-resistant path **already existed** in the release unit but was never claimed: the
 §5.0 Go harness is non-generated and runs from a generated-baseline invocation. Rev 5 makes it
 explicit, load-bearing, and self-verifying. Two criteria added (no new file/workflow/CI step/ledger
@@ -1403,7 +1411,13 @@ Stage does not push, open, update, or comment on PR #54, and does **not** reply 
 comments `3994928139`, `3994928153`, or `3994928163`. Reply text updated to rev 12 is **prepared for
 the operator or Orchestrator to post**; preparing it is not posting it. The Orchestrator owns every
 GitHub operation on this branch.
-## 20. Final session state — BLOCKED handoff (awaiting operator disposition)
+## 20. Post-rev-12 session state — BLOCKED handoff (operator disposition RECEIVED)
+
+> **[STATUS UPDATE — rev 13.]** This section records the state **as of the end of the rev-12
+> session**, when it was BLOCKED. The disposition it requested has since been **received**: the
+> operator chose **option 1** of §20.5. See **§21** for the resulting rev-13 pass and the current
+> state. This section is retained unaltered below as the record of what was handed off; it is **no
+> longer** the live status.
 
 ### 20.1 Revision / push state
 
@@ -1434,14 +1448,18 @@ GitHub operation on this branch.
 - Shipment **`017-S` remains queued/unclaimed**. **Ship was not invoked.** No merge occurred, and
   no direct push to `main` occurred at any point during remediation.
 
-### 20.5 Required operator disposition
+### 20.5 Required operator disposition — RESOLVED
 
-The operator must explicitly choose one of:
+The operator was asked to explicitly choose one of:
 
 1. **Authorize one additional Stage remediation + adversarial review cycle**, or
 2. **Explicitly accept the named residual risks in §20.2 and authorize pushing revs 11-12.**
 
 In-scope findings **cannot be silently deferred** solely because the cycle budget is exhausted.
+
+**DISPOSITION RECEIVED — option 1.** The operator **explicitly authorized ONE additional Stage
+remediation plus adversarial re-review cycle**. That authorization is **consumed** by the rev-13
+pass recorded in **§21**. No residual was accepted under option 2, and none was silently deferred.
 
 ### 20.6 Compaction scan
 
@@ -1450,4 +1468,66 @@ In-scope findings **cannot be silently deferred** solely because the cycle budge
 - **Zero** artifacts older than 14 days; **no done features indexed**.
 - Result: **no compaction candidates**; all active artifacts preserved.
 
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+## 21. Revision 13 — operator-authorized final remediation (CURRENT STATE)
+
+### 21.1 Authorization
+
+The operator **explicitly authorized ONE additional Stage remediation plus adversarial re-review
+cycle** (§20.5, option 1), after the rev-12 cycle cap was reached at `cycles_run: 2` with six
+residuals outstanding. This section records that single authorized pass.
+
+**The authorization is CONSUMED by this pass.** No further remediation cycle is implied. The
+**adversarial re-review it enables has NOT been performed** — Stage did not review its own
+remediation, and nothing here claims a re-review outcome.
+
+### 21.2 The six capped residuals — all remediated
+
+| # | Conf. | Sev. | Residual | Disposition |
+|---|---|---|---|---|
+| 1 | MEDIUM | P1 | Targeted selector precedence vs. terminal witness activation | **FIXED** — `gate()` split into mode-independent **Stage 1 integrity** (MP1 + MP6 validation) and mode-dependent **Stage 2 activation** where a valid `-gatetask` has **activation precedence**. Witness integrity may still fail a targeted invocation; witness presence may no longer activate unselected bodies. Default mode unchanged |
+| 2 | LOW | P1 | H0 harness eligibility with dependency-blocked tasks | **RESOLVED AGAINST THE INSTALLED CONTRACT, UNCHANGED** — Ship Step 2 selects the full `queued` set up front and halts unless all carry `harness-ready`; Step 3 builds the dependency-ordered queue. Dependencies gate claim/execution, not harness generation. Set-equality check added to AC-C2.11 point 1. No permission invented |
+| 3 | LOW | P1 | Control-state input exemption wording | **FIXED, NARROWLY** — invariant scoped to **substantive surfaces**; manifest and witness are expressly allowed/required MP1/MP6 inputs, bounded by a three-part test, not a carve-out list |
+| 4 | LOW | P1 | Plan/task AC-C1 parity drift | **FIXED** — one canonical block written **byte-identically** into plan §7.1 and `018.010-T` (7,197 bytes each); §7.2 ↔ `018.011-T` re-verified (19,273 bytes each) |
+| 5 | LOW | P1 | Vacuous terminal lint-removal evidence | **FIXED** — §5.0.2 point 7 rewritten as a **default-mode** run against a copied terminal-state fixture under `t.TempDir()`, asserting C1 failure **and** C2 execution by test-event name. Targeted form retained as point **7a**, selector evidence only |
+| 6 | LOW | P2 | Residual CI provenance overstatement (§6.3.2) | **FIXED** — exact four-part distinction applied: observed installed command / template token / recorded render input / guaranteed full-suite `./...` invariant with AC-C1.7 post-render verification |
+
+### 21.3 Invariants re-verified, not assumed
+
+Valid manifest states stay **exhaustive at exactly three**; **MP5 stays RETIRED** and
+un-renumbered; **witness-first then atomic manifest transition** preserved; the **coordinated
+two-file rollback residual (R22)** remains honest and unclaimed; **fail-closed** malformed-state
+behaviour preserved; **literal 8/8 H0 red phase** preserved; **default full-suite green task
+boundaries** preserved; **dependency-closed B-task ordering** (subsequence, not prefix) preserved;
+**live 3a / 3e-absence** references preserved.
+
+### 21.4 Scope and sizing
+
+No new task, sub-epic, fixture, harness function, file, CI step, ledger entry, CODEOWNERS line,
+policy ID, shipment, or dependency edge. **No new acceptance criterion** — six clarified in place
+(AC-C1.3, AC-C1.6, AC-C2.7, AC-C2.9, AC-C2.10, AC-C2.11). **No task re-sized**: every change
+concerns the **mode** an assertion runs in or the **form** of its evidence, never the work a task
+performs. Shipment `017-S` unchanged — 9 items, dependency order A1→A2→A3→{B1,B2,B3}→C1→C2.
+
+### 21.5 Pipeline and PR state — UNCHANGED by this pass
+
+- Shipment **`017-S` remains queued/unclaimed**. **Ship was not invoked.**
+- **No push occurred.** Remote PR #54 HEAD is still `8999867` (**rev 10**); revs **11, 12, 13**
+  are local-only on `chore/stage-pipeline-policy-gap`.
+- PR #54 was **not** edited, commented on, reviewed, or merged. Threads
+  `PRRT_kwDOTPuhps6hstWa`, `PRRT_kwDOTPuhps6hstWg`, `PRRT_kwDOTPuhps6hstWn` remain **unresolved**.
+- **No direct push to `main`** occurred at any point.
+
+### 21.6 Next action — PENDING
+
+**The one authorized adversarial re-review has not been run.** It is the next action and it is
+**pending**. Stage must not perform it. Until it completes, the correct status of this release unit
+is *remediated, re-review pending* — **not** *cleared*.
+
+### 21.7 Validation performed (Stage scope — no Go build/test, per the Stage role boundary)
+
+- Plan §7.1 ↔ `018.010-T` byte parity: **PASS** (7,197 = 7,197).
+- Plan §7.2 ↔ `018.011-T` byte parity: **PASS** (19,273 = 19,273).
+- AC-ID bijection: **PASS**.
+- `markdownlint`, `backlogit sync` / `doctor`, shipment membership and dependency graph, clean
+  tree: recorded in the session summary.

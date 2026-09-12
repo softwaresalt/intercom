@@ -1220,3 +1220,161 @@ from the subject* (§15.1) — **generalized here** to *no part of a guard's ver
 failure, may derive from its own subject* (§16.1), with the corollary that *a check that the
 defect can skip is not a check* (§16.2); and, new here, *when a control rests on an observed value,
 name its producer and claim only what that producer guarantees* (§16.3).
+
+## 17. Revision 13 addendum — a precedence read off a table, and four residuals the cap left open
+
+**Authorization.** The rev-12 session ended **BLOCKED**: the adversarial cycle cap was reached at
+`cycles_run: 2` with six residuals outstanding and none silently deferrable. The operator chose
+option 1 of memory §20.5 and **explicitly authorized ONE additional Stage remediation plus
+adversarial re-review cycle**. This addendum records that single authorized pass. The authorization
+is **consumed** here; the re-review it enables has **not** been run by Stage, and nothing below
+claims its outcome.
+
+### 17.1 Withdrawn: "stating the witness rule and the selector rule in one table is sufficient"
+
+Rev 12 added MP6 and wrote its consequences into the same flat activation table that already
+carried the `-gatetask` rows. The witness row — "`C2` is **forced active**; all eight activate" —
+was placed **before** the selector rows and carried **no mode qualifier**. Every individual
+statement in that table was true of the mode its author had in mind. The table as a whole was not,
+because a normative table is read **sequentially**: the first matching row wins, and in terminal
+state the witness row matched **every** invocation, targeted ones included.
+
+The consequence was a direct contradiction with four criteria the same revision had just written.
+MP3 says selector skips of the seven non-selected functions "are expected in targeted mode in
+**every** phase". AC-C2.7's rev-12 qualification, AC-C2.9's targeted clause, and AC-C2.11's
+evidence rules all require exactly the selected test to run. Under the table as written,
+`-gatetask=C1` in terminal state activated all eight bodies.
+
+This is a failure mode worth naming because it is **not** a wrong claim — it is a **missing
+precedence**. Both rules were correct; nothing said which governed when they overlapped. Prose that
+enumerates rules without ordering them is under-specified in exactly the way an implementer cannot
+detect, because each sentence reads true in isolation.
+
+**Decision — two explicitly ordered stages, and precedence stated as a rule rather than implied by
+row order.** `gate()` is specified as:
+
+1. **Stage 1 — integrity. Mode-independent.** MP1 manifest validity and MP6 witness/manifest
+   cross-agreement. Fails closed on **every** invocation, targeted or default, before any activation
+   decision is taken. Nothing in this stage activates anything.
+2. **Stage 2 — activation. Mode-dependent.** A valid `-gatetask` selector has **activation
+   precedence** over every default-mode rule, **including MP6's forcing clause**. Default mode is
+   unchanged: `red` and `terminal` activate all eight, `build` activates the completed set, and a
+   valid witness forces `C2` active.
+
+**Why this subtracts no detection, which is the whole question.** MP6 was added at rev 12 to close
+one specific hole: a self-consistent manifest rewind letting C2 skip past MP2. That hole is closed
+by MP6's **integrity** half — *witness present ⇒ manifest terminal; manifest terminal ⇒ valid
+witness* — which now lives in Stage 1 and is **mode-independent**. A targeted run against a rewound
+or mismatched state still fails, loudly, before Stage 2 is reached. The **forcing** half was always
+belt-and-braces over the `terminal` activation row, never the detection mechanism. Scoping it to
+default mode therefore removes a contradiction and removes nothing else.
+
+The discipline, and it is a new one: **when two rules can match the same invocation, state which
+governs. Row order in a table is not a specification of precedence — it is an accident of
+drafting.**
+
+### 17.2 The independence invariant had swallowed its own instruments
+
+§16.1 generalized the rule to *no part of a guard's verdict, activation or failure, may derive from
+its own subject*. Read strictly — and a NON-NEGOTIABLE invariant must be read strictly — that
+forbids MP1 from reading the manifest and MP6 from reading the witness, because both are inputs the
+checks derive verdicts from. The invariant, stated at full generality, prohibited the mechanism it
+was written to protect.
+
+**Decision — narrow the invariant to substantive surfaces, and bound the exemption with a test
+rather than a list.** The rule now reads: no activation and no gate-level failure may derive from a
+**SUBSTANTIVE SURFACE** that the same test asserts on — agent, policy, workflow, or script
+behaviour. The **dedicated harness control-state inputs** — the validated manifest and the terminal
+witness — are **allowed and required** inputs to MP1 and MP6.
+
+The exemption is deliberately **not** a carve-out list, because §15.3 already rejected exempting
+C1/C2 by name rather than closing the class. It is a three-part test: a file qualifies only if it is
+(a) authored by the harness for the harness, (b) never the subject of any substantive assertion, and
+(c) covered by its own integrity proof. The discriminating property is the **failure direction**: a
+missing or malformed control-state input **fails all eight** functions, whereas a missing job-`lint`
+step under the rev-10 design **silently skipped** the very function that existed to notice it. A
+control-state input can never self-disable its own check; a substantive surface can. That asymmetry
+is what makes the exemption safe, and it is why nothing else may be added to the exempt column.
+
+### 17.3 Evidence that could not have failed
+
+§5.0.2 point 7 asked for proof that C1 and C2 stay active from manifest state when the job-`lint`
+step is removed — the R5 pair, the single most load-bearing observation in the plan. The recorded
+command was `-gatetask=C1`.
+
+Targeted mode activates the selected function **by construction**. The observation therefore could
+not fail for the reason it was supposed to test: it would have passed identically under the
+**rev-10 self-disarming design** that R5 exists to exclude. It also never invoked C2, so "both
+halves live" rested on nothing at all. This is the §14.1 shape — *name the operation that discharges
+each MUST, and confirm it can observe what the MUST is about* — applied to evidence rather than to a
+contract clause, and it is the second time in this deliberation that a check was written in a mode
+where its own failure was unreachable.
+
+**Decision — the observation moves to default mode, against a copied fixture.** Point 7 is now an
+**unselected** run against a **copied terminal-state repository fixture** under `t.TempDir()`, with
+the real tree never mutated and `git status --porcelain` empty either side, asserting **by
+test-event name** that `TestDirectPushGate_CIWiringIsBlocking` **fails for the missing lint step**
+and that `TestDirectPushGate_FullCorpusClean` **executes** rather than skipping. The fixture's
+manifest and witness must stay **valid and in agreement**, or Stage 1's integrity gate fails the run
+and the observation reverts to vacuous for a second, different reason — a constraint worth writing
+down because it is the obvious way to get the fixture wrong.
+
+The targeted command is **retained**, as point **7a**, labelled selector evidence only. Nothing is
+lost; what changes is that it is no longer offered as proof of a proposition it cannot reach.
+
+### 17.4 The remaining three, briefly
+
+**H0 eligibility (LOW P1).** Whether `harness-architect` may batch seven tasks with unmet
+dependencies is answered by the **installed contract**, not by this plan: `_ship.agent.md` Step 2
+lists **`queued`** tasks, partitions **only** on the `harness-ready` label, runs "once, up front —
+not in a loop", and **halts unless every queued task carries the label**; Step 3 is where dependency
+ordering first appears; `harness-architect` Step 1 excludes **`blocked`** as a *status value*, and
+all eight `017-S` tasks are `queued`. Dependencies gate **claim and execution**, never harness
+generation. Harnessing only A1 would **halt** the shipment at Step 2 — so 8/8 is required, not
+merely permitted. **No contract is amended and no permission is invented**: the plan states that a
+future contract reading the other way must be **reported as a contradiction**, not worked around.
+
+**AC-C1 parity (LOW P1).** §7.1 and `018.010-T` had drifted to ID parity with materially different
+text — precisely the drift AC-C1.5's own history records at rev 4, recurring one revision band
+later. A single canonical block is now written **byte-identically** into both, matching the
+§7.2 ↔ `018.011-T` convention, and parity is verified by **content** rather than by ID.
+
+**Residual provenance (LOW P2).** §6.3.2's "Regeneration exposure" still called the installed
+`Test (race)` command the generated baseline — a survivor of the sweep §16.3 performed. It now
+carries the same four-part distinction used everywhere else: observed installed command, template
+token, recorded render input, and the invariant that is actually guaranteed.
+
+### 17.5 D3 is again NOT extended
+
+None of the six findings is a D3 violation shape — none is a push to the default branch and none is
+a permission to commit on one — so the closed construct set and the 14-fixture corpus stay as they
+are (the §10.4 / §11.4 / §12.4 / §13.4 / §14.4 / §15.5 / §16.4 position, unchanged for the eighth
+time).
+
+### 17.6 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged and none is reversed. **No** foundational contract is
+amended: `harness-architect`'s skill file, P-002, P-004, and `_ship.agent.md` Step 2 and Step 4.3
+all stay exactly as installed — and finding 2 is resolved **by citing** them rather than by touching
+them. No task, sub-epic, fixture, harness **function**, file, shipment, or dependency edge is added;
+**no acceptance criterion is added** — six are clarified in place. Shipment `017-S` remains one
+shipment of nine items and **no task is re-sized**, because every change concerns the **mode** in
+which an assertion runs or the **form** of its evidence, not the work any task performs.
+
+Invariants re-verified rather than assumed: valid manifest states stay **exhaustive at three**;
+**MP5 stays RETIRED** and un-renumbered; **witness-first then atomic manifest transition** holds;
+the **coordinated two-file rollback residual (R22)** remains stated honestly and unclaimed;
+fail-closed behaviour on malformed state is unchanged; the **literal 8/8 H0 red phase** holds;
+**default full-suite green task boundaries** hold; **dependency-closed B-task ordering** holds; and
+the **live 3a / 3e-absence** references stand.
+
+The deliberation now carries six disciplines: *name the surface that produces each consumed value*
+(§12.2, §13.2, §14.2); *name the operation that discharges each MUST, and confirm it can observe
+what the MUST is about* (§14.1); *name what activates each guard, and confirm the activator is
+disjoint from the subject* (§15.1), generalized to *no part of a guard's verdict may derive from its
+own subject* (§16.1) and **narrowed here** to *its own **substantive** subject, since a guard's
+dedicated control-state instruments are not its subject* (§17.2); *a check that the defect can skip
+is not a check* (§16.2); *when a control rests on an observed value, name its producer and claim
+only what that producer guarantees* (§16.3); and, new here, *when two rules can match the same
+invocation, state which governs — row order is not precedence* (§17.1), with the corollary that
+*evidence taken in a mode where it cannot fail is not evidence* (§17.3).

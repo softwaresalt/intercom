@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — Stage Artifact Branch/PR Policy Gap Correction"
 date: 2026-09-11
-revision: 12
+revision: 13
 status: reviewed
 agent: Stage
 governs: stash 638A410B
@@ -14,8 +14,8 @@ source: docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-ga
 `docs/decisions/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-deliberation.md`
 (including its **§8 Revision 2 addendum**, **§9 Revision 3 addendum**, **§10 Revision 6
 addendum**, **§11 Revision 7 addendum**, **§12 Revision 8 addendum**, **§13 Revision 9
-addendum**, **§14 Revision 10 addendum**, **§15 Revision 11 addendum**, and **§16 Revision 12
-addendum**)
+addendum**, **§14 Revision 10 addendum**, **§15 Revision 11 addendum**, **§16 Revision 12
+addendum**, and **§17 Revision 13 addendum**)
 **Stash entry**: `638A410B`
 **Requires plan hardening**: **yes** — see §9.
 
@@ -249,8 +249,42 @@ gloss, and AC-C2.4's reference to the historical §2 enumeration that still coun
 Step 4.3. No task, harness function, fixture, shipment, or dependency edge is added; 017-S stays one
 shipment of nine items.
 
-**Artifact persistence note (P-010)**: this plan and its deliberation are themselves Stage
-artifacts. They are committed on the dedicated branch `chore/stage-pipeline-policy-gap` and reach
+**Revision 13** incorporates the PR #54 **final capped post-remediation adversarial re-review**
+(anchor **GPT-5.6 Sol** with **GPT-5.4-mini**, **Claude Sonnet 5**, and **Claude Opus 5**; **4/4
+usable**, **no route degradation**), run under an **explicit operator authorization of one
+additional Stage remediation plus re-review cycle** after the rev-12 cycle budget was exhausted and
+the session was recorded BLOCKED. All six findings are **same-contract completion** under P-021;
+none is P0. **P1-1 (MEDIUM) — targeted selector precedence vs. terminal witness activation.** The
+rev-12 activation table placed the witness rows **before** the `-gatetask` rows and stated that a
+valid witness "forces `C2` active; all eight activate" without qualifying the mode. Read
+sequentially — which is how a normative table is read — a **targeted** invocation in terminal state
+activated all eight bodies, contradicting MP3, AC-C2.7, AC-C2.9, and AC-C2.11, each of which
+requires exactly the selected test to run and the seven unrelated functions to skip. Rev 13 splits
+`gate()` into two explicitly ordered stages — a **mode-independent integrity gate** (MP1 + MP6
+validation) and a **mode-dependent activation resolution** in which a valid `-gatetask` selector has
+**activation precedence** — and scopes every "forces `C2` active / all eight activate" clause to
+**default mode**. Witness integrity still runs **first** and can fail a targeted invocation; what it
+may no longer do is activate unrelated test bodies (§5.0.1). **P1-2 (LOW) — H0 harness eligibility
+with dependency-blocked tasks.** Resolved **against the installed contract without changing it**:
+`_ship.agent.md` **Step 2** selects the shipment's **full `queued` task set** for harness
+generation and **Step 3** separately builds the dependency-ordered execution queue, so
+implementation dependencies gate **claim and execution**, never upfront harness generation (§5.0
+"H0 eligibility"). **P1-3 (LOW) — control-state input exemption.** The independence invariant is
+narrowed precisely: no activation and no gate-level failure may derive from a **substantive
+surface** the same test asserts on; the **dedicated harness control-state inputs** — the validated
+manifest and the terminal witness — are expressly **allowed and required** inputs to MP1/MP6
+(§5.0.1 "Control-state inputs"). **P1-4 (LOW) — plan/task AC-C1 parity.** §7.1 and `018.010-T` now
+carry **byte-identical** AC-C1.1–AC-C1.7 text, verified by content parity rather than ID parity.
+**P1-5 (LOW) — vacuous terminal lint-removal evidence.** §5.0.2 point 7 used targeted
+`-gatetask=C1`, which activates C1 **by construction** and therefore cannot prove terminal
+**default-mode** activation, and never exercised C2 at all. It is replaced by a **default-mode** run
+against a **copied terminal-state repository fixture** under `t.TempDir()` with the lint step
+removed, asserting C1 **fails for the missing step** *and* C2 **executes** — both by test-event
+name. The targeted command is retained **separately**, as selector evidence only. **P1-6 (P2, LOW)
+— residual provenance overstatement.** §6.3.2's "Regeneration exposure" paragraph still called the
+installed `Test (race)` command the generated baseline; it now carries the same exact distinction
+used everywhere else. No task, harness function, fixture, shipment, or dependency edge is added;
+017-S stays one shipment of nine items and **no task is re-sized**. They are committed on the dedicated branch `chore/stage-pipeline-policy-gap` and reach
 `main` only via PR — the exact path this shipment installs. This shipment does not reproduce the
 `fdff9e4` pattern it exists to close.
 
@@ -380,6 +414,47 @@ a non-runtime invariant. This gate is the same shape.
    postcondition and of every legitimate pre-C2 build state; only C2's completion creates it
    (§5.0.1, MP6). H0 MUST NOT write it, and a witness present at H0 is a fail-closed error.
 
+**H0 eligibility — why all eight tasks are harnessed up front, even though seven have unmet
+implementation dependencies (rev 13).** A reviewer asked whether `harness-architect` may legitimately
+batch tasks that cannot yet be worked. It may, and the **installed contract already says so** — this
+plan resolves the question by citing that contract, not by amending it:
+
+* **`_ship.agent.md` Step 2 (Harness Generation)** — "This step runs once, up front — **not in a
+  loop**." Its item 1 lists "all tasks for the target feature or chore that are in **`queued`**
+  status"; item 2 partitions that list **solely** on the `harness-ready` label; item 3 invokes
+  `harness-architect` **for the batch**; and item 4 halts unless **every queued task** carries the
+  label afterwards. **No step of this sequence consults the dependency graph.**
+* **`_ship.agent.md` Step 3 (Build Ready Queue)** — runs **after** Step 2 ("Now that all tasks are
+  harnessed") and is where the dependency graph first appears: item 3 "Sort the queue by dependency
+  order (tasks with no unfinished dependencies first)". Claiming happens later still, at Step 4.1.
+* **`harness-architect` Step 1** excludes "**blocked**, done, or otherwise non-ready work items" —
+  where `blocked` is a **backlog status value**, not a derived dependency state. **All eight tasks
+  of `017-S` are `queued`**; none is `blocked` or `done`, so none is excluded. Step 1 item 2
+  additionally restricts scope to an explicit `${input:tasks}` set when one is supplied, which is
+  exactly what Step 2's "for the batch" invocation supplies.
+
+The ordering is therefore unambiguous: **implementation dependencies gate CLAIM and EXECUTION
+(Steps 3–4), not upfront harness generation (Step 2).** H0 batches **all eight** explicitly selected
+queued shipment tasks and verifies a **literal 8/8** red before labelling any of them
+`harness-ready`. This is not merely permitted but **required**: Step 2 item 4 halts unless *every*
+queued task carries the label, so harnessing only the dependency-ready task (A1) would **halt the
+shipment** at Step 2 rather than advance it.
+
+**Mechanical check (recorded with AC-C2.11 evidence point 1, the H0 observation).** The H0 record
+MUST assert set equality, not a count: the selected task set equals **exactly** the eight task IDs
+of shipment `017-S` — `018.004-T`, `018.005-T`, `018.006-T`, `018.007-T`, `018.008-T`, `018.009-T`,
+`018.010-T`, `018.011-T` — with the covering feature `018-F` resolved through `parent_id` and
+**never executed**. No task may be omitted on account of dependency state, and no task outside the
+manifest may be added. A selected set that is a proper subset of those eight is an **H0 failure**,
+not a partial success.
+
+**Rev 13 note — if the installed contract is ever read to say otherwise.** Nothing here invents
+permission. Should a future revision of `_ship.agent.md` Step 2 or `harness-architect` Step 1
+genuinely exclude dependency-unready tasks from batch harness generation, the correct response is to
+**report the contradiction** between that contract and Step 2 item 4's all-queued-tasks halt — not
+to relax this plan's 8/8 red-phase requirement, and not to amend the contract from inside this
+release unit (§11 keeps every foundational contract out of scope).
+
 **Red-phase evidence (P-004 precondition, taken literally; rev 11):** after H0, `go vet ./...`
 exits 0 and `go test ./...` exits **non-zero** with **all eight** functions failing, each carrying
 its **own task-specific** `not implemented: <ID> <surface>` marker (§5.0.1 marker table). The
@@ -426,11 +501,34 @@ read a surface the harness asserts on" is not only about *skipping*; it is equal
 Rev 11's MP5 obeyed the rule for activation and broke it for failure — it read those same surfaces
 to raise a rollback error — and that is what deadlocked the legitimate post-C1 / pre-C2 state
 (§5.0.1, "MP5 — RETIRED at rev 12"). The invariant is therefore stated in its general form: **no
-assertion's activation and no gate-level failure may be derived from a surface this harness asserts
-on.** Rollback of a **completed** task's surface is caught by that task's own substantive assertion,
-which default mode runs from its completion onward; an **incomplete** task having its prerequisites
-or even parts of its surface present is a legal mid-shipment state and MUST NOT fail the default
-suite.
+assertion's activation and no gate-level failure may be derived from a SUBSTANTIVE SURFACE that the
+same test asserts on** — agent, policy, workflow, or script behaviour. Rollback of a **completed**
+task's surface is caught by that task's own substantive assertion, which default mode runs from its
+completion onward; an **incomplete** task having its prerequisites or even parts of its surface
+present is a legal mid-shipment state and MUST NOT fail the default suite.
+
+**Control-state inputs are expressly exempt, and the exemption is narrow (rev 13).** The invariant
+above is scoped to **substantive surfaces** — the product and governance artifacts this harness
+exists to verify. It is **not** a prohibition on reading the harness's own **dedicated control-state
+inputs**: the validated **harness-state manifest** and the **terminal completion witness** are
+**allowed and required** inputs to MP1 and MP6, and both activation and fail-closed behaviour are
+*supposed* to derive from them. The distinction is not a loophole and does not generalize:
+
+| | Substantive surface | Dedicated control-state input |
+|---|---|---|
+| Examples | `_orchestrator.agent.md` Step 1.5, `workflow-policies.md` P-010, `_stage.agent.md` Role Boundary, `jobs.lint.steps[]`, `scripts/check-direct-push-language.sh` | `harness-state.json`, `terminal-witness.json` |
+| What the harness does with it | **Asserts on it** — it is the subject of a test | **Reads it** — it is the control state of the lifecycle |
+| May it drive activation or gate-level failure? | **No** — that is the self-disarming class (rev 10) and the MP5 class (rev 11) | **Yes** — that is precisely MP1's and MP6's job |
+| Is it itself verified? | Yes, by its own substantive assertion | Yes, by **separate** mutation/integrity assertions (MP0/MP1/MP4/MP6, AC-C2.2's ten cases) |
+
+The property that makes the exemption safe is that a control-state input is **never a surface whose
+absence can self-disable its own check**: a missing, malformed, or mismatched manifest or witness
+**fails closed** and fails **all eight** functions, whereas a missing job-`lint` step under the
+rev-10 design **silently skipped** the very function that existed to notice it. The failure
+directions are opposite, and that is the whole test for whether something belongs in the right-hand
+column. Nothing else may be added to it: a file is a dedicated control-state input only if it is (a)
+authored by the harness for the harness, (b) never a subject of any substantive assertion, and
+(c) covered by its own integrity proof.
 
 **Per-task harness map.** Each function is the `harness_cmd` boundary `build-feature` loops on, so
 every task has exactly one observable red→green transition. **Rev 10**: every `harness_cmd` carries
@@ -631,29 +729,67 @@ type terminalWitness struct {
 }
 ```
 
-`gate(t, "B3")` is the **first statement** of every test function. It loads and validates the
-manifest **and the terminal witness (rev 12)**, then resolves activation:
+`gate(t, "B3")` is the **first statement** of every test function. It runs in **two explicitly
+ordered stages (rev 13)**: a **mode-independent integrity gate**, then a **mode-dependent activation
+resolution**. The stages are separate because they answer different questions, and collapsing them
+is what produced the rev-12 defect: *is the control state coherent?* must be answered for every
+invocation, while *should this test body run?* depends on how the harness was invoked.
+
+**Stage 1 — integrity gate (mode-independent; runs in EVERY mode, before any activation decision).**
+Every row below **fails** and never skips. Nothing in this stage activates anything:
 
 | Condition | Outcome |
 |---|---|
-| Manifest missing, unreadable, or malformed JSON | **fail** (never skip) |
-| Manifest invalid per MP1 (unknown/duplicate/out-of-order ID, non-subsequence set, unmet prerequisite, inconsistent `phase`/`completed`/`terminal` triple) | **fail** (never skip) |
-| Witness present but invalid per MP6 (schema/version/contract mismatch, `completed` ≠ `gateOrder`, digest mismatch, malformed JSON) | **fail** (never skip) |
+| Manifest missing, unreadable, or malformed JSON | **fail** (never skip) — MP1 |
+| Manifest invalid per MP1 (unknown/duplicate/out-of-order ID, non-subsequence set, unmet prerequisite, inconsistent `phase`/`completed`/`terminal` triple) | **fail** (never skip) — MP1 |
+| Witness present but invalid per MP6 (schema/version/contract mismatch, `completed` ≠ `gateOrder`, digest mismatch, malformed JSON) | **fail** (never skip) — MP6 |
 | Witness present **and** manifest **not** terminal | **fail** (never skip) — MP6 |
 | Manifest terminal **and** witness absent | **fail** (never skip) — MP6 |
-| Witness present and valid (⇒ manifest terminal) | `C2` is **forced active**; all eight activate |
-| `-gatetask` names an ID absent from `gateOrder`, or the function's own ID is absent | **fail** (never skip) |
-| `-gatetask` names this function's task ID | **activate** — the real assertion runs, in **every** phase, regardless of manifest or surface state |
-| `-gatetask` names a *different* valid task ID | `t.Skip` — a **selector** skip, not an activation skip (see the zero-skip qualification below) |
-| `-gatetask` empty, `phase: red` | **activate** — *all eight* activate; no function skips |
-| `-gatetask` empty, `phase: build` | **activate** iff this task's ID is in `completed`; otherwise `t.Skip` naming the ID, the phase, and the current `completed` set |
-| `-gatetask` empty, `phase: terminal` | **activate** — *all eight* activate; no activation skip remains |
+| `-gatetask` names an ID absent from `gateOrder`, or the function's own ID is absent from `gateOrder` | **fail** (never skip) — MP0/MP3 |
 
-There is **no surface predicate anywhere in this table**. That is the entire correction: activation
-is a function of manifest state, witness state, and the selector only, so no assertion's activation
-can be switched off by mutating the thing it asserts on. **Rev 12** adds the symmetric rule for the
-failure direction: no row of this table, and no gate-level check, may *fail* on the basis of a
-surface the harness asserts on either (that was MP5's defect — see "MP5 — RETIRED at rev 12").
+**Stage 2 — activation resolution (mode-dependent). A valid `-gatetask` selector has activation
+precedence over every default-mode rule, including the witness rule.** The **Mode** column is the
+first discriminator and it is exhaustive: an invocation is either **Targeted** or **Default**, never
+both, and **no Default row may be applied to a Targeted invocation**. Within a mode, the first
+matching row governs — except the final witness row, which is **additive reinforcement** of the
+`phase: terminal` row rather than an alternative to it:
+
+| Mode | Condition | Outcome |
+|---|---|---|
+| **Targeted** (valid `-gatetask` supplied) | `-gatetask` names **this** function's task ID | **activate** — the real assertion runs, in **every** phase, regardless of manifest phase, witness presence, or surface state |
+| **Targeted** (valid `-gatetask` supplied) | `-gatetask` names a **different** valid task ID | `t.Skip` — a **selector** skip. Applies in **every** phase **including `terminal`**, and **regardless of witness presence** |
+| **Default** (`-gatetask` empty) | `phase: red` | **activate** — *all eight* activate; no function skips |
+| **Default** (`-gatetask` empty) | `phase: build` | **activate** iff this task's ID is in `completed`; otherwise `t.Skip` naming the ID, the phase, and the current `completed` set |
+| **Default** (`-gatetask` empty) | `phase: terminal` | **activate** — *all eight* activate; no activation skip remains |
+| **Default** (`-gatetask` empty) | Witness present and valid (⇒ manifest terminal, by Stage 1) | `C2` is **forced active** — belt-and-braces over the `terminal` row above, so a defect in the phase path cannot un-force it |
+
+**Why selector precedence does not reopen the MP6 hole (rev 13).** MP6 has two halves, and only one
+of them is an activation rule. Its **integrity** half — *witness present ⇒ manifest terminal; manifest
+terminal ⇒ valid witness present* — lives in **Stage 1** and is **mode-independent**, so a targeted
+invocation against a rewound or mismatched state **still fails**, loudly, before Stage 2 is reached.
+Its **forcing** half is an activation rule and is therefore **default-mode only**. The hole MP6 was
+added to close — a self-consistent manifest rewind letting C2 skip past MP2 — is closed by the
+**integrity** half, which fires in both modes; the forcing half is redundant reinforcement of the
+`terminal` row, not the mechanism. Scoping it to default mode consequently subtracts **no**
+detection, while removing the contradiction with MP3, AC-C2.7, AC-C2.9, and AC-C2.11.
+
+**What rev 12 got wrong, stated so it cannot recur.** The rev-12 table was a single flat list whose
+witness row — "`C2` is forced active; **all eight** activate" — appeared **before** the `-gatetask`
+rows. Read sequentially, as a normative table must be, a **targeted** run in terminal state
+activated all eight bodies: `-gatetask=C1` would have executed C2, B3, A2 and the rest, contradicting
+MP3's "selector skips of the seven non-selected functions are expected in targeted mode in **every**
+phase", AC-C2.7's rev-12 qualification, AC-C2.9's targeted clause, and AC-C2.11's evidence rules.
+**Witness integrity may fail a targeted invocation; witness presence may never activate a test body
+the operator did not select.**
+
+There is **no substantive-surface predicate anywhere in either table**. That is the rev-11
+correction, preserved intact: activation is a function of **manifest state, witness state, and the
+selector only**, so no assertion's activation can be switched off by mutating the thing it asserts
+on. The manifest and witness are **dedicated control-state inputs**, expressly permitted here per
+§5.0 "Control-state inputs are expressly exempt"; they are not substantive surfaces. **Rev 12**
+added the symmetric rule for the failure direction: no row of either table, and no gate-level check,
+may *fail* on the basis of a **substantive surface** the harness asserts on either (that was MP5's
+defect — see "MP5 — RETIRED at rev 12").
 
 **Valid states, defined exhaustively (rev 12).** Exactly three combinations are legal. Anything not
 in this table is invalid and **fails closed** in `gate()` on every call:
@@ -681,15 +817,18 @@ partial write, a rollback, or a hand-edit actually produces:
 The three-row table is the normative definition; the bullet list enumerates the rejections that
 matter operationally and is not a second, weaker rule.
 
-**Zero skips — what it does and does not claim (rev 12).** "No skip remains anywhere" is a statement
-about **default mode** in `red` and `terminal` phase: with no `-gatetask` given, all eight gate
-functions activate and none skips. It is **not** a claim about targeted mode. `-gatetask={ID}` is a
-selector: by design it runs exactly the selected function's real assertion and **skips the other
-seven**, in every phase. Those are **selector** skips, and they are correct. What targeted mode may
-never do is skip **the test it selected** — if `-gatetask=C1` causes `TestDirectPushGate_CIWiringIsBlocking`
-itself to skip, that is a defect and a failure of AC-C1.6. Evidence that cites "zero `--- SKIP:`
-lines" therefore MUST be taken from a **default-mode** run; a targeted run showing seven skips is
-expected and proves nothing either way.
+**Zero skips — what it does and does not claim (rev 12; precedence stated rev 13).** "No skip
+remains anywhere" is a statement about **default mode** in `red` and `terminal` phase: with no
+`-gatetask` given, all eight gate functions activate and none skips. It is **not** a claim about
+targeted mode. `-gatetask={ID}` is a selector with **activation precedence over every default-mode
+rule, including the witness-forcing rule**: by design it runs exactly the selected function's real
+assertion and **skips the other seven**, in every phase, **including `terminal`, and regardless of
+whether a valid terminal witness is present**. Those are **selector** skips, and they are correct.
+What targeted mode may never do is skip **the test it selected** — if `-gatetask=C1` causes
+`TestDirectPushGate_CIWiringIsBlocking` itself to skip, that is a defect and a failure of AC-C1.6.
+Witness and manifest **integrity** are unaffected by the selector and still fail a targeted
+invocation (Stage 1). Evidence that cites "zero `--- SKIP:` lines" therefore MUST be taken from a
+**default-mode** run; a targeted run showing seven skips is expected and proves nothing either way.
 
 **Why a Go test flag rather than an environment variable.** A flag is invoked identically from
 `bash`, `pwsh`, and `cmd`; `VAR=value go test …` is a POSIX-shell-only construct and
@@ -739,9 +878,13 @@ witness.
 past its own check:
 
 * Witness **present** ⇒ the manifest MUST be terminal (exact eight-element set, `terminal: true`,
-  `phase: terminal`), **and `C2` is forced active** regardless of what the manifest says. Forcing is
-  stated explicitly rather than left to follow from terminal-phase activation, so a defect in the
-  phase path cannot silently un-force it.
+  `phase: terminal`), **and in default mode `C2` is forced active** regardless of what the manifest
+  says. Forcing is stated explicitly rather than left to follow from terminal-phase activation, so a
+  defect in the phase path cannot silently un-force it. **Rev 13**: the forcing clause is an
+  **activation** rule and is therefore **default-mode only**; the *integrity* requirement in the same
+  sentence is **mode-independent** and fails a targeted invocation too. A targeted run selecting some
+  other task still skips `C2` — a selector skip — while any witness/manifest disagreement has already
+  failed the invocation in Stage 1.
 * Manifest **terminal** ⇒ a **valid** witness MUST be present.
 * Witness **absent** and manifest **not** terminal ⇒ normal H0/`build` operation. **H0 absence is
   valid**, and so is absence throughout `build`; neither is an error.
@@ -917,7 +1060,9 @@ six; that miscount is corrected here.
   turn the suite green. **Activation** skips are structurally impossible in `red` and `terminal`
   phase; **selector** skips of the seven non-selected functions are expected in targeted mode in
   every phase, and the selected function itself may never skip (see the zero-skip qualification
-  above).
+  above). **Rev 13**: this is now guaranteed by construction rather than by convention — the
+  selector holds **activation precedence** in `gate()`'s Stage 2, so a valid terminal witness can no
+  longer activate the seven unselected bodies in a targeted run.
 * **MP4 — the state files are themselves part of the mutation proof (AC-C2.2, AC-C2.9, AC-C2.10).**
   Against a **scratch copy** under `t.TempDir()` — never the committed tree, same no-dirty-tree-edit
   rule as AC-A2.4/AC-C1.6 — the proof asserts that `gate()` **fails** for each of: the manifest
@@ -952,15 +1097,20 @@ six; that miscount is corrected here.
   call and **before any activation decision is taken**: a present witness must be **valid** (schema
   `directpush-gate/terminal-witness`, version `1`, contract `017-S/018-F`, `completed` exactly
   `gateOrder`, digest matching its own array) — otherwise **fail**; a present **valid** witness
-  requires a **terminal** manifest and **forces `C2` active** — otherwise **fail**; a **terminal**
-  manifest requires a present valid witness — otherwise **fail**; and a witness **absent** with a
-  non-terminal manifest is **valid**, which is the H0 and `build` state. Because MP6 precedes
-  activation, **C2 can no longer be skipped past MP2** by a self-consistent manifest rewind: the
-  surviving witness forces C2 active and the mismatch fails the whole suite. Treatment is
-  **fail-closed** for missing, malformed, or mismatched state **wherever terminal or witness
-  evidence exists**; **H0 absence is valid** and is not an error. The coordinated
-  both-files rollback remains undetectable at runtime and is recorded as **R22**, not claimed as
-  closed.
+  requires a **terminal** manifest — otherwise **fail**; a **terminal** manifest requires a present
+  valid witness — otherwise **fail**; and a witness **absent** with a non-terminal manifest is
+  **valid**, which is the H0 and `build` state. In **default mode** a present valid witness
+  additionally **forces `C2` active**. **Rev 13 separates MP6's two halves explicitly**: the
+  **integrity** half above is **mode-independent** and lives in `gate()`'s Stage 1, so it fails a
+  targeted invocation exactly as it fails a default one; the **forcing** half is an **activation**
+  rule and is **default-mode only**, because a targeted run must execute exactly the selected test
+  (MP3). Because the integrity half precedes activation in every mode, **C2 can no longer be skipped
+  past MP2** by a self-consistent manifest rewind: the surviving witness fails the whole suite on
+  the mismatch, and in default mode it also forces C2 active. Scoping the forcing half to default
+  mode therefore subtracts no detection. Treatment is **fail-closed** for missing, malformed, or
+  mismatched state **wherever terminal or witness evidence exists**; **H0 absence is valid** and is
+  not an error. The coordinated both-files rollback remains undetectable at runtime and is recorded
+  as **R22**, not claimed as closed.
 
 **What this preserves, point by point.**
 
@@ -971,7 +1121,7 @@ six; that miscount is corrected here.
 | (c) every task has an observed targeted **red→green** transition before its implementation | Each `harness_cmd` carries `-gatetask={ID}`, which activates unconditionally in every phase, so the function is red at claim time and green after implementation. Ship's `build-feature` boundary is unchanged |
 | (d) future-task expected-red cases do not fail the **default** suite after A1 | A1's completion moves `phase` to `build`; default mode then runs the completed set and skips only not-yet-started tasks, so Step 4.3's `go test ./...` is green between tasks |
 | (e) the final `go test ./...` runs all eight **real** assertions green | At `terminal` every ID is in `completed`, so all eight activate and no skip remains; MP2 asserts exactly that, from manifest state, before any surface check |
-| (f) C1/C2 cannot be disarmed by the surface they verify | Activation is manifest-only. A render removing the job-`lint` step leaves both **active**, so C1 fails loudly on (b) while C2 keeps executing the detector for (a) |
+| (f) C1/C2 cannot be disarmed by the surface they verify | Activation is manifest-only. A render removing the job-`lint` step leaves both **active in default mode**, so C1 fails loudly on (b) while C2 keeps executing the detector for (a) — the §5.0.2 point-7 observation, taken **unselected** |
 | (g) a legitimate mid-shipment state never fails the default suite (rev 12) | No check reads an **incomplete** task's surface. MP5, which did, is **RETIRED**; the post-C1/pre-C2 window — in which C2's old probe (the lint step) is present because **C1 created it** — is now simply a valid `build` state |
 | (h) the terminal claim cannot be withdrawn silently (rev 12) | The claim is carried by **two** tracked files that MP6 requires to agree, checked in `gate()` **before** activation, so a manifest-only rewind no longer skips C2 past MP2. Rolling back **both** is the recorded residual **R22**, caught by diff review — not claimed as runtime-detectable |
 
@@ -1059,25 +1209,44 @@ render or tooling boundaries and both invite exactly the backlog-coupling reject
 `tests/integration/testdata/` is outside every render boundary and is Go-idiomatic for harness
 fixtures.
 
-#### 5.0.2 Lifecycle evidence — the observation points, and what each must show (rev 12)
+#### 5.0.2 Lifecycle evidence — the observation points, and what each must show (rev 12; point 7 rewritten rev 13)
 
-The mechanism above is only as good as the evidence that it behaved as specified, so the eight
-observation points below are **required evidence**, recorded by AC-C2.11 and collected as each
-occurs. Each names the state, the command, and the expected observation. "Zero skips" always means
-**default mode** (§5.0.1's qualification).
+The mechanism above is only as good as the evidence that it behaved as specified, so the **eight
+numbered observation points** below are **required evidence**, recorded by AC-C2.11 and collected as
+each occurs. **Rev 13** adds a paired selector observation **7a** alongside the rewritten point 7;
+it is a companion to that point, not a ninth point. Each names the state, the command, and the
+expected observation. "Zero skips" always means **default mode** (§5.0.1's qualification), and a
+**targeted** run is never evidence for or against a default-mode activation claim.
 
 | # | Point | Required observation |
 |---|---|---|
-| 1 | **H0** (post-`harness-architect`, pre-A1) | `go test ./...` red with **exactly 8** expected failures, each carrying its own `not implemented: <ID> <surface>` marker; **zero default-mode activation skips**; **terminal witness absent**; manifest `{"phase":"red","completed":[],"terminal":false}` |
+| 1 | **H0** (post-`harness-architect`, pre-A1) | `go test ./...` red with **exactly 8** expected failures, each carrying its own `not implemented: <ID> <surface>` marker; **zero default-mode activation skips**; **terminal witness absent**; manifest `{"phase":"red","completed":[],"terminal":false}`. **Rev 13**: the record also asserts **set equality** — the harnessed task set is exactly the eight `017-S` task IDs, none omitted for dependency state (§5.0 "H0 eligibility") |
 | 2 | **Post-A2** | A2 targeted **green** (`-gatetask=A2` exits 0); A3 targeted **expected-red** (`-gatetask=A3` exits non-zero with `--- FAIL:` and the detector-stub reason — AC-A2.5); **default suite green** |
 | 3 | **Legal B-block orders** | Each of the B1/B2/B3 completion orders `B1,B2,B3` / `B2,B1,B3` / `B3,B1,B2` (and any other permutation) is **accepted** by the validator as a dependency-closed order-preserving subsequence; no legal order is rejected and no prefix rule is applied |
 | 4 | **Post-C1** | **Default suite green**; C2 targeted **expected-red** (`-gatetask=C2` exits non-zero); **witness absent**. This is the state rev-11's MP5 deadlocked, and it must now be quiet |
 | 5 | **Terminal** | Manifest carries the **exact eight-task set** with `terminal: true` / `phase: terminal`, **and** a valid **witness**; all **8** substantive assertions **green**; **zero default-mode skips** |
-| 6 | **Terminal tree, manifest rolled back to seven tasks, witness retained** | **Failure** (MP6: witness present ⇒ manifest must be terminal; C2 forced active) |
-| 7 | **Terminal manifest, job-`lint` step removed** | **C1 fails** (it stays active from manifest state) **and C2 executes** (the detector still runs) — the R5 pair, both halves live |
+| 6 | **Terminal tree, manifest rolled back to seven tasks, witness retained** | **Failure** (MP6 integrity: witness present ⇒ manifest must be terminal). The integrity half is **mode-independent**, so this fails in default *and* targeted mode; in default mode `C2` is additionally forced active |
+| 7 | **Terminal-state fixture, job-`lint` step removed — DEFAULT MODE (rewritten rev 13)** | A **copied terminal-state repository fixture** under `t.TempDir()` — real tree never mutated — with a **valid manifest and witness** and the job-`lint` step removed from its `ci.yml`. Run **unselected** (no `-gatetask`). Evidence MUST show, **by test-event name**: `--- FAIL: TestDirectPushGate_CIWiringIsBlocking` citing the **missing lint step**, and `TestDirectPushGate_FullCorpusClean` **executing** (present in the run as a `run`/`pass` event, **not** `--- SKIP:`). The R5 pair, both halves live |
+| 7a | **Same fixture, targeted — SELECTOR EVIDENCE ONLY (rev 13)** | `-gatetask=C1` against the same fixture: `TestDirectPushGate_CIWiringIsBlocking` **executes and fails**, and the other seven **skip**. This is evidence about the **selector**, and is explicitly **NOT** evidence of terminal default-mode activation |
 | 8 | **Witness-only / terminal-manifest-only / malformed witness** | **Failure** in each of the three cases (MP6; proven by execution under `t.TempDir()` per MP4/AC-C2.2) |
 
-Points 1, 2, and 4 are taken at the boundaries where they occur; points 3, 5, 6, 7, and 8 are
+**Why point 7 was rewritten (rev 13).** The rev-12 form ran `-gatetask=C1`. Targeted mode activates
+the selected function **by construction**, so the observation was **vacuous** as proof of terminal
+default-mode activation: it would have passed identically under the rev-10 self-disarming design
+that R5 exists to exclude. It also never exercised **C2**, so the "both halves live" claim rested on
+nothing. The replacement is **unselected** — which is the only mode in which manifest-derived
+activation is actually under test — and asserts **both** functions by name. Point **7a** keeps the
+targeted command, correctly labelled as selector evidence, so no observation is lost.
+
+**Fixture construction constraints for point 7 (normative).** The fixture is a **copy**, built with
+`t.TempDir()` or the equivalent existing harness copy helper; `git status --porcelain` over the real
+tree stays empty before and after, the same no-dirty-tree-edit rule as AC-A2.4, AC-C1.6, and
+AC-C2.2. The copied `harness-state.json` and `terminal-witness.json` MUST remain **valid and in
+agreement** (exact eight-element set, `terminal: true`, `phase: terminal`, matching digest) —
+otherwise Stage 1's integrity gate fails the run and the observation reverts to vacuous for a second
+reason. Only the job-`lint` step is removed.
+
+Points 1, 2, and 4 are taken at the boundaries where they occur; points 3, 5, 6, 7, 7a, and 8 are
 executed or replayed at C2. None of them is satisfied by narration: each is a recorded command and
 its observed output.
 
@@ -2343,8 +2512,16 @@ AC-C1.6's `jobs.lint.steps[]` walk, and it is chosen for the same reason.
 
 **Regeneration exposure.** `_stage.agent.md` is autoharness-generated, so a render can revert both
 steps. That is the R13 shape, and it is carried by the same mechanism: this function lives in the
-non-generated `tests/integration/directpush_gate_test.go` and runs from the generated-baseline
-`Test (race)` step, so a render that drops the steps turns CI **red**. Recorded as **R17**.
+non-generated `tests/integration/directpush_gate_test.go` and runs from job `expensive`
+(`name: test`)'s **full-suite `./...`** test step, so a render that drops the steps turns CI **red**.
+**Rev 13 — provenance precision**, matching §5.0 "Invocation provenance" exactly: the **observed
+installed** command is `go test -race -mod=readonly ./...` (step `Test (race)`); the **template**
+emits `{{TEST_COMMAND}}`; this workspace's **recorded render input** is `go test ./...`. What a
+render re-emits is therefore **the step and its substitution — a full-suite `./...` invocation that
+includes the integration harness — not those flags**, and AC-C1.7's post-render verification is what
+keeps that package pattern true across a regeneration. The rev-9 wording of this paragraph called
+the installed command the "generated-baseline" step; that was the same overstatement corrected
+elsewhere at rev 12 and is withdrawn here. Recorded as **R17**.
 
 **AC-B3.1** The Git row Allowed cell contains no default-branch allowance.
 **AC-B3.2** The Git row Allowed cell grants creation and check-out of the dedicated artifact
@@ -2476,63 +2653,84 @@ No `uses:` is added, so `ci-security.instructions.md`'s 40-hex-SHA pinning MUST 
 vacuously; job `lint` already declares `permissions: contents: read` and
 `persist-credentials: false`, so the least-privilege MUSTs need no new work.
 
-**AC-C1.1** The step is present in job `lint`, **blocking** (no `continue-on-error`, no toggle
-variable), and task-ID-suffixed.
-**AC-C1.2** `.github/workflows/ci.yml` remains valid YAML
-(`python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` passes) **and**
-`ci-gate` still transitively depends on job `lint`, so the new step is genuinely merge-blocking.
-**AC-C1.3** Ledger names the gate, uses the generalized membership rule, carries no magic count,
-and records both the no-toggle decision and the D2 residual. **Rev 12**: the ledger's
-regeneration-survival sentence is scoped to what is actually guaranteed — the harness runs because
-job `expensive`'s test step is a **full-suite `./...`** invocation that a render re-emits — and
-MUST NOT assert that the observed installed command `go test -race -mod=readonly ./...` is the
-generated baseline (§5.0 "Invocation provenance"). The exact installed command may still be cited
-**as the observed command**, which is what makes the evidence name a real step.
-**AC-C1.4** CODEOWNERS coverage is asserted **structurally, not by count** (rev 3): every script
-invoked by a step in `.github/workflows/ci.yml` has an owner line in `.github/CODEOWNERS`. The
-header's fixture-data carve-out is generalized from `scripts/testdata/gitignore/**` to
-`scripts/testdata/**` so the new fixture tree is covered by the same stated rationale.
-**AC-C1.5** The script header states **verbatim** that this is an **anti-accident control, not an
-anti-adversary control** (CI runs it from the PR's own head), and discloses that the job-`lint`
-wiring step sits **inside** the autoharness render boundary (deliberation D6) **and** that its
-removal is **detected — not accepted — by** `TestDirectPushGate_CIWiringIsBlocking` (§5.0), so the
-disclosure points a future reader at the surviving enforcement path rather than at a silent failure.
-Added at rev 4 — review round 3 — to close a plan↔task drift: `018.010-T` already carried this
-criterion while the plan did not state it. **Rev 5** replaced the "accepted residual" half of the
-disclosure per the R5 reclassification.
-**AC-C1.6** **Render-survival assertion — structural and non-vacuous (rev 5).**
-`TestDirectPushGate_CIWiringIsBlocking` determines step presence by **parsing**
-`.github/workflows/ci.yml` and walking `jobs.lint.steps[]` for a step whose `run` invokes
-`scripts/check-direct-push-language.sh` — **never** by a file-wide text search, which would
-self-match the LOCAL DIVERGENCE ledger comment naming the same script and pass vacuously after the
-step itself was deleted (§5.0; prior art
-`docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md`). Non-vacuity is
-proven by **execution**: the test writes a copy of the current `ci.yml` with that step removed into
-`t.TempDir()` and asserts the same check **fails** against the copy. **No edit is made to the real
-tree** — `git status --porcelain` stays empty — the same no-dirty-tree-edit rule as AC-A2.4 and
-AC-C2.2. **Rev 11 — activation independence (the P0 correction).** This function's default-mode
-activation is derived **solely** from the harness-state manifest (`C1` present in `completed`), and
-**never** from the presence of the job-`lint` step it asserts on. Rev 10 keyed activation on that
-step, so a regeneration that dropped it made this function `t.Skip` instead of fail — the assertion
-disarmed itself at precisely the moment it was meant to fire. The criterion is therefore satisfied
-only if, with `C1` in `completed` and the job-`lint` step **absent**, the function **runs and
-fails**; a skip is an explicit failure of this criterion. C1's completion also inserts `C1` into
-`completed` at its `gateOrder` position (§5.0.1) — one line in
-`tests/integration/testdata/directpush-gate/harness-state.json`, the shared harness-state
-completion record, not a second skill domain; C1's size band is unchanged.
-**AC-C1.7** **Post-render verification of the rendered full-suite command (rev 12).** The
-regeneration-resistant guarantee (§5.0) depends on job `expensive`'s test step invoking the **full
-suite over `./...`**, because `./...` is what pulls `tests/integration` — and therefore this
-harness — into the run. That step is rendered from `{{TEST_COMMAND}}`, so the **package pattern is a
-render output, not a fixed constant**, and no claim is made that the observed `-race` /
-`-mod=readonly` flags survive a render. C1 therefore records, in the LOCAL DIVERGENCE ledger, a
-standing obligation: **after any `autoharness install` / `tune` regeneration of
-`.github/workflows/ci.yml`, verify that the rendered expensive-job test command still invokes the
-full suite over `./...`** — by reading the rendered step, not by assuming it — and re-apply the C1
-divergence step. The verification is satisfied by observing a rendered command whose package pattern
-is `./...`; it is **not** satisfied by the flags matching. If a render narrows the pattern, the
-harness stops running and **R5 reverts to an open residual** — which is why this obligation is
-written into the ledger rather than left to memory. Residual: **R23**.
+- **AC-C1.1** The step is present in job `lint`, **BLOCKING from its FIRST wiring** (no
+  `continue-on-error`, no toggle variable, no advisory window), and task-ID-suffixed.
+- **AC-C1.2** `.github/workflows/ci.yml` remains valid YAML
+  (`python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` passes) **and**
+  `ci-gate` still transitively depends on job `lint`, so the new step is genuinely merge-blocking.
+- **AC-C1.3** The LOCAL DIVERGENCE ledger names the gate, uses the generalized membership rule
+  (wildcard/range form rather than the literal `011.0xx-T`), carries no magic count, records the
+  no-toggle decision and the D2 residual, and records that removal of this step is **CAUGHT, NOT
+  ACCEPTED** — `tests/integration/directpush_gate_test.go`
+  (`TestDirectPushGate_CIWiringIsBlocking`) is not autoharness-generated and runs from job
+  `expensive` (`name: test`)'s **full-suite `./...`** test step, so a render that drops this step
+  turns CI **red** rather than green (§5.0). **Rev 8**: the CI step is cited by its exact name and
+  command, because "the `go test` step in job `expensive`" names no step in this workflow.
+  **Rev 12 — provenance correction**: the ledger MUST NOT assert that the observed installed command
+  `go test -race -mod=readonly ./...` is the **generated baseline**. The template emits
+  `{{TEST_COMMAND}}` and this workspace's recorded render input is `go test ./...` (§5.0 "Invocation
+  provenance"), so the flags are local to the installed artifact. The installed command may still be
+  cited **as the observed command** — that is what makes the evidence name a real step — but the
+  ledger's survival claim is scoped to the **full-suite `./...` package pattern**, which is what a
+  render actually re-emits.
+- **AC-C1.4** CODEOWNERS coverage is asserted **structurally, not by count** (rev 3): every script
+  invoked by a step in `.github/workflows/ci.yml` has an owner line in `.github/CODEOWNERS`; the
+  header's fixture-data carve-out is generalized from `scripts/testdata/gitignore/**` to
+  `scripts/testdata/**` so the new fixture tree is covered by the same stated rationale.
+- **AC-C1.5** The script header states **VERBATIM** that this is an **ANTI-ACCIDENT control, not an
+  anti-adversary control** (CI runs it from the PR's own head), and discloses that the job-`lint`
+  wiring step sits **INSIDE** the autoharness render boundary (deliberation D6) **and** that its
+  removal is **DETECTED — NOT ACCEPTED — by** `TestDirectPushGate_CIWiringIsBlocking` (§5.0), so the
+  disclosure points a future reader at the surviving enforcement path rather than at a silent
+  failure. Added at rev 4 — review round 3 — to close a plan↔task drift: `018.010-T` already carried
+  this criterion while the plan did not state it. **Rev 5** replaced the "accepted residual" half of
+  the disclosure per the R5 reclassification.
+- **AC-C1.6** **Render-survival assertion — structural and non-vacuous (rev 5).**
+  `TestDirectPushGate_CIWiringIsBlocking` determines step presence by **PARSING**
+  `.github/workflows/ci.yml` and walking `jobs.lint.steps[]` for a step whose `run` invokes
+  `scripts/check-direct-push-language.sh` — **NEVER** by a file-wide text search, which would
+  self-match the LOCAL DIVERGENCE ledger comment naming the same script and pass vacuously after the
+  step itself was deleted (§5.0; prior art
+  `docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md`). Non-vacuity
+  is proven by **EXECUTION**: the test writes a copy of the current `ci.yml` with that step removed
+  into `t.TempDir()` and asserts the same check **FAILS** against the copy. **No edit is made to the
+  real tree** — `git status --porcelain` stays empty — the same no-dirty-tree-edit rule as AC-A2.4
+  and AC-C2.2. **Rev 11 — activation independence (the P0 correction).** This function's
+  default-mode activation is derived **solely** from the harness-state manifest (`C1` present in
+  `completed`), and **never** from the presence of the job-`lint` step it asserts on. Rev 10 keyed
+  activation on that step, so a regeneration that dropped it made this function `t.Skip` instead of
+  fail — the assertion disarmed itself at precisely the moment it was meant to fire. The criterion
+  is therefore satisfied only if, with `C1` in `completed` and the job-`lint` step **absent**, the
+  function **runs and fails**; a skip is an explicit failure of this criterion. C1's completion also
+  inserts `"C1"` into `completed` at its `gateOrder` position (§5.0.1) — one line in
+  `tests/integration/testdata/directpush-gate/harness-state.json`, the shared harness-state
+  completion record, not a second skill domain; C1's size band is unchanged. **Rev 12**: "runs and
+  fails" is a **default-mode** requirement; a targeted `-gatetask=C1` run must likewise execute the
+  real assertion and never skip. C1 carries **no** MP5 obligation — MP5 is **RETIRED** (§5.0.1), and
+  its retirement does not weaken this criterion, because C1's activation was already manifest-only.
+  **Rev 13 — the evidence must be taken UNSELECTED.** A targeted `-gatetask=C1` run activates this
+  function **by construction**, so it cannot demonstrate that manifest-derived activation survives
+  removal of the lint step, and it would have passed identically under the rev-10 self-disarming
+  design. The criterion's evidence is therefore the **default-mode** §5.0.2 point-7 observation
+  against a **copied terminal-state fixture** under `t.TempDir()` whose manifest and witness remain
+  valid and in agreement: it must show, **by test-event name**, `--- FAIL:
+  TestDirectPushGate_CIWiringIsBlocking` citing the **missing lint step**, and
+  `TestDirectPushGate_FullCorpusClean` **executing** rather than skipping. The targeted invocation is
+  retained **separately** as §5.0.2 point 7a and is **selector evidence only**.
+- **AC-C1.7** **Post-render verification of the rendered full-suite command (rev 12).** The
+  regeneration-resistant guarantee (§5.0) depends on job `expensive`'s test step invoking the **full
+  suite over `./...`**, because `./...` is what pulls `tests/integration` — and therefore this
+  harness — into the run. That step is rendered from `{{TEST_COMMAND}}`, so the **package pattern is
+  a render output, not a fixed constant**, and **no claim is made** that the observed `-race` /
+  `-mod=readonly` flags survive a render. C1 therefore records, in the LOCAL DIVERGENCE ledger, a
+  standing obligation: **after any `autoharness install` / `tune` regeneration of
+  `.github/workflows/ci.yml`, verify — by reading the rendered step, not by assuming it — that the
+  rendered expensive-job test command still invokes the full suite over `./...`**, and re-apply the
+  C1 divergence step. The verification is satisfied by observing a rendered command whose package
+  pattern is `./...`; it is **not** satisfied by the flags matching. If a render narrows the pattern,
+  the harness stops running and **R5 reverts to an open residual** — which is why this obligation is
+  written into the ledger rather than left to memory. Residual: **R23**. Size/complexity
+  **UNCHANGED**: one additional sentence in a ledger this task already authors.
 
 ### 7.2 Task C2 — coupling verification
 
@@ -2641,7 +2839,11 @@ different numbering for the same criteria).
   **default-mode** run (no `-gatetask`). A **targeted** run legitimately skips the seven
   non-selected functions in any phase — those are selector skips, not activation skips — and the
   only targeted-mode requirement is that the **selected** test actually executes. Evidence for this
-  criterion MUST therefore be taken from a default-mode invocation.
+  criterion MUST therefore be taken from a default-mode invocation. **Rev 13**: that is now
+  structural rather than conventional — the selector holds **activation precedence** in `gate()`'s
+  Stage 2 (§5.0.1), so a valid terminal witness does **not** activate the seven unselected bodies in
+  a targeted run. Witness and manifest **integrity** still fail a targeted invocation, because
+  Stage 1 is mode-independent.
 - **AC-C2.8** **Regeneration-resistant enforcement, recorded (rev 5; provenance corrected rev 12).**
   The evidence records that the full-corpus scan of AC-C2.1 is executed by
   `TestDirectPushGate_FullCorpusClean` from job `expensive` (`name: test`)'s test step — whose
@@ -2684,7 +2886,13 @@ different numbering for the same criteria).
   removes the lint step leaves both **active and failing loudly** rather than skipping. Targeted
   `-gatetask=C1` and `-gatetask=C2` execute their real assertions **regardless** of current surface
   presence, phase, or manifest contents (manifest **validity** is still enforced — MP1 fails closed
-  in every mode). C2's completion also performs the one-line insertion into `completed` described in
+  in every mode). **Rev 13**: the converse is equally binding — a targeted run **skips the seven
+  non-selected functions**, in every phase **including `terminal`** and **regardless of witness
+  presence**, because the selector has **activation precedence** over the default-mode rules
+  including MP6's forcing clause (§5.0.1 Stage 2). Evidence that this clause holds MUST therefore be
+  taken **unselected**; the §5.0.2 point-7 lint-removal observation is run in **default mode** for
+  exactly that reason, with the targeted form retained separately as point 7a selector evidence.
+  C2's completion also performs the one-line insertion into `completed` described in
   §5.0.1 — the shared harness-state completion record, not a second skill domain; C2's size band is
   unchanged.
 - **AC-C2.10** **Terminal completion witness — independent, minimal, fail-closed (rev 12).** C2's
@@ -2698,30 +2906,46 @@ different numbering for the same criteria).
   **Write order is normative**: the **witness is written first**, then the manifest is **atomically
   replaced** with the exact terminal state; the tests are green only when the two **agree**.
   `gate()` enforces MP6 **before any activation decision**: a present witness must be valid and
-  requires a terminal manifest **and forces `C2` active**; a terminal manifest requires a present
-  valid witness; a **missing, malformed, or mismatched** witness **wherever terminal or witness
-  evidence exists** is **fail-closed**; and **absence at H0 and throughout `build` is valid**, not
-  an error. Consequently a rollback of **only** the manifest and a rollback of **only** the witness
-  each **fail loudly** (proven by execution — AC-C2.2 cases viii–x). **Recorded residual, not
+  requires a terminal manifest; a terminal manifest requires a present valid witness; a **missing,
+  malformed, or mismatched** witness **wherever terminal or witness evidence exists** is
+  **fail-closed**; and **absence at H0 and throughout `build` is valid**, not an error. In
+  **default mode** a present valid witness additionally **forces `C2` active**. **Rev 13 separates
+  the two halves**: the **integrity** requirements just listed are **mode-independent** (`gate()`
+  Stage 1) and fail a targeted invocation exactly as they fail a default one, while the **forcing**
+  clause is an **activation** rule and is **default-mode only**, so a targeted run selecting another
+  task still skips `C2` (MP3). Scoping it that way subtracts no detection: the rewind MP6 exists to
+  catch is caught by the integrity half, which runs in both modes. Consequently a rollback of
+  **only** the manifest and a rollback of **only** the witness each **fail loudly** (proven by
+  execution — AC-C2.2 cases viii–x). **Recorded residual, not
   claimed as closed**: rolling back or deleting **both** files in one change yields a state that a
   stateless validator cannot distinguish from legitimate pre-C2 `build`, because that is what it
   looks like; it is caught by **diff and review** of two tracked non-generated files, **not** by
   runtime history (**R22**). No claim is made here that any stateless validator detects every
   coordinated rollback.
-- **AC-C2.11** **Lifecycle evidence ledger (rev 12).** The PR evidence records all **eight**
-  §5.0.2 observation points, each as a run command plus its observed output, never as narration:
-  (1) **H0** — 8 expected failures with their own markers, **zero default-mode activation skips**,
-  **witness absent**; (2) **post-A2** — A2 targeted green, A3 targeted expected-red, **default suite
+- **AC-C2.11** **Lifecycle evidence ledger (rev 12; point 7 rewritten rev 13).** The PR evidence
+  records all **eight** §5.0.2 observation points, each as a run command plus its observed output,
+  never as narration: (1) **H0** — 8 expected failures with their own markers, **zero default-mode
+  activation skips**, **witness absent**, **and set equality** between the harnessed task set and
+  the eight `017-S` task IDs, none omitted for dependency state (rev 13; §5.0 "H0 eligibility");
+  (2) **post-A2** — A2 targeted green, A3 targeted expected-red, **default suite
   green**; (3) **legal B1/B2/B3 orders** — each dependency-closed order-preserving subsequence is
   **accepted**, no legal order rejected; (4) **post-C1** — **default suite green**, C2 targeted
   expected-red, **witness absent** (this is the state rev-11's MP5 deadlocked); (5) **terminal** —
   exact eight-task set **plus** valid witness, all 8 substantive assertions green, **zero
   default-mode skips**; (6) **terminal tree with the manifest rolled back to seven tasks while the
-  witness remains** — **failure**; (7) **terminal manifest with the job-`lint` step removed** — C1
-  **fails** and C2 **executes**; (8) **witness-only, terminal-manifest-only, and malformed witness**
-  — **failure** in each. Points 1, 2 and 4 are captured at the boundaries where they occur; points
-  3, 5, 6, 7 and 8 are executed or replayed at C2 under `t.TempDir()` per AC-C2.2's
-  no-dirty-tree-edit rule. Every "zero skips" figure is taken from a **default-mode** run.
+  witness remains** — **failure** (MP6 integrity, which is mode-independent); (7) **terminal-state
+  fixture with the job-`lint` step removed, run in DEFAULT MODE** — against a **copied**
+  terminal-state repository fixture under `t.TempDir()` whose manifest and witness remain **valid
+  and in agreement**, with **no mutation of the real tree**, the evidence shows **by test-event
+  name** that `TestDirectPushGate_CIWiringIsBlocking` **fails for the missing lint step** and that
+  `TestDirectPushGate_FullCorpusClean` **executes** (a `run`/`pass` event, never `--- SKIP:`);
+  (7a) the **targeted** `-gatetask=C1` form of the same fixture is recorded **separately and
+  labelled selector evidence only** — it activates C1 by construction and is explicitly **not**
+  evidence of terminal default-mode activation; (8) **witness-only, terminal-manifest-only, and
+  malformed witness** — **failure** in each. Points 1, 2 and 4 are captured at the boundaries where
+  they occur; points 3, 5, 6, 7, 7a and 8 are executed or replayed at C2 under `t.TempDir()` per
+  AC-C2.2's no-dirty-tree-edit rule. Every "zero skips" figure is taken from a **default-mode** run,
+  and **no targeted run may be offered as evidence of a default-mode activation claim** (rev 13).
 
 ## 8. Verification commands
 
@@ -2746,9 +2970,12 @@ git merge-base --is-ancestor {stage_base_commit} {stage_head_commit}   # base→
 # Rev 9 — the producing side, exercised by the B3 harness function rather than by a shell command:
 go test ./tests/integration -run TestDirectPushGate_StageAgentSurfaceClean   # branch gate + commit step, present AND ordered
 # Rev 10/11 — per-task activation (§5.0.1). Activation comes from the harness-state manifest,
-# NEVER from a surface the harness asserts on (the rev-10 self-disarming defect).
+# NEVER from a substantive surface the harness asserts on (the rev-10 self-disarming defect).
 # Default mode: red = all eight active; build = the completed set; terminal = all eight active.
 # Targeted mode: force exactly one task's assertions in any phase — how each task's red is observed.
+# Rev 13 — the selector has ACTIVATION PRECEDENCE: a targeted run skips the other seven in EVERY
+# phase, including terminal and regardless of witness presence. Witness/manifest INTEGRITY is
+# mode-independent and still fails a targeted invocation (gate() Stage 1).
 go test ./tests/integration -run '^TestDirectPushGate_StageAgentSurfaceClean$' -gatetask=B3
 # Rev 11 — inspect the harness-state manifest (JSON: stdlib-parseable, outside every render boundary):
 cat tests/integration/testdata/directpush-gate/harness-state.json
@@ -2765,7 +2992,15 @@ go test ./tests/integration -run TestDirectPushGate 2>&1 | Select-String -Patter
 # Rev 12 — this is a DEFAULT-MODE claim. A targeted run skips the seven non-selected functions BY DESIGN;
 # the only targeted-mode requirement is that the SELECTED test actually executes (never skips).
 go test -v ./tests/integration -run TestDirectPushGate 2>&1 | Select-String -Pattern '--- SKIP:' # expect none
-# Rev 11 — C1/C2 stay active from manifest state with the job-`lint` step removed (AC-C1.6, AC-C2.8):
+# Rev 11, REWRITTEN rev 13 — C1/C2 stay active from manifest state with the job-`lint` step removed
+# (AC-C1.6, AC-C2.8, §5.0.2 point 7). The AUTHORITATIVE evidence is DEFAULT MODE (no -gatetask)
+# against a COPIED terminal-state fixture under t.TempDir() — real tree never mutated, and the
+# fixture's manifest + witness must stay VALID AND IN AGREEMENT or Stage 1 fails the run instead.
+# Assert BOTH by test-event name: C1 must FAIL for the missing step, C2 must EXECUTE (never SKIP).
+go test -v ./tests/integration -run TestDirectPushGate 2>&1 | Select-String -Pattern '--- FAIL: TestDirectPushGate_CIWiringIsBlocking'
+go test -v ./tests/integration -run TestDirectPushGate 2>&1 | Select-String -Pattern 'TestDirectPushGate_FullCorpusClean'  # MUST appear, and MUST NOT be '--- SKIP:'
+# Rev 13 — SELECTOR EVIDENCE ONLY (§5.0.2 point 7a). This activates C1 BY CONSTRUCTION and is
+# therefore NOT evidence of terminal default-mode activation; it proves only that the selector works.
 go test ./tests/integration -run '^TestDirectPushGate_CIWiringIsBlocking$' -gatetask=C1  # expect non-zero, NOT a skip
 # Rev 10 — AC-A2.5's two exactly-anchored invocations (the second MUST print `--- FAIL:`;
 # a non-matching -run pattern exits 0 with `[no tests to run]`, so exit code alone proves nothing):
@@ -2944,9 +3179,9 @@ P-014 readiness and P-018 thread resolution apply to the staging PR as to any PR
 | R16 | `stage_base_commit` is captured wrongly — too late (missing early commits) or too early (over-wide set) | **BOUNDED (rev 8).** Capture is a single `git rev-parse HEAD` by the **Orchestrator immediately before it invokes Stage**, at a point where Stage has not yet run and cannot have committed — so "too late" requires the Orchestrator to reorder its own Step 1, which `TestDirectPushGate_OrchestratorSurfaceClean` asserts against. "Too early" is bounded by the `STAGE_ARTIFACT_ROOTS` pathspec and fails **conservatively** (extra paths verified, never fewer). The retained value is authoritative over any Stage-reported one, so a wrong report cannot shrink the set; and base→head ancestry (check 3) rejects an unrelated or rewritten base outright rather than silently producing a nonsense diff. **Rev 9** supplies the direct-invocation half the row previously left implicit: Step 1.9 captures the base from `HEAD` **before** it creates or checks out the branch, and never re-captures it, so the same "too late" argument holds on the unbracketed path |
 | R17 | A render reverts the rev-9 operative steps, restoring a Stage agent that is *permitted* to branch and commit but never *instructed* to — a defect the detector cannot see, since it is neither §5.3 construct | **MITIGATED, same mechanism as R13 (rev 9).** `TestDirectPushGate_StageAgentSurfaceClean` asserts both steps present **and ordered**, by parsing the Step Sequence Contract checklist and comparing entry indices and heading positions rather than by text search (§6.3.2). It lives in the non-generated `directpush_gate_test.go` and runs from job `expensive`'s **full-suite `./...`** test step (observed installed command `go test -race -mod=readonly ./...`; §5.0 "Invocation provenance" — the *step and its `{{TEST_COMMAND}}` substitution* are render-baseline, the flags are not), so a render that drops either step fails CI **red**. The structural form is load-bearing: `_stage.agent.md` names its own steps in the Step 6 gate, so a bare name search would pass with the step sections deleted — the AC-C1.6 hazard, one file over |
 | R18 | An artifact is written before the branch gate runs, landing on the default branch | **CLOSED BY ORDERING, with a narrow residual (rev 9).** The gate occupies a **fixed** checklist position (after learnings retrieval, before deliberation), and every mutation that would otherwise precede it — the Step 1 deferred-expansion duplicate archival, the session's first memory checkpoint — is **deferred until after** it by an explicit deferral rule rather than by racing the gate earlier. **Rev 10 closes the under-inclusion**: the rule was an *enumeration* of two mutations, while the installed Stage contract also schedules a stash-classification checkpoint, a contextual-grouping/operator-selection checkpoint, and the **write half** of the mandatory late-identifier reconciliation before that ordinal — each of them tracked, and each therefore still legal on the default branch under the rev-9 wording. The rule is now **categorical** ("every tracked Stage artifact mutation"), with those classes enumerated as illustration rather than as the closed set, and with gitignored disposables expressly excluded rather than silently claimed. The rev-9 draft's alternative, letting the gate fire early against a provisional slug, was **rejected**: it contradicts the Step Sequence Contract's own "execute in order" semantics, leaves the real position unassertable, and re-admits the default-branch write it was meant to prevent. `TestDirectPushGate_StageAgentSurfaceClean` asserts both the ordinal and the deferral clause. **Residual, recorded not hidden**: an agent that writes before reaching Step 1.9 violates the contract — now a **P-005** step-order violation as well as P-010 — without tripping the harness, which reads the document, not the run. The Orchestrator's step-4 arm is the backstop: artifacts written on the default branch leave `stage_branch` UNRESOLVED and the aggregate diff empty, which halts the gate rather than passing it |
-| R19 | The activation mechanism degenerates — assertions skip forever and the suite is green while proving nothing | **REWRITTEN AT REV 11 — the rev-10 form had already degenerated.** Rev 10 keyed default-mode activation on **surface predicates**, so C1's activation was the very proposition C1 asserts and C2 reused it verbatim: a render dropping the job-`lint` step disarmed **both**, MP2 (inside C2) never ran, and `go test ./...` stayed green. Rev 11 removes the predicate→activation edge entirely — activation derives **only** from the tracked harness-state manifest and the `-gatetask` selector, so no assertion's activation can be switched off by mutating its own subject. Six executed checks bound the replacement: **MP0** fixes `gateOrder`/`gateDeps` at eight IDs matching the recorded `blocks` edges; **MP1** runs inside `gate()` on **every** call and fails closed on a missing, malformed, unknown-phase, duplicate, unknown-ID, non-subsequence, dependency-open, or phase/terminal-inconsistent manifest — so a corrupt state file fails all eight functions rather than silently skipping them; **MP2** requires the exact eight-element ordered set with `terminal: true`, evaluated from manifest state **before** any surface assertion in C2; **MP3** makes every skip a named `t.Skip` and an unknown selector a **failure**, with skips structurally impossible in `red` and `terminal`; **MP4** proves ten manifest- and witness-mutation cases fail by execution against a `t.TempDir()` copy (AC-C2.2); **MP6** (rev 12) cross-checks the terminal witness against the manifest inside `gate()` **before** any activation decision, so a self-consistent manifest rewind can no longer skip C2 past MP2. **MP5 is RETIRED at rev 12**: its live no-rollback anchor read *incomplete* tasks' surface probes and failed when one was present, but C2's probe was the job-`lint` step **that C1 creates**, so the entirely legitimate post-C1/pre-C2 window failed the default suite — the Step 4.3 deadlock, reintroduced by the check meant to guard against degeneration. Its function is covered without it: a **completed** task's rollback is caught by that task's own substantive assertion (active in default mode from its completion onward), and manifest/witness rollback is caught by MP1 and MP6. **Residual, recorded not hidden**: a rollback in which the manifest **and** the witness **and** the corresponding surface are all reverted together is not distinguishable at runtime from a legitimate mid-shipment state, so it is caught by review of a tracked-file diff rather than by a live assertion — the R22/R21/R12 class, a visible edit, never a render artifact |
+| R19 | The activation mechanism degenerates — assertions skip forever and the suite is green while proving nothing | **REWRITTEN AT REV 11 — the rev-10 form had already degenerated.** Rev 10 keyed default-mode activation on **surface predicates**, so C1's activation was the very proposition C1 asserts and C2 reused it verbatim: a render dropping the job-`lint` step disarmed **both**, MP2 (inside C2) never ran, and `go test ./...` stayed green. Rev 11 removes the predicate→activation edge entirely — activation derives **only** from the tracked harness-state manifest and the `-gatetask` selector, so no assertion's activation can be switched off by mutating its own subject. Six executed checks bound the replacement: **MP0** fixes `gateOrder`/`gateDeps` at eight IDs matching the recorded `blocks` edges; **MP1** runs inside `gate()` on **every** call and fails closed on a missing, malformed, unknown-phase, duplicate, unknown-ID, non-subsequence, dependency-open, or phase/terminal-inconsistent manifest — so a corrupt state file fails all eight functions rather than silently skipping them; **MP2** requires the exact eight-element ordered set with `terminal: true`, evaluated from manifest state **before** any surface assertion in C2; **MP3** makes every skip a named `t.Skip` and an unknown selector a **failure**, with skips structurally impossible in `red` and `terminal`; **MP4** proves ten manifest- and witness-mutation cases fail by execution against a `t.TempDir()` copy (AC-C2.2); **MP6** (rev 12) cross-checks the terminal witness against the manifest inside `gate()` **before** any activation decision, so a self-consistent manifest rewind can no longer skip C2 past MP2. **MP5 is RETIRED at rev 12**: its live no-rollback anchor read *incomplete* tasks' surface probes and failed when one was present, but C2's probe was the job-`lint` step **that C1 creates**, so the entirely legitimate post-C1/pre-C2 window failed the default suite — the Step 4.3 deadlock, reintroduced by the check meant to guard against degeneration. Its function is covered without it: a **completed** task's rollback is caught by that task's own substantive assertion (active in default mode from its completion onward), and manifest/witness rollback is caught by MP1 and MP6. **Residual, recorded not hidden**: a rollback in which the manifest **and** the witness **and** the corresponding surface are all reverted together is not distinguishable at runtime from a legitimate mid-shipment state, so it is caught by review of a tracked-file diff rather than by a live assertion — the R22/R21/R12 class, a visible edit, never a render artifact. **Rev 13 closes a narrower degeneracy the rev-12 table admitted**: because the witness row preceded the `-gatetask` rows and was unqualified by mode, a *targeted* run in terminal state would have activated all eight bodies, contradicting MP3 and making every targeted observation ambiguous. `gate()` is now split into a **mode-independent integrity gate** and a **mode-dependent activation resolution** in which the selector takes **precedence**; MP6's integrity half still fails a targeted invocation, only its forcing half is default-mode. Separately, the §5.0.2 point-7 lint-removal evidence — previously taken with `-gatetask=C1`, which activates C1 **by construction** and would have passed under the rev-10 self-disarming design — is now taken **unselected** against a copied terminal-state fixture and asserts **both** C1's failure and C2's execution by test-event name |
 | R20 | Step 5.7's out-of-root halt fires on a human operator's unrelated in-flight edit, blocking the Stage commit | **ACCEPTED AND DELIBERATE (rev 10).** Fail-closed is the correct direction: the alternative is a Stage commit that silently omits a change the operator believed was being saved, or one that silently widens beyond `STAGE_ARTIFACT_ROOTS`. The halt names every offending path, and Stage **leaves the change exactly as found** — no checkout, restore, stash, revert, or delete — so nothing is lost and the operator decides. Discarding it would be a destructive act without approval (Constitution VII). Gitignored paths never reach this check, so routine index/checkpoint/hook-queue churn cannot trip it |
-| R21 | The harness-state manifest becomes a **single point of failure**: one tracked file whose corruption, deletion, or rollback could disable all eight assertions at once | **BOUNDED, AND THE TRADE IS DELIBERATE (rev 11).** Centralizing activation state is what makes it *checkable* — the rev-10 alternative distributed the same power across eight surface predicates where it was invisible and, in C1/C2's case, self-referential. The file is bounded four ways. **(1) Fail-closed by default**: MP1 runs inside `gate()`, so a missing, unreadable, malformed, or invalid manifest fails **all eight** functions loudly; the degenerate direction is red, not green. **(2) Not skippable**: no manifest state produces a skip in `red` or `terminal` phase, and targeted mode ignores the manifest for activation entirely, so `-gatetask={ID}` still executes the real assertion even against a tampered file. **(3) Outside every render boundary**: it lives under `tests/**`, which no autoharness template covers (§5.0 render table), so — unlike the job-`lint` step — **no regeneration can touch it**. **(4) Executed mutation proof**: MP4/AC-C2.2 prove ten corruption and rollback cases fail rather than skip. **(5) Rev 12 — the terminal claim is no longer single-file**: `terminal-witness.json` is an independent tracked file, and MP6 requires the two to agree **before** activation, so neither a manifest-only nor a witness-only rollback can pass. **Accepted residual, same class as R12**: deleting or rolling back the state files *together with* the surfaces they gate remains possible through a reviewable pull-request diff to non-generated tracked files. That is a **visible human or agent edit, not a silent render**, which is exactly the boundary §1 promises. **If a future autoharness version begins generating `tests/**`, this row and R11/R12/R22 must be re-verified together** |
+| R21 | The harness-state manifest becomes a **single point of failure**: one tracked file whose corruption, deletion, or rollback could disable all eight assertions at once | **BOUNDED, AND THE TRADE IS DELIBERATE (rev 11).** Centralizing activation state is what makes it *checkable* — the rev-10 alternative distributed the same power across eight surface predicates where it was invisible and, in C1/C2's case, self-referential. The file is bounded four ways. **(1) Fail-closed by default**: MP1 runs inside `gate()`, so a missing, unreadable, malformed, or invalid manifest fails **all eight** functions loudly; the degenerate direction is red, not green. **(2) Not skippable**: no manifest state produces a skip in `red` or `terminal` phase, and targeted mode ignores the manifest for **activation** entirely, so `-gatetask={ID}` still executes the real assertion even against a manifest whose `phase`/`completed` state has been rewound. **Rev 13 precision**: "ignores" is scoped to activation only — a manifest that is *invalid* (malformed, unknown phase, duplicate/unknown ID, non-subsequence, dependency-open, or an illegal triple) still **fails closed in every mode**, because MP1 lives in `gate()`'s mode-independent Stage 1. Tampering therefore either fails the run or fails to suppress the assertion; it cannot do neither. **(3) Outside every render boundary**: it lives under `tests/**`, which no autoharness template covers (§5.0 render table), so — unlike the job-`lint` step — **no regeneration can touch it**. **(4) Executed mutation proof**: MP4/AC-C2.2 prove ten corruption and rollback cases fail rather than skip. **(5) Rev 12 — the terminal claim is no longer single-file**: `terminal-witness.json` is an independent tracked file, and MP6 requires the two to agree **before** activation, so neither a manifest-only nor a witness-only rollback can pass. **Accepted residual, same class as R12**: deleting or rolling back the state files *together with* the surfaces they gate remains possible through a reviewable pull-request diff to non-generated tracked files. That is a **visible human or agent edit, not a silent render**, which is exactly the boundary §1 promises. **If a future autoharness version begins generating `tests/**`, this row and R11/R12/R22 must be re-verified together** |
 | R22 | **Coordinated rollback of BOTH state files in one change** (rev 12) — the witness deleted and the manifest rewound together, reproducing a state that looks exactly like legitimate pre-C2 `build` | **ACCEPTED AND STATED HONESTLY — NOT claimed as runtime-detectable.** MP6 closes the *asymmetric* cases: witness-only and manifest-only rollbacks each fail loudly, which is what a partial write or a single-file edit produces. It does **not** close the symmetric one, and the plan does not pretend otherwise: a validator that reads only the current tree has **no history to compare against**, so a state that is byte-identical to a legal earlier state is, to it, that state. Claiming a stateless validator detects every coordinated rollback would be false, and inventing a runtime history mechanism (a signed log, an append-only ledger, a CI-side cache) is a materially larger control than this release unit's branch-policy contract warrants. What does catch it: **both files are tracked and non-generated**, so the rollback appears as a reviewable diff in a pull request — deleting the witness is a visible file deletion and rewinding the manifest is a visible content change, both under `tests/integration/testdata/directpush-gate/`. Caught by **diff and review**, not by runtime history. Same visible-edit boundary as R12 and R21 |
 | R23 | **A future render narrows the expensive-job test command's package pattern**, so `tests/integration` — and therefore the whole harness — stops running, silently reopening R5 | **BOUNDED BY AN EXPLICIT POST-RENDER CHECK (rev 12), and the previous overstatement withdrawn.** Revisions 5–11 asserted `go test -race -mod=readonly ./...` *was* the generated baseline, which made this risk invisible: if the exact command were render-guaranteed there would be nothing to verify. It is not — the template emits `{{TEST_COMMAND}}` and the recorded render input here is `go test ./...` (§5.0 "Invocation provenance"), so the flags are local and only the **step plus its substitution** is re-emitted. The guarantee is therefore scoped to what the baseline supports — **a full-suite invocation whose package pattern is `./...`** — and **AC-C1.7** makes verifying that pattern a written, standing obligation in the LOCAL DIVERGENCE ledger after every regeneration of `ci.yml`. **Residual**: the check is **procedural, not mechanical** — nothing in CI asserts the rendered pattern, because a check on the rendered file would itself sit inside the render boundary. If the obligation is skipped and a render narrows the pattern, R5 reverts to open. Recorded, not hidden |
 
@@ -3415,5 +3650,52 @@ comments `3994928139`, `3994928153`, or `3994928163`, which remain **unreplied a
 this pass. Reply text for them is prepared for the operator or Orchestrator to post; preparing it is
 not posting it. Those are Orchestrator or operator actions; this record states only what the
 artifacts now contain.
+
+### 12.13 Revision 13 — final capped post-remediation remediation (operator-authorized)
+
+**Authorization (explicit, and recorded because the budget was already exhausted).** The rev-12
+session terminated **BLOCKED** with the adversarial cycle cap reached at `cycles_run: 2` and six
+uncapped residuals outstanding (memory §20). Per that record's §20.5, the operator chose option 1
+and **explicitly authorized ONE additional Stage remediation plus adversarial re-review cycle**.
+This revision is that single authorized pass. The authorization is **consumed** by it; no further
+remediation cycle is implied, and the re-review it enables has **not** been performed by Stage.
+
+**The six capped residuals, and their disposition.** All six were classified
+`post_remediation_residual`; none is P0; all are **same-contract completion** under P-021.
+
+| # | Conf. | Sev. | Residual | Disposition |
+|---|---|---|---|---|
+| 1 | MEDIUM | P1 | **Targeted selector precedence vs. terminal witness activation.** The rev-12 activation table placed the witness rows before the `-gatetask` rows and said a valid witness "forces `C2` active; all eight activate" with no mode qualifier. Read sequentially, a **targeted** run in terminal state activated all eight bodies, contradicting MP3, AC-C2.7, AC-C2.9, and AC-C2.11. | **FIXED.** `gate()` is split into **Stage 1 — mode-independent integrity** (MP1 + MP6 validation, fails in every mode) and **Stage 2 — mode-dependent activation**, in which a valid `-gatetask` has **activation precedence** over every default-mode rule including MP6's forcing clause. Witness integrity may still **fail** a targeted invocation; it may no longer **activate** unrelated bodies. Default mode is unchanged: red/terminal activate all eight; build activates the completed set; a valid witness forces `C2` active. Synchronized across §5.0.1 (both tables, MP3, MP6, zero-skip paragraph, preservation row (f)), §5.0.2 (points 6, 7, 7a), §7.2 (AC-C2.7, AC-C2.9, AC-C2.10, AC-C2.11), §8, §11 R19, `018-F`, all eight task files, the deliberation, and the memory record |
+| 2 | LOW | P1 | **H0 harness eligibility with dependency-blocked tasks** — could `harness-architect` legitimately batch seven tasks with unmet dependencies? | **RESOLVED AGAINST THE INSTALLED CONTRACT, WHICH IS UNCHANGED.** §5.0 "H0 eligibility" cites `_ship.agent.md` **Step 2** (runs "once, up front — not in a loop"; lists **`queued`** tasks; partitions **only** on the `harness-ready` label; halts unless **every** queued task carries it) and **Step 3** (runs after, and is where "sort the queue by dependency order" first appears), plus `harness-architect` Step 1's exclusion of **`blocked`** as a *status value* — and all eight `017-S` tasks are `queued`. Dependencies gate **claim/execution**, not harness generation. A mechanical **set-equality** check is added to AC-C2.11 evidence point 1. **No permission was invented**: §5.0 states that if the installed contract is ever read to exclude such tasks, the correct response is to **report the contradiction** with Step 2 item 4, not to relax the 8/8 red requirement |
+| 3 | LOW | P1 | **Control-state input exemption wording** — the independence invariant, read literally, forbade MP1/MP6 from reading the manifest and witness. | **FIXED, NARROWLY.** §5.0 "Control-state inputs are expressly exempt" scopes the invariant to **substantive surfaces** (agent/policy/workflow/script behaviour) and expressly **allows and requires** the validated manifest and terminal witness as MP1/MP6 inputs. A four-row table gives the discriminator, and a three-part test (authored by the harness for the harness; never a subject of a substantive assertion; covered by its own integrity proof) bounds the exemption so it cannot generalize into a loophole |
+| 4 | LOW | P1 | **Plan/task AC-C1 parity** — §7.1 and `018.010-T` carried materially different AC-C1 text (ID parity only). | **FIXED.** One canonical AC-C1.1–AC-C1.7 block is now written **byte-identically** into both, matching the §7.2 ↔ `018.011-T` convention. Verified by **content** parity, not ID parity: both blocks are **7,197 bytes**, and §7.2 ↔ `018.011-T` is re-verified at **19,273 bytes** |
+| 5 | LOW | P1 | **Vacuous terminal lint-removal evidence** — §5.0.2 point 7 used `-gatetask=C1`, which activates C1 **by construction**, so it could not prove terminal default-mode activation and would have passed under the rev-10 self-disarming design; it also never exercised C2. | **FIXED.** Point 7 is rewritten as a **default-mode** (unselected) run against a **copied terminal-state repository fixture** under `t.TempDir()` — real tree never mutated, `git status --porcelain` empty, fixture manifest and witness **valid and in agreement** — asserting **by test-event name** that `TestDirectPushGate_CIWiringIsBlocking` **fails for the missing lint step** and `TestDirectPushGate_FullCorpusClean` **executes** (never `--- SKIP:`). The targeted command is retained **separately** as point **7a**, labelled selector evidence only. AC-C1.6 and AC-C2.11 carry the same requirement; §8 carries both commands, distinctly labelled |
+| 6 | LOW | P2 | **Residual CI provenance overstatement** — §6.3.2's "Regeneration exposure" still called the installed `Test (race)` command the generated baseline. | **FIXED.** That paragraph now carries the same exact distinction used everywhere else: **observed installed command** `go test -race -mod=readonly ./...`; **template** emits `{{TEST_COMMAND}}`; **recorded render input** `go test ./...`; **invariant** is a rendered **full-suite `./...`** invocation that includes the integration harness, with **AC-C1.7** post-render verification. Historical quotations elsewhere are retained and remain clearly labelled non-normative |
+
+**Invariants explicitly preserved (re-verified, not assumed).** Valid manifest states stay
+**exhaustive at exactly three**; **MP5 stays RETIRED** and un-renumbered; **witness-first then
+atomic manifest transition** is unchanged; the **coordinated two-file rollback residual (R22)**
+remains stated honestly and is **not** claimed as runtime-detectable; **fail-closed** behaviour on
+malformed state is unchanged; the **literal 8/8 H0 red phase** is unchanged; **default full-suite
+green task boundaries** are unchanged; **dependency-closed B-task ordering** (subsequence, not
+prefix) is unchanged; and the **live 3a / 3e-absence** references in AC-C2.4 are untouched.
+
+**Scope discipline (rev 13)**: no new task, sub-epic, fixture, harness **function**, file, CI step,
+ledger entry, CODEOWNERS line, policy ID, shipment, or dependency edge. **No new acceptance
+criterion** — AC-C1.3, AC-C1.6, AC-C2.7, AC-C2.9, AC-C2.10, and AC-C2.11 are **clarified in place**.
+One `gate()` subsection restructured (§5.0.1), one evidence point rewritten with a paired companion
+(§5.0.2 point 7 / 7a), one risk row extended (**R19**). AC-ID parity re-swept: **57 plan IDs ↔ 57
+task IDs**, exact bijection maintained, and **content** parity now verified for both C-block pairs.
+Shipment **017-S remains one shipment** with unchanged membership (9 items) and unchanged dependency
+order (A1→A2→A3→{B1,B2,B3}→C1→C2). **No task is re-sized**: every change is a clarification of an
+assertion's mode or evidence form, not of the work any task performs. No production code, test,
+script, workflow, policy, agent, or skill file is modified by this pass — those remain Ship's
+execution surfaces.
+
+**Deliberately not claimed (rev 13).** Stage did **not** perform the authorized adversarial
+re-review — that is the next action and it is **pending**. Stage did **not** push, open, update,
+comment on, or merge PR #54, did **not** reply to or resolve any thread (`PRRT_kwDOTPuhps6hstWa`,
+`PRRT_kwDOTPuhps6hstWg`, `PRRT_kwDOTPuhps6hstWn` remain **unresolved**), and did **not** claim,
+modify, or close shipment `017-S`. **No success is claimed for the re-review that has not yet run.**
 
 <!-- plan-review-attempt: 2 -->
