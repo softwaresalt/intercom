@@ -1664,3 +1664,45 @@ is *remediated, re-review pending* — **not** *cleared*.
 - AC-ID bijection: **PASS** — 57 unique plan IDs ↔ 57 unique task IDs, no orphan on either side.
 - `markdownlint`, `backlogit sync` / `doctor`, shipment membership and dependency-graph integrity,
   clean-tree check: recorded in the session summary.
+
+## 24. Blocked handoff — adversarial re-review consumed, verdict NOT READY
+
+### 24.1 Authorization consumed
+
+Operator authorized **one more remediation + review** cycle. Revision **14** (`da38be5`) consumed
+that authorization. Rev 14 remains **local and unpushed**. Remote PR #54 HEAD is still
+`8999867` (**rev 10**).
+
+### 24.2 Review outcome
+
+Four-model adversarial review completed with **no model-route fallback**. Verdict: **NOT READY**.
+**0 P0**, **three P1 `post_remediation_residuals`**:
+
+1. **MEDIUM** — empty-worktree requirement deadlocks a legitimate dirty C2 boundary.
+2. **LOW** — copied tracked files lack a self-contained `.git`/root, so Git-based scans fail or
+   target the wrong repository.
+3. **LOW** — `git ls-files` omits the newly untracked terminal witness before commit.
+
+### 24.3 Associated P2/P3 (noted separately, not gating)
+
+Readiness-semantics ambiguity; tracked gitlink handling; sentinel wording contradiction; and
+commit-message process hygiene (rev-14 trailer/footer format).
+
+### 24.4 Required corrections (not performed in this session)
+
+- Compare before/after real-tree status **byte-for-byte** rather than requiring an empty worktree.
+- Initialize the copied fixture as a **self-contained Git repo/index** and assert its top-level root.
+- Explicitly **copy and validate the terminal witness**, and handle gitlinks.
+- Clean up the related wording inconsistencies.
+
+### 24.5 Blocked state
+
+- PR body is **BLOCKED**.
+- Local revisions **11–14 unpushed**.
+- **Three Copilot threads unresolved**; no reply, no resolution.
+- **No merge**, no Ship invocation or shipment claim, no direct push to `main`.
+
+### 24.6 Required operator disposition
+
+Either (a) authorize **another narrow remediation + review** cycle, or (b) **accept the named
+residuals** and authorize the push.
