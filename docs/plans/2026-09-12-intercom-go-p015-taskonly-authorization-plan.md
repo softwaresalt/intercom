@@ -3,7 +3,7 @@ title: "Plan — Dormant token-gated TASK_ONLY_FINALIZE authorization in P-015 (
 date: 2026-09-12
 status: planned
 agent: Stage
-revision: 1
+revision: 2
 feature: 023-F
 task: 023.001-T
 shipment: 022-S
@@ -49,12 +49,26 @@ could conclude the path is available. Token gating inverts the default:
 | Property | Consequence |
 |---|---|
 | Absence of the token is the **default state** | No action is required to keep the path off |
-| The token is advertised by the **installed skill**, not by config | It cannot be enabled by a flag, an operator, or an agent |
-| The gate is a **precondition of selection**, not a warning | A classifier that ignored it would fail P-015, not merely deviate |
+| The token is advertised by the **installed skill**, not by config | It cannot be enabled by a flag or a config setting — it requires a merged change to the skill file |
+| The gate is a **precondition of selection**, not a warning | A classifier that ignored it would be **violating P-015**, not merely deviating from guidance |
 | The token is **exact-version** | A future incompatible skill revision **de-authorizes** the branch rather than silently keeping it |
 
-This is fail-closed **by construction**, not by discipline. It is what makes B safe to
-land as its own shipment.
+**How strong this actually is, stated precisely (rev 2).** The **absence-by-default**
+property is genuine and is the load-bearing one: until C merges, the token does not exist
+in the installed skill, so there is no state in which the branch is correctly selectable.
+That is a fact about the filesystem, and it is what makes B safe to land on its own.
+
+**It is not, however, machine-enforced in this workspace, and rev 1 overstated it.** Plan C
+§2.2 verifies that `intercom-go` has **no `src/` directory and no executable close-path
+classifier** — classification here is **agent-driven from the skill markdown**. So nothing
+executable detects an agent that reads P-015 and proceeds despite the missing token; the
+guards are text-presence assertions (B rows 3/4/11, C rows 1/2) plus the fail-closed
+fallback. Rev 1's *"fail-closed **by construction**, not by discipline"* and *"cannot be
+enabled by … an agent"* claimed more enforcement than exists and contradicted B's own §7.2
+honesty note (*"does **not** prove the branch is unreachable at runtime"*).
+
+The accurate statement: **the token's absence is structural; its observance is
+contractual.** Both are needed, and B proves only the first.
 
 ## 3. Surface — exactly 2 files
 
@@ -159,7 +173,7 @@ Exactly **one** generated test function — the `021.001-T` one-queued-task cons
 
 ### 7.1 What the Go test proves
 
-**Contract text and ordering on `workflow-policies.md` only.** 11 rows:
+**Contract text and ordering on `workflow-policies.md` only.** **12 rows**:
 
 | # | Assertion | Kind |
 |---|---|---|
@@ -197,26 +211,77 @@ is the bootstrap property.
 
 | Step | Session | Action |
 |---|---|---|
-| 1 | S1 | Orchestrator routes `022-S` **only after** `021-S` is archived `shipped`; claim; `023-F -> active`, `023.001-T -> active` |
-| 2 | S1 | H0 red → implement A1–A8 → H1 green; commit; push; PR; operator approval; merge |
-| 3 | S1 | Verify merge SHA; `023.001-T -> done` |
-| 4 | S1 | Reload merged `main`. **No Role Boundary change in this merge**, so §6 of plan A does **not** force a session end |
-| 5 | S1 | Step 6.1(a1) — A's authority: verify conditions; `023-F active -> done` |
-| 6 | S1 | Pre-mode `expected_status: done` → both members `done` → `PROCEED` |
-| 7 | S1 | Classification → **`CASCADE`** (fully-covered root; `TASK_ONLY_FINALIZE` not selectable — token absent); close via cascade; P-007; post-mode; sync |
-| 8 | S1 | Operational closure + P-020; closure PR; operator merge |
-| 9 | — | Orchestrator routes **C** only |
+| 1 | S1 | Orchestrator routes `022-S` **only after** `021-S` is archived `shipped`; Step 0.5 pre-claim topology gate; **claim**. Ship moves `023.001-T -> active`. **`023-F` is left `active` as an observed effect of the claim** — Ship performs no direct feature move here (see below) |
+| 2 | S1 | H0 red → implement A1–A8 → H1 green |
+| 3 | S1 | **Step 4.3 quality gates; Step 4.4 review gate** |
+| 4 | S1 | **Step 4.5 Complete Task — commit, then `023.001-T -> done`.** *(Installed order: Step 4.5 (L517) precedes Step 5 (L554). The task reaches `done` BEFORE the implementation PR merges.)* |
+| 5 | S1 | **Step 5 PR lifecycle** — full gate sequence, `--phase lifecycle` topology gate, build, push, PR, operator approval, **merge** |
+| 6 | S1 | **Step 6 Merge Confirmation Gate** — `gh pr view` state `MERGED`; `git fetch origin main`; `git merge-base --is-ancestor {merge_sha} origin/main` |
+| 7 | S1 | Reload merged `main`. **No Role Boundary change in this merge**, and **no capability token is activated by it** (B lands dormant), so neither plan A §6 nor plan C §8.1 forces a session end |
+| 8 | S1 | **Step 6.0 Post-Merge Branch Protocol** — `git checkout main`, `git pull`, `git checkout -b post-merge/023-p015-taskonly-authorization`. **Created BEFORE any post-merge backlog mutation**, because Step 6.1(e) commits `.backlogit/` and those commits must not land on `main` |
+| 9 | S1 | **Step 6.1(a0)** `--phase lifecycle` topology gate — run **while `022-S` is still `active`**. *(Probe 20 tripwire: post-archive this gate fails closed on every route.)* |
+| 10 | S1 | **Step 6.1(a1)** — A's authority, §5.1 case **(ii)**: `023-F` is a manifest member and all five conditions hold → `023-F active -> done` |
+| 11 | S1 | **Step 6.1(a)** pre-mode `expected_status: done` → both members `done` → `PROCEED` |
+| 12 | S1 | Classification → **`CASCADE`** (fully-covered root; `TASK_ONLY_FINALIZE` not selectable — token absent); **6.1(b)** close via cascade; **6.1(c)** P-007; **6.1(d)** post-mode; **6.1(e)** commit `.backlogit/` **on the closure branch** |
+| 13 | S1 | **Step 6 item 2** `operational-closure mode=post-merge` → `docs/closure/`; **P-020** compact-context finalizes the compaction status — **all on the closure branch, before the closure PR is pushed** |
+| 14 | S1 | **Step 6 item 9** `backlogit sync`, then push the closure branch, closure PR, P-014 local review, operator approval, merge |
+| 15 | S1 | **Step 6 item 10** return to `main`; `git pull` |
+| 16 | — | Orchestrator routes **C** only |
+
+**`023-F -> active` is an observed claim effect, not a Ship move (rev 2).** Rev 1's step 1
+read *"claim; `023-F -> active`, `023.001-T -> active`"*, which described Ship transitioning
+the covering feature directly. Ship has **no such authority**: its Role Boundary permits
+moving **tasks** to active/done, and A's new grant is narrowly `active -> done` at Step
+6.1(a1) only. Reading rev 1 literally would have had Ship commit an unauthorized feature
+move at claim time.
+
+What actually happens is a property of the **engine**, measured:
+
+> **Probe 22** (`probe22-parent-status-at-claim.ps1`, executed at `7bc0318`,
+> `DIGEST_GATE=PASS`, live-config-seeded, CLI-only), **ARM AB** — the exact
+> `[feature, task]` shape of `022-S`:
+> `ARM_AB_FEATURE_STATUS_PRE_CLAIM=queued` → **`ARM_AB_FEATURE_STATUS_AFTER_CLAIM=active`**.
+> The same effect is measured on the task-only shape in ARM C, where the feature is not
+> even a manifest member — confirming this is the claim operation propagating to the
+> parent, not anything Ship did.
+
+So `023-F` arrives at `active` **because `backlogit shipment claim` put it there**. Ship
+observes that status; it does not produce it. The only feature transition Ship performs in
+this sequence is the `active -> done` move at step 10, under A's a1 grant. Asserted by
+**AC-14**.
+
+**Why the order in steps 4–5 and 8–14 is exactly this.** Read from the **installed**
+`_ship.agent.md`, not inferred:
+
+| Installed anchor | Consequence |
+|---|---|
+| Step 4.5 (L517) precedes Step 5 (L554) | task `-> done` **before** the implementation PR merges |
+| Step 6.0 (L726) items 2–3 — branch from fresh `main`; *"All subsequent Step 6 work happens on this branch"* | closure branch exists **before** the 6.1(e) backlog commit |
+| Step 6.1(a0) — *"the shipment-scoped check immediately preceding the safe-close mutation itself"* | lifecycle gate runs while `022-S` is still `active` |
+| Step 6.1(a)→(b)→(c)→(d)→(e) | pre-mode → close → P-007 → post-mode → commit |
+| Step 6 item 2 and item 8 (P-020) precede item 9 (`sync`) and the 6.0 item 4 push | closure artifacts + P-020 land on the closure branch **before** the closure PR is pushed |
+
+Rev 1 placed `023.001-T -> done` **after** the merge and collapsed closure into *"P-020;
+closure PR; operator merge"* without establishing the branch first. Both contradicted the
+installed contract. Corrected above.
 
 ### 8.1 Why B may close in one session, unlike A
 
 A changed **Ship's own Role Boundary**, which plan A §6 forbids taking effect
-mid-session. B changes **policy text only** — it grants Ship no new authority. The
-authority B's closure relies on (`023-F active -> done`) was merged and session-loaded in
-**A**, one shipment earlier. So B's single-session closure is consistent with the
-authority-escalation rule rather than an exception to it.
+mid-session. B changes **policy text only** — it grants Ship no new authority **and
+activates no capability token** (the token is C's, and B's gate stays dormant without it).
+The authority B's closure relies on (`023-F active -> done`) was merged and session-loaded
+in **A**, one shipment earlier. So B's single-session closure is consistent with **both**
+escalation rules rather than an exception to either:
 
-This asymmetry is deliberate and is itself evidence that the rule is scoped correctly:
-it binds **authority** changes, not all contract changes.
+| Rule | Source | Applies to B? |
+|---|---|---|
+| A merged Role Boundary change ⇒ session must end | plan A §6 | **No** — B changes no Role Boundary |
+| A session must not select a verdict whose authorizing token it merged | plan C §8.1 | **No** — B merges no token, and closes by `CASCADE`, which predates the whole chain |
+
+This asymmetry is deliberate and is itself evidence that the rules are scoped correctly:
+they bind **authority** and **activation**, not all contract changes. **C, unlike B, does
+merge the token — so C is a two-session close** (plan C §8.1).
 
 ## 9. Intermediate state after B merges (the coherence proof)
 
@@ -247,11 +312,31 @@ C's plan carries the reciprocal obligation and its Go test asserts parity agains
 If C needs a different token, the change is made **in B's surface by Stage**, re-reviewed,
 and only then implemented — never adjusted unilaterally inside C.
 
+**CO-1 is the only coupling requiring a literal string match — it is not the only
+coupling (rev 2).** The full cross-surface set is the deliberation's §7.4 matrix
+(**CO-1 … CO-14**), which includes the verdict literal, the classifier order, the
+`T1–T5`↔`G1–G5` semantic dependency, the verdict-delegation contract, the reload set, the
+a1 feature-completion authority B depends on, and the Probe 20 post-archive
+lifecycle-gate tripwire. B participates in several of those as producer or consumer.
+
 ### 10.2 Rollback
 
 Two files on a feature branch. `git revert` the merge commit. Because the branch is
 dormant, reverting B changes **no runtime behavior** — the strongest possible rollback
 property, and a direct consequence of token gating.
+
+**That property holds only while C is NOT installed.** Once C is installed the token
+exists, B's gate is live, and **reverting B alone would leave the skill advertising and
+implementing a verdict P-015 no longer authorizes** — the worst of the three states. After
+activation the mandatory order is **`C → B → A`**: reverting B requires C already reverted.
+See plan C §10.1 for the full ordering table.
+
+**Downstream shipments must be held before any upstream contract is reverted.** Reverse
+order is necessary but not sufficient — a revert changes the contract queued work was
+planned against. Before reverting B: confirm no downstream shipment is `active`; explicitly
+hold `017-S` (a **Stage** action, recorded in the backlog, taken **before** the revert);
+and re-plan the affected shipments rather than re-routing them on the old plan. Plan C
+§10.1 states this rule once, normatively, for all three shipments.
 
 ### 10.3 Failure paths
 
@@ -260,7 +345,10 @@ property, and a direct consequence of token gating.
 | H1 not reachable in budget | HALT, return to Stage |
 | A5/A6 cannot be scoped without touching items 1–7 | HALT, return to Stage — do **not** re-draft the preserved region |
 | Classification returns `SAFE_CLOSE` at B's closure | HALT — the manifest is not the fully-covered root asserted. Return to Stage |
+| Classification returns `TASK_ONLY_FINALIZE` at B's closure | **HALT** — the branch must be dormant (no token until C). This would falsify A7's gate. Return to Stage |
 | a1 gate unavailable (A not actually live) | HALT — dependency ordering was violated |
+| `023-F` is not `active` at the a1 gate | HALT (plan A §5.1 case iii). If it is already `done`, proceed via idempotent resume (plan A §5.2) |
+| `--phase lifecycle` gate invoked after the archive | **HALT** — Probe 20 tripwire; it fails closed with zero active shipments |
 
 ## 11. Acceptance criteria
 
@@ -277,6 +365,9 @@ property, and a direct consequence of token gating.
 - **AC-11** `_ship.agent.md` and `shipment-reconcile/SKILL.md` are **unchanged** by this shipment.
 - **AC-12** Closure follows §8 and classifies **`CASCADE`**, never `TASK_ONLY_FINALIZE`.
 - **AC-13** Exactly 2 files changed. 0 new production files.
+- **AC-14** **(rev 2)** Ship performs **no** direct feature move at claim. `023-F` reaching `active` is recorded as an **observed effect of `backlogit shipment claim`** (Probe 22 ARM AB), and the only Ship-performed feature transition is `active -> done` at Step 6.1(a1) under A's grant.
+- **AC-15** **(rev 2)** The lifecycle order of §8 is followed: `023.001-T -> done` **before** the implementation PR merges; the closure branch created from fresh `main` **before** any post-merge backlog mutation; closure artifacts and P-020 on the closure branch **before** the closure PR is pushed; `sync` and post-mode in installed order.
+- **AC-16** **(rev 2)** The `a0` `--phase lifecycle` gate runs **while `022-S` is still active**; **no** `--phase lifecycle` invocation occurs after the archive (Probe 20 tripwire).
 
 ## 12. Sizing
 
@@ -290,13 +381,17 @@ property, and a direct consequence of token gating.
 | A4 + A5 + A6 structural MUST | ~12 min |
 | **A7 dormant exception block** (token + order + T1–T5 + exclusivity + fallback) | **~20 min** |
 | A8 Amendment Log row | ~1 min |
-| Go table-driven test (11 rows) + ≤4 helpers | ~18 min |
+| Go table-driven test (**12** rows) + ≤4 helpers | ~19 min |
 | H0→H1, `go vet`, `go test`, `markdownlint` | ~10 min |
-| **Total** | **~66 min ≈ 1.1 h** |
+| **Total** | **~67 min ≈ 1.1 h** |
 
-Margin to the 2-hour rule: **~54 min**. A7 is ~20 min rather than rev 6's ~15 because it
+Margin to the 2-hour rule: **~53 min**. A7 is ~20 min rather than rev 6's ~15 because it
 adds the token gate; it is far below rev 6's ~30 min `B18` because **T1–T5 only** land
 here and `G0–G13`/`P1–P10` go to C.
+
+*(Rev-2 delta: Go test **+1** min — the row count in §7.1 was stated as 11 while the table
+has always listed 12; the text is corrected to 12 and the estimate follows it. Total ~66 →
+~67 min.)*
 
 **Contingency.** Exceeding 2 h mid-execution → **HALT and return to Stage.**
 
@@ -338,11 +433,18 @@ implement cleanly and then **fail at closure** with no live authority to complet
 The `022-S depends_on 021-S` edge is therefore load-bearing, and §10.3 halts rather than
 improvises.
 
-**Hardening 5 — coupling to C is the one cross-shipment obligation.** CO-1 is the only
-place B and C must agree. It is narrow (one token string), asserted from **both** sides
-(B's row 3, C's parity row), and changes to it route through **Stage**, not through C.
-Unilateral adjustment inside C is forbidden precisely because it would silently
-de-authorize or over-authorize the branch.
+**Hardening 5 — coupling to C is the one cross-shipment obligation needing a literal
+string match, not the only coupling at all.** CO-1 is the only place B and C must agree on
+an **exact string**. It is narrow (one token), asserted from **both** sides (B's row 3,
+C's parity row), and changes to it route through **Stage**, not through C. Unilateral
+adjustment inside C is forbidden precisely because it would silently de-authorize or
+over-authorize the branch. **Rev 2 correction:** rev 1's phrasing ("the one cross-shipment
+obligation", "the only place B and C must agree") overstated this. B and C are also
+coupled on the verdict literal (**CO-2**), the classifier order (**CO-3**), and the
+`T1–T5`↔`G1–G5` relationship (**CO-4**) — the last of which is **semantic, not textual**,
+and is an accepted residual because C cites rather than restates. The authoritative set is
+the deliberation's §7.4 matrix (**CO-1 … CO-12**). Treating CO-1 as the whole coupling
+surface is exactly how CO-4 drift would go unnoticed.
 
 **Hardening 6 — what could make this plan wrong.** If the skill cannot advertise a
 machine-readable token at all, A7's gate is unimplementable and the whole three-shipment

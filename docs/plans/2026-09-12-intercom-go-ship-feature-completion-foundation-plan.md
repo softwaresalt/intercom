@@ -3,7 +3,7 @@ title: "Plan — Ship covering-feature completion and close-path delegation (Fou
 date: 2026-09-12
 status: planned
 agent: Stage
-revision: 1
+revision: 2
 feature: 022-F
 task: 022.001-T
 shipment: 021-S
@@ -13,7 +13,7 @@ umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finaliza
 
 # Plan — Ship covering-feature completion and close-path delegation (Foundation)
 
-> **Requires plan hardening**: **yes — applied in rev 1** (see `## Plan Hardening`).
+> **Requires plan hardening**: **yes — applied in rev 2** (see `## Plan Hardening`).
 
 - **Shipment**: `021-S` (A, Foundation) — first of three in the bootstrap chain
 - **Closes by**: the **existing** P-015 `VERIFIED FULLY-COVERED-ROOT EXCEPTION` (`CASCADE`)
@@ -52,7 +52,7 @@ during re-planning, independent of the bootstrap:
 
 | Surface | Coverage rule |
 |---|---|
-| P-015 item 1 (v1.24.0), `workflow-policies.md:436` | *"every one of its **descendants — at every depth, not only direct children**"*, and: *"A check limited to direct children is insufficient"* |
+| P-015 item 1 (v1.24.0), `workflow-policies.md:438` | *"every one of its **descendants — at every depth, not only direct children**"*, and: *"A check limited to direct children is insufficient"* |
 | `_ship.agent.md:810` | *"every one of its **children**, enumerated live from `.backlogit/queue/` + `.backlogit/archive/`"* |
 
 A manifest `[feature, task]` whose task owns an out-of-manifest subtask **passes Ship's
@@ -84,8 +84,25 @@ Inventory Table §6.1-C exactly.
 
 | Additive | Content |
 |---|---|
-| **A-1** | Role Boundary table row (line 38) — narrow feature-completion authority |
-| **A-2** | New **Step 6.1(a1)** — covering-feature completion gate |
+| **ADD-1** | Role Boundary table row (line 38) — narrow feature-completion authority |
+| **ADD-2** | New **Step 6.1(a1)** — covering-feature completion gate |
+
+> **Rev 2 — additive-item label rename, recorded for traceability.** Rev 1 labelled these
+> two additive items `A-1` and `A-2`. That collided visually with plan **B**'s clause-site
+> labels `A1`–`A8` (B's sites are named `A*` because rev 6's Inventory Table §6.1-A covers
+> `workflow-policies.md`). Because the three plans are reviewed together, `A-1` and `A1`
+> appearing in the same review were a genuine mis-read hazard. They are renamed
+> **`ADD-1`/`ADD-2`** here. **Traceability:** rev 1 `A-1` ≡ rev 2 `ADD-1`; rev 1 `A-2` ≡
+> rev 2 `ADD-2`. No content changed — label only. The cross-plan label map is:
+>
+> | Plan | Surface | Clause-site labels | Origin |
+> |---|---|---|---|
+> | **A** (this plan) | `_ship.agent.md` | `C1`–`C6` + `ADD-1`/`ADD-2` | rev 6 Inventory Table §6.1-C |
+> | **B** | `workflow-policies.md` | `A1`–`A8` | rev 6 Inventory Table §6.1-A |
+> | **C** | `shipment-reconcile/SKILL.md` | `B1`–`B18` | rev 6 Inventory Table §6.1-B |
+>
+> The letters track the **rev-6 inventory section**, not the shipment. That is confusing
+> but it is the traceable naming, so it is documented rather than silently re-lettered.
 
 ### 4.1 Delegation wording constraint (normative)
 
@@ -117,17 +134,22 @@ reconciliation to inference. C1's reconciled text is pinned:
 Go test row 11 asserts the scoping clause is present, so the two sentences cannot ship
 unreconciled.
 
-### 4.3 Stage precondition — manifest re-shape (owned, not assumed)
+### 4.3 Stage precondition — manifest re-shape (owned, and now COMPLETED)
 
-`021-S`'s live manifest is **task-only** `[022.001-T]`. The fully-covered-root shape this
-plan depends on is a **required re-shape to `[022-F, 022.001-T]`**, performed by **Stage**
-(Ship's Role Boundary forbids editing shipment planning fields). It is done **before**
-Ship claims `021-S`, and it is completed in the re-plan session that produced this plan.
+**Rev 2 status: DONE.** `021-S`'s live manifest is the fully-covered root
+`[022-F, 022.001-T]`, verified at this plan's revision. Rev 1 described the re-shape in the
+present/future tense (*"`021-S`'s live manifest is task-only `[022.001-T]` … is a required
+re-shape"*), which was accurate when drafted but became stale the moment the re-shape was
+performed in the same re-plan session. An implementer reading rev 1 would have gone looking
+for work that no longer existed.
 
-If it were skipped, A's manifest would stay task-only, the classifier would return
-`SAFE_CLOSE` (no feature member ⇒ no `CASCADE`; `TASK_ONLY_FINALIZE` not yet authorized),
-and A could not close. That outcome is **fail-closed** (§10.3), but it is a precondition
-with a named owner, not a hope. Asserted by **AC-12**.
+The re-shape was performed by **Stage** (Ship's Role Boundary forbids editing shipment
+planning fields), **before** Ship claims `021-S`.
+
+If it had been skipped, A's manifest would have stayed task-only, the classifier would
+return `SAFE_CLOSE` (no feature member ⇒ no `CASCADE`; `TASK_ONLY_FINALIZE` not yet
+authorized), and A could not close. That outcome is **fail-closed** (§10.3). **AC-12** is
+now a *verification* that the shape is present at claim, not an instruction to create it.
 
 ## 5. The Role Boundary grant (normative, narrow, fail-closed)
 
@@ -146,6 +168,49 @@ hold:
 grant. The authority is **not** general feature lifecycle management: it may not move a
 feature to `done` outside Step 6.1(a1), and it grants nothing over features outside the
 active shipment's manifest.
+
+### 5.1 Step 6.1(a1) applicability — three outcomes, stated exhaustively (rev 2)
+
+Rev 1 specified what a1 does when it applies, but never said what a1 does when the
+manifest has **no** feature member. That gap matters immediately: `017-S` is a 12-member
+**task-only** manifest, so a1 will encounter that case in this very chain, and an
+unspecified step invites an implementer to either skip the gate silently or invent a
+transition. Both are wrong. The step MUST be written with an explicit three-way outcome:
+
+| Case | Condition | Outcome |
+|---|---|---|
+| **(i) NOT APPLICABLE** | The manifest contains **zero** feature members | **Explicit no-op.** a1 records `A1_NOT_APPLICABLE: no feature member in manifest` and proceeds directly to Step 6.1(a). This is a **successful** outcome, not a skip and not a failure |
+| **(ii) APPLIES — proceed** | The manifest contains a feature member and **all five** §5 conditions hold for it | Perform `active -> done`; record the transition |
+| **(iii) APPLIES — halt** | The manifest contains a feature member and **any** §5 condition is unmet | **HALT, fail closed.** Surface which condition failed. Do **not** proceed to Step 6.1(a). Do **not** widen any condition in-flight |
+
+**The distinction between (i) and (iii) is load-bearing.** Case (i) is "there is nothing
+here for this gate to do". Case (iii) is "there is something here and it is not in the
+required state". Collapsing them — treating an unmet guard on a real feature member as a
+benign no-op — would let a shipment close with a covering feature left `active` or with
+descendants unfinished, which is precisely the corruption the gate exists to prevent. A
+zero-feature-member manifest must never be reported as a guard failure either: that would
+make every task-only shipment, including `017-S`, un-closable.
+
+Asserted by **AC-15** (case i) and **AC-16** (case iii).
+
+### 5.2 Idempotent resume (rev 2)
+
+A1 MUST be **idempotent**. If the feature member's live status is already `done` when a1
+runs, a1 records `A1_ALREADY_DONE: {feature_id}` and proceeds to Step 6.1(a) **without
+error and without re-issuing the transition**.
+
+This is not hypothetical tidiness — it is required by A's own two-session closure. If S2
+completes `022-F -> done` and then fails anywhere between a1 and the close (a
+`RECONCILE_FAIL`, a digest mismatch, an operator halt), the recovery session re-enters at
+a1 with the feature already `done`. Without idempotent resume, condition 5 (*"live status
+is exactly `active`"*) would fail closed and A could **never** be closed by any session —
+a permanently stuck shipment created by its own partial success.
+
+Idempotent resume is scoped tightly: it recognises the **already-satisfied terminal state**
+of the transition a1 itself performs. It does **not** relax conditions 1–4, which are
+re-verified on every entry, and it does **not** authorize any transition from any status
+other than `active`. A feature in `queued`, `blocked`, or any other status remains case
+(iii) — **HALT**. Asserted by **AC-17**.
 
 ## 6. The authority-escalation rule (load-bearing)
 
@@ -166,7 +231,7 @@ Therefore: **the session that merges A checkpoints and ends.**
 1. **H0 — red.** Add the single table-driven test function. Marker:
    `not implemented: ship feature-completion delegation contract`. Red count **1 of 1**;
    `go vet` clean; `go test ./...` non-zero.
-2. **H1 — green.** Apply A-1, A-2, C1–C6. Re-run: `go vet` clean, `go test ./...` green,
+2. **H1 — green.** Apply ADD-1, ADD-2, C1–C6. Re-run: `go vet` clean, `go test ./...` green,
    `markdownlint` clean.
 
 Exactly **one** generated test function, so Ship Step 2's feature-scoped batch yields one
@@ -176,7 +241,7 @@ function and Step 4.3 cannot deadlock (the `021.001-T` constraint).
 
 ### 8.1 What the Go test proves
 
-**Contract text and ordering on `_ship.agent.md` only.** 10 rows:
+**Contract text and ordering on `_ship.agent.md` only.** **13 rows**:
 
 | # | Assertion | Kind |
 |---|---|---|
@@ -191,10 +256,16 @@ function and Step 4.3 cannot deadlock (the `021.001-T` constraint).
 | 9 | `_ship.agent.md` does **not** enumerate the authorized verdict set | **negative** |
 | 10 | The `backlogit move <shipment_id> --status shipped` prescription (C2) is gone | **negative** |
 | 11 | C1's reconciled wording scopes the carve-out to **Role Boundary** changes only (§4.2) | **ordering/consistency** |
+| 12 | Step 6.1(a1) states the **zero-feature-member explicit no-op** (§5.1 case i) and that an unmet guard on a present feature member **halts** (case iii) | **ordering/consistency** |
+| 13 | Step 6.1(a1) states **idempotent resume** — a feature member already `done` proceeds without error and without re-issuing the transition (§5.2) | **ordering/consistency** |
 
 Rows 7–10 are the **widening guards**: they fail if this change authorized anything new.
 Row 11 is the **coherence guard**: it fails if C1 ships with the carve-out and the
 "close under the just-merged contract" directive unreconciled.
+**Rows 12–13 are the applicability guards** (rev 2): they fail if a1 ships without an
+explicit not-applicable outcome — which would make every task-only shipment, `017-S`
+included, ambiguous at the gate — or without idempotent resume, which would make a
+partially-completed A permanently unclosable.
 
 ### 8.2 What it does **not** prove
 
@@ -212,61 +283,129 @@ else. It therefore qualifies under the **existing, already-reviewed** P-015 exce
 
 | Step | Session | Action |
 |---|---|---|
-| 0 | **Stage** | **Pre-execution readiness check (PO-1)** — read `022-F`'s live status *shape* under claim semantics **before** implementation begins (§10.1) |
-| 1 | S1 | Verify on `main`; claim `021-S`. Ship moves **`022.001-T -> active`**. Whatever status claim leaves `022-F` in is **observed, not assumed** (PO-1) |
-| 2 | S1 | H0 red → implement → H1 green; commit; push; PR; operator approval; merge |
-| 3 | S1 | Verify merge SHA; `022.001-T -> done` |
-| 4 | S1 | **Reload merged `main`.** Detect that the merged change alters **Ship's own Role Boundary**. Per §6 the new authority is **not** available to this session |
-| 5 | S1 | **Write checkpoint** (`phase: awaiting-fresh-session-parent-completion`, `resume_hint` naming `021-S`, `022-F`, the merge SHA) and **END** |
-| 6 | **S2** | **Fresh session.** Loads the new Role Boundary + Step 6.1(a1) from merged `main` |
-| 7 | S2 | Restore checkpoint; validate the **same** active shipment `021-S`; verify merge SHA is an ancestor of `main` |
-| 8 | S2 | Step 6.1(a0) topology gate → **Step 6.1(a1)**: verify §5 conditions 1–5; `022-F active -> done` |
-| 9 | S2 | Step 6.1(a) pre-mode, `expected_status: done` — **both** members now `done` → `PROCEED` |
-| 10 | S2 | Classification returns **`CASCADE`** (fully-covered root); close via the cascade op; P-007; post-mode; sync; verify |
-| 11 | S2 | Operational closure + P-020 on the post-merge branch; closure PR; operator merge |
-| 12 | — | Orchestrator routes **B** only |
+| 0 | **Stage** | **Pre-execution readiness check (PO-1a)** — **DISCHARGED**, see §10.1. Probe 22 measured the claim shape; no pre-implementation blocker remains |
+| 1 | S1 | Verify on `main`; Step 0.5 pre-claim topology gate; **claim `021-S`**. Ship moves **`022.001-T -> active`**. `022-F` is left **`active`** — **measured, not assumed** (Probe 22 ARM AB) |
+| 2 | S1 | H0 red → implement → H1 green |
+| 3 | S1 | **Step 4.3 quality gates; Step 4.4 review gate** |
+| 4 | S1 | **Step 4.5 Complete Task — commit, then `022.001-T -> done`.** *(Installed order: Step 4.5 (L517) precedes Step 5 (L554). The task reaches `done` BEFORE the implementation PR merges.)* |
+| 5 | S1 | **Step 5 PR lifecycle** — full gate sequence, `--phase lifecycle` topology gate, build, push, PR, operator approval, **merge** |
+| 6 | S1 | **Step 6 Merge Confirmation Gate** — `gh pr view` state `MERGED`; `git fetch origin main`; `git merge-base --is-ancestor {merge_sha} origin/main` |
+| 7 | S1 | **Reload merged `main`.** Detect that the merged change alters **Ship's own Role Boundary**. Per §6 the new authority is **not** available to this session |
+| 8 | S1 | **Write checkpoint** (`schema_version: 1`, `agent: ship`, `phase: awaiting-fresh-session-parent-completion`, `resume_hint` naming `021-S`, `022-F`, `022.001-T` and the merge SHA; domain data under `context`) and **END** |
+| 9 | **S2** | **Fresh session.** Full checkpoint-recovery protocol (§9.1) — enumeration, anomaly gate, explicit owner selection, operator confirmation, same cursor, resolve-after-resume. Loads the new Role Boundary + Step 6.1(a1) from merged `main` |
+| 10 | S2 | Verify the merge SHA is an ancestor of `origin/main`; validate the **same** active shipment `021-S` |
+| 11 | S2 | **Step 6.0 Post-Merge Branch Protocol** — `git checkout main`, `git pull`, `git checkout -b post-merge/022-ship-feature-completion`. **Created BEFORE any post-merge backlog mutation**, because Step 6.1(e) commits `.backlogit/` and those commits must not land on `main` |
+| 12 | S2 | **Step 6.1(a0)** `--phase lifecycle` topology gate — run **while `021-S` is still `active`**. *(Probe 20 tripwire: post-archive this gate fails closed on every route; it must never be re-run after the close.)* |
+| 13 | S2 | **Step 6.1(a1)** — §5.1 case **(ii)**: `022-F` is a manifest member and all five §5 conditions hold → `022-F active -> done` |
+| 14 | S2 | **Step 6.1(a)** pre-mode, `expected_status: done` — **both** members now `done` → `PROCEED` |
+| 15 | S2 | Classification returns **`CASCADE`** (fully-covered root); **6.1(b)** close via the cascade op; **6.1(c)** P-007 archive-integrity verify; **6.1(d)** post-mode; **6.1(e)** commit `.backlogit/` **on the closure branch** |
+| 16 | S2 | **Step 6 item 2** `operational-closure mode=post-merge` → `docs/closure/`; **P-020** compact-context finalizes the compaction status — **all on the closure branch, before the closure PR is pushed** |
+| 17 | S2 | **Step 6 item 9** `backlogit sync`, then push the closure branch, closure PR, P-014 local review, operator approval, merge |
+| 18 | S2 | **Step 6 item 10** return to `main`; `git pull` |
+| 19 | — | Orchestrator routes **B** only |
 
-### 9.1 What this proves
+**Why the order in steps 4–5 and 11–17 is exactly this.** Read from the **installed**
+`_ship.agent.md`, not inferred:
 
-* **Checkpoint/resume across a session boundary** — steps 5→7, executed, not asserted.
+| Installed anchor | Consequence |
+|---|---|
+| Step 4.5 (L517) precedes Step 5 (L554) | task `-> done` **before** the implementation PR merges |
+| Step 6.0 (L726) items 2–3 — branch from fresh `main`; *"All subsequent Step 6 work happens on this branch"* | closure branch exists **before** the 6.1(e) backlog commit |
+| Step 6.1(a0) — *"the shipment-scoped check immediately preceding the safe-close mutation itself"* | lifecycle gate runs while `021-S` is still `active` |
+| Step 6.1(a)→(b)→(c)→(d)→(e) | pre-mode → close → P-007 → post-mode → commit |
+| Step 6 item 2 and item 8 (P-020) precede item 9 (`sync`) and the 6.0 item 4 push | closure artifacts + P-020 land on the closure branch **before** the closure PR is pushed |
+
+Rev 1 placed `022.001-T -> done` **after** the merge, and placed operational closure + P-020
+as a single late step without establishing the branch first. Both contradicted the
+installed contract. Corrected above.
+
+### 9.1 S2's checkpoint recovery is the FULL protocol, not a resume shortcut (rev 2)
+
+Rev 1 said only that S2 *"restores the checkpoint"*. That is the step most likely to be
+short-circuited, so it is specified in full. S2 MUST:
+
+1. **Enumerate** via `backlogit_list_checkpoints` with `consumer_id: "ship"` and **no**
+   `status`/`agent` filter — a quarantined or schema-invalid record must not be silently
+   excluded by the query itself.
+2. **Run the anomaly gate FIRST** — any validation error, quarantine flag, or
+   missing/malformed required field in **any** enumerated summary ⇒ **FAIL CLOSED** to
+   operator handoff, evaluated **before** the zero-candidate check.
+3. **Require explicit owner selection** — never auto-pick, **even when exactly one
+   candidate is returned**. The operator selects one checkpoint by filename; ambiguity
+   fails closed.
+4. **Validate ownership** — CheckpointV1 `agent` MUST be exactly `ship`. A `stage`-owned
+   checkpoint is never selectable here (P-001 role separation).
+5. **Obtain operator confirmation before restore** — present `resume_hint` and recorded
+   state. There is no automatic resume: schema V1 carries no heartbeat or lease, so elapsed
+   time can never prove S1 dead.
+6. **Resume the same cursor** — the **same** single active shipment `021-S`. No parallel
+   resume, no new worktree (P-001/P-016).
+7. **Resolve only after a confirmed successful resume** — `backlogit_resolve_checkpoint`
+   for that **one** selected checkpoint only. No bulk sweep, never a `stage`-owned record.
+8. **Fail closed with no fresh-start fallback** — an invalid, torn, or unreadable
+   checkpoint halts to the operator. S2 MUST NOT discard it and begin fresh work.
+
+### 9.2 What this proves
+
+* **Checkpoint/resume across a session boundary** — steps 8→9, executed, not asserted.
 * **No authority gained mid-session** — S1 never uses feature-completion authority;
   it is used first by S2, which did not perform the merge. This is the §6 property
   demonstrated by execution.
-* **A closes by an existing path.** At step 10, P-015 still has exactly one exception.
+* **A closes by an existing path.** At step 15, P-015 still has exactly one exception.
   A introduces no verdict and closes by the pre-existing one.
 
 ## 10. Risks, residuals, rollback
 
 | ID | Risk | Disposition |
 |---|---|---|
-| **R-1** | `022-F` may be `queued`, not `active`, at the a1 gate, so §5 condition 5 fails closed and A cannot self-close | **PO-1a** (pre-execution) + **PO-1b** (at the gate), §10.1. Fail-closed HALT is correct; the plan does **not** assume claim sets features `active` |
+| **R-1** | `022-F` may be `queued`, not `active`, at the a1 gate, so §5 condition 5 fails closed and A cannot self-close | **(rev 2 — DISCHARGED by measurement.)** Probe 22 ARM AB measured `022-F`'s analogue at **`active`** after claim of a fully-covered-root manifest. PO-1a is closed; **PO-1b** remains as the at-the-gate re-read (§10.1). Fail-closed HALT is still correct if the live read disagrees |
 | **R-2** | S1 might use the new authority anyway, defeating the proof | §6 is stated normatively **and** asserted by Go test row 6 |
 | **R-3** | Delegation could be read as authorizing any verdict the skill invents | §4.1 binds Ship to verdicts the **classification** names; P-015 remains the authorization surface. Go test row 9 guards it |
 | **R-4** | C2's correction touches the safe-close summary, which C also edits in its own file | **No overlap**: C2 is in `_ship.agent.md`; the skill's step 8 is C's file. Disjoint surfaces |
 | **R-5** | Removing Ship's restatement loses reviewer-visible context | Accepted. The classification stays fully specified in P-015 and the skill; duplication is what caused the §2.2 drift |
 
-### 10.1 PO-1 — covering-feature status at claim (**pre-execution** readiness check)
+### 10.1 PO-1 — covering-feature status at claim (**PO-1a discharged in rev 2**)
 
-**Promoted to a pre-execution check (review correction).** PO-1 was drafted as a
-closure-time read, which would have discovered a claim-shape mismatch only *after* A's
-implementation merged — the most expensive possible moment. It now runs **twice**:
+**PO-1a — before implementation begins (Stage / §9 step 0). STATUS: DISCHARGED.**
+Rev 1 required Stage to determine what status shipment claim leaves a covering feature in,
+**before** implementing, so a claim-shape mismatch could not be discovered only after A's
+implementation merged. That measurement has now been executed:
 
-**PO-1a — before implementation begins (Stage / §9 step 0).** Determine what status
-shipment claim leaves a covering feature in. Evidence may be taken from an already-closed
-fully-covered-root shipment in `.backlogit/archive/`, or from a scratch probe. If claim
-does **not** leave the covering feature `active`, **stop before implementing** and return
-to Stage to choose between (i) amending the claim step to transition covering features to
-`active`, or (ii) widening the authorized transition — either as its **own** reviewed
-unit.
+> **Probe 22** (`probe22-parent-status-at-claim.ps1`, executed at `7bc0318`,
+> `DIGEST_GATE=PASS`, live-config-seeded, CLI-only):
+> **ARM AB** — fully-covered-root manifest `[001-F, 001.001-T]`, the exact shape of
+> `021-S`:
+> `ARM_AB_FEATURE_STATUS_PRE_CLAIM=queued`,
+> **`ARM_AB_FEATURE_STATUS_AFTER_CLAIM=active`**,
+> `ARM_AB_FEATURE_ACTIVE_AT_CLAIM=True`,
+> `ARM_AB_FEATURE_DONE_MOVE_ACCEPTED=True`.
 
-**PO-1b — at the gate (S2, before §9 step 8).** Re-read `.backlogit/queue/022-F.md` and
-record the live `status`.
+Claim leaves the covering feature **`active`**, which is exactly what §5 condition 5
+requires, and the engine accepts the `active -> done` move a1 performs. **A may proceed to
+implementation.** Neither of rev 1's contingency branches — amending the claim step, or
+widening the authorized transition — is needed, and neither is authorized.
 
-* `active` → proceed.
-* anything else → **HALT**. Do not widen §5 condition 5 in-flight. Return to **Stage**.
+**PO-1b — at the gate (S2, before §9 step 13). RETAINED.** Read `022-F`'s live status with
+**`backlogit get 022-F`** and record the `status` field.
 
-Widening an authority envelope mid-execution is forbidden. PO-1a makes the expensive
-discovery cheap; PO-1b keeps the gate fail-closed regardless.
+> **Read by status, never by path (rev 2 correction).** An earlier draft said *"re-read
+> `.backlogit/queue/022-F.md`"*. That is wrong and would have made the `done` branch below
+> **unreachable**: the live `registry.yaml` routes `done|accepted|rejected|archived` to
+> `archive/` and only `queued|active|blocked|review` to `queue/`, and `shipment-reconcile`
+> independently classifies a live `status: done` record found in `queue/` as `conflicting`.
+> A literal implementer reading the queue path for a completed feature gets file-not-found,
+> falls into "anything else", and **HALTs** — producing exactly the permanently-stuck
+> shipment §5.2 exists to prevent.
+
+* `active` → proceed (case ii).
+* `done` → proceed via **idempotent resume** (§5.2).
+* anything else → **HALT** (case iii). Do not widen §5 condition 5 in-flight. Return to
+  **Stage**.
+
+PO-1b is retained even though PO-1a measured the general behavior, because a probe
+measures the **engine**, not this specific live record at that specific moment. Widening an
+authority envelope mid-execution remains forbidden; PO-1b keeps the gate fail-closed
+regardless of what the probe found.
 
 ### 10.1.1 Probe 18 travels with A
 
@@ -283,15 +422,33 @@ Two files on a feature branch. `git revert` the merge commit; Ship's closure beh
 returns to today's state (including, knowingly, the §2.2 drift). No backlog mutation is
 performed by the implementation commit itself, so no backlog rollback is required.
 
+**That simple statement holds only BEFORE the chain is activated.** Once B and/or C are
+installed, **A must not be reverted alone** — it would restore Ship's stale binary
+restatement and the `children`-only drift while newer surfaces depend on the delegation A
+introduced. After activation the mandatory order is **`C → B → A`**: reverting A requires
+B and C already reverted. See plan C §10.1 for the full ordering table.
+
+**Downstream shipments must be held before any upstream contract is reverted.** Reverse
+order is necessary but not sufficient — a revert changes the contract queued work was
+planned against. Before reverting A: confirm no downstream shipment is `active`; explicitly
+hold `017-S` (a **Stage** action, recorded in the backlog, taken **before** the revert);
+and re-plan the affected shipments rather than re-routing them on the old plan. Plan C
+§10.1 states this rule once, normatively, for all three shipments.
+
 ### 10.3 Failure paths
 
 | Failure | Response |
 |---|---|
 | H1 cannot be reached in budget | HALT, return to Stage. Never split — A is already minimal |
-| a1 gate conditions 1–4 fail | HALT fail-closed; surface which condition; no close |
+| a1: a **present** feature member fails any §5 condition 1–5 | **HALT** fail-closed (§5.1 case iii); surface which condition; no close |
+| a1: manifest has **zero** feature members | **Explicit no-op** (§5.1 case i) — record `A1_NOT_APPLICABLE` and proceed to `a`. **Not** a failure |
+| a1: feature member already `done` | **Idempotent resume** (§5.2) — record `A1_ALREADY_DONE` and proceed to `a`. **Not** a failure |
 | Pre-mode returns `RECONCILE_FAIL` | HALT; do not proceed to close; surface the report |
 | Classification returns `SAFE_CLOSE` instead of `CASCADE` | HALT — indicates the manifest is not the fully-covered root this plan asserts. Return to Stage |
 | Cascade archives anything outside `allowed_ids` | P-015 violation action: `git restore`, re-verify protected set, HALT |
+| S1 attempts the a1 gate or the close after its own merge | **HALT** — §6 forbids it; S1 must checkpoint and end. Return to Stage; the two-session property has been violated |
+| S2 recovery hits a validation/quarantine anomaly, ambiguity, or a `stage`-owned record | **FAIL CLOSED** to operator handoff (§9.1). No restore, no resume, no resolve |
+| `--phase lifecycle` gate invoked after the archive | **HALT** — Probe 20 tripwire; it fails closed with zero active shipments and nothing remains to re-claim |
 
 ## 11. Acceptance criteria
 
@@ -306,15 +463,25 @@ performed by the implementation commit itself, so no backlog rollback is require
 - **AC-8** `markdownlint` clean on the changed file.
 - **AC-9** Closure follows §9 including the S1 checkpoint-and-end and the S2 fresh-session
   parent completion. AC-9 is **not** satisfied if one session performs both. The
-  checkpoint MUST be written through `backlogit_create_checkpoint` (tool-timestamped) and
-  its `created_at` must precede S2's resume. *Residual, stated honestly:* the artifact is
-  not tamper-proof — the two-session property ultimately rests on process integrity, and
-  the checkpoint is evidence, not enforcement.
-- **AC-10** PO-1a executed **before** implementation; PO-1b executed before the a1 gate; both recorded.
+  checkpoint MUST be written through `backlogit_create_checkpoint` (tool-timestamped) with
+  `schema_version: 1`, `agent: ship`, a `phase`, a `resume_hint` naming `021-S`, `022-F`,
+  `022.001-T` and the merge SHA, and domain data under `context`; its `created_at` must
+  precede S2's resume. **S2 executes the full §9.1 recovery protocol** — enumeration
+  without status/agent filter, anomaly gate first, explicit owner selection even for a
+  single candidate, `agent: ship` ownership validation, operator confirmation before
+  restore, same cursor, and resolve-only-after-confirmed-resume. *Residual, stated
+  honestly:* the artifact is not tamper-proof — the two-session property ultimately rests
+  on process integrity, and the checkpoint is evidence, not enforcement.
+- **AC-10** PO-1a is **discharged by Probe 22** and cited (§10.1); PO-1b executed before the a1 gate and recorded.
 - **AC-11** Exactly 2 files changed. 0 new production files.
-- **AC-12** `021-S`'s manifest is `[022-F, 022.001-T]` **before** claim (§4.3, Stage-owned).
+- **AC-12** `021-S`'s manifest is verified to be `[022-F, 022.001-T]` **at claim** (§4.3 — the re-shape is already complete; this is a verification, not a task).
 - **AC-13** Probe 18 is cited as C2's justification (§10.1.1).
 - **AC-14** C1 ships with the §4.2 pinned reconciled wording; Go test row 11 passes.
+- **AC-15** **(rev 2)** Step 6.1(a1) states the **zero-feature-member explicit no-op** (§5.1 case i); Go test row 12 passes.
+- **AC-16** **(rev 2)** Step 6.1(a1) states that an unmet §5 condition on a **present** feature member **HALTs** (§5.1 case iii) and is not treated as a no-op.
+- **AC-17** **(rev 2)** Step 6.1(a1) states **idempotent resume** for a feature member already `done` (§5.2); Go test row 13 passes.
+- **AC-18** **(rev 2)** The lifecycle order of §9 is followed: `022.001-T -> done` **before** the implementation PR merges; the closure branch created from fresh `main` **before** any post-merge backlog mutation; closure artifacts and P-020 on the closure branch **before** the closure PR is pushed; `sync` and post-mode in installed order.
+- **AC-19** **(rev 2)** The `a0` `--phase lifecycle` gate runs **while `021-S` is still active**; **no** `--phase lifecycle` invocation occurs after the archive (Probe 20 tripwire).
 
 ## 12. Sizing
 
@@ -325,18 +492,22 @@ field (confirmed at `.backlogit/header-def.yaml:144–166`, and in
 
 | Work item | Estimate |
 |---|---|
-| Role Boundary grant (A-1) | ~8 min |
-| Step 6.1(a1) parent-completion step (A-2) | ~10 min |
+| Role Boundary grant (ADD-1) | ~8 min |
+| Step 6.1(a1) parent-completion step (ADD-2), incl. §5.1 three-way applicability + §5.2 idempotent resume | ~15 min |
 | C1 reload extension | ~4 min |
 | C2 safe-close summary correction | ~4 min |
 | C3 + C4 + C5 generic delegation | ~12 min |
 | C6 delegation bullet | ~4 min |
-| Go table-driven test (11 rows) + ≤4 helpers | ~19 min |
+| Go table-driven test (**13** rows) + ≤4 helpers | ~21 min |
 | H0→H1, `go vet`, `go test`, `markdownlint` | ~10 min |
-| **Total** | **~71 min ≈ 1.2 h** |
+| **Total** | **~78 min ≈ 1.3 h** |
 
 Rates are rev 6 §10.1's own, so this is directly comparable to the measurement that
-produced `MUST_REPLAN`. Margin to the 2-hour rule: **~49 min**.
+produced `MUST_REPLAN`. Margin to the 2-hour rule: **~42 min**.
+
+*(Rev-2 delta: ADD-2 **+5** for the §5.1/§5.2 applicability and idempotence text; Go test
+**+2** for rows 12–13. Total ~71 → ~78 min, margin ~49 → ~42 min. A remains the
+second-most comfortable of the three.)*
 
 *(Rev-1 review: +1 min for the C1 coherence row 11. PO-1a is a Stage/pre-execution read
 and is not charged to the task budget.)*
@@ -358,6 +529,12 @@ scope (the active shipment's manifest), and one transition (`active -> done`). I
 archive, reparent, create or delete. The residual — a Ship defect completing a feature
 whose descendants are not all done — is caught by pre-mode's `expected_status: done`
 sweep and by P-015's protected-set gate, both downstream and both fail-closed.
+**Rev 2 adds the two cases rev 1 left unstated**: a manifest with **zero** feature members
+is an explicit **no-op** (§5.1 case i), and a feature member already `done` is an
+**idempotent resume** (§5.2). Neither widens the grant — the no-op performs no transition
+at all, and idempotent resume recognises the terminal state of the *same* transition
+without relaxing conditions 1–4. Both are asserted negatively-by-construction in Go test
+rows 12–13.
 
 **Hardening 2 — delegation must not become a blank cheque.** §4.1's wording binds Ship to
 the verdict **named by the classification**, and P-015 remains the sole authorization
@@ -368,15 +545,22 @@ authorize `TASK_ONLY_FINALIZE`; only B can, and only under C's token.
 where an impatient implementer would "just finish it". Three independent defenses: §6 is
 normative contract text; AC-9 explicitly fails if one session does both; the Go test
 asserts the rule is present in the merged file. The checkpoint `resume_hint` names
-`021-S`, `022-F` and the merge SHA so S2 can validate rather than trust.
+`021-S`, `022-F`, `022.001-T` and the merge SHA so S2 can validate rather than trust.
+**Rev 2 specifies S2's side of that handoff in full (§9.1)** — rev 1's *"restore the
+checkpoint"* was exactly the kind of one-line instruction that gets satisfied by a
+plausible-looking shortcut. Auto-picking a sole candidate, filtering the enumeration by
+status, or resolving before a confirmed resume would each defeat the property the handoff
+exists to establish.
 
-**Hardening 4 — R-1 is a real possibility, planned for, and now discovered early.** The
-plan does **not** assume claim leaves a covering feature `active`. **PO-1a** makes it an
-explicit pre-execution read, so a claim-shape mismatch surfaces **before** any
-implementation is written rather than after the merge — the review correction that turned
-the most expensive discovery into the cheapest one. **PO-1b** keeps the gate fail-closed
-regardless. Both non-`active` branches halt and return to Stage rather than widening the
-grant in-flight, deliberately preferring a planned halt over a silent authority expansion.
+**Hardening 4 — R-1 was a real possibility and is now MEASURED, not merely planned for.**
+Rev 1 correctly refused to assume claim leaves a covering feature `active`, and made PO-1a
+a pre-execution read. Rev 2 **executed** it: Probe 22 ARM AB measured
+`ARM_AB_FEATURE_STATUS_AFTER_CLAIM=active` on the exact `[feature, task]` shape, and
+measured that the engine accepts the subsequent `active -> done` move. The expensive
+discovery has been made cheaply and has come back **favourable**, so A proceeds. **PO-1b
+is retained anyway** — a probe measures the engine, not this particular record at that
+particular moment — and both non-`active`, non-`done` branches still halt and return to
+Stage rather than widening the grant in-flight.
 
 **Hardening 5 — engine coupling.** A performs **no** engine call that depends on the
 1.10.1 digest beyond what every closure already does. The digest binding
