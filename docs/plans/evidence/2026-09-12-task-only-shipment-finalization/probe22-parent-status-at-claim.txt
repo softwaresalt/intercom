@@ -1,0 +1,120 @@
+ENGINE_PATH=C:\Tools\backlogit.exe
+ENGINE_SHA256=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+ENGINE_SHA256_EXPECTED=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+DIGEST_GATE=PASS
+ENGINE_VERSION=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty (update check skipped)
+AUTHORIZATION_SURFACE=CLI-only (MCP not probed, not authorized)
+REPO_ROOT=C:\Source\GitHub\intercom-go
+PROBE_HEAD=7bc0318
+
+### ARM C - TASK-ONLY manifest, covering feature OUTSIDE the manifest (matches 023-S)
+SEEDED_FROM_LIVE_CONFIG=True  WS=C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p22-c
+MANIFEST_C:
+      "items": [
+    "id": "001-S",
+          "id": "001.001-T",
+    "status": "queued",
+  C0 after create (pre-claim)        feature 001-F=queued     task 001.001-T=queued     shipment 001-S=queued
+
+### ARM C - STEP 1: claim the task-only shipment (Ship Step 0.5.4)
+CLAIM_EXIT=0
+  CLAIM_OUT: {
+  CLAIM_OUT:   "id": "001-S",
+  CLAIM_OUT:   "title": "Task-only shipment (C shape)",
+  CLAIM_OUT:   "status": "active",
+  CLAIM_OUT:   "artifact_type": "shipment",
+  CLAIM_OUT:   "custom_fields": {
+  CLAIM_OUT:     "items": [
+  CLAIM_OUT:       "001.001-T"
+  CLAIM_OUT:     ]
+  CLAIM_OUT:   },
+  CLAIM_OUT:   "created_at": "2026-09-13T07:16:12.5556746Z",
+  CLAIM_OUT:   "updated_at": "2026-09-13T07:16:14.1287282Z",
+  CLAIM_OUT:   "level": 1
+  CLAIM_OUT: }
+  C1 AFTER CLAIM                     feature 001-F=active     task 001.001-T=active     shipment 001-S=active
+
+### ARM C - STEP 2: Ship Step 4.1 moves the task active, Step 4.5 moves it done
+  C2 after task->active              feature 001-F=active     task 001.001-T=active     shipment 001-S=active
+  C3 after task->done                feature 001-F=active     task 001.001-T=done       shipment 001-S=active
+
+### ARM C - STEP 3: TASK-ONLY close - archive ONLY the manifest item, then close the record
+ARCHIVE_TASK_EXIT=0
+  ARCHIVE_OUT: Archived 001.001-T → C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p22-c\.backlogit\archive\001.001-T.md
+  C4 after manifest task archived    feature 001-F=active     task 001.001-T=archived   shipment 001-S=active
+
+  -- shipment-record close route A: backlogit move <ship> --status shipped (Ship 6.1.b text)
+  MOVE_SHIPPED_EXIT=9
+    MOVE_OUT: move shipment 001-S to shipped via generic path: backlogit: shipment must be shipped via ShipShipment, not a direct status update
+  C5 after move --status shipped     feature 001-F=active     task 001.001-T=archived   shipment 001-S=active
+
+  -- route A refused; falling back to the cascade op to reach a CLOSED record (measurement only)
+  SHIPMENT_SHIP_EXIT=0
+    SHIP_OUT: {
+    SHIP_OUT:   "shipment_id": "001-S",
+    SHIP_OUT:   "shipment_status": "shipped",
+    SHIP_OUT:   "archived_ids": [
+    SHIP_OUT:     "001-S"
+    SHIP_OUT:   ],
+    SHIP_OUT:   "returned_ids": [],
+    SHIP_OUT:   "commit_sha": "7bc03180000000000000000000000000000000000"
+    SHIP_OUT: }
+  C6 after cascade shipment ship     feature 001-F=active     task 001.001-T=archived   shipment 001-S=archived
+  C_FINAL after sync                 feature 001-F=active     task 001.001-T=archived   shipment 001-S=archived
+
+ARM_C_FEATURE_STATUS_PRE_CLAIM=queued
+ARM_C_FEATURE_STATUS_AFTER_CLAIM=active
+ARM_C_FEATURE_STATUS_AFTER_TASKONLY_CLOSE=active
+ARM_C_FEATURE_EVER_ACTIVE=True
+
+### ARM AB - FULLY-COVERED-ROOT manifest, covering feature IS a member (matches 021-S / 022-S)
+SEEDED_FROM_LIVE_CONFIG=True  WS=C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p22-ab
+MANIFEST_AB:
+      "id": "001-F",
+      "items": [
+    "id": "001-S",
+          "id": "001.001-T",
+    "status": "queued",
+  AB0 after create (pre-claim)       feature 001-F=queued     task 001.001-T=queued     shipment 001-S=queued
+
+### ARM AB - STEP 1: claim the fully-covered-root shipment
+CLAIM_EXIT=0
+  CLAIM_OUT: {
+  CLAIM_OUT:   "id": "001-S",
+  CLAIM_OUT:   "title": "Fully-covered-root shipment (A/B shape)",
+  CLAIM_OUT:   "status": "active",
+  CLAIM_OUT:   "artifact_type": "shipment",
+  CLAIM_OUT:   "custom_fields": {
+  CLAIM_OUT:     "items": [
+  CLAIM_OUT:       "001-F",
+  CLAIM_OUT:       "001.001-T"
+  CLAIM_OUT:     ]
+  CLAIM_OUT:   },
+  CLAIM_OUT:   "created_at": "2026-09-13T07:16:35.9203633Z",
+  CLAIM_OUT:   "updated_at": "2026-09-13T07:16:38.0344881Z",
+  CLAIM_OUT:   "level": 1
+  CLAIM_OUT: }
+  AB1 AFTER CLAIM                    feature 001-F=active     task 001.001-T=active     shipment 001-S=active
+
+### ARM AB - STEP 2: task active -> done (Ship 4.1 / 4.5)
+  AB2 after task->done               feature 001-F=active     task 001.001-T=done       shipment 001-S=active
+
+### ARM AB - STEP 3: can the feature be completed by an explicit move (A's a1 grant)?
+MOVE_FEATURE_DONE_EXIT=0
+  MOVE_OUT: Moved 001-F → done
+  AB3 after feature->done            feature 001-F=done       task 001.001-T=done       shipment 001-S=active
+
+ARM_AB_FEATURE_STATUS_PRE_CLAIM=queued
+ARM_AB_FEATURE_STATUS_AFTER_CLAIM=active
+ARM_AB_FEATURE_ACTIVE_AT_CLAIM=True
+ARM_AB_FEATURE_DONE_MOVE_ACCEPTED=True
+
+### P-001 gate evaluation - Ship Step 1 item 1 tests for status Active
+  L308   1. **P-001 Gate**: Sequential single-PR-at-a-time is the default — at most one top-level release unit may be in flight. Check that no other top-level release units (features or chores) are `Active` in the backlog, and treat any previously merged shipment with incomplete required post-merge release closure (for example, an open post-merge closure PR/branch, a missing tag, or a pending publish step when `true` is true) as still active for P-001 purposes
+
+### VERDICT
+Q1_CLAIM_ACTIVATES_OUT_OF_MANIFEST_PARENT=True
+Q2_CLAIM_ACTIVATES_IN_MANIFEST_PARENT=True
+Q3_TASKONLY_CLOSE_LEAVES_PARENT_STATUS=active
+Q4_PARENT_IS_ACTIVE_FOR_P001_AFTER_TASKONLY_CLOSE=True
+

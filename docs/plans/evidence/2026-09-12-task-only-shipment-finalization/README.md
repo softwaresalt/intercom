@@ -48,6 +48,42 @@ binary and re-record the digest). There is no advisory fallback: the previous
 | **18** | Under the **live** configuration, does the inbound `017-S -> 021-S` edge holder survive the prerequisite close **byte-identical**? | `probe18-liveconfig-inbound-edge.ps1` | `probe18-liveconfig-inbound-edge.txt` | **PASS** |
 | **19** | Does the **§6.5.3 procedure as specified** recover a real errored invocation — on **both** approval branches? | `probe19-bounded-recovery-v2.ps1` | `probe19-bounded-recovery-v2.txt` | **PASS — both branches** |
 | **20** | **O-6:** post-archive, does the closure route hit a topology-gate deadlock? | `probe20-post-archive-closure-route.ps1` | `probe20-post-archive-closure-route.txt` | **Gate blocks on all 4 routes; closure-PR path does not invoke it** |
+| **22** | Does shipment claim activate the covering feature, and what status survives a task-only close? | `probe22-parent-status-at-claim.ps1` | `probe22-parent-status-at-claim.txt` | **Claim ⇒ `active` on BOTH shapes; task-only close leaves it `active`** |
+| **23** | Can a `blocks` edge be written from a successor shipment to a covering **feature**? | `probe23-feature-dependency-barrier.ps1` | `probe23-feature-dependency-barrier.txt` | **NO — `Q0_FEATURE_ENDPOINT_EDGE_CONSTRUCTIBLE=False`; successor already eligible (`ready_set=[002-S]`) while the feature is still `active`** |
+| **24** | Does moving the feature **inside** the manifest make the cascade dispose it — in the LIVE manifest order? | `probe24-manifest-reshape-remedy.ps1` | `probe24-manifest-reshape-remedy.txt` | **YES, in both orders — `ORDER_INDEPENDENCE_MEASURED=True`; `archived_ids` includes the feature; 0 other active top-level units; successor eligible with no barrier** |
+
+**Probes 22–24 (rev 2) adjudicate the `024-F` parent-status question.** They were run
+together, in that order, and each one falsified the previous step's assumption:
+
+* **22** falsified the rev-1 assumption that a task-only close leaves the out-of-manifest
+  covering feature in a disposable state. It does not — the feature is `active` at claim
+  and **stays** `active`. ARM AB additionally discharges plan A's **PO-1a** and plan B's
+  "observed claim effect" wording by measuring the same activation on the
+  fully-covered-root shape.
+* **23** falsified the obvious remedy. A `blocks` edge to a feature is **not
+  constructible**; backlogit requires both dependency endpoints to be shipments, and
+  defines no shipment `blocked` status. **No dependency-graph barrier against a feature
+  exists**, so rev 1's Stage-disposition step could never have been mechanically enforced.
+  The probe additionally records the deadlock directly: with the predecessor shipment
+  archived and the covering feature still `active`, `dag-readiness` reports
+  `ready_set=[002-S]` — the successor is **already eligible**, with nothing holding it.
+* **24** validated the adopted remedy in **both manifest orders**. ARM Q builds the
+  manifest feature-first; **ARM QR reproduces the live `023-S` construction exactly**
+  (create task-only, then `backlogit shipment add` the feature, yielding
+  `MANIFEST_IS_TASK_FIRST=True`) because task-first was the one order the remedy had not
+  been probed in — and it is the order the live re-shape produced. Both arms archive the
+  feature and release the successor (`ORDER_INDEPENDENCE_MEASURED=True`). A **control arm**
+  (ARM T) leaves the same topology task-only and the feature stays `active` and unarchived,
+  so the difference is attributable to **manifest shape alone**.
+
+**Probe-script convention (rev 2, learned the hard way).** A PowerShell helper that both
+`Write-Output`s a display line **and** `return`s a value emits *both* into the caller's
+capture, so the display line silently vanishes from the transcript and the returned value
+becomes an array. An earlier rev-2 run of probes 22–24 hit exactly this: intermediate
+status snapshots were missing and two verdict fields were malformed. Helpers in this
+directory now either write **only** (callers re-read values explicitly) or route display
+text to `Write-Host`, which cannot merge into a return value. Verdict fields are computed
+from explicitly re-read state, never from a helper's return.
 
 ### Rev-6 evidence rules (binding on probes 18, 19, 20)
 
@@ -309,3 +345,19 @@ Neither is under `.backlog`/`.backlogit` queue, archive, or log inventory.
 Scratch workspaces are removed after transcripts are captured; **the durable
 evidence in this directory is never deleted.** No raw `.db`, `-wal`, or `-shm`
 file is committed.
+
+**Scratch removal is mandatory, not merely tidy (rev 2).** Leftover scratch workspaces
+under `.backlogit/runtime/stage-probe-scratch/` are **rehydrated by `backlogit sync`** and
+collapse into the live index as duplicate IDs. Before rev 2's cleanup, `backlogit sync`
+emitted `rehydrate: duplicate source id detected` warnings for `001-F`, `001-S`,
+`001.001-T` and `002-S`, and `backlogit shipment list` reported a phantom **`002-S`
+"Successor blocked shipment"** as `queued` — an artifact of probe 20's scratch, not a real
+backlog record. Any probe run MUST therefore:
+
+1. remove its scratch directory once the transcript is captured, and
+2. re-run `backlogit sync` and confirm **zero** `duplicate source id` warnings before the
+   live backlog state is read or reported.
+
+Rev 2 removed the residual `p18`, `p19-granted`, `p19-withheld`, `p20` and `seedtest`
+directories; the index dropped from 254 to 238 artifacts with no warnings, and the phantom
+`002-S` disappeared from `shipment list`.

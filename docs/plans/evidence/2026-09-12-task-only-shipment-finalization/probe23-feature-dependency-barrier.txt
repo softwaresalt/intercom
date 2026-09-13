@@ -1,0 +1,71 @@
+ENGINE_PATH=C:\Tools\backlogit.exe
+ENGINE_SHA256=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+ENGINE_SHA256_EXPECTED=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+DIGEST_GATE=PASS
+ENGINE_VERSION=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty (update check skipped)
+GATE_ENGINE=C:\Python\Python314\Scripts\autoharness.exe
+AUTHORIZATION_SURFACE=CLI-only (MCP not probed, not authorized)
+REPO_ROOT=C:\Source\GitHub\intercom-go
+PROBE_HEAD=7bc0318
+SEEDED_FROM_LIVE_CONFIG=True  WS=C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p23
+
+### STEP 1: build the C analogue (001-F / 001.001-T / 001-S task-only) and the 017-S analogue (002-F / 002.001-T / 002-S)
+
+### STEP 2: write BOTH edges - the existing chain edge AND the candidate barrier edge
+Added dependency 002-S → 001-S
+Error: add shipment block: prerequisite 001-F has type "feature"; both endpoints must be shipments
+### edge readback (002-S):
+  002-S → 001-S (blocks)
+
+### STEP 3: BASELINE readiness (both predecessors live)
+  R0 baseline                              GATE_EXIT=0 ready_set=[001-S] next_eligible=001-S
+  statuses: 001-F=queued 001-S=queued 002-S=queued
+
+### STEP 4: claim the C shipment - Probe 22 showed this activates the out-of-manifest parent
+  statuses: 001-F=active 001-S=active
+  R1 after C claim                         GATE_EXIT=0 ready_set=[] next_eligible=001-S
+
+### STEP 5: complete + close the C shipment task-only (its own task archives; 001-F is NOT a member)
+SHIP_EXIT=0
+  SHIP_OUT: {
+  SHIP_OUT:   "shipment_id": "001-S",
+  SHIP_OUT:   "shipment_status": "shipped",
+  SHIP_OUT:   "archived_ids": [
+  SHIP_OUT:     "001.001-T",
+  SHIP_OUT:     "001-S"
+  SHIP_OUT:   ],
+  SHIP_OUT:   "returned_ids": [],
+  SHIP_OUT:   "commit_sha": "7bc03180000000000000000000000000000000000"
+  SHIP_OUT: }
+  statuses: 001-F=active 001-S=archived 002-S=queued
+
+### STEP 6: Q1 - with the predecessor SHIPMENT archived but the barrier FEATURE still active, is the successor SUPPRESSED?
+  R2 barrier feature still active          GATE_EXIT=0 ready_set=[002-S] next_eligible=002-S
+  Q1_SUCCESSOR_SUPPRESSED_BY_FEATURE_BARRIER=False
+
+### STEP 7: CONTROL - confirm the chain edge alone would NOT have suppressed it (predecessor shipment is already archived)
+  001-S archived_status:
+    archived_status: shipped
+    status: archived
+
+### STEP 8: STAGE DISPOSITION - the barrier's designated unblocking action (move done, then archive)
+  MOVE_FEATURE_DONE_EXIT=0
+    Moved 001-F → done
+  ARCHIVE_FEATURE_EXIT=0
+    Archived 001-F → C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p23\.backlogit\archive\001-F.md
+  statuses: 001-F=archived
+
+### STEP 9: Q2 - is the successor now ELIGIBLE?
+  R3 after Stage disposition               GATE_EXIT=0 ready_set=[002-S] next_eligible=002-S
+  Q2_SUCCESSOR_RELEASED_AFTER_DISPOSITION=True
+
+### STEP 10: Q3 - edge preserved across disposal?
+  002-S → 001-S (blocks)
+
+### VERDICT
+Q0_FEATURE_ENDPOINT_EDGE_CONSTRUCTIBLE=False
+Q1_FEATURE_EDGE_ENFORCES_BARRIER=False  (MOOT when Q0 is False - no edge exists to enforce anything)
+Q2_DISPOSITION_RELEASES_SUCCESSOR=True
+BARRIER_IS_MECHANICALLY_ENFORCED=False
+FEATURE_STATUS_AFTER_TASKONLY_CLOSE=active
+
