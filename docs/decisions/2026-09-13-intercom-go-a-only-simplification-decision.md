@@ -217,3 +217,92 @@ A (021-S) merges
 ```
 
 Two shipments, one new gate, **zero** new close-path verdicts.
+
+## 10. Post-decision status — A-only final review, remediation cycle 1 (2026-09-13)
+
+This decision (`SIMPLIFICATION_VALID`) **stands**. Nothing below re-opens the A-only
+simplification itself: the retirement of the three-shipment `A → B → C` bootstrap, the
+two-shipment `A → 017-S` route, the deferral of B and C, and the `CASCADE`-not-
+`TASK_ONLY_FINALIZE` close path are all **unchanged and unchallenged** by the review
+described here.
+
+What changed is the **readiness of Plan A**, and two of this decision's own recorded
+follow-ups have been **re-graded**.
+
+### 10.1 Plan A is rev 4 and its formal review gate returned FAIL
+
+A formal `plan-review` gate was executed against
+`docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md` rev 4 —
+**attempt 1**, `dispatch_mode: multi-agent`, all seven selected personas dispatched
+(including the `gpt-5.6-sol` anchor route), **`decision: FAIL`**.
+
+**Consequences, stated plainly:**
+
+* Plan A `status:` remains `planned`. The plan is **not** harvest-ready.
+* **`021-S` must not be claimed.** `017-S` is blocked behind it and is therefore also not
+  claimable. The route in §9 above is **correct but not yet executable**.
+* Two findings — **A-1** and **A-2** — require **operator adjudication** before remediation
+  cycle 2 can proceed. Both concern §9.4 of Plan A, which is **new in rev 4 and did not
+  exist when this decision was taken**.
+
+### 10.2 Re-graded follow-up — the root-included cascade fixture
+
+§7 of this decision recorded the root-included 13-member cascade fixture as a follow-up to
+be run *"before `017-S` is routed"*. Plan A rev 4 **promoted it to a non-bypassable gate on
+A's own close** (§9.4 / AC-20) on the ground that A is an irreversible contract change whose
+sole release value is making `017-S` closable.
+
+**That promotion is itself now contested**, by four independent reviewers:
+
+* **A-1** — the gate sits **after** A's PR merges to `main`, so on FAIL the Role Boundary
+  change is already deployed while `021-S` is stuck in-flight, and §9.4 grants **no operator
+  override** — which also contradicts Plan A's own §10.2 `git revert` rollback.
+* **A-2** — the gate assigns **authoring and committing** `docs/plans/evidence/probe25-*` to
+  **Ship (S2)**, but Ship's Role Boundary **forbids** creating or modifying plan artifacts
+  (P-010). Executed literally, S2 halts and A can never close.
+
+**Unresolved, pending operator adjudication.** The recommended resolution — which preserves
+the operator's stated intent at the lowest risk — is the **hybrid**: **Stage** runs and
+commits Probe 25 **before `021-S` is claimed**, and the fresh S2 session **re-verifies the
+committed evidence read-only** (presence + digest + PASS tokens) before A may be marked or
+archived `shipped`. That keeps the gate non-bypassable, removes the deadlock, and removes
+the P-010 conflict. **No change has been made to §9.4 in remediation cycle 1** — the gate is
+recorded exactly as directed, with both findings attached.
+
+### 10.3 New follow-up — a disclosed narrowing (finding A-5)
+
+Not previously recorded anywhere. P-015's fully-covered-root exception is *"quantified over
+**every feature member of the manifest**"* and item 4 says *"the qualifying root feature
+**member(s)**"* — **plural is authorized by policy**. Plan A's new a1 case (iv) halts
+whenever more than one feature member is present, which **narrows** a manifest shape P-015
+permits. The halt is safe (it mutates nothing) and is retained; the **claim that A "narrows
+nothing" is withdrawn**. Interim rule: a multi-root manifest must be dispositioned by
+**Stage**. Recorded as stash `D8397D20`.
+
+### 10.4 Governing-contract contradiction repaired (finding A-15)
+
+§R16 of `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` is
+now **rev 20**. Rev 19 had corrected §R16.2 to the 13-entry fully-covered root — the shape
+**this decision** established — but left §R16.3 through §R16.3.3 operatively asserting the
+**opposite**: a 12-entry task-only manifest, a "WITHDRAWN" and "unreachable by construction"
+`CASCADE` shape, and *"neither is remediable from a Stage planning cycle"*. Since §R16 is
+declared the whole governing contract, an executor reading §R16.3 would have built the
+withdrawn shape. Rev 20 makes §R16.3 the **sole operative** manifest contract and relabels
+§R16.3.1 / §R16.3.1a / §R16.3.2 **HISTORICAL — NON-GOVERNING**. **This repair makes the
+governing plan agree with this decision**; it does not change this decision.
+
+### 10.5 Other follow-ups recorded this cycle
+
+* Stash **`4029DABB`** — `shipment-reconcile/SKILL.md` cites `src/autoharness/...` classifier
+  paths that **do not exist** in this Go workspace. Confirmed **out of Plan A's 2-file scope**
+  and correctly left unedited; recorded rather than scope-crept.
+* Orchestrator Step 1.5's item 3 contradiction (3(a) commit, 3(e) direct-`main` push attempt)
+  is now covered by an **explicit fail-closed runtime directive** in §R16.5 of the policy-gap
+  plan. The Orchestrator itself was **not modified**; its repair stays deferred to
+  `019.004-T`. The **operator-only PR boundary is preserved unweakened** (Probe 17).
+
+### 10.6 What this means for §9's route
+
+The route diagram in §9 is **unchanged and still correct**. It is simply **gated earlier than
+this decision anticipated**: not by `017-S`'s readiness, but by Plan A's own review verdict.
+`021-S` is the only eligible shipment *by topology*, and it is **not claimable** *by gate*.
