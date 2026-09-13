@@ -3,7 +3,7 @@ title: "Plan — Ship covering-feature completion and close-path delegation (Fou
 date: 2026-09-12
 status: planned
 agent: Stage
-revision: 5
+revision: 6
 feature: 022-F
 task: 022.001-T
 shipment: 021-S
@@ -14,14 +14,18 @@ umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finaliza
 
 # Plan — Ship covering-feature completion and close-path delegation (Foundation)
 
-> **Requires plan hardening**: **yes — applied in rev 2, re-affirmed in rev 3** (see
-> `## Plan Hardening`).
+> **Requires plan hardening**: **yes — applied in rev 2, re-affirmed in rev 3, re-stated in
+> rev 6** (see `## Plan Hardening`, including **Hardening 9a**).
 
 > **Rev 3 — A is now the SOLE prerequisite.**
 > `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
 > (`SIMPLIFICATION_VALID`) retires the three-shipment chain for the current scope.
 > Shipments **B** (`022-S`) and **C** (`023-S`) are **deferred generalized platform
-> work** — `blocked`, records archived non-destructively, **not** current prerequisites.
+> work** — records **archived non-destructively** (`archived_status: queued`), **not**
+> current prerequisites. *(Rev 6, finding D-9: the rev-3 wording called them `blocked`,
+> which is **not a valid shipment status** — the vocabulary is
+> `queued|active|shipped|abandoned`. Their actual state is **archived** with
+> `archived_status: queued`.)*
 > **A's own scope, surface, inventory, budget and closure sequence are UNCHANGED.**
 > What changed is only what comes *after* A: the route now goes **A → `017-S`**, and
 > `017-S` is a **feature-present** `CASCADE` case, not the zero-feature example rev 2
@@ -88,9 +92,59 @@ umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finaliza
 > it. **Rev 5 is NOT harvest-ready and `021-S` must NOT be claimed.** See
 > `## Plan Review — attempt 2` for the full finding set and the cycle-3 remediation queue.
 
+> **Rev 6 — remediation cycle 3 (FINAL) of the attempt-2 `FAIL`. DECLARED STATUS replaces
+> FILE LOCATION everywhere.** Rev 5's `## Plan Review — attempt 2` returned `FAIL` with 1 P0
+> and 7 P1s in rev 5's own constructs. **Rev 6 closes B-1 through B-8 and the same-surface
+> P2/P3 queue.** The one root-cause correction, and six localized ones:
+>
+> 1. **B-1/B-2 — every lifecycle decision is re-based on DECLARED `status`; file location
+>    proves exactly-one-copy containment ONLY (§4.4, §5, §5.0, §5.1 S0, rows 14/15, AC-22,
+>    AC-24, AC-27).** The installed skill is explicit (L394–399): declared status is *"never
+>    inferred from, nor substituted by, which of `queue/`/`archive/` currently holds the
+>    record."* **A descendant declaring `status: done` is a COMPLETED descendant even when
+>    registry routing stores it under `archive/`; a PRE-ARCHIVED descendant means declared
+>    `status: archived`**, which alone triggers the §5.0 11-ID allowlist and the
+>    provenance/immutability checks. **`022.001-T`, `done`-in-archive at the a1 gate,
+>    therefore PASSES §5 condition 1 and is NOT an unmapped pre-archived member** — the P0
+>    stall is gone. The committed transcript (`MEMBERS_QUEUE_LOCATED=0` with
+>    `PREMODE_MATCHED=2`/`PREMODE_PRE_ARCHIVED=11`) was always consistent with the declared-
+>    status rule; rev 5's restatement of the rule was the defect. **No re-measurement.**
+> 2. **B-3 — the enumeration contradiction is resolved by the SAFE ALLOWLIST CONTRACT (§4.1,
+>    AC-5, AC-25, row 9).** `_ship.agent.md` MAY name the **result tokens the installed skill
+>    can currently emit**, purely to validate output; it MUST NOT restate any classification
+>    **predicate**. Unknown/absent/ambiguous token ⇒ **HALT**; skill unavailable or unreadable
+>    ⇒ **HALT**; bound to the **currently installed** contract, never a future capability.
+> 3. **B-4 — Hardening 9's withdrawn no-override language is DELETED, and four distinct
+>    fields replace the overloaded `evidence_sha` (Hardening 9a, §9.4a):**
+>    `evidence_commit_sha` (the **LAST** commit touching either file), `fixture_script_sha256`,
+>    `fixture_result_sha256`, `backlogit_executable_sha256`. Stage verifies them pre-claim;
+>    **S2 re-verifies them read-only**. A post-merge mismatch **HALTs active A** with named
+>    operator recovery — **no rollback or override fiction**.
+> 4. **B-5 — the pre-mode circularity is removed (§5.1).** **a1 runs BEFORE pre-mode and MUST
+>    NOT require it**; its read-only guard directly checks declared status, exactly-one
+>    physical copy, topology/parent, and the exact 017 allowlist. This is a **narrow
+>    completion precondition**, not duplicate close-path classification.
+> 5. **B-6 — the CASCADE reachability and fallback overclaims are deleted (§9.3, §9.4b).**
+>    The **authoritative** mode selection runs **after** a1; A/017's exact root-inclusive
+>    manifests **EXPECT `CASCADE`**, and **any other verdict is a topology discrepancy that
+>    HALTs — there is NO `SAFE_CLOSE` fallback**. The pre-existing cascade branch is invoked
+>    **only** on an authoritative `CASCADE`. The inherited detect-after-mutate residual is
+>    stated honestly, including that **A adds new reachability** to it.
+> 6. **B-8 — S2 checkpoint selection order is corrected (§9.1 step 2a, AC-29).** Enumerate
+>    all with **no filter** → anomaly gate over the **full** enumeration → **then** filter to
+>    filename + `agent: ship` + `session_id` → require **exactly one MATCH**. **Unrelated
+>    active checkpoints no longer strand the handoff.**
+> 7. **§12's arithmetic is fixed (C-1).** Rev 5's rows summed to **97** while claiming ~99.
+>    Rows now sum **exactly** to **97 min**, margin **23 min**. Rev 6 adds **no** new work.
+>
+> **Rev 6 is submitted to a FRESH `plan-review` as attempt 3 — the LAST cycle before the
+> Escalation Protocol applies.** See `## Plan Review — attempt 3` and the
+> `## Plan Review — AUTHORITATIVE GATE STATE` section for the operative markers.
+
 - **Shipment**: `021-S` (A, Foundation) — **the sole prerequisite**; the only eligible shipment
 - **Closes by**: the **existing** P-015 `VERIFIED FULLY-COVERED-ROOT EXCEPTION` (`CASCADE`)
-- **Authorizes**: nothing new in the close-path verdict set
+- **Authorizes**: nothing new in the close-path verdict set — **a result-token allowlist is
+  output validation, not authorization (§4.1 rev 6)**
 - **Releases**: `017-S` (13-member fully-covered root), which then closes by the **same existing** `CASCADE`
 
 ## 1. Objective
@@ -202,16 +256,71 @@ instruction and both grounds.**
 Both sites MUST be reconciled to the **authoritative** `shipment-reconcile` pre-mode
 classification, which is (skill `## Classification` table, and its `PROCEED` rule):
 
-| Classification | Condition |
+| Classification | Condition — **declared `status` is authoritative; physical location proves existence and uniqueness ONLY** |
 |---|---|
-| `matched` | Queue file present **AND** declared status matches `expected_status` |
-| `pre-archived` | **No queue file, but an archive file exists** — already archived before this shipment ran; **valid**, accepted **without** a status check |
-| `missing` | No queue **or** archive file for this manifest item |
-| `status-mismatch` | Queue file present but declared status ≠ `expected_status` |
+| `matched` | The record exists in **exactly one** location and its **declared `status` equals `expected_status`** — **regardless of whether that one location is `queue/` or `archive/`** |
+| `pre-archived` | The record exists in **exactly one** location and **declares `status: archived`** — truly archived before this shipment ran; **valid**, accepted **without** an `expected_status` check |
+| `missing` | No record in `queue/` **or** `archive/` for this manifest item |
+| `status-mismatch` | The record exists in exactly one location and its declared `status` is **neither** `expected_status` **nor** `archived` |
+| `duplicate`/torn | The same ID is present in **both** `queue/` **and** `archive/` — a containment violation, never a classification input |
 
 `PROCEED` requires every item to be `matched` **or** `pre-archived`, with no orphans. The
 replacement sentences MUST therefore express **both** accepted dispositions. Neither
 sentence may be left in the queue-only form. Asserted by Go test rows **14** and **15**.
+
+> **Rev 6 — DECLARED STATUS IS THE SOLE LIFECYCLE AUTHORITY (plan-review findings B-1/B-2,
+> NORMATIVE, load-bearing).** Rev 5's table defined `matched` as *"**Queue file present** AND
+> declared status matches"* — a **location-derived** predicate. That is the single root cause
+> of both B-1 and B-2, and it is **falsified by this plan's own committed measurement**.
+>
+> **The authoritative rule, quoted verbatim from the installed
+> `shipment-reconcile/SKILL.md` (L394–399):**
+>
+> > **Declared `status` is read from the record's own frontmatter `status` field — never
+> > inferred from, nor substituted by, which of `queue/`/`archive/` currently holds the
+> > record.** A record residing in `.backlogit/archive/` while declaring `status: done` is
+> > **not** truly archived; only a declared `status: archived` counts as truly archived …
+> > location alone is never sufficient.
+>
+> **Two consequences, both binding on every gate in this plan:**
+>
+> 1. **A descendant declaring `status: done` is a COMPLETED descendant — full stop** — even
+>    when registry-managed storage has relocated it under `.backlogit/archive/`. It satisfies
+>    §5 condition 1, it is **not** live for condition 2, and it is **NOT** a pre-archived
+>    member. The live `registry.yaml` routes `done|accepted|rejected|archived` to `archive/`
+>    and only `queued|active|blocked|review` to `queue/`, so **correct completion itself moves
+>    a record out of the queue**. Treating that relocation as evidence of anything is the
+>    defect.
+> 2. **A PRE-ARCHIVED descendant means declared `status: archived` — never merely
+>    archive-located.** Only such a record is subject to §5.0's exact 11-ID allowlist and its
+>    immutable-metadata/provenance/parent checks.
+>
+> **Physical-location reads are retained, with exactly one narrowed job:** proving
+> **exactly-one-copy containment** (present in `queue/` XOR `archive/`; both ⇒ torn duplicate,
+> neither ⇒ missing). They **never** classify lifecycle state. This preserves the
+> duplicate/containment guarantee in full while removing every status inference from it.
+>
+> **The measurement that forces this (committed, `PROBE25_RESULT=PASS`).** In one transcript
+> block the fixture records `MEMBERS_QUEUE_LOCATED=0` **and** `MEMBERS_ARCHIVE_LOCATED=13`
+> **and** `PREMODE_MATCHED=2 PREMODE_PRE_ARCHIVED=11 PREMODE_RESULT=PROCEED`. Under rev 5's
+> locational table those are contradictory (zero queue-located ⇒ `MATCHED=0`). Under the
+> declared-status rule they are **exactly consistent**: the 2 members declaring `status: done`
+> are `matched`, the 11 declaring `status: archived` are `pre-archived`. **The transcript was
+> never wrong; rev 5's restatement of the rule was.** No re-measurement is required, and none
+> was performed.
+>
+> **Disclosed tension inside the skill, recorded not papered over.** The skill's *operational
+> sketch* at its pre-mode step 3 is written location-first (*"attempt to locate the file at
+> `.backlogit/queue/{id}.*` … if NOT found in queue, check `.backlogit/archive/{id}.*` — …
+> classify as `pre-archived`"*). That sketch predates registry-managed `done` relocation and
+> is in tension with the skill's own **normative** L394–399 rule. **L394–399 governs** — it is
+> stated as an absolute, and the sketch is an implementation shorthand.
+> **`shipment-reconcile/SKILL.md` is outside A's 2-file surface and is NOT edited here**;
+> aligning the sketch is a **recorded follow-up** against the skill.
+> **Safety note — the tension is not load-bearing for either live route:** `PROCEED` accepts
+> `matched` **and** `pre-archived` alike, so **both** readings return `PROCEED` for `021-S`
+> and for `017-S`. The B-1 stall was never in pre-mode; it was in **this plan's own** a1/S0
+> gate, which is what §5.0/§5.1 now correct.
 
 > **Rev 5 — the two PROCEED conditions rev 4 dropped (plan-review finding B-11, normative).**
 > `PROCEED` is **not** "every item is `matched` or `pre-archived`" alone. The authoritative
@@ -272,40 +381,57 @@ including the deferred `TASK_ONLY_FINALIZE` platform work, if a fired trigger ev
 it back. It also forbids Ship
 from authorizing a verdict on its own — A adds **no** verdict.
 
-> **Rev 5 — the delegation TRUST BOUNDARY (plan-review finding A-11, normative).**
-> Delegation is **not** unbounded trust in whatever the skill emits. A delegates exactly one
-> thing — **selection among close paths that already exist** — and nothing else.
+> **Rev 6 — THE ENUMERATION CONTRACT, RESOLVED (plan-review finding B-3, normative).**
+> Rev 5 created a contradiction an honest test could not satisfy: **AC-5** and Go row 9
+> asserted the file *"does **not** enumerate the authorized verdict set"*, while **AC-25**
+> required it to *"bind Ship to the **closed** verdict set"*. Rev 6 chooses **one** side —
+> the **safe allowlist contract** — and applies it everywhere.
 >
-> **The allowed verdict set is CLOSED at its current membership.** Ship may act on exactly:
+> **What `_ship.agent.md` MAY contain — a RESULT-TOKEN ALLOWLIST, and nothing more.** Ship
+> must be able to tell a valid result from garbage, so the file MAY name the **result tokens
+> the INSTALLED `shipment-reconcile` skill can currently emit**, purely as an **output
+> validation allowlist**:
 >
-> | Verdict | Close path |
+> | Token | Ship's action |
 > |---|---|
-> | `CASCADE` | the P-015 verified fully-covered-root cascade sub-procedure |
-> | `SAFE_CLOSE` | the default per-item safe-close procedure (skill steps 1–10) |
+> | `CASCADE` | invoke the close path the classification named |
+> | `SAFE_CLOSE` | invoke the close path the classification named |
 > | `HALT` | no close; report and stop |
 >
-> **Ship MUST HALT — fail closed, no mutation — on ANY of:** a verdict outside that set (a
-> name the classifier invented or a future version added); an **absent**, **empty**,
-> **unparseable** or **ambiguous** classifier result; a classifier that is **not installed
-> or not readable**; or a result whose `policy_id` is not `P-015` or whose recorded policy
-> version does not match the P-015 amendment this plan was reviewed against.
+> **What `_ship.agent.md` MUST NOT contain — any classification PREDICATE.** The file must
+> **never** restate, re-implement, paraphrase or summarize *the conditions under which a
+> token is selected* — no root/`parent_id` test, no full-coverage test, no
+> nothing-beyond-the-root test, no per-member-versus-whole-manifest rule, no fallback rule.
+> **Those predicates live in P-015 and the skill, and are read from there at run time.**
+> This is the exact drift §2.2 exists to eliminate, and it is what rows 7 and 9 assert
+> negatively.
 >
-> **P-015 and the skill must AGREE.** The verdict is authoritative only when the skill's
-> machine-checkable classification and P-015's stated preconditions select the **same**
-> close path. On **disagreement**, Ship HALTs and returns the shipment to **Stage** — it
-> never prefers one source, and never breaks the tie itself.
+> **The distinction is CHECKING AN OUTPUT versus COMPUTING ONE.** Comparing a returned token
+> against a list of tokens that exist is input validation. Deciding *which* token applies is
+> classification — and remains wholly delegated. This is why the allowlist does **not**
+> re-introduce the duplication A removes: an allowlist has **no conditions in it**.
 >
-> **No unversioned future capability is authorized.** A grants Ship no ability to act on a
-> verdict that does not exist today. If a future change adds one, that change must carry its
-> own review and its own authorization; it does **not** inherit A's delegation. This is the
-> answer to the objection that `shipment-reconcile/SKILL.md` sits outside A's 2-file surface
-> and outside its review: A does not trust that file's *future* contents, because the verdict
-> set Ship may act on is pinned **here**, in A's own reviewed file.
+> **Fail-closed behavior — Ship MUST HALT, no mutation, on ANY of:**
 >
-> **Why this is not a re-derivation.** Ship still does not compute *which* path applies —
-> that remains delegated. Ship only checks that the answer it was handed is **one of the
-> answers that exist**, and that its two authorities concur. Validating an input is not
-> restating a classification.
+> * a result token **outside** the installed allowlist — including one a **future** skill
+>   version introduces. **An unknown token is never honored, never guessed, never mapped to
+>   a neighbour**; it HALTs and returns the shipment to **Stage**;
+> * an **absent**, **empty**, **unparseable** or **ambiguous** classifier result;
+> * a classifier that is **not installed**, **not readable**, or otherwise unavailable —
+>   **HALT**; there is no default, no assumed verdict, and no "proceed without
+>   classification" path;
+> * a result whose `policy_id` is not `P-015`, or whose recorded policy version does not
+>   match the P-015 amendment this plan was reviewed against; or
+> * **P-015/skill disagreement** — the verdict is authoritative only when both sources select
+>   the same close path. On disagreement Ship HALTs and returns to **Stage**; it never
+>   prefers one source and never breaks the tie itself.
+>
+> **BOUND TO THE CURRENT INSTALLED CONTRACT — no unversioned future capability.** The
+> allowlist is the token set of the **skill and P-015 amendment installed and reviewed at
+> this plan's revision**. A future version that adds a token gains **nothing** from A: its
+> token lands outside the installed allowlist and **HALTs**. Widening the allowlist requires
+> that change to carry **its own review and its own authorization** — it does **not** inherit
+> A's delegation. A authorizes **no new verdict and no new close path**.
 
 ### 4.2 Pinned reconciled C1 wording (normative)
 
@@ -347,7 +473,9 @@ now a *verification* that the shape is present at claim, not an instruction to c
 Authorized transition: a **covering feature** `active -> done`, and **only** when **all**
 hold:
 
-1. every **non-pre-archived executable descendant** (at any depth) is `done`;
+1. every **non-pre-archived executable descendant** (at any depth) **declares `status: done`**
+   — read from the record's own frontmatter, **never** from which directory holds it
+   (§4.4, rev 6);
 2. **no** `queued` or `active` live descendant remains;
 3. parent/child topology is intact — every descendant resolves to this feature by
    `parent_id`, and no descendant is orphaned or reparented;
@@ -360,40 +488,53 @@ grant. The authority is **not** general feature lifecycle management: it may not
 feature to `done` outside Step 6.1(a1), and it grants nothing over features outside the
 active shipment's manifest.
 
-### 5.0 What "pre-archived descendant" means for THIS grant (rev 5, normative, fail-closed)
+### 5.0 What "pre-archived descendant" means for THIS grant (rev 5; **re-based on DECLARED STATUS in rev 6**, normative, fail-closed)
 
-**Plan-review finding A-10.** Condition 1 exempts *pre-archived* descendants from the `done`
-check. Rev 4 inherited pre-mode's definition — **archive-located, accepted without a status
-check** — which is correct *for pre-mode* but **unsafe as a completion exemption**. Under
-that reading, an unfinished descendant that is merely archive-located stops counting for
+**Plan-review findings A-10, B-1, B-5.** Condition 1 exempts *pre-archived* descendants from
+the completion check. Rev 4 inherited pre-mode's *sketch* definition — **archive-located,
+accepted without a status check** — which is **unsafe as a completion exemption**. Under that
+reading, an unfinished descendant that is merely archive-located stops counting for
 condition 1, is not live for condition 2, and can keep an intact `parent_id` for condition 3
 — letting Ship complete a covering feature whose work is **not done**.
 
-**The exemption is therefore NOT granted on archive-location, and NOT on `archived_status:
-queued`.** Being `archived_status: queued` **does not prove completion** and is never
-treated as proving it.
+**Rev 5 tightened the gates but left the TRIGGER locational, which is the B-1 P0.** Rev 5
+still keyed the exemption, and §5.1's S0 anomaly gate, off **archive location**. Because the
+live registry routes `done` to `archive/`, a **correctly completed** descendant trips a
+gate built for **archived** ones. That is what made `021-S` unclosable.
+
+**Rev 6 removes location from the trigger entirely.** "Pre-archived" means **declared
+`status: archived`**, and nothing else. Being archive-**located** proves nothing; being
+`archived_status: queued` **does not prove completion** and is never treated as proving it.
 
 A manifest descendant is **excluded from condition 1** only when **all five** hold:
 
-1. **P-015 pre-mode classifies it `pre-archived`** — the classification is taken from the
-   authoritative scan, never re-derived by a1;
-2. **exactly one location** — the record exists in `.backlogit/archive/` and **not** in
-   `.backlogit/queue/`. A record in **both** is a torn/duplicate state; a record in
-   **neither** is missing;
-3. **immutable across the gate** — its content hash and `parent_id` are unchanged from the
-   pre-gate snapshot;
+1. **it DECLARES `status: archived`** in its own frontmatter — the sole definition of
+   "pre-archived" for this grant. **Read directly by a1** from the record, as a **narrow
+   completion precondition**; a1 does **not** wait for, depend on, or re-run any pre-mode
+   classification (rev 6, finding B-5). A record that is archive-**located** while declaring
+   `status: done` is **NOT** pre-archived — it is a **completed** descendant that **satisfies**
+   condition 1 normally;
+2. **exactly one physical copy** — the record exists in `.backlogit/archive/` and **not** in
+   `.backlogit/queue/`. This check proves **containment and uniqueness ONLY**, never lifecycle
+   state (§4.4, rev 6). A record in **both** is a torn/duplicate state; a record in **neither**
+   is missing;
+3. **immutable across the gate** — its content hash, declared `status` and `parent_id` are
+   unchanged from the pre-gate snapshot;
 4. **valid archive provenance** — a well-formed `archived_from`, a present `archived_status`,
-   and a resolvable `artifact_type`; and
-5. **a recorded Stage decision maps it as a superseded / non-obligatory closure member** —
-   an explicit, named disposition that this descendant is **not** part of the obligation the
-   covering feature's completion asserts.
+   and a resolvable `artifact_type`. **Required only because condition 1 established a
+   declared `status: archived`**; it is never demanded of a `status: done` record, whose
+   relocation is a registry routing effect that carries no provenance by design; and
+5. **it is on the §5.0 exact allowlist below** — a recorded Stage decision mapping it as a
+   superseded / non-obligatory closure member: an explicit, named disposition that this
+   descendant is **not** part of the obligation the covering feature's completion asserts.
 
 **Condition 5 is the load-bearing one.** Conditions 1–4 establish that the record is
-*genuinely and stably archived*; only a **Stage decision** establishes that it is
-*not owed*. Without it the exemption would still be inferring completion from location.
+*genuinely and stably archived* **by its own declaration**; only a **Stage decision**
+establishes that it is *not owed*. Without it the exemption would still be inferring
+completion from a status the descendant did not earn.
 
 **`017-S` — the exact 11 IDs, mapped.** Stage's disposition covers precisely these eleven
-pre-archived manifest descendants of `018-F`, and no others:
+manifest descendants of `018-F` that **declare `status: archived`**, and no others:
 
 | # | ID | Kind | Parent |
 |---|---|---|---|
@@ -409,17 +550,66 @@ pre-archived manifest descendants of `018-F`, and no others:
 | 10 | `018.003.001-ST` | subtask | `018.003-T` |
 | 11 | `018.003.002-ST` | subtask | `018.003-T` |
 
-**Any pre-archived manifest descendant NOT on this list ⇒ HALT.** The list is the
-authorization; membership is not inferable. If `017-S`'s live manifest at its own gate
-presents a pre-archived descendant that is absent here, a1 **halts and returns to Stage**.
+**Any manifest descendant DECLARING `status: archived` that is NOT on this list ⇒ HALT.**
+The list is the authorization; membership is not inferable. If `017-S`'s live manifest at
+its own gate presents a descendant declaring `status: archived` that is absent here, a1
+**halts and returns to Stage**. **Being archive-located is NOT the trigger** — a descendant
+declaring `status: done` is never tested against this list, no matter where it is stored.
 
-**`021-S` (A itself) has NO pre-archived descendants.** Its manifest is `[022-F,
-022.001-T]`, both live. The exemption is therefore **never exercised on A's own route** —
-it exists for `017-S` and is gated fail-closed for everything else.
+**`021-S` (A itself) has NO pre-archived descendants — and this remains TRUE AT THE MOMENT
+a1 RUNS (rev 6, the B-1 correction).** Its manifest is `[022-F, 022.001-T]`. At §9 step 4
+Ship moves **`022.001-T -> done`**, and the live registry relocates it to `.backlogit/archive/`
+as a routing consequence. By §9 step 13, when a1 runs, `022.001-T` is therefore
+**archive-located while declaring `status: done`**.
+
+Under the rev-5 locational rule that record was an *"archive-located member not on the
+§5.0 list"* ⇒ **S0 HALT** ⇒ `022-F` never reaches `done` ⇒ `021-S` unclosable **after A's
+irreversible merge**. That was the P0.
+
+Under the rev-6 declared-status rule the same record is unambiguously a **completed
+descendant that SATISFIES §5 condition 1**:
+
+| Check at a1 | `022.001-T` | Result |
+|---|---|---|
+| Declared `status` | `done` | **completed** ⇒ condition 1 **satisfied** |
+| Pre-archived? (declares `status: archived`?) | **no** | **not** a pre-archived member; §5.0's allowlist is **never consulted** |
+| §5.0 allowlist membership required? | **no** | absence from the 11-ID list is **irrelevant** |
+| Archive provenance required? | **no** | registry relocation on `done` carries none **by design**; demanding it was the second, independent S0 HALT — also removed |
+| Exactly one physical copy | `archive/` only | containment **satisfied** |
+| Live (`queued`/`active`)? | no | condition 2 **satisfied** |
+| `parent_id` → `022-F` | intact | condition 3 **satisfied** |
+
+The exemption is therefore **never exercised on A's own route** — not because A's
+descendants stay in the queue, but because **none of them ever declares `status: archived`**.
+It exists for `017-S` and is gated fail-closed for everything else.
 
 **The general authority stays narrow.** This is an exemption from *one* condition, for
-*enumerated* IDs, under a *recorded* Stage decision. It is not a general rule that archived
-descendants don't count, and it must not be generalized into one.
+*enumerated* IDs, under a *recorded* Stage decision, triggered **only** by a declared
+`status: archived`. It is not a general rule that archived descendants don't count, and it
+must not be generalized into one.
+
+> **Rev 6 — where the 11 IDs LIVE (finding C-5).** The enumerated list is a **release-instance
+> disposition and belongs to THIS PLAN**, not to the global agent contract. `_ship.agent.md`
+> receives only the **general rule** — *"a descendant declaring `status: archived` is exempt
+> from condition 1 only under a recorded Stage disposition that names it; absent such a
+> disposition, HALT"* — and **never the `018.*` IDs themselves**. This keeps the reusable
+> policy decoupled from one release, and it is why no Go test row pins an `018.*` literal.
+> Stage owns the disposition and re-states it per shipment.
+
+> **Rev 6 — HOW S0 and §5.0's containment checks are actually executed (finding C-10).**
+> `backlogit_get_item` returns a single resolved record and **cannot reveal a torn duplicate**
+> (the same ID present in both `queue/` and `archive/`), so containment must not be pinned to
+> it. The executable surface:
+>
+> | Check | Tool |
+> |---|---|
+> | **Exactly-one-copy containment** (torn duplicate / missing) | `backlogit doctor` (`check_duplicates`, `check_orphans`) and/or `backlogit_query_sql` over the index — **never** `get_item` alone |
+> | **Declared `status`, `artifact_type`, `parent_id`** | `backlogit_get_item` / `backlogit get {id}` — the record's own frontmatter |
+> | **Archive provenance** (`archived_from`, `archived_status`) on a declared `status: archived` record | `backlogit_get_item` |
+> | **Topology at every depth** | `backlogit_query_sql` over `parent_id`, or `backlogit_get_dependencies` / `get_links` as applicable |
+>
+> **Doctor was run clean this session** (`No issues found.`, 240 artifacts indexed,
+> `parse_failures=0`), which is the containment evidence for `021-S`'s two members.
 
 ### 5.1 Step 6.1(a1) applicability — a STRICTLY ORDERED, non-overlapping selector (rev 2; re-scoped rev 3; made total in rev 4; **ordered and disambiguated in rev 5**)
 
@@ -452,16 +642,60 @@ over `n = |{manifest members whose artifact_type is feature}|`:
 
 **S0 — ANOMALY GATE (before `n` is computed).** Evaluated over every manifest member,
 **first**, because a malformed record makes the multiplicity count itself untrustworthy.
+**Every trigger below is keyed on DECLARED STATUS or on physical CONTAINMENT — never on
+which directory holds a record (rev 6, finding B-1).**
 **HALT, fail closed, no mutation** on any of:
 
 * a member whose `artifact_type` is **missing, empty, or unresolvable**;
-* a member present in **both** `.backlogit/queue/` and `.backlogit/archive/` (torn/duplicate);
+* a member present in **both** `.backlogit/queue/` and `.backlogit/archive/` — a
+  **containment** violation (torn/duplicate), not a status inference;
 * a member present in **neither** (missing);
-* a member with **malformed archive provenance** (absent/ill-formed `archived_from` or
-  `archived_status` on an archive-located record);
-* an **archive-located member that is not on the §5.0 recorded Stage disposition list**.
+* a member **declaring `status: archived`** with **malformed archive provenance** (absent or
+  ill-formed `archived_from` or `archived_status`). **Scoped strictly to declared
+  `status: archived`** — a `status: done` record carries no provenance by design, and
+  demanding it was one of the two rev-5 S0 HALTs that made `021-S` unclosable;
+* a member **declaring `status: archived`** that is **not on the §5.0 recorded Stage
+  disposition list**.
+
+> **Rev 6 — what S0 explicitly DOES NOT halt on (normative).** A member that is
+> **archive-located while declaring `status: done`** is a **normal completed member**. It
+> raises **no** S0 trigger, is **not** matched against §5.0's allowlist, and is **not**
+> required to carry archive provenance. This is the exact shape `022.001-T` presents at
+> §9 step 13 (§5.0), and the exact shape rev 5 halted on.
 
 Only if S0 raises nothing does a1 compute `n`.
+
+> **Rev 6 — THE PRE-MODE CIRCULARITY IS REMOVED (plan-review finding B-5, normative).**
+> Rev 5's §5.0 gate 1 required that *"P-015 pre-mode classifies it `pre-archived`"*, taken
+> from the authoritative scan. But §9 runs **a1 at step 13** and
+> **`shipment-reconcile mode: pre` at step 14**. Pre-mode **has not run** when a1 executes,
+> and an earlier intake scan is a different snapshot, so the input had **no defined
+> provider** on the `017-S` route.
+>
+> **The fixed ordering is strictly one-directional, and there is no back-edge:**
+>
+> | # | Step | Runs | Reads |
+> |---|---|---|---|
+> | 1 | **a1** (§9 step 13) | **BEFORE** pre-mode | its **own** direct, read-only reads of each manifest member's record |
+> | 2 | **feature completion** | inside a1's S4 | — |
+> | 3 | **`shipment-reconcile mode: pre`** (§9 step 14) | **AFTER** a1 | the authoritative scan, unchanged |
+>
+> **a1's completion guard is self-sufficient and READ-ONLY.** It directly checks, per member:
+> **(a)** the **declared `status`** in the record's own frontmatter; **(b)** **exactly one
+> physical copy** (`queue/` XOR `archive/`); **(c)** topology — `parent_id` resolves to this
+> feature, nothing orphaned or reparented; and **(d)** for a member declaring
+> `status: archived` **only**, the exact §5.0 11-ID allowlist plus its provenance and
+> immutable-metadata checks. Nothing else. **a1 MUST NOT require pre-mode to have already
+> run**, and MUST NOT invoke pre-mode itself.
+>
+> **This is a NARROW COMPLETION PRECONDITION, not a duplicate close-path classification.**
+> a1 answers exactly one question — *"is this covering feature's obligation discharged, such
+> that `active -> done` is authorized?"* It does **not** compute a close path, does **not**
+> emit or consume a verdict, and does **not** decide `PROCEED`/`RECONCILE_FAIL`. The
+> **authoritative** pre-mode classification and the P-015 close-path selection run **after**
+> a1, **once**, and remain **solely** authoritative for everything they own (§4.1, §9.3).
+> Reading a record's own declared status to decide whether an authority's precondition holds
+> is not re-deriving a classification — it is the ordinary evidence any guard must gather.
 
 **S1 — `n == 0` ⇒ NOT APPLICABLE.** Record `A1_NOT_APPLICABLE: no feature member in
 manifest` and proceed to Step 6.1(a). A **successful** outcome — not a skip, not a failure,
@@ -496,7 +730,7 @@ other value) ⇒ **HALT**, fail closed. Record the observed status. Return to **
 
 | Step | Guard (assumes every earlier guard failed) | Outcome |
 |---|---|---|
-| **S0** | any member anomaly | **HALT** — no `n`, no mutation |
+| **S0** | any member anomaly — declared-status or containment keyed, **never** location | **HALT** — no `n`, no mutation |
 | **S1** | `n == 0` | explicit no-op ⇒ proceed to `a` |
 | **S2** | `n > 1` | **HALT** — no condition evaluated, no mutation |
 | **S3** | `n == 1`, status `done` | conditions 1–4 revalidate ⇒ idempotent no-op; else **HALT** |
@@ -636,9 +870,10 @@ Therefore: **the session that merges A checkpoints and ends.**
 
 ## 7. Ordering (test-first; `main` stays green)
 
-1. **H0 — red.** Add the single table-driven test function. Marker:
-   `not implemented: ship feature-completion delegation contract`. Red count **1 of 1**;
-   `go vet` clean; `go test ./...` non-zero.
+1. **H0 — red.** Add the single table-driven test function. The readiness guard finds the
+   `a1` anchor **absent** and fails once with the message
+   `not implemented: ship feature-completion delegation contract` (§8.1.1). Red count
+   **1 of 1**; `go vet` clean; `go test ./...` non-zero.
 2. **H1 — green.** Apply ADD-1, ADD-2, C1–C6. Re-run: `go vet` clean, `go test ./...` green,
    `markdownlint` clean.
 
@@ -661,18 +896,33 @@ function and Step 4.3 cannot deadlock (the `021.001-T` constraint).
 | 6 | The authority-escalation rule (§6) is present | positive |
 | 7 | `_ship.agent.md` no longer contains the drifted `children`-only coverage rule | **negative** |
 | 8 | `_ship.agent.md` does **not** name `TASK_ONLY_FINALIZE` | **negative** |
-| 9 | `_ship.agent.md` does **not** enumerate the authorized verdict set | **negative** |
-| 10 | The `backlogit move <shipment_id> --status shipped` prescription (C2) is gone | **negative** |
+| 9 | `_ship.agent.md` states **no classification PREDICATE** — a result-token allowlist is permitted, a selection condition is not (§4.1 rev 6) | **compound +/−** |
+| 10 | The `backlogit move <shipment_id> --status shipped` prescription (C2) is gone | **compound +/−** |
 | 11 | C1's reconciled wording scopes the carve-out to **Role Boundary** changes only (§4.2) | **ordering/consistency** |
 | 12 | Step 6.1(a1) states the **zero-feature-member explicit no-op** (S1) and that an unmet guard on a present feature member **halts** (S4) | **ordering/consistency** |
 | 13 | Step 6.1(a1) states **idempotent resume** — a feature member already `done` proceeds without error and without re-issuing the transition, **after conditions 1–4 revalidate** (S3) | **ordering/consistency** |
-| 14 | **(C7)** **COMPOUND** — Step 0.5 item 6's pre-mode summary **PRESENT**: the reconciled archive-located disposition phrase; **AND ABSENT**: the exact old literal | **compound +/−** |
-| 15 | **(C8)** **COMPOUND** — Step 6.1(a)'s pre-archive gate summary **PRESENT**: the reconciled phrase; **AND ABSENT**: the exact old literal | **compound +/−** |
-| 16 | **COMPOUND** — Step 6.1(a1)'s selector states **`n > 1` halts with no feature mutation** (S2) **AND** the anomaly-gate-before-`n` rule (S0) | **compound** |
+| 14 | **(C7)** Step 0.5 item 6's pre-mode summary **PRESENT**: the reconciled **declared-status** phrase (§8.1.1); **AND ABSENT**: the exact old queue-only literal | **compound +/−** |
+| 15 | **(C8)** Step 6.1(a)'s pre-archive gate summary **PRESENT**: the reconciled **declared-status** phrase (§8.1.1); **AND ABSENT**: the exact old queue-only literal | **compound +/−** |
+| 16 | Step 6.1(a1)'s selector states **`n > 1` halts with no feature mutation** (S2) **AND** the anomaly-gate-before-`n` rule (S0) | **compound ++** |
 | 17 | **(rev 5, B-11)** C8's reconciled sentence **PRESERVES** the single-writer lock clause **and** the orphan scan clause | **preservation** |
 | 18 | **(rev 5, B-14)** C7's adjacent `Scope note (139-F/139.001-T)` **survives** the C7 replacement | **preservation** |
 
-#### 8.1.1 Pinned literals (rev 5, normative — plan-review finding A-7)
+> **Rev 6 — Kind labelling is now consistent (finding D-2).** Rev 5 called rows 14/15/16
+> "compound" while marking rows 7/10 "negative", even though §8.1.1 pinned **both** a PRESENT
+> and an ABSENT literal for 7 and 10. Three distinct kinds are now named explicitly:
+>
+> * **`compound +/−`** — one PRESENT literal **and** one ABSENT literal on the same site:
+>   rows **9, 10, 14, 15** = **4 rows**. This is the count AC-23 and §12 track.
+> * **`compound ++`** — two PRESENT assertions, no ABSENT literal: row **16** only.
+> * **`negative`** — ABSENT literal only: rows **7** and **8**. Row 7 is ABSENT-only by
+>   deliberate rev-6 correction (finding C-2 — its rev-5 PRESENT needle was itself a
+>   forbidden predicate); row 8's bare-token absence is correct for `TASK_ONLY_FINALIZE`, a
+>   string the file must never contain in any form.
+>
+> **The compound count is unchanged at 4** — row 7 left the set and row 9 joined it — so
+> **§12 carries no test-row delta for this change** (§12 rev-6 note).
+
+#### 8.1.1 Pinned literals (rev 5, normative — plan-review finding A-7; **re-pinned in rev 6 for B-1/B-2/B-3**)
 
 Rows 14–15 were **vacuously satisfiable** in rev 4: §8.1 said they *"reuse the same
 substring-assertion helper"*, i.e. a whole-file `strings.Contains(content, "pre-archived")`.
@@ -682,17 +932,82 @@ transitioning red→green. Since rows 14–15 (AC-22) are the **entire mechanica
 justification** for reopening the inventory, that would let the plan go all-green with its
 headline defect intact.
 
-**Every row below is COMPOUND: assert a long distinctive PRESENT phrase that only the
-reconciled wording can contain, AND assert the site's exact old literal is ABSENT.**
-All needles are **single-line** (C-6: the target file may be CRLF on Windows) and are
-pinned **verbatim** here:
+**All FOUR `compound +/−` rows below assert a long distinctive PRESENT phrase that only the
+reconciled wording can contain, AND assert the site's exact old literal is ABSENT. Row 7 is
+ABSENT-only** (see the rev-6 note after the table). All needles are **single-line** (C-6: the
+target file may be CRLF on Windows), are **verified present exactly once** in the installed
+file at the line shown, and are pinned **verbatim** here:
 
 | Row | MUST BE ABSENT (exact current literal) | MUST BE PRESENT (distinctive reconciled phrase) |
 |---|---|---|
-| 14 (C7) | ``every manifest item is present in `.backlogit/queue/` with the`` | ``an archive-located `pre-archived` member is accepted without a status check`` |
-| 15 (C8) | ``queue with `status: done`, and scans for orphan items.`` | ``either a queue item at `status: done` or an archive-located `pre-archived` member`` |
-| 7 | ``it is fully covered (every one of its children,`` | ``descendants — at every depth, not only direct children`` |
+| 14 (C7) | ``every manifest item is present in `.backlogit/queue/` with the`` | ``never inferring it from `queue/` or `archive/` location`` |
+| 15 (C8) | ``queue with `status: done`, and scans for orphan items.`` | ``either declares `status: done` or declares `status: archived``` |
+| **9** | ``qualification is never per-member, and no feature ID is ever special-cased.`` | ``HALT on any result token the installed classification did not name`` |
 | 10 | ``<shipment_id> --status shipped`` | ``the authoritative close sequence defined by the `shipment-reconcile` skill`` |
+| 7 | ``it is fully covered (every one of its children,`` | **— none (ABSENT-only; see below)** |
+
+> **Rev 6 — row 7 loses its PRESENT needle, which was self-contradictory (finding C-2).**
+> Rev 5 pinned row 7's PRESENT phrase as ``descendants — at every depth, not only direct
+> children``. That phrase is **itself a coverage PREDICATE** — precisely what §4.1's rev-6
+> allowlist contract and row 9 forbid `_ship.agent.md` from restating. Satisfying row 7 would
+> have **forced the implementer to re-add a predicate** in order to pass a row whose purpose
+> is removing one, and it appeared in **no** pinned replacement text.
+> **Row 7 is therefore ABSENT-only, and that is sufficient**: its ABSENT literal is the
+> **full drifted single-line clause**, verified to occur **exactly once** in the installed
+> file (L810), so the row is **non-vacuous on its own** and cannot be green at H0. The
+> delegation that replaces the deleted predicate is asserted positively by rows **4** and
+> **10**, so nothing goes unchecked.
+
+> **Rev 6 — rows 14/15 are re-pinned to DECLARED-STATUS wording (findings B-1/B-2).** Rev 5's
+> PRESENT literals (``an archive-located `pre-archived` member is accepted without a status
+> check`` and ``either a queue item at `status: done` or an archive-located `pre-archived`
+> member``) encoded the **locational** rule §4.4 now rejects. Satisfying them would have
+> written the B-1 defect **permanently into Ship's instruction surface** while rows 14–15
+> reported green. The rev-6 literals above can only be satisfied by wording that reads
+> declared status from the record's own frontmatter. **The ABSENT literals are unchanged and
+> re-verified** (row 14 at L255, row 15 at L777).
+>
+> **Row 9 is now COMPOUND (finding B-3).** Its ABSENT literal is a **classification
+> predicate** — the per-member/whole-manifest fallback rule at L819, verified present and
+> **unique** in the installed file — so the row goes green only when the predicate block is
+> genuinely replaced by delegation. Its PRESENT literal asserts the **fail-closed validation
+> behavior**, not a verdict list. **Row 9 therefore no longer contradicts AC-25**: both now
+> require the same thing — tokens may be listed, predicates may not.
+>
+> **Reconciled target wording (normative, so the literals are reachable).**
+>
+> * **C7** (L255–256) becomes: *"This verifies every manifest item either declares the
+>   expected status or declares `status: archived` (pre-archived — accepted without a status
+>   check), reading declared status from each record's own frontmatter and **never inferring
+>   it from `queue/` or `archive/` location**; it also requires a `record-consistent` shipment
+>   record and **scans for orphan items**."*
+> * **C8** (L775–777) becomes: *"This acquires the single-writer lock on
+>   `.backlogit/queue/{shipment_id}.md` **(via the `file-lock` skill)** and verifies that
+>   every manifest item **either declares `status: done` or declares `status: archived``
+>   (pre-archived — accepted without a status check), that the shipment-record-status
+>   classification is `record-consistent`, and **scans for orphan items**."*
+>
+> Both preserve the `PROCEED` conjuncts (**no orphans**, **`record-consistent`**) and C8
+> preserves the **single-writer lock** clause, so rows 14/15 and row 17 are jointly
+> satisfiable. Row 18's `Scope note (139-F/139.001-T)` at L259 is untouched by C7's sentence.
+
+> **Rev 6 — ABSENT-needle uniqueness MEASURED, not assumed (finding D-5).** Each ABSENT
+> literal was counted across the whole installed file this session; every one occurs
+> **exactly once**, so no row can pass or fail on an unrelated match:
+>
+> | Row | ABSENT literal occurrences | Line |
+> |---|---|---|
+> | 14 | 1 | L255 |
+> | 15 | 1 | L777 |
+> | 7 | 1 | L810 |
+> | 9 | 1 | L819 |
+> | 10 | 1 | L790 |
+>
+> Row 3's three ordering anchors were re-counted the same way (L767, L773, and the `a1`
+> anchor which is absent pre-implementation **by design** — that absence is the H0 readiness
+> guard, not a row failure). Row 17's ``scans for orphan items`` occurs **twice** (L256,
+> L777) — correct and intended for a **preservation** needle, which asserts survival, not
+> uniqueness.
 
 **Negative needles are pinned to the FULL drifted clause, never a bare token (B-3).** A bare
 `children` needle can **never** go green — `_ship.agent.md` legitimately uses the word
@@ -717,12 +1032,24 @@ skill)`` and ``scans for orphan items`` as still-present after C8's rewrite; row
 likely implementation error is a wholesale sentence replacement that silently deletes
 surrounding clauses.
 
-**H0 red is `1 of 1` by construction (B-4).** An 18-row table naturally yields many reds. A
-single **marker-fatal guard runs BEFORE the row loop**: if the file does not contain the
-marker `not implemented: ship feature-completion delegation contract`, the test fails once
-with that marker and **returns**, so H0 is exactly one failure. At H1 the marker is gone and
-the 18 rows execute. Each row runs under its own `t.Run(row.name, …)` for traceability
-(C-2), so the table is **real assertions from the start**, not a stub.
+**H0 red is `1 of 1` by construction (B-4; LOGIC CORRECTED in rev 6, finding C-3).** An
+18-row table naturally yields many reds. A single **readiness guard runs BEFORE the row
+loop**, and rev 5 stated its polarity **backwards** — it described failing when a marker was
+*absent* and then claimed the rows execute once that same marker *is gone*, which taken
+literally means the rows never run and H1 never greens. The guard is pinned correctly here:
+
+| Phase | Readiness anchor ``a1. **Covering-feature completion gate (P-015 grant)**`` | Guard | Rows |
+|---|---|---|---|
+| **H0** (pre-implementation) | **absent** | `t.Fatalf("not implemented: ship feature-completion delegation contract")` — fails **once** and returns | **do not execute** |
+| **H1** (post-implementation) | **present** | passes | **all 18 execute** |
+
+The **readiness anchor is the file content** (the unique `a1` heading of §8.1.1's anchor
+table, which exists only after implementation); `not implemented: ship feature-completion
+delegation contract` is the **failure message**, never a string searched for in
+`_ship.agent.md`. Conflating the two is what produced the inverted description. H0 is
+therefore **exactly one** failure, and H1 executes the full table. Each row runs under its
+own `t.Run(row.name, …)` for traceability (C-2), so the table is **real assertions from the
+start**, not a stub.
 
 **Assertions are stdlib only (B-5).** `technology-go.instructions.md` recommends testify,
 but **testify is not in `go.mod`**; importing it would add a dependency and break AC-11's
@@ -774,25 +1101,25 @@ else. It therefore qualifies under the **existing, already-reviewed** P-015 exce
 | Step | Session | Action |
 |---|---|---|
 | 0 | **Stage** | **Pre-execution readiness check (PO-1a)** — **DISCHARGED**, see §10.1. Probe 22 measured the claim shape; no pre-implementation blocker remains |
-| **0a** | **Stage** | **PROBE 25 — root-included cascade fixture (§9.4). DISCHARGED.** Authored, executed and **committed** by Stage **before `021-S` is claimed**. `PROBE25_RESULT=PASS`, 8/8 criteria. **`021-S` is not claimable until this evidence is committed and PASSing.** Ship never authors this artifact (P-010) |
+| **0a** | **Stage** | **PROBE 25 — root-included cascade fixture (§9.4). DISCHARGED.** Authored, executed and **committed** by Stage **before `021-S` is claimed**. `PROBE25_RESULT=PASS`, 8/8 criteria (9 tokens). Stage records the four Hardening-9a identity fields — `evidence_commit_sha`, `fixture_script_sha256`, `fixture_result_sha256`, `backlogit_executable_sha256` — and confirms both files are **tracked and committed**. **`021-S` is not claimable until this evidence is committed and PASSing.** Ship never authors this artifact (P-010) |
 | 1 | S1 | Verify on `main`; Step 0.5 pre-claim topology gate; **claim `021-S`**. Ship moves **`022.001-T -> active`**. `022-F` is left **`active`** — **measured, not assumed** (Probe 22 ARM AB) |
 | 2 | S1 | H0 red → implement → H1 green |
 | 3 | S1 | **Step 4.3 quality gates; Step 4.4 review gate** |
 | 4 | S1 | **Step 4.5 Complete Task — commit, then `022.001-T -> done`.** *(Installed order: Step 4.5 (L517) precedes Step 5 (L554). The task reaches `done` BEFORE the implementation PR merges.)* |
-| 5 | S1 | **Step 5 PR lifecycle** — full gate sequence, `--phase lifecycle` topology gate, build, push, PR, operator approval, **merge** |
+| 5 | S1 | **Step 5 PR lifecycle** — full gate sequence, `--phase lifecycle` topology gate, build, push, PR, **P-018 Copilot review engagement (rev 6, finding C-9)**, operator approval, **merge** |
 | 6 | S1 | **Step 6 Merge Confirmation Gate** — `gh pr view` state `MERGED`; `git fetch origin main`; `git merge-base --is-ancestor {merge_sha} origin/main` |
 | 7 | S1 | **Reload merged `main`.** Detect that the merged change alters **Ship's own Role Boundary**. Per §6 the new authority is **not** available to this session |
 | 8 | S1 | **Write checkpoint** (§9.1 payload contract: `schema_version: 1`, `agent: ship`, **`session_id`**, `phase: awaiting-fresh-session-parent-completion`, `resume_hint` naming `021-S`, `022-F`, `022.001-T` and the merge SHA; domain data under `context`) and **END**. **Record the emitted checkpoint filename** — S2 must match it exactly |
-| 9 | **S2** | **Fresh session.** Full checkpoint-recovery protocol (§9.1) — enumeration, anomaly gate, **S2-specific fail-closed zero-candidate rule**, exact-filename match, explicit owner selection, `agent: ship` ownership, operator confirmation, **restore → prune/gate → resume** (Engram-reachability fail-closed; never-prune allowlist honored), same cursor, resolve-after-confirmed-resume. Loads the new Role Boundary + Step 6.1(a1) from merged `main` |
+| 9 | **S2** | **Fresh session.** Full checkpoint-recovery protocol (§9.1, thirteen steps) — enumerate all with no filter, **anomaly gate over the full enumeration FIRST**, then **filter to the MATCH set** (filename + `agent: ship` + `session_id`) and require **exactly one MATCH**; unrelated active checkpoints are a warning only. Explicit owner selection, ownership validation, operator confirmation, **restore → prune/gate → resume** (Engram-reachability fail-closed; never-prune allowlist honored), same cursor, resolve-after-confirmed-resume. Loads the new Role Boundary + Step 6.1(a1) from merged `main` |
 | 10 | S2 | Verify the merge SHA is an ancestor of `origin/main`; validate the **same** active shipment `021-S` |
 | 11 | S2 | **Step 6.0 Post-Merge Branch Protocol** — `git checkout main`, `git pull`, `git checkout -b post-merge/022-ship-feature-completion`. **Created BEFORE any post-merge backlog mutation**, because Step 6.1(e) commits `.backlogit/` and those commits must not land on `main` |
 | 12 | S2 | **Step 6.1(a0)** `--phase lifecycle` topology gate — run **while `021-S` is still `active`**. *(Probe 20 tripwire: post-archive this gate fails closed on every route; it must never be re-run after the close.)* |
-| **12a** | **S2** | **READ-ONLY RE-VERIFICATION of Stage's committed Probe-25 evidence (§9.4a).** All five checks: exact topology, PASS fields, evidence commit **ancestry** of the merge SHA, **currently-resolved** engine digest, and no stale/missing record. **S2 authors, modifies and re-runs NOTHING.** FAIL ⇒ HALT with the §9.4a recovery path; `021-S` stays `active`, no a1 mutation |
-| 13 | S2 | **Step 6.1(a1)** — §5.1 step **S4** (`n == 1`, status `active`): `022-F` is a manifest member and all five §5 conditions hold → `022-F active -> done` |
-| 14 | S2 | **Step 6.1(a)** pre-mode, `expected_status: done` — **both** members now `done` → `PROCEED` |
-| 15 | S2 | Classification returns **`CASCADE`** (fully-covered root); **6.1(b)** close via the cascade op; **6.1(c)** P-007 archive-integrity verify; **6.1(d)** post-mode; **6.1(e)** commit `.backlogit/` **on the closure branch** |
+| **12a** | **S2** | **READ-ONLY RE-VERIFICATION of Stage's committed Probe-25 evidence (§9.4a).** All **six** checks: exact topology, PASS fields (9 tokens), **`evidence_commit_sha`** ancestry of the merge SHA, **currently-resolved `backlogit_executable_sha256`**, per-file `fixture_script_sha256`/`fixture_result_sha256` against committed blobs, and transcript internal consistency. **S2 authors, modifies and re-runs NOTHING.** FAIL ⇒ HALT naming the failed field, with the §9.4a recovery path; `021-S` stays `active`, no a1 mutation |
+| 13 | S2 | **Step 6.1(a1)** — §5.1 step **S4** (`n == 1`, status `active`). **Runs BEFORE pre-mode** and reads declared status directly (§5.1 rev 6). `022-F` is a manifest member; `022.001-T` declares `status: done` (archive-located by registry routing — a **completed** descendant, **not** pre-archived, §5.0); all five §5 conditions hold → `022-F active -> done` |
+| 14 | S2 | **Step 6.1(a)** pre-mode, `expected_status: done` — **both** members declare `done` → **`matched`** → `PROCEED` |
+| 15 | S2 | **Authoritative** classification returns **`CASCADE`** (fully-covered root); **any other verdict is a topology discrepancy ⇒ HALT to Stage, no `SAFE_CLOSE` fallback** (§9.3 rev 6). On `CASCADE`: **6.1(b)** close via the **pre-existing** cascade op; **6.1(c)** P-007 archive-integrity verify; **6.1(d)** post-mode; **6.1(e)** commit `.backlogit/` **on the closure branch** |
 | 16 | S2 | **Step 6 item 2** `operational-closure mode=post-merge` → `docs/closure/`; **P-020** compact-context finalizes the compaction status — **all on the closure branch, before the closure PR is pushed** |
-| 17 | S2 | **Step 6 item 9** `backlogit sync`, then push the closure branch, closure PR, P-014 local review, operator approval, merge |
+| 17 | S2 | **Step 6 item 9** sync — **MCP `backlogit_sync_index` first, CLI `backlogit sync` only as the declared fallback (rev 6, finding D-6)** — then push the closure branch, closure PR, **P-018 Copilot review engagement (rev 6, C-9)**, P-014 local review, operator approval, merge |
 | 18 | S2 | **Step 6 item 10** return to `main`; `git pull` |
 | 19 | — | Orchestrator routes **`017-S`** only (rev 3 — A is the sole prerequisite; there is no B) |
 
@@ -846,20 +1173,36 @@ S2 MUST, **in this order**:
 2. **Run the anomaly gate FIRST** — any validation error, quarantine flag, or
    missing/malformed required field in **any** enumerated summary ⇒ **FAIL CLOSED** to
    operator handoff, evaluated **before** the candidate-count check.
-2a. **S2-SPECIFIC CANDIDATE RULE — FAIL CLOSED on zero, multiple, or mismatch. (rev 5.)**
-   The installed protocol treats **zero** active `ship` candidates as *normal startup —
-   explicitly not a failure*. **That continuation does NOT apply to this handoff**, and an
-   agent that applies it would skip parent completion entirely and "proceed with fresh work".
-   For S2, whose entire purpose presupposes S1's checkpoint:
-   * **zero** active `ship` candidates ⇒ **FAIL CLOSED** to operator handoff. There is **no
-     normal zero-candidate path at this step**;
-   * **more than one** active `ship` candidate ⇒ **FAIL CLOSED** (ambiguity is never resolved
-     by picking);
-   * a candidate whose **filename** does not match the exact filename S1 emitted, or whose
-     **`session_id`** does not match S1's recorded `session_id` ⇒ **FAIL CLOSED**.
+2a. **S2-SPECIFIC CANDIDATE RULE — FILTER FIRST, THEN COUNT THE MATCHES. (rev 5; ORDER
+   CORRECTED in rev 6, finding B-8.)**
+   Rev 5 fail-closed on **any** `>1` active `ship` candidate **before** applying the identity
+   filter. But the installed protocol **deliberately leaves fail-closed handoffs `active`
+   regardless of age**, so unrelated leftovers are **expected**, not exceptional — one
+   leftover plus a perfectly valid S1 checkpoint would have **bricked S2**. The count is now
+   taken over the **MATCH set**, never over the raw enumeration:
 
-   Exactly **one** candidate, matching **both** the expected filename **and** `session_id`,
-   may proceed. Anything else halts to the operator.
+   | # | Operation | Rule |
+   |---|---|---|
+   | i | **Enumerate ALL** — `consumer_id: "ship"`, **no** `status`/`agent` filter | a quarantined or schema-invalid record must not be hidden by the query |
+   | ii | **Anomaly gate over the FULL enumeration** (step 2 above) | any validation error, quarantine flag, or missing/malformed required field in **any** record ⇒ **FAIL CLOSED**, before any filtering |
+   | iii | **FILTER to MATCHES** — exact expected checkpoint filename/reference **AND** `agent: ship` **AND** the exact `session_id` S1 recorded | all three conjunctive |
+   | iv | **COUNT the MATCHES — require exactly ONE** | **0 MATCHES ⇒ FAIL CLOSED** (S2 presupposes S1's checkpoint; the installed "zero candidates is normal startup" continuation **does not apply here**). **>1 MATCH ⇒ FAIL CLOSED** (ambiguity is never resolved by picking) |
+   | v | **Non-matching active records are a WARNING, not a failure** | they are **surfaced in the handoff report** and otherwise ignored. **They never strand a valid S1 handoff**, and S2 **never** resolves, prunes or touches them — least of all a `stage`-owned record (P-001) |
+
+   **Identity mismatch is still fail-closed.** If the single MATCH's filename/reference,
+   `agent`, or `session_id` disagrees with S1's recorded values at any later validation
+   point, S2 **FAILS CLOSED**. Malformed or unreadable records **FAIL CLOSED** at step ii.
+
+   > **`session_id` availability (rev 6, finding B-8 second half).** The installed
+   > `backlogit_list_checkpoints` summary **does** expose `session_id` — verified this session
+   > against the live tool, whose summaries carry `filename`, `agent`, `session_id`, `phase`,
+   > `status`, `created_at`, `shipment_id`, `feature_id` and `resume_hint`. The filter at
+   > step iii is therefore executable **at enumeration time**. S2 nonetheless
+   > **re-confirms `agent` and `session_id` after `backlogit_get_checkpoint`**, because the
+   > CheckpointV1 record — not the summary — is the authoritative source.
+
+   Exactly **one MATCH**, satisfying filename, `agent: ship` **and** `session_id`, may
+   proceed to step 3. Anything else halts to the operator.
 3. **Require explicit owner selection** — never auto-pick, **even when exactly one
    candidate is returned** and even when it matches. The operator selects one checkpoint by
    filename; ambiguity fails closed.
@@ -921,11 +1264,11 @@ is exactly `[021-S]`.
 | Step | Action |
 |---|---|
 | 1 | `017-S` becomes eligible once `021-S` is archived shipped **and** A's post-merge closure is complete (P-020 compaction status `done`/`degraded`, not `pending`) |
-| 2 | Ship claims `017-S`. Manifest is the **13-member fully-covered root**: root `018-F` + `018.008-T` (live) + 11 pre-archived legacy descendants |
-| 3 | Step 4.5 moves `018.008-T -> done` |
-| 4 | **Step 6.1(a1)** — §5.1 step **S4** (`n == 1`, status `active`): `018-F` is a present feature member; conditions hold; `018-F active -> done`. The 11 pre-archived descendants are exempt from condition 1 **only** under the §5.0 enumerated-ID disposition |
-| 5 | **Step 6.1(a)** pre-mode `expected_status: done`: `018-F` `done`, `018.008-T` `done`, 11 legacy members **pre-archived** (accepted without a status check) → **`PROCEED`** |
-| 6 | Classification returns **`CASCADE`** — the **existing** exception |
+| 2 | Ship claims `017-S`. Manifest is the **13-member fully-covered root**: root `018-F` + `018.008-T` (live) + **11 legacy descendants that DECLARE `status: archived`** |
+| 3 | Step 4.5 moves `018.008-T -> done` *(after which registry routing relocates it to `archive/` — it remains a **completed**, `matched` member, **not** pre-archived; §4.4 rev 6)* |
+| 4 | **Step 6.1(a1)** — §5.1 step **S4** (`n == 1`, status `active`), **running BEFORE pre-mode**: `018-F` is a present feature member; conditions hold; `018-F active -> done`. The 11 descendants **declaring `status: archived`** are exempt from condition 1 **only** under the §5.0 enumerated-ID disposition; `018.008-T`, declaring `status: done`, **satisfies condition 1 normally** |
+| 5 | **Step 6.1(a)** pre-mode `expected_status: done`: `018-F` declares `done` (**`matched`**), `018.008-T` declares `done` (**`matched`**), 11 legacy members declare `status: archived` (**`pre-archived`**, accepted without an `expected_status` check) → **`PROCEED`** |
+| 6 | The **authoritative** classification returns **`CASCADE`** — the **existing** exception. **Any other verdict is a topology discrepancy ⇒ HALT to Stage; no `SAFE_CLOSE` fallback** (AC-28) |
 
 **Why the rev-18 `SAFE_CLOSE` exit-9 blocker is not reached.** Rev 18 recorded that a
 `SAFE_CLOSE`-classified shipment halts at skill step 8 because
@@ -938,20 +1281,64 @@ reached. The underlying tool/contract conflict is **not fixed** here; it is simp
 this route**, and remains a recorded follow-up.
 
 > **Verification scope of this claim — stated honestly (rev 3, internal review P2;
-> ESCALATED TO A GATE in rev 4).**
+> ESCALATED TO A GATE in rev 4; **FALLBACK OVERCLAIM DELETED in rev 6, finding B-6**).**
 > The `CASCADE` result above is established at the **classification** level: the manifest
 > shape provably satisfies P-015's fully-covered-root preconditions, and pre-mode provably
-> accepts pre-archived members. It is **not** established at the **engine-execution**
-> level *for this exact member shape*. A's own closure (§9) archives a clean root with
-> **no** truly-archived members; Probe 15 measured the **old** root-*excluded* 12-member
-> shape, which is the inverse case. **No committed probe or Go test exercises a
-> root-*included* cascade whose siblings are genuinely `status: archived`.**
+> accepts both `matched` and `pre-archived` members. It is **not** established at the
+> **engine-execution** level *for this exact member shape* by anything other than Probe 25's
+> fixture measurement — which is why that measurement is a pre-claim gate (§9.4).
 >
 > The path is **fail-closed** at two independent gates — the skill's cascade step 2 HALTs
 > on non-empty `returned_ids`, and step 3's two-set gate HALTs on any required/returned
-> mismatch — so a mis-derivation cannot silently corrupt the backlog. The realistic
-> downside is that `017-S` **HALTs** and falls back to `SAFE_CLOSE`, re-exposing the
-> exit-9 blocker, returning `017-S` to **Stage** at no data cost.
+> mismatch — so a mis-derivation cannot silently corrupt the backlog.
+>
+> **THE "FALLS BACK TO `SAFE_CLOSE` AT NO DATA COST" CLAIM IS WITHDRAWN IN FULL.** Rev 3
+> asserted that a HALT on this route *"falls back to `SAFE_CLOSE`, re-exposing the exit-9
+> blocker, returning `017-S` to Stage at no data cost."* **All three parts were wrong**, and
+> the sentence is deleted rather than qualified:
+>
+> 1. **P-015 forbids CASCADE→SAFE_CLOSE substitution once `CASCADE` is selected.** The
+>    skill's generic *"any classifier error … falls back to safe-close"* rule governs
+>    **classification-time** failure, **not** a HALT raised by the cascade sub-procedure's own
+>    post-mutation gates. Re-routing a halted cascade into safe-close would run a second close
+>    path over a partially-mutated backlog.
+> 2. **A HALT after the cascade has begun is NOT "no data cost."** The cascade's verification
+>    is **detect-after-mutate** (§9.4b): by the time step 2 or step 3 halts, the mutation has
+>    already occurred. The cost is a backlog requiring operator restore — §10.3's
+>    `git restore -- .backlogit/queue/ .backlogit/archive/` — not zero.
+> 3. **There is no automatic fallback of any kind on this route.** See the rev-6 verdict
+>    contract immediately below.
+
+> **Rev 6 — THE AUTHORITATIVE VERDICT CONTRACT FOR A AND `017-S` (finding B-6, normative).**
+>
+> **Ordering is fixed and one-directional** (§5.1 rev 6): **a1 runs first** (§9 step 13),
+> then the **authoritative installed `shipment-reconcile` / P-015 mode selection runs after
+> it** (§9 steps 14–15). a1 neither performs nor anticipates that selection.
+>
+> **Both A's and `017-S`'s manifests are exact root-inclusive fully-covered roots, so the
+> authoritative classification is EXPECTED to return `CASCADE`.**
+>
+> **Any other verdict is a TOPOLOGY DISCREPANCY and HALTs. There is NO `SAFE_CLOSE` fallback
+> for these two shipments.** If the classifier returns `SAFE_CLOSE`, that does not mean
+> "close a different way" — it means **the live manifest is not the shape this plan asserts**,
+> which is a planning-state error only **Stage** can reconcile. Ship HALTs, mutates nothing,
+> and returns the shipment to Stage. `HALT` likewise halts. An unknown token halts (§4.1).
+>
+> **Invocation of the cascade branch is CONDITIONAL on the authoritative `CASCADE` verdict.**
+> Ship does not "take the cascade path because the plan says so" — it takes it **if and only
+> if** the classification it did not compute names `CASCADE`. The branch itself is the
+> **already-existing** one; **A adds no cascade path, no verdict, and no new close
+> procedure.**
+>
+> **What A genuinely changes, stated without softening: REACHABILITY.** Before A, `017-S`'s
+> root-inclusive manifest failed pre-mode first, so the destructive cascade branch was
+> **unreachable** for it. After A, a1 completes the covering feature, pre-mode passes, and the
+> branch becomes **reachable**. A therefore **inherits that branch's detect-after-mutate
+> residual for a route that previously could not reach it** (§9.4b). That is a real, disclosed
+> consequence of A — **not** a defect A introduces into the cascade, and **not** something
+> Probe 25 or any part of A repairs.
+
+**Why the rev-18 `SAFE_CLOSE` exit-9 blocker is not reached.** Rev 18 recorded that a
 >
 > **Rev 4 — the rev-3 disposition is WITHDRAWN.** Rev 3 recorded this as *"not a current
 > blocker … deliberately not charged to A"*, to be run *"before `017-S` is routed, **not**
@@ -1002,7 +1389,25 @@ this route**, and remains a recorded follow-up.
 | **Ship S2** (§9 step **12a**, post-merge) | **read-only re-verification** of the committed evidence (§9.4a) | author, modify, re-run or regenerate planning evidence |
 
 **STATUS: EXECUTED AND COMMITTED.** Stage ran Probe 25 at `4fd21c5`, **before** `021-S` is
-claimable. `PROBE25_RESULT=PASS`, `FAILED_CRITERIA=0`, all eight criteria PASS.
+claimable. `PROBE25_RESULT=PASS`, `FAILED_CRITERIA=0`, **all eight criteria PASS across nine
+emitted tokens** — criterion 5 emits `CRITERION_5A_NO_UNEXPECTED_ARCHIVE` and
+`CRITERION_5B_NO_REQUIRED_LEFT_UNARCHIVED` as two independent, never-merged set equations, so
+8 criteria ↔ 9 tokens is **correct, not a discrepancy** (rev 6, finding C-4 second half).
+
+> **Rev 6 — the shipment record IS verified, by a separate criterion (finding C-4).** The
+> transcript's `REQUIRED_IDS=001-F,001.004-T` omits the shipment record, and P-015 makes that
+> record an **unconditional** required member — so on its own, criterion **5B** could pass
+> while the engine silently failed to archive it. **It cannot pass unnoticed here, because
+> criterion 7 checks the shipment record directly and independently**:
+> `SHIPMENT_LOC=archive`, `SHIPMENT_STATUS=archived`, `SHIPMENT_ARCHIVED_STATUS=shipped`,
+> `CRITERION_7_SHIPMENT_ARCHIVED_SHIPPED=PASS`. The engine's own `archived_ids` also lists it
+> (`ARCHIVED_IDS_TRANSITION_LOG_ENGINE=001-F,001-S,001.004-T`), and
+> `ALLOWED_IDS_INCL_SHIPMENT_COUNT=14` shows it inside the allowed set for equation A.
+> **Coverage is therefore complete**, but it is delivered by criterion 7 rather than by 5B.
+> **Recorded follow-up (not charged to A, and not a re-run):** a future revision of the
+> fixture should add the shipment record to `required_ids` so equation B is
+> self-sufficient. The current evidence is **not** invalidated — nothing it asserts is
+> false, and no gap is left unchecked.
 
 **Gate definition.**
 
@@ -1063,10 +1468,14 @@ P-015 preconditions 1 and 4 therefore hold on the live records.
 > to `mode: detect-mixed-role` only**, which the skill states is *"used **ONLY to DESCRIBE**
 > the inconsistency in a report — **NEVER** to gate a mutation"* (013-DL Addendum G, Copilot
 > PR #304 finding 1). **Pre-mode** uses the separate four-value classification
-> (`matched`/`pre-archived`/`missing`/`status-mismatch`), under which an archive-located member
-> is simply **`pre-archived`, valid, accepted without a status check** — so `017-S` reaches
-> `PROCEED`. The two classifications are explicitly different scans; conflating them would
-> produce a false halt.
+> (`matched`/`pre-archived`/`missing`/`status-mismatch`), under which each of these 11 members
+> is **`pre-archived` BECAUSE IT DECLARES `status: archived`** — valid, accepted without an
+> `expected_status` check — so `017-S` reaches
+> `PROCEED`. *(Rev 6, B-1/B-2: the qualifying fact is the **declared status**, not the archive
+> location. §4.4's rev-6 table governs. The distinction is load-bearing here: `018.008-T` will
+> declare `status: done` and is therefore **`matched`, not `pre-archived`** — exactly as
+> `022.001-T` is on A's own route.)* The two classifications are explicitly different scans;
+> conflating them would produce a false halt.
 >
 > **Recorded residual**: if any future gate were to adopt the role table as a *gating* check,
 > all 11 members would halt `017-S`. That is not the case today and is not charged to A, but
@@ -1135,24 +1544,39 @@ LIVE_BACKLOG_UNMUTATED=True              PROBE25_RESULT=PASS
 At §9 step **12a**, the fresh S2 session performs a **read-only** re-verification of the
 **already-committed** evidence. **S2 authors nothing, modifies nothing, and re-runs nothing.**
 
-**What S2 checks — all five, conjunctive:**
+**What S2 checks — all six, conjunctive (rev 6: field names disambiguated per B-4; check 6
+added per C-8):**
 
 1. **Exact topology.** The evidence records `TOPOLOGY_MEMBERS=13`, `ROOT_INCLUDED=True`,
    `PRE_ARCHIVED=11`, `ARCHIVED_STATUS_FLAVOUR=queued`. **An exact-match check** — any other
    topology means the measurement is not about `017-S`'s shape.
-2. **PASS fields.** `PROBE25_RESULT=PASS` and `FAILED_CRITERIA=0`, and each of the eight
-   criterion tokens reads `PASS`.
-3. **Evidence commit ancestry.** Both evidence files are **present and tracked**, and the
-   commit that introduced them is an **ancestor of the merge commit** S2 verified at §9
-   step 6 (`git merge-base --is-ancestor {evidence_sha} {merge_sha}`). This is what makes
-   "stale" machine-checkable: evidence must **pre-date** the merge, not be regenerated after.
-4. **Current resolved engine digest.** S2 resolves `backlogit` **the same portable way**
-   (registered command / `Get-Command`) and compares its **current** SHA-256 to the digest
-   recorded in the evidence. This detects toolchain drift **between** measurement and close.
-5. **No stale or missing record.** Neither evidence file is absent, empty, or modified
-   relative to its committed blob (`git diff --quiet HEAD -- {paths}`).
+2. **PASS fields.** `PROBE25_RESULT=PASS` and `FAILED_CRITERIA=0`, and each of the **nine**
+   criterion tokens (eight criteria; criterion 5 emits `5A` and `5B` separately) reads
+   `PASS`.
+3. **Evidence commit ancestry — on `evidence_commit_sha`.** Both evidence files are
+   **present and tracked**, and `evidence_commit_sha` — **the LAST commit touching either
+   file**, per Hardening 9a — is an **ancestor of the merge commit** S2 verified at §9 step 6
+   (`git merge-base --is-ancestor {evidence_commit_sha} {merge_sha}`). Because the field is
+   the *last* commit and not the *introducing* one, **post-merge replacement of the evidence
+   fails this check** rather than slipping past it.
+4. **Current resolved engine digest — `backlogit_executable_sha256`.** S2 resolves
+   `backlogit` **the same portable way** (registered command / `Get-Command`) and compares
+   its **current** SHA-256 to the digest recorded in the evidence. This detects toolchain
+   drift **between** measurement and close. **No absolute path is required by this check.**
+5. **No stale or missing record — `fixture_script_sha256` / `fixture_result_sha256`.**
+   Neither evidence file is absent, empty, or modified relative to its committed blob
+   (`git diff --quiet HEAD -- {paths}`), and each file's current SHA-256 equals the value
+   recorded for it at `evidence_commit_sha`. **The two files are hashed separately** so a
+   swap or a partial edit cannot be masked by a single combined digest.
+6. **Internal consistency of the transcript (rev 6, finding C-8).** A **read-only**
+   arithmetic check on the evidence itself: `PREMODE_MATCHED + PREMODE_PRE_ARCHIVED +
+   PREMODE_MISSING + PREMODE_STATUS_MISMATCH + PREMODE_DUPLICATE_TORN == MANIFEST_COUNT`,
+   `PRE_ARCHIVED_COUNT == PREMODE_PRE_ARCHIVED`, and `FAILED_CRITERIA == 0` agrees with the
+   per-criterion tokens. Checks 1–5 verify **provenance** only and would accept an internally
+   contradictory transcript; this one catches the B-2 class of defect at re-verification
+   time. **Current values satisfy it**: `2 + 11 + 0 + 0 + 0 == 13`, `11 == 11`, `0` failures.
 
-**S2's role boundary is preserved absolutely.** Every one of the five is a **read**:
+**S2's role boundary is preserved absolutely.** Every one of the six is a **read**:
 `git log`, `git merge-base`, `git diff --quiet`, `Get-FileHash`, and text inspection. S2
 never writes to `docs/plans/`. This is what closes **A-2**.
 
@@ -1160,15 +1584,29 @@ never writes to `docs/plans/`. This is what closes **A-2**.
 
 1. **`021-S` remains `active`.** It is **not** marked `shipped`, **not** archived, and the
    a1 mutation is **not** performed. `017-S → 021-S` stays unsatisfied.
-2. **S2 HALTs and returns to the operator**, recording which of the five checks failed.
+2. **S2 HALTs and returns to the operator**, recording **which named field or check** failed
+   (`evidence_commit_sha`, `fixture_script_sha256`, `fixture_result_sha256`,
+   `backlogit_executable_sha256`, topology, PASS fields, or consistency).
 3. **The operator has real, in-role options** — this is the override rev 4 wrongly forbade:
-   * **re-verify** after resolving toolchain drift (check 4 is the common benign cause), or
+   * **re-verify** after resolving toolchain drift (check 4 /
+     `backlogit_executable_sha256` is the common benign cause), or
    * direct **Stage** to re-run Probe 25 pre-claim and re-commit fresh evidence — Stage owns
-     this artifact, so this is always available, or
-   * **revert A** per §10.2, after holding `017-S` per §10.2's obligation.
+     this artifact, so this is always available. **Note the sequencing consequence honestly:**
+     re-committing after the merge moves `evidence_commit_sha` to a **descendant** of the
+     merge SHA, so check 3 will **still fail** on the already-merged A. This option therefore
+     restores a valid pre-claim posture for a **re-planned** A (or a future shipment), and is
+     **not** a way to green an in-flight post-merge A. Rev 5 listed it without this caveat,
+     which made it structurally void (**finding C-7**); it is now stated plainly, or
+   * **revert A** per §10.2, after holding `017-S` per §10.2's obligation. **This is the only
+     option that clears a post-merge mismatch on A itself.**
 4. **`021-S` is left claimable-and-active for a future Ship session**, not stranded: because
    no a1 mutation and no close occurred, a later S2 re-entry is a clean resume (§5.1 **S4**,
    or **S3** if a prior attempt had already completed the feature).
+
+**No rollback fiction.** Nothing here claims an automatic restore, an automatic revert, or a
+"proceed with a recorded residual" path. A post-merge mismatch **HALTs active A** and hands
+the operator the three named options above — one of which (revert) is the only true unwind,
+and it is explicit, manual, and gated on the `017-S` hold.
 
 **The impossible contradiction is gone.** There is no longer a no-override clause sitting
 against a rollback that requires an override, and no step assigns Ship a P-010-forbidden
@@ -1190,10 +1628,17 @@ destructive mutation is *detected*, not *prevented*.
 that plainly matters, because the alternative — claiming Probe 25 prevents it — would be
 an overclaim:
 
-* **Not a new cascade path.** A introduces **no** verdict and **no** new close path. The
-  `CASCADE` invocation A rides is the identical call every fully-covered-root closure
-  already makes today. The detect-after-mutate ordering is a property of **P-015 and the
-  engine**, inherited unchanged.
+* **No new cascade path — but NEW REACHABILITY, and that distinction is stated in both
+  directions (rev 6, finding B-6).** A introduces **no** verdict, **no** new close path and
+  **no** change to the cascade procedure: the `CASCADE` invocation A rides is the identical
+  call every fully-covered-root closure already makes today, and the detect-after-mutate
+  ordering is a property of **P-015 and the engine**, inherited unchanged. **What A DOES do is
+  make that destructive path REACHABLE for `017-S`, which previously could not reach it** —
+  before a1, `017-S`'s root-inclusive manifest failed pre-mode first. Rev 5 asserted *"A
+  neither creates nor removes it"* and *"not a new cascade path"* as if that settled the
+  matter; both are true at the **implementation-definition** level and **incomplete** at the
+  **reachability** level. **A inherits this residual for a new route. That is a genuine
+  consequence of A**, and it is disclosed here rather than argued away.
 * **What Probe 25 actually does** is act as a **pre-claim gate**: it measures, on an exact
   topology match, that this cascade shape behaves as classified. **Measured: `returned_ids`
   empty, both set equations EMPTY, all `parent_id`s preserved, nothing outside the manifest
@@ -1203,11 +1648,23 @@ an overclaim:
   live topology at closure differs from the measured topology, the fixture's PASS does not
   transfer — which is exactly why §9.4a check 1 is an **exact topology match that HALTs on
   mismatch**.
-* **Rollback is not claimed.** Rev 4's implied restore-on-halt is **not** asserted here.
-  Remediating the detect-after-mutate ordering (a pre-cascade restorable snapshot and an
-  unconditional `git restore -- .backlogit/queue/ .backlogit/archive/` on every cascade HALT
-  path) is a **recorded follow-up against P-015 and the skill** — **not charged to A**,
-  whose 2-file surface touches neither.
+* **Rollback is not claimed — and §10.3 is reconciled with this (rev 6, finding B-6).**
+  Rev 4's implied restore-on-halt is **not** asserted here, and **no new rollback mechanism is
+  introduced by A**. Rev 5 left this sitting against §10.3's `git restore` prescription
+  without saying how they relate. They are reconciled explicitly:
+
+  | HALT path | Mutation occurred? | Restore obligation |
+  |---|---|---|
+  | a1 **S0–S5** halts (§5.1) | **no** — a1 halts before any mutation | **none**; nothing to unwind |
+  | pre-mode `RECONCILE_FAIL` (§9 step 14) | **no** — pre-mode is a check | **none** |
+  | verdict is not `CASCADE` for A/`017-S` (§9.3 rev 6) | **no** — HALT precedes the close | **none**; return to **Stage** |
+  | S2 §9.4a re-verification fails | **no** — 12a precedes a1 and the close | **none**; §9.4a's three operator options |
+  | **cascade step 2 / step 3 gate halts** (inherited) | **YES — detect-after-mutate** | **MANDATORY verified `git restore -- .backlogit/queue/ .backlogit/archive/`** per §10.3, then re-verify the protected set, then HALT |
+
+  **Exactly one row carries a mandatory restore**, and it is the **inherited** P-015 cascade
+  gate — not anything A adds. Remediating that ordering (a pre-cascade restorable snapshot
+  and an unconditional restore on every cascade HALT path) is a **recorded follow-up** against
+  P-015 and the skill — **not charged to A**, whose 2-file surface touches neither.
 
 ## 10. Risks, residuals, rollback
 
@@ -1335,10 +1792,10 @@ delegated it to plan C §10.1, which is now **deferred** and must not be routed 
 | a1: feature member already `done`, but any of conditions 1–4 **fails** | **HALT** fail-closed (§5.1 **S3**) — a `done` feature over unfinished descendants is corruption, not a resume |
 | a1: feature member in any other status (`queued`, `blocked`, `review`, …) | **HALT** fail-closed (§5.1 **S5**); record the observed status; return to Stage |
 | a1: manifest has **more than one** feature member | **HALT** fail-closed (§5.1 **S2**) — record `A1_MULTIPLE_FEATURE_MEMBERS: {ids}`; evaluate **no** §5 condition and mutate **no** feature; return to Stage |
-| **(rev 5)** a1: member anomaly — missing/unresolvable `artifact_type`, record in **both** queue and archive, record in **neither**, malformed archive provenance, or an archive-located member **not on the §5.0 disposition list** | **HALT** fail-closed (§5.1 **S0**) — evaluated **before** `n` is computed; no mutation |
+| **(rev 5; re-based rev 6)** a1: member anomaly — missing/unresolvable `artifact_type`, record in **both** queue and archive (containment), record in **neither**, or a member **declaring `status: archived`** with malformed provenance or **not on the §5.0 disposition list** | **HALT** fail-closed (§5.1 **S0**) — evaluated **before** `n` is computed; no mutation. **An archive-located member declaring `status: done` is a normal completed member and raises NO trigger** |
 | **(rev 5)** Probe 25 **FAILS** or digest-mismatches at Stage §9 step **0a** | **HALT pre-claim.** `021-S` is **not claimable**; nothing has merged and nothing is in flight. Return to Stage to re-plan. *(Already executed: `PROBE25_RESULT=PASS`.)* |
 | **(rev 5)** S2 §9.4a **read-only re-verification** fails any of the five checks | **HALT.** `021-S` stays `active`, **no** a1 mutation, **not** shipped, **not** archived. Return to the **operator** with the §9.4a recovery path: re-verify after resolving toolchain drift, or have **Stage** re-run and re-commit Probe 25, or **revert A** per §10.2 (holding `017-S` first). `021-S` remains cleanly resumable |
-| **(rev 5)** S2 checkpoint candidates: **zero**, **more than one**, or filename/`session_id` **mismatch** | **FAIL CLOSED** to operator handoff (§9.1 step **2a**). The installed "zero candidates is normal startup" continuation **does not apply to S2** |
+| **(rev 5; ORDER CORRECTED rev 6)** S2 checkpoint **MATCH set** (exact filename/reference **AND** `agent: ship` **AND** `session_id`) has **zero** or **more than one** member; or any enumerated record is malformed/quarantined; or identity mismatches at re-confirmation | **FAIL CLOSED** to operator handoff (§9.1 step **2a**). The installed "zero candidates is normal startup" continuation **does not apply to S2**. **Unrelated active `stage`/`ship` checkpoints are a WARNING only and never strand the handoff** |
 | **(rev 4)** `agent-engram` unreachable at S2 restore | **FAIL CLOSED** to operator handoff (§9.1 step 7) — **no prune and no resume**. A file-based prune degradation is not permitted |
 | Pre-mode returns `RECONCILE_FAIL` | HALT; do not proceed to close; surface the report |
 | Classification returns `SAFE_CLOSE` instead of `CASCADE` | HALT — indicates the manifest is not the fully-covered root this plan asserts. Return to Stage |
@@ -1353,8 +1810,11 @@ delegated it to plan C §10.1, which is now **deferred** and must not be routed 
 - **AC-2** Step 6.1(a1) exists, positioned after `a0` and immediately before `a`.
 - **AC-3** The §6 authority-escalation rule is stated normatively in `_ship.agent.md`.
 - **AC-4** C1–C6 are all applied; the delegation block names P-015 + `shipment-reconcile`.
-- **AC-5** `_ship.agent.md` contains **no** enumeration of the authorized verdict set and
-  **no** occurrence of `TASK_ONLY_FINALIZE`.
+- **AC-5** `_ship.agent.md` contains **no classification predicate** — no restatement,
+  re-implementation or paraphrase of the conditions under which a close path is selected —
+  and **no** occurrence of `TASK_ONLY_FINALIZE`. **(rev 6, B-3: a result-token allowlist used
+  solely to validate the classifier's output IS permitted; a selection condition is not.
+  See §4.1.)**
 - **AC-6** The drifted `children`-only coverage rule is **absent**.
 - **AC-7** Exactly **one** Go test function; H0 red 1 of 1; H1 green; `go vet` clean.
 - **AC-8** `markdownlint` clean on the changed file.
@@ -1367,16 +1827,19 @@ delegated it to plan C §10.1, which is now **deferred** and must not be routed 
   a `phase`, and a `resume_hint` naming `021-S`, `022-F`, `022.001-T` and the merge SHA,
   with domain data under `context`; its `created_at` must precede S2's resume. S1 records
   the **emitted filename** and the `session_id`; S2 matches **both exactly**.
-  **S2 executes the full §9.1 recovery protocol — all twelve steps, in order.** AC-9 is
-  **not** satisfied unless S2 demonstrably performed **every** element
+  **S2 executes the full §9.1 recovery protocol — all thirteen steps (0, 1, 2, 2a, 3–11), in
+  order.** AC-9 is **not** satisfied unless S2 demonstrably performed **every** element
   below; rev 3's shorter list is superseded and is **not** sufficient evidence:
   * enumeration via `backlogit_list_checkpoints` with `consumer_id: "ship"` and **no**
     `status`/`agent` filter;
-  * **anomaly gate evaluated FIRST**, before the candidate-count check;
-  * **the S2-SPECIFIC candidate rule (rev 5, A-9)** — **zero** active `ship` candidates is
-    **FAIL CLOSED**, *not* the installed "normal startup" continuation; **more than one** is
-    FAIL CLOSED; and a filename or `session_id` that does not match S1's recorded values is
-    FAIL CLOSED. **There is no normal zero-candidate path at this handoff**;
+  * **anomaly gate evaluated FIRST**, over the **full enumeration**, before any filtering or
+    counting;
+  * **the S2-SPECIFIC MATCH rule (rev 5, A-9; ORDER CORRECTED rev 6, B-8)** — **filter
+    first** to the MATCH set (exact filename/reference **AND** `agent: ship` **AND** the exact
+    `session_id`), **then** require **exactly one MATCH**. **Zero MATCHES is FAIL CLOSED**
+    (the installed "normal startup" continuation does not apply); **more than one MATCH is
+    FAIL CLOSED**; **unrelated active checkpoints are a WARNING only and never strand the
+    handoff**, and are never resolved, pruned or touched by S2;
   * **explicit owner selection by filename, even for a single candidate** — never auto-pick;
   * `agent: ship` ownership validation (a `stage`-owned record is never selectable);
   * **explicit operator confirmation before restore** (no automatic resume; no age-based
@@ -1401,23 +1864,36 @@ delegated it to plan C §10.1, which is now **deferred** and must not be routed 
   *Residual, stated honestly:* the artifact is not tamper-proof — the two-session property
   ultimately rests on process integrity, and the checkpoint is evidence, not enforcement.
 - **AC-10** PO-1a is **discharged by Probe 22** and cited (§10.1); PO-1b executed before the a1 gate and recorded.
-- **AC-11** Exactly 2 files changed. 0 new production files.
+- **AC-11** Exactly **2 implementation files** changed (`_ship.agent.md` + the one Go test) and **0 new production files**. **(rev 6, finding D-1/B-1: planning artifacts — this plan, `docs/plans/evidence/probe25-*`, `docs/memory/`, `docs/decisions/` and `.backlogit/` records — are authored by Stage in separate commits and are NOT counted against this 2-file implementation surface.)**
 - **AC-12** `021-S`'s manifest is verified to be `[022-F, 022.001-T]` **at claim** (§4.3 — the re-shape is already complete; this is a verification, not a task).
 - **AC-13** Probe 18 is cited as C2's justification (§10.1.1).
 - **AC-14** C1 ships with the §4.2 pinned reconciled wording; Go test row 11 passes.
-- **AC-15** **(rev 2)** Step 6.1(a1) states the **zero-feature-member explicit no-op** (§5.1 case i); Go test row 12 passes.
-- **AC-16** **(rev 2)** Step 6.1(a1) states that an unmet §5 condition on a **present** feature member **HALTs** (§5.1 case iii) and is not treated as a no-op.
+- **AC-15** **(rev 2; re-labelled rev 6)** Step 6.1(a1) states the **zero-feature-member explicit no-op** (§5.1 **S1**, legacy case i); Go test row 12 passes.
+- **AC-16** **(rev 2; re-labelled rev 6)** Step 6.1(a1) states that an unmet §5 condition on a **present** feature member **HALTs** (§5.1 **S4**, legacy case iii) and is not treated as a no-op.
 - **AC-17** **(rev 2)** Step 6.1(a1) states **idempotent resume** for a feature member already `done` (§5.2); Go test row 13 passes.
 - **AC-18** **(rev 2)** The lifecycle order of §9 is followed: `022.001-T -> done` **before** the implementation PR merges; the closure branch created from fresh `main` **before** any post-merge backlog mutation; closure artifacts and P-020 on the closure branch **before** the closure PR is pushed; `sync` and post-mode in installed order.
 - **AC-19** **(rev 2)** The `a0` `--phase lifecycle` gate runs **while `021-S` is still active**; **no** `--phase lifecycle` invocation occurs after the archive (Probe 20 tripwire).
-- **AC-20** **(rev 5, RE-SEATED — supersedes rev 4's S2-run gate)** The §9.4 root-included cascade fixture (Probe 25) is **authored, executed and committed by STAGE at §9 step 0a, BEFORE `021-S` is claimed**. **`021-S` is not claimable** until the evidence is committed and PASSing. The evidence lives at `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/probe25-root-included-cascade-fixture.{ps1,txt}`, records `DIGEST_GATE=PASS` against SHA-256 `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98` **with the engine resolved at runtime via the registered command (no hardcoded path)**, and satisfies **all eight** PASS criteria over the **exact 13-member root-included manifest with 11 genuinely pre-archived (`archived_status: queued`) members**. **STATUS: DISCHARGED** — `PROBE25_RESULT=PASS`, `FAILED_CRITERIA=0`, measured at `4fd21c5`. **Ship never authors, modifies, re-runs or regenerates this artifact (P-010).**
-- **AC-20a** **(rev 5)** At §9 step 12a the fresh S2 session performs the §9.4a **read-only** re-verification and it passes: (1) exact topology `TOPOLOGY_MEMBERS=13` / `ROOT_INCLUDED=True` / `PRE_ARCHIVED=11` / `ARCHIVED_STATUS_FLAVOUR=queued`; (2) `PROBE25_RESULT=PASS` and `FAILED_CRITERIA=0` with all eight criterion tokens `PASS`; (3) the evidence commit is an **ancestor of the verified merge SHA**; (4) the **currently-resolved** engine SHA-256 matches the digest recorded in the evidence; (5) neither file is missing, empty, or modified relative to its committed blob. **Every check is a read.** On failure S2 HALTs, `021-S` stays `active` with **no** a1 mutation, and the operator has the §9.4a recovery path. AC-20a is **not** satisfied if S2 writes to `docs/plans/`.
-- **AC-21** **(rev 5)** Step 6.1(a1)'s selector is the **strictly ordered, non-overlapping** sequence **S0 → S5** of §5.1, computing `n` by `artifact_type` and never by ID suffix: **S0** anomaly gate **before** `n`; **S1** `n == 0` ⇒ explicit no-op; **S2** `n > 1` ⇒ HALT with `A1_MULTIPLE_FEATURE_MEMBERS` and **no** feature mutation whatsoever; **S3** `n == 1` + `done` ⇒ idempotent no-op **only after conditions 1–4 revalidate**, else HALT; **S4** `n == 1` + `active` ⇒ full five-condition guard then `active -> done`; **S5** `n == 1` + any other status ⇒ HALT. **No input may satisfy two steps.** Go test row 16 passes.
-- **AC-22** **(rev 4; assertions made NON-VACUOUS in rev 5)** Both stale queue-only pre-mode summaries are reconciled to the §4.4 authoritative semantics — **C7** at `_ship.agent.md` L255–256 (Step 0.5 item 6) and **C8** at L776–777 (Step 6.1(a)). Each reconciled sentence expresses **both** accepted dispositions: a **queue item at the expected status** *or* an **archive-located `pre-archived` member accepted without a status check**, **and** preserves the `PROCEED` conjuncts **no orphans** and **`record-consistent`**. Neither may remain queue-only. Go test rows **14** and **15** are **compound** — each asserts the §8.1.1 PRESENT phrase **and** the ABSENT exact old literal — so neither can pass while its site keeps the old text. The rev-3 instruction that *"a reviewer MUST NOT fail A for its absence"* is **withdrawn**.
-- **AC-23** **(rev 5)** The inventory is **8 clause sites + 2 additive**, the recalculated budget is **~99 min** with a **~21 min** margin to the 2-hour rule (§12), and the Go test carries **18 rows** — of which **4 are compound** — in **one** function with **≤4 helpers**, using **stdlib assertions only** and **reusing** `repoRoot(t)`. No site is excluded from the inventory in order to preserve a previously-pinned budget.
-- **AC-24** **(rev 5)** §5.0's pre-archived-descendant exemption is applied **only** to the enumerated **11 `017-S` IDs**, and **only** when all five §5.0 gates hold. `archived_status: queued` is **never** treated as proving completion. Any pre-archived manifest descendant not on the list ⇒ **HALT**. `021-S` has **none**.
-- **AC-25** **(rev 5)** `_ship.agent.md` binds Ship to the **closed** verdict set `{CASCADE, SAFE_CLOSE, HALT}` (§4.1), and Ship **HALTs** on an absent, unparseable, unknown, ambiguous or policy-mismatched verdict, and on **P-015/skill disagreement**. No future or unversioned verdict is authorized by A.
+- **AC-20** **(rev 5, RE-SEATED — supersedes rev 4's S2-run gate)** The §9.4 root-included cascade fixture (Probe 25) is **authored, executed and committed by STAGE at §9 step 0a, BEFORE `021-S` is claimed**. **`021-S` is not claimable** until the evidence is committed and PASSing. The evidence lives at `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/probe25-root-included-cascade-fixture.{ps1,txt}`, records `DIGEST_GATE=PASS` against SHA-256 `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98` **with the engine resolved at runtime via the registered command (no hardcoded path is a requirement of any check)**, and satisfies **all eight** PASS criteria — **emitted as nine tokens** (criterion 5 splits into `5A`/`5B`) — over the **exact 13-member root-included manifest with 11 members genuinely declaring `status: archived` (`archived_status: queued`)**. **STATUS: DISCHARGED** — `PROBE25_RESULT=PASS`, `FAILED_CRITERIA=0`, measured at `4fd21c5`. **Ship never authors, modifies, re-runs or regenerates this artifact (P-010).**
+- **AC-20a** **(rev 5; EXTENDED in rev 6, B-4/C-7/C-8)** At §9 step 12a the fresh S2 session performs the §9.4a **read-only** re-verification and **all six** checks pass: (1) exact topology `TOPOLOGY_MEMBERS=13` / `ROOT_INCLUDED=True` / `PRE_ARCHIVED=11` / `ARCHIVED_STATUS_FLAVOUR=queued`; (2) `PROBE25_RESULT=PASS` and `FAILED_CRITERIA=0` with all **nine** criterion tokens (eight criteria; criterion 5 emits `5A`/`5B`) reading `PASS`; (3) **`evidence_commit_sha`** — the **LAST** commit touching either evidence file — is an **ancestor of the verified merge SHA**; (4) the **currently-resolved `backlogit_executable_sha256`** matches the digest recorded in the evidence, with **no absolute path required by the check**; (5) **`fixture_script_sha256`** and **`fixture_result_sha256`** each match their committed blobs, hashed **separately**, and neither file is missing, empty or modified; (6) the transcript is **internally consistent** (`PREMODE_*` classifications sum to `MANIFEST_COUNT`; `PRE_ARCHIVED_COUNT == PREMODE_PRE_ARCHIVED`; `FAILED_CRITERIA` agrees with the per-criterion tokens). **Every check is a read.** On failure S2 HALTs **naming the failed field**, `021-S` stays `active` with **no** a1 mutation, and the operator has the §9.4a recovery path — of which **only `git revert` per §10.2 clears a post-merge mismatch on A itself**. AC-20a is **not** satisfied if S2 writes to `docs/plans/`.
+- **AC-21** **(rev 5; S0 RE-BASED in rev 6, B-1/B-5)** Step 6.1(a1)'s selector is the **strictly ordered, non-overlapping** sequence **S0 → S5** of §5.1, computing `n` by `artifact_type` and never by ID suffix: **S0** anomaly gate **before** `n`, with **every trigger keyed on declared status or physical containment and NONE on archive location** — an archive-located member declaring `status: done` raises **no** trigger; **S1** `n == 0` ⇒ explicit no-op; **S2** `n > 1` ⇒ HALT with `A1_MULTIPLE_FEATURE_MEMBERS` and **no** feature mutation whatsoever; **S3** `n == 1` + `done` ⇒ idempotent no-op **only after conditions 1–4 revalidate**, else HALT; **S4** `n == 1` + `active` ⇒ full five-condition guard then `active -> done`; **S5** `n == 1` + any other status ⇒ HALT. **No input may satisfy two steps.** **a1 runs BEFORE `shipment-reconcile mode: pre` and MUST NOT require pre-mode to have run** — its completion guard reads declared status, containment, topology and the §5.0 allowlist directly. Go test row 16 passes.
+- **AC-22** **(rev 4; assertions made NON-VACUOUS in rev 5; RE-BASED ON DECLARED STATUS in rev 6, B-1/B-2)** Both stale queue-only pre-mode summaries are reconciled to the §4.4 authoritative semantics — **C7** at `_ship.agent.md` L255–256 (Step 0.5 item 6) and **C8** at L775–777 (Step 6.1(a)). Each reconciled sentence expresses **both** accepted dispositions in **declared-status** terms: an item **declaring the expected status** *or* an item **declaring `status: archived`** (pre-archived, accepted without a status check), with declared status read from the record's own frontmatter and **never inferred from `queue/`/`archive/` location**; and preserves the `PROCEED` conjuncts **no orphans** and **`record-consistent`**. Neither may remain queue-only, and **neither may re-introduce a locational predicate**. Go test rows **14** and **15** are **`compound +/−`** — each asserts the §8.1.1 declared-status PRESENT phrase **and** the ABSENT exact old literal — so neither can pass while its site keeps the old text. The rev-3 instruction that *"a reviewer MUST NOT fail A for its absence"* is **withdrawn**.
+- **AC-23** **(rev 5; RECALCULATED in rev 6)** The inventory is **8 clause sites + 2 additive**, the recalculated budget is **97 min** with a **23 min** margin to the 2-hour rule, **and §12's rows sum exactly to that total (`8+18+4+4+12+4+4+4+29+10 = 97`)**, and the Go test carries **18 rows** — of which **4 are `compound +/−`**, **1 is `compound ++`** and **2 are negative** — in **one** function with **≤4 helpers**, using **stdlib assertions only** and **reusing** `repoRoot(t)`. No site is excluded from the inventory in order to preserve a previously-pinned budget, and no row is adjusted to preserve a previously-pinned total.
+- **AC-24** **(rev 5; RE-BASED ON DECLARED STATUS in rev 6, B-1)** §5.0's pre-archived-descendant exemption is triggered **only** by a descendant **declaring `status: archived`** — **never** by archive location — is applied **only** to the enumerated **11 `017-S` IDs**, and **only** when all five §5.0 gates hold. `archived_status: queued` is **never** treated as proving completion. Any descendant **declaring `status: archived`** that is not on the list ⇒ **HALT**. **A descendant declaring `status: done` is a COMPLETED descendant that satisfies §5 condition 1 even when stored under `archive/`**, is never tested against the allowlist, and is never required to carry archive provenance. `021-S` has **no** pre-archived descendants **at the moment a1 runs** — `022.001-T` is `done`, not `archived`.
+- **AC-25** **(rev 5; RESOLVED in rev 6, finding B-3)** `_ship.agent.md` implements the
+  **safe allowlist contract** of §4.1: it MAY name the **result tokens the INSTALLED
+  `shipment-reconcile` skill can currently emit** (`CASCADE`, `SAFE_CLOSE`, `HALT`) **solely
+  as an output-validation allowlist**, and it **MUST NOT restate or re-implement any
+  classification predicate**. Ship **HALTs, fail closed, no mutation** on: a token outside
+  the installed allowlist (**including any future token**); an absent, empty, unparseable or
+  ambiguous result; a classifier that is **not installed or not readable**; a `policy_id` /
+  policy-version mismatch against P-015; or **P-015/skill disagreement**. The allowlist is
+  bound to the **currently installed** skill and P-015 amendment — **no unversioned future
+  capability is authorized**, and widening it requires its own review. **AC-25 and AC-5/row 9
+  are now mutually satisfiable**: tokens may be listed, predicates may not.
 - **AC-26** **(rev 5)** Rows **17** and **18** pass: C8's reconciled sentence preserves the **single-writer lock** and **orphan scan** clauses; C7's replacement leaves the adjacent `Scope note (139-F/139.001-T)` intact.
+- **AC-27** **(rev 6, finding B-1/B-2)** **No lifecycle decision anywhere in A is derived from file location.** Every completion, exemption, anomaly and classification predicate in §4.4, §5, §5.0, §5.1 and §9 reads the record's **own declared `status`**. Physical-location reads survive **only** as an exactly-one-copy containment proof (`queue/` XOR `archive/`), which is **preserved in full** — a record in both is torn, a record in neither is missing. **`022.001-T`, `done` and archive-located at the a1 gate, passes §5 condition 1 and raises no S0 trigger.**
+- **AC-28** **(rev 6, finding B-6)** For `021-S` and `017-S` the **authoritative installed classification runs AFTER a1** and is **expected to return `CASCADE`**. **Any other verdict is a topology discrepancy that HALTs and returns the shipment to Stage — there is NO `SAFE_CLOSE` fallback on these routes**, and the pre-existing cascade branch is invoked **if and only if** the authoritative verdict is `CASCADE`. A adds **no** cascade path, **no** verdict and **no** rollback; it discloses that it adds **reachability** to an inherited detect-after-mutate residual.
+- **AC-29** **(rev 6, finding B-8)** S2's checkpoint recovery **enumerates all records with no filter**, runs the **anomaly gate over the full enumeration first**, **then** filters to the MATCH set (**exact filename/reference AND `agent: ship` AND `session_id`**) and requires **exactly one MATCH**. Zero or more than one MATCH, a malformed record, or an identity mismatch ⇒ **FAIL CLOSED**. **Unrelated active Stage- or Ship-owned checkpoints are surfaced as a warning and never strand the handoff**, and are never resolved, pruned or touched. Order is **restore → prune/gate → resume**, and `backlogit_resolve_checkpoint` runs **only after a confirmed successful resume**, for that one checkpoint only.
 
 ## Constitution Check
 
@@ -1434,7 +1910,7 @@ deviations. Rev 4 mapped exhaustively against *workflow policies* but never agai
 | **IV. CLI Workspace Containment (NON-NEGOTIABLE)** | yes | Every probe call is `--cwd $ws`. The engine is resolved via the **registered command**, not an absolute path (§9.4). No write escapes the repo |
 | **V. Structured Observability** | yes | a1 emits named, greppable tokens (`A1_NOT_APPLICABLE`, `A1_ALREADY_DONE`, `A1_MULTIPLE_FEATURE_MEMBERS`); Probe 25 emits one `KEY=VALUE` line per criterion |
 | **VI. Single Responsibility** | yes | A does exactly two things — grant one narrow authority, and replace a duplicated classification with delegation. §2.2's drift is the cost of the duplication this removes |
-| **VII. Destructive Command Approval (NON-NEGOTIABLE)** | yes | The cascade is destructive. It is invoked **only** on a machine-selected `CASCADE` verdict, only inside the disposable fixture for measurement, and never against the live backlog by this plan. Ship's live cascade remains gated by P-015 |
+| **VII. Destructive Command Approval (NON-NEGOTIABLE)** | yes | The cascade is destructive. It is invoked **only** on a machine-selected `CASCADE` verdict from the authoritative classification, and only after a1 (§9.3 rev 6). **Correction (rev 6, finding C-6): the rev-5 claim that it runs "never against the live backlog by this plan" was FALSE** — §9 step 15 and §9.3 step 6 both invoke it **live**. What is true: the **measurement** (Probe 25) runs only inside the disposable fixture, and every **live** invocation remains gated by P-015, by the pre-mode `PROCEED`, and by the no-fallback HALT rule of AC-28. **A adds reachability to this destructive path for `017-S`** (§9.4b) |
 | **VIII. Explicit Safety Modes for Elevated Risk** | yes | **Deviation (justified) — see D4 below** |
 | **IX. Git-Friendly Persistence** | yes | All artifacts are line-oriented Markdown/PowerShell/Go. The backlog mutation at 6.1(e) is committed on the closure branch, never on `main` |
 | **X. Agent Context Efficiency** | yes | A **removes** ~20 lines of re-derived classification prose from `_ship.agent.md` and replaces them with a delegation pointer — a net context reduction on Ship's hot path |
@@ -1477,19 +1953,46 @@ field (confirmed at `.backlogit/header-def.yaml:144–166`, and in
 | Work item | Estimate |
 |---|---|
 | Role Boundary grant (ADD-1) | ~8 min |
-| Step 6.1(a1) parent-completion step (ADD-2), incl. §5.1 **four-case** multiplicity-first applicability + §5.2 idempotent resume | ~18 min |
+| Step 6.1(a1) parent-completion step (ADD-2), incl. §5.1's ordered **S0–S5** selector + §5.2 idempotent resume | ~18 min |
 | C1 reload extension | ~4 min |
 | C2 safe-close summary correction | ~4 min |
-| C3 + C4 + C5 generic delegation | ~12 min |
+| C3 + C4 + C5 generic delegation (incl. §4.1's result-token allowlist and fail-closed HALT rules) | ~12 min |
 | C6 delegation bullet | ~4 min |
 | **C7** Step 0.5 item 6 pre-mode summary reconciliation (**rev 4**) | ~4 min |
 | **C8** Step 6.1(a) pre-mode summary reconciliation (**rev 4**) | ~4 min |
-| Go table-driven test (**18** rows, 4 compound) + ≤4 helpers | ~29 min |
+| Go table-driven test (**18** rows — **4 `compound +/−`**, 1 `compound ++`, 2 negative) + ≤4 helpers | ~29 min |
 | H0→H1, `go vet`, `go test`, `markdownlint` | ~10 min |
-| **Total** | **~99 min ≈ 1.65 h** |
+| **Total** | **97 min ≈ 1.62 h** |
 
-Rates are rev 6 §10.1's own, so this is directly comparable to the measurement that
-produced `MUST_REPLAN`. Margin to the 2-hour rule: **~21 min**.
+**Arithmetic check (rev 6, finding C-1): `8 + 18 + 4 + 4 + 12 + 4 + 4 + 4 + 29 + 10 = 97`.**
+The rows sum **exactly** to the stated total. Rates are rev 6 §10.1's own, so this is directly
+comparable to the measurement that produced `MUST_REPLAN`.
+**Margin to the 2-hour rule: 23 min.**
+
+> **Rev-6 delta: 0 min of new work; the total changes only because the ARITHMETIC was wrong.**
+>
+> **The rev-5 table never summed to its stated total.** Its rows added to **97**, not the
+> pinned **~99** — a two-minute discrepancy that AC-23 and §13.6 then propagated as if it
+> were measured. That is the C-1 finding, and it is fixed by **recomputing the total from the
+> rows**, never by adjusting a row to protect a headline number (Hardening 7).
+> **97 was always the real figure**; rev 6 simply states it.
+>
+> **Every rev-6 change is a re-wording or a re-pinning at equal cost — no row moves:**
+>
+> | Rev-6 change | Surface effect | Delta |
+> |---|---|---|
+> | B-1/B-2 declared-status rebasing (§4.4, §5.0, §5.1 S0, rows 14/15) | same sentences, different predicate — and **simpler** to write: a1 reads one frontmatter field instead of reasoning over location + provenance + allowlist for every member | **0** |
+> | B-3 allowlist contract (§4.1, C3–C5) | **reshapes** the trust-boundary text rev 5 already required under AC-25 | **0** |
+> | B-3 row 9 becomes `compound +/−`; C-2 row 7 becomes ABSENT-only | **one needle added, one removed**; the compound count holds at **4** | **0** |
+> | B-4 four identity fields (Hardening 9a, §9.4a) | **Stage pre-claim** + **S2 read-only** obligations — outside the implementation task, like every other §9.4a read | **0** |
+> | B-5 pre-mode de-circularization (§5.1) | **removes** a dependency; writes no new contract text into `_ship.agent.md` | **0** |
+> | B-6 verdict contract (§9.3, §9.4b) | plan-level honesty corrections; the `_ship.agent.md` surface is the delegation block already priced in C3–C5 | **0** |
+> | B-8 S2 MATCH-set ordering (§9.1) | an **S2 session** obligation against the installed protocol; not `_ship.agent.md` surface | **0** |
+>
+> **No row was reduced to buy margin, and no site was dropped from the inventory.** The
+> margin improves from a *claimed* ~21 to a *computed* **23** solely because the base was
+> corrected. **Helper count unchanged at ≤4** and function count unchanged at **1**, so Ship
+> Step 4.3's one-function constraint still holds.
 
 *(Rev-2 delta: ADD-2 **+5** for the §5.1/§5.2 applicability and idempotence text; Go test
 **+2** for rows 12–13. Total ~71 → ~78 min, margin ~49 → ~42 min.)*
@@ -1505,27 +2008,30 @@ multiplicity-first selector. Go test **+3** for rows 14–16. Total ~78 → **~9
 ~42 → **~28 min**. **Helper count unchanged at ≤4** and the function count unchanged at 1,
 so Ship Step 4.3's one-function constraint still holds.)*
 
-> **The margin is smaller and that is the honest number.** ~21 min of headroom against the
-> 2-hour rule is still real headroom, and §12's contingency is unchanged: if actual work
-> exceeds 2 h mid-execution, **HALT and return to Stage**. Rev 3 protected a ~42 min margin
-> by leaving two defects out of the inventory; rev 4 spent 14 of those minutes fixing them
-> and rev 5 spends 7 more making the resulting assertions **actually falsifiable**. Trading
-> margin for completeness is the correct direction — an under-scoped inventory does not make
-> the work smaller, it only moves the discovery later.
+> **The margin is real and it is now COMPUTED, not asserted.** **23 min** of headroom against
+> the 2-hour rule, and §12's contingency is unchanged: if actual work exceeds 2 h
+> mid-execution, **HALT and return to Stage**. Rev 3 protected a ~42 min margin by leaving two
+> defects out of the inventory; rev 4 spent 14 of those minutes fixing them, rev 5 spent 5
+> more making the resulting assertions **actually falsifiable**, and **rev 6 spends none** —
+> it corrects the arithmetic and re-points needles at equal cost. Trading margin for
+> completeness is the correct direction; **mis-adding the column is not a way to buy it
+> back**, which is why C-1 is fixed by recomputation.
 
-> **Rev-5 delta: +7 min. Total ~92 → ~99 min; margin ~28 → ~21 min.** Go test **+5** for
-> rows 17–18 and for making rows 7, 10, 14 and 15 **compound** with verbatim-pinned literals
-> (§8.1.1) — the rev-4 versions were vacuously satisfiable, so this is the cost of the
-> assertions being real. ADD-2 **+2** for the §5.1 ordered S0–S5 selector and the §5.0
-> pre-archived-descendant gate. **Helper count unchanged at ≤4** and function count unchanged
-> at **1**, so Ship Step 4.3's one-function constraint still holds.
+> **Rev-5 delta: +5 min (as recomputed in rev 6). Total ~92 → 97 min; margin ~28 → 23 min.**
+> Go test **+3** for rows 17–18 and for making rows 7, 10, 14 and 15 compound with
+> verbatim-pinned literals (§8.1.1) — the rev-4 versions were vacuously satisfiable, so this
+> is the cost of the assertions being real. ADD-2 **+2** for the §5.1 ordered S0–S5 selector
+> and the §5.0 pre-archived-descendant gate. **Rev 5's own note claimed +7 and a ~99 total;
+> both were arithmetic errors (finding C-1) — the rows it actually wrote sum to 97.**
+> **Helper count unchanged at ≤4** and function count unchanged at **1**, so Ship Step 4.3's
+> one-function constraint still holds.
 
 > **Not charged to the task budget: Probe 25 (§9.4).** Probe 25 is run by **Stage**, at §9
 > step **0a**, **pre-claim** — it is a Stage planning-time measurement against a disposable
 > workspace, outside the implementation task's 2-hour envelope. **It has already been
 > executed and committed** (`PROBE25_RESULT=PASS`). S2's §9.4a obligation is a **read-only
-> re-verification** of that committed evidence — five read operations, ~3 min of S2 session
-> time, and likewise not part of the harnessed task. Neither consumes the ~21 min margin.
+> re-verification** of that committed evidence — **six** read operations, ~4 min of S2 session
+> time, and likewise not part of the harnessed task. Neither consumes the **23 min** margin.
 
 *(Rev-1 review: +1 min for the C1 coherence row 11. PO-1a is a Stage/pre-execution read
 and is not charged to the task budget.)*
@@ -1640,22 +2146,73 @@ is a feature completed by manifest ordering, or a bulk feature-lifecycle power t
 explicitly refuses.
 
 **Hardening 9 — the fixture gate converts a confidence residual into a blocking
-measurement (rev 4).** Rev 3 classified the unproven root-included cascade as *"a
-confidence residual, not a safety one"* and deferred it past A. That classification was
-defensible in isolation and wrong in **sequence**: A is an **irreversible contract change**
-(a permanent Role Boundary authority grant) whose sole release value is making `017-S`
-closable, so deferring the measurement past A's close means discovering a mis-classification
-only once it is expensive to act on. §9.4 moves it **before** A's close **and before a1's
-mutation**, so a FAIL costs nothing but a halt. The gate deliberately carries **no override
-path**: an override would restore exactly the accepted-residual posture rev 4 withdraws.
-Its placement — inside A's existing closure sequence, riding the pre-existing
-`017-S → 021-S` edge — means it adds **no shipment, no backlog item and no dependency
-edge**, so it cannot itself perturb the topology it is protecting.
+measurement (rev 4; **RE-STATED in rev 6, plan-review finding B-4**).** Rev 3 classified the
+unproven root-included cascade as *"a confidence residual, not a safety one"* and deferred it
+past A. That classification was defensible in isolation and wrong in **sequence**: A is an
+**irreversible contract change** (a permanent Role Boundary authority grant) whose sole
+release value is making `017-S` closable, so deferring the measurement past A's close means
+discovering a mis-classification only once it is expensive to act on. §9.4 moves it
+**pre-claim**, **before** A's merge and **before** a1's mutation, so a FAIL costs nothing but
+a halt.
 
-## 13. Independent re-review scope (rev 5)
+> **Rev 6 — THE NO-OVERRIDE LANGUAGE IS DELETED (finding B-4).** Rev 5 rewrote §9.4a and
+> §10.2 to **provide** an operator recovery path, but this item still read *"The gate
+> deliberately carries **no override path**"* — a direct self-contradiction, and the exact
+> clause whose withdrawal was the substance of closing A-1. **It is removed, not softened.**
+>
+> **The gate remains NON-BYPASSABLE — that is a different property from having no override.**
+> Non-bypassable means **no actor may close A without a PASS**. Recoverable means **a FAIL
+> has a named in-role exit**. Rev 4 conflated them and produced a deadlock; rev 6 keeps the
+> first and provides the second. The authoritative recovery paths are §9.4a's three named
+> options and §10.2's `git revert`. **There is no `--force`, no "proceed with a recorded
+> residual", and no self-authorized waiver** — every exit is an explicit operator action.
 
-**All prior review scopes are SUPERSEDED**, including rev 4's §13 and every
-three-shipment-era scope (rev 5 §13, rev 6 §13). Review **rev 5 of this plan only**;
+Its placement — pre-claim, riding the pre-existing `017-S → 021-S` edge — means it adds
+**no shipment, no backlog item and no dependency edge**, so it cannot itself perturb the
+topology it is protecting.
+
+**Hardening 9a — the four evidence identity fields are DISTINCT and UNAMBIGUOUS (rev 6,
+finding B-4).** Rev 5 used a single overloaded name, `evidence_sha`, for two different
+things — *the commit that **introduced** the evidence* (§9.4a check 3) and *the content
+compared against `HEAD`* (check 5). A post-merge commit could therefore **replace** the
+evidence while the introducing commit remained a valid ancestor, and both checks would still
+pass. Four separately-named fields replace it; **no field is ever used for another's job**:
+
+| Field | Definition | Verified by |
+|---|---|---|
+| `evidence_commit_sha` | the **LAST** commit that modified **either** evidence file (`git log -1 --format=%H -- {both paths}`) — **not** the introducing commit | Stage at §9 step 0a; **re-verified read-only** by S2 at 12a |
+| `fixture_script_sha256` | SHA-256 of `probe25-root-included-cascade-fixture.ps1` **as committed at `evidence_commit_sha`** | Stage; re-verified by S2 |
+| `fixture_result_sha256` | SHA-256 of `probe25-root-included-cascade-fixture.txt` **as committed at `evidence_commit_sha`** | Stage; re-verified by S2 |
+| `backlogit_executable_sha256` | SHA-256 of the `backlogit` executable **resolved at run time via the registered command**, compared to the digest recorded in the transcript. **No absolute path is a requirement of any check** | Stage; re-resolved and re-verified by S2 |
+
+**Using the LAST commit — not the introducing one — is what closes the replacement hole.**
+If evidence is replaced after the merge, `evidence_commit_sha` **moves to that new commit**,
+which is a **descendant** of the merge SHA, so the ancestry check **fails**. Under rev 5's
+"introducing commit" reading it would have passed.
+
+**Who verifies what, and when:**
+
+* **Stage — pre-claim gate (§9 step 0a).** Stage computes all four fields, confirms the two
+  evidence files are **tracked and committed** (not merely present in the working tree), and
+  confirms `evidence_commit_sha` is an ancestor of the branch tip. **`021-S` is not claimable
+  until this holds.**
+* **Ship S2 — post-merge re-verification (§9.4a).** S2 **re-reads** the same four fields and
+  re-confirms them. **Every operation is a read** (`git log`, `git merge-base`,
+  `git diff --quiet`, `Get-FileHash`, text inspection). S2 authors nothing, modifies nothing,
+  re-runs nothing (P-010).
+
+**Post-merge mismatch HALTs active A — with named operator recovery, and NO rollback
+fiction.** If any of the four mismatches at S2: `021-S` **stays `active`**, **no** a1
+mutation occurs, nothing is shipped or archived, and S2 HALTs to the operator naming the
+field that failed. The operator's recovery options are exactly §9.4a's three. **No automatic
+rollback, no automatic revert, and no "restore and continue" is claimed** — because none
+exists. The only state to unwind is the merge itself, and unwinding it is the explicit
+operator `git revert` of §10.2, subject to its `017-S` hold obligation.
+
+## 13. Independent re-review scope (rev 6)
+
+**All prior review scopes are SUPERSEDED**, including rev 5's §13 and every
+three-shipment-era scope. Review **rev 6 of this plan only**;
 the deferred B/C plans are **not** in scope and must not be routed from.
 
 | # | Item | Why it is in scope |
@@ -1664,8 +2221,8 @@ the deferred B/C plans are **not** in scope and must not be routed from.
 | 2 | **Verify the committed Probe-25 evidence.** Does the transcript actually establish the 8 criteria on the exact 13-member root-included shape with `archived_status: queued`? Is the two-set gate evaluated over the engine's own `archived_ids`, not vacuously? | The plan's central empirical claim |
 | 3 | **Audit §5.1's S0–S5 ordering.** Is it genuinely total *and* disjoint over (`n`, status)? Can any input still reach two steps? Is S0 correctly placed before `n` is computed? | Closes A-6; rev-4's table was ambiguous |
 | 4 | **Audit §5.0's pre-archived exemption.** Is the five-gate definition fail-closed? Is the 11-ID enumeration correct for `017-S`? Is the general authority narrow enough that it cannot be read as "archived descendants don't count"? | Closes A-10 — the completion-proof gap |
-| 5 | **Adjudicate §8.1.1's pinned literals.** Are the four ABSENT literals verbatim-correct against the installed file? Can any of rows 7/10/14/15 still pass vacuously or be green at H0? Do rows 17–18 actually protect the surrounding clauses? | Closes A-7; rows 14–15 are the whole justification for the inventory reopening |
-| 6 | **Adjudicate the recalculated budget** (~99 min, ~21 min margin) and the ≤4-helper / 1-function claim at 18 rows | The rev-6 `MUST_REPLAN` verdict was a budget verdict; this is the same axis |
+| 5 | **Adjudicate §8.1.1's pinned literals.** Are the **five** ABSENT literals (rows 7/9/10/14/15) verbatim-correct and **singly-occurring** against the installed file? Are rows 14/15's rev-6 **declared-status** PRESENT phrases reachable only by declared-status wording? Is row 7's ABSENT-only form non-vacuous (C-2)? Can any row still be green at H0 under the corrected readiness guard (C-3)? | Closes A-7/B-1/B-2/C-2/C-3; rows 14–15 are the whole justification for the inventory reopening |
+| 6 | **Adjudicate the recalculated budget** (**97 min, 23 min margin, rows summing exactly**) and the ≤4-helper / 1-function claim at 18 rows | The rev-6 `MUST_REPLAN` verdict was a budget verdict; this is the same axis, and C-1 was an arithmetic defect |
 | 7 | **Audit §4.1's delegation trust boundary.** Does pinning the closed verdict set in Ship's own file contradict §4.1's "do not enumerate verdicts" constraint? Is the P-015/skill-disagreement HALT correct? | Closes A-11 without re-introducing the duplication A removes |
 | 8 | **Audit §9.1's S2 candidate rule and payload.** Is `session_id` top-level correct per the installed contract? Is overriding the "zero candidates is normal startup" continuation safe and correctly scoped to S2 only? | Closes A-8/A-9 |
 | 9 | **Verify §9.4b's residual classification.** Is detect-after-mutate correctly attributed to inherited P-015 rather than to A? Is the plan free of prevention/rollback overclaims? | Closes A-12 honestly rather than by assertion |
@@ -1673,6 +2230,12 @@ the deferred B/C plans are **not** in scope and must not be routed from.
 | 11 | **Confirm A still authorizes no new verdict** and that the §6 authority-escalation property survives rev 5's larger surface | Widening guard (rows 7–10); core self-hosting property |
 | 12 | **Adjudicate the §R16 correction** in `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` — is R16.3 still the *sole operative* manifest contract, with withdrawn text clearly non-governing? | Governing-contract coherence; a contradiction there re-blocks `017-S`. **Read-only coherence check** (C-8) |
 | 13 | **Confirm the operator-only PR boundary survives**, and that the fail-closed stance on the contradictory Orchestrator Step 1.5 (3a/3e) is correctly recorded **without** modifying the Orchestrator in this cycle | P-010/role-separation boundary. **Read-only coherence check** (C-8) |
+| **14** | **Adjudicate the DECLARED-STATUS re-basing (rev 6, B-1/B-2).** Is any lifecycle decision anywhere in §4.4/§5/§5.0/§5.1/§9 still derived from file location? Is exactly-one-copy containment preserved in full? Is the `022.001-T` `done`-in-archive case now correctly a **completed** descendant rather than an unmapped pre-archived member? Is the skill-internal tension (normative L394–399 vs the location-first step-3 sketch) disclosed honestly and correctly scoped as a non-load-bearing follow-up? | **The attempt-2 P0 and its twin P1.** The single most important adjudication in this review |
+| **15** | **Adjudicate the SAFE ALLOWLIST CONTRACT (rev 6, B-3).** Are AC-5, AC-25 and row 9 now mutually satisfiable by one honest implementation? Is "result-token allowlist" genuinely distinguishable from "classification predicate" at implementation time? Does the unknown-token and skill-unreadable HALT bind to the **installed** contract only? | Rev 5's contradiction was unsatisfiable; rev 6 must not have traded it for an ambiguity |
+| **16** | **Adjudicate Hardening 9a's four identity fields (rev 6, B-4).** Does `evidence_commit_sha` = *last* commit genuinely close the post-merge replacement hole that the *introducing* commit left open? Are the two fixture hashes separable and both checked? Is the no-override language fully gone, with **non-bypassable** and **recoverable** kept distinct and no rollback fiction? Is the C-7 caveat on recovery option 2 accurate? | Closes the last self-contradiction rev 5 carried |
+| **17** | **Adjudicate a1's ordering and self-sufficiency (rev 6, B-5).** Does a1 genuinely run before pre-mode with **no** back-edge? Is its guard truly a narrow completion precondition rather than a second close-path classification? Is the authoritative pre-mode/P-015 selection left solely authoritative for what it owns? | The circular dependency had no defined provider on the `017-S` route |
+| **18** | **Adjudicate the no-fallback verdict contract (rev 6, B-6, AC-28).** Is "EXPECT `CASCADE`; any other verdict HALTs to Stage" correct against P-015 and the installed skill for these two exact manifests? Is the reachability admission complete and free of prevention/rollback overclaims? Is §9.4b's HALT/restore table consistent with §10.3? | Rev 5's `SAFE_CLOSE`-at-no-data-cost claim was wrong in all three parts |
+| **19** | **Adjudicate the S2 MATCH-set ordering (rev 6, B-8, AC-29).** Does anomaly-gate-over-full-enumeration → filter → exactly-one-MATCH preserve fail-closed safety while no longer stranding on expected leftovers? Is the `session_id`-in-summary claim correct against the installed tool? | The rev-5 rule bricked S2 on a state the protocol deliberately produces |
 
 **Out of scope, explicitly**: the deferred B/C plans; `shipment-reconcile/SKILL.md`
 (including its stale `src/autoharness/...` classifier paths — recorded as a follow-up, not
@@ -2292,7 +2855,197 @@ introduced.
 harvest-ready. **`021-S` must not be claimed**, and `017-S` behind it stays ineligible.
 **No backlog items are created from this plan.**
 
-## Plan Review — AUTHORITATIVE GATE STATE (read this one)
+## Plan Review — attempt 3
+
+<!-- plan-review-attempt: 3 -->
+
+```text
+dispatch_mode: multi-agent
+decision: FAIL
+```
+
+- **Reviewed revision**: rev 6
+- **Reviewed at commit**: `f57703d` + working tree (pre-commit)
+- **Gate run**: attempt 3 (remediation cycle 3 of max 3 — **the last**)
+- **Plan hardening required**: **yes** (declared in the header). **Present**: yes — `## Plan
+  Hardening` with 9 items **plus the new Hardening 9a**. **Materially complete**: **yes** —
+  the withdrawn no-override language is deleted and the four identity fields are defined.
+- **Verdict**: **FAIL** — gate rule *"Any P0 or P1 findings ⇒ FAIL"*. `status:` stays
+  `planned`. **`021-S` must NOT be claimed.**
+
+### Dispatch capability (P-012)
+
+| Capability | Status |
+|---|---|
+| reviewer-subagent-dispatch | `TOOL_OK` |
+| model-specific-review-routing | `TOOL_OK` — anchor route `model_routing.anchor_review` = `openai` / `gpt-5.6-sol` / `high` dispatched |
+| `agent-native-parity-reviewer` identity file | `TOOL_DEGRADED: agent-native-parity-reviewer-identity — declared fallback: rubric applied via dispatched subagent on a cross-model route.` Persona **covered, not skipped** |
+
+### Persona coverage
+
+| Persona | Mode | Model/route | P0/P1/P2/P3 |
+|---|---|---|---|
+| Architecture Strategist | subagent — **ANCHOR** | `gpt-5.6-sol` / high | **0 / 6 / 2 / 0** |
+| Constitution Reviewer | subagent | `claude-opus-4.8` | 0 / 1 / 1 / 3 |
+| Go Reviewer | subagent | `claude-opus-4.8` | **0 / 0 / 0 / 1** |
+| Scope Boundary Auditor | subagent | `claude-opus-4.8` | 0 / 1 / 1 / 2 |
+| Learnings Researcher | subagent | default | 0 / 2 / 4 / 4 |
+| Security Lens Reviewer | subagent (cross-model) | `gpt-5.5` / high | **0 / 0 / 0 / 0** |
+| Agent-Native Parity Reviewer | subagent (cross-model), degraded identity | `grok-4.6` / high | 0 / 0 / 3 / 1 |
+
+All seven selected personas were covered. No persona was skipped.
+**Totals: P0 = 0 · P1 = 10 · P2 = 11 · P3 = 11.**
+
+### Gate decision rationale
+
+**The attempt-2 P0 (B-1) is GENUINELY CLOSED, and every persona that could adjudicate it
+agrees.** The declared-status re-basing is correct, it matches the recorded institutional
+knowledge that originally diagnosed the defect
+(`docs/compound/2026-05-07-backlogit-shipment-status-constraints.md`: *"Treat 'location in
+archive/' and 'declared `status: archived`' as two independent facts"*), and it is
+corroborated by the committed Probe-25 transcript. **`022.001-T`, `done`-in-archive at the a1
+gate, now passes §5 condition 1 and raises no S0 trigger.** The **Go Reviewer** mechanically
+re-verified every pinned literal and returned a clean sheet on its axis; the **Security Lens
+Reviewer** returned **0/0/0/0** for the second consecutive attempt.
+
+**The plan nonetheless FAILS on 10 P1s.** They fall into three groups:
+
+1. **The declared-status sweep is INCOMPLETE (anchor P1-1, Learnings P1-1).** §5.0 condition 2
+   still requires the record to be in `archive/` specifically, which is stronger than the
+   containment-only contract AC-27 asserts; and **§4's clause-inventory table (L222–223) still
+   prescribes the rev-4 LOCATIONAL C7/C8 wording** — the exact predicate §4.4 names as the
+   root cause. AC-27 and §13 item 14 both enumerate *"§4.4, §5, §5.0, §5.1, §9"* and **omit
+   §4**, which is how it survived.
+2. **Three new internal contradictions introduced by rev 6's own corrections (anchor
+   P1-2/3/4/5/6).** Hardening 2 still fails row 9 on any verdict enumeration, contradicting
+   AC-25's permitted allowlist; **AC-28's "HALT on a valid `SAFE_CLOSE`" contradicts §4.1's
+   "MUST invoke the close path the classification named"**; AC-25 requires detecting
+   P-015/skill disagreement that the installed classifier emits no fields to support;
+   §9.4b's restore table omits the cascade's post-mutation `parent_id` check; and §9.4a's
+   option 1 (re-verify and continue) contradicts option 3/AC-20a (only revert clears a
+   post-merge mismatch).
+3. **The backlog-record split-brain has recurred for the THIRD consecutive cycle
+   (Constitution P1, Scope P1, Learnings P1-2).** `022-F`/`022.001-T` still carry the rev-5 /
+   attempt-2 banner and — critically — `022.001-T`'s most recent C7/C8 statement is the
+   **rev-4 LOCATIONAL** one. **This is closed by the Stage action recorded below**; the
+   standing fix is recorded as a process change.
+
+### P1 findings — blocking
+
+| # | Finding | Persona | Section |
+|---|---|---|---|
+| **E-1** | §5.0 condition 2 still makes a lifecycle decision from physical location (requires `archive/` specifically, not `queue/` XOR `archive/`), contradicting §4.4/AC-27's containment-only contract | Architecture (anchor) | §5.0 |
+| **E-2** | §4's clause-inventory table still prescribes the rev-4 **locational** C7/C8 replacement wording — the B-1/B-2 root-cause predicate, in the table an implementer actually reads. AC-27 and §13 item 14 omit §4 from the sweep | Learnings | §4 (L222–223) |
+| **E-3** | §4.4 promotes the skill's safe-close Step 0(b) snapshot rule (L394–399) into the *pre-mode* API, but the skill's Classification table and pre-mode step 3 are explicitly location-first. Non-load-bearing for these two manifests, but C7/C8 would describe semantics the delegated skill does not have | Architecture (anchor) | §4.4 |
+| **E-4** | Hardening 2 still says row 9 fails whenever `_ship.agent.md` re-enumerates verdicts — directly contradicting AC-25's permitted result-token allowlist | Architecture (anchor) | Hardening 2 / AC-25 |
+| **E-5** | AC-25 requires detecting `P-015`/skill **disagreement** and a `policy_id`/version match, but the installed classifier emits no such fields and P-015 supplies no independent machine result. Detecting semantic disagreement would force Ship to re-run the predicates — violating AC-5 | Architecture (anchor) | §4.1 / AC-25 |
+| **E-6** | **§4.1 and AC-28 prescribe incompatible actions for a valid `SAFE_CLOSE`.** §4.1: Ship MUST invoke the named close path. AC-28: Ship MUST HALT without invoking it. The result is simultaneously mandatory and forbidden | Architecture (anchor) | §4.1 / AC-28 |
+| **E-7** | §9.4b's HALT/restore table omits the installed cascade's **step 4 `parent_id` preservation check**, which also fails *after* mutation; §10.3 covers only out-of-`allowed_ids` archival. A valid-ID cascade that clears a `parent_id` halts with mutated state and no mandatory verified restore | Architecture (anchor) | §9.4b / §10.3 |
+| **E-8** | §9.4a's recovery contract is internally inconsistent: option 1 allows the same A execution to continue after re-verification, while option 3 / AC-20a claim only `git revert` clears a post-merge mismatch. The committed-evidence-replacement case has no specified abandon/reset/re-merge sequence | Architecture (anchor) | §9.4a |
+| **E-9** | `022-F` / `022.001-T` are a rev-5 / attempt-2 split-brain against a rev-6 plan; `022.001-T`'s latest C7/C8 statement is the **rev-4 locational** wording. Third consecutive recurrence (A-14 → B-7 → E-9) | Constitution, Scope, Learnings | backlog records |
+| **E-10** | The rev-6 header claims it closes *"the same-surface P2/P3 queue"*, but D-3, D-4, D-7 and D-10 are neither addressed nor dispositioned; no cycle-3 disposition table existed | Scope, Learnings | header / disposition |
+
+### P2 findings — advisory
+
+| # | Finding | Persona |
+|---|---|---|
+| F-1 | Hardening 9a does not define a durable owner/storage location for `evidence_commit_sha` / the two fixture hashes; the transcript records `PROBE_HEAD` and engine hashes but not those three fields | Architecture |
+| F-2 | The reachability disclosure attributes new CASCADE reachability only to `017-S`; **`021-S`'s own manifest also could not reach it before a1** and now invokes the destructive branch at §9 step 15 | Architecture |
+| F-3 | Row 16 (the a1/S0 selector guard) is **not** in §8.1.1's pinned-literals table, so a1 could ship with a location-keyed S0 and still pass green — the A-7 vacuousness class reproduced on the headline defect | Scope |
+| F-4 | §9.4's "8/8 PASS" does not distinguish the two **probe-simulated** criteria (2 = pre-mode `PROCEED`, 3 = `CASCADE`, both re-derived in PowerShell) from the six **engine-observed** ones | Learnings |
+| F-5 | §9 steps 5/17 name P-018 engagement but not the workspace's **verified `[bot]`-suffixed REST fallback** and poll cadence, which the compound entry records as mandatory before merge | Learnings |
+| F-6 | Stale **"five checks"** survives in §10.3 and §13 item 1 after C-8 added the sixth | Learnings |
+| F-7 | §9.4a check 2's "nine criterion tokens" are unpinned; the transcript body emits `CRITERION_2…8` and the nine-token set exists only in the STEP 11 aggregate. An S2 agent grepping for nine `CRITERION_n` tokens finds eight and HALTs — a fabricated post-merge failure | Learnings |
+| F-8 | §9.1 2a.i still passes `consumer_id: "ship"` while claiming unfiltered enumeration; the CLI has `--agent` (not `--consumer_id`), and `--agent ship` would drop the 13 stage records so AC-29's leftover warnings cannot fire | Agent-Native Parity |
+| F-9 | §9.1 step 2's "quarantine flag" is not a per-summary field; the live list exposes top-level `needs_quarantine` / `quarantined` / `total` | Agent-Native Parity |
+| F-10 | **D-7 NOT FIXED** — §5.1 S4 and §9 step 13 still state `active -> done` with no tool pin; the `backlogit_move_item` pin lives only in §10.1's PO-1b box | Agent-Native Parity |
+| F-11 | Constitution Principle VI row assesses cohesion, not dependency discipline; Width-Isolation (markdown + Go in one task) remains undocumented | Constitution |
+
+### P3 findings — noted
+
+| # | Finding | Persona |
+|---|---|---|
+| G-1 | Row 10's ABSENT needle is a command **fragment**, not the "full drifted clause" §8.1.1's own rule prescribes — verified unique, so it functions, but the rule and the needle disagree | Go |
+| G-2 | Principle VII marks "satisfied" via machine gates only; operator-approval routing for the now-reachable destructive cascade is not mapped | Constitution |
+| G-3 | Deviation D4 still does not label the rejected simpler alternative as such, nor engage whether VIII is *satisfied via freeze-scope* rather than deviated | Constitution |
+| G-4 | C-5's decoupling is prose-only: no negative row asserts `_ship.agent.md` contains no `018.` literal, so the release-instance boundary can silently regress | Scope |
+| G-5 | §9.4a check 6 does not tie the topology tokens to the classification arithmetic (`TOPOLOGY_MEMBERS == MANIFEST_COUNT`, etc.) | Learnings |
+| G-6 | Dangling duplicated sentence fragment in §9.3 (*"Rev 18 recorded that a"*) | Learnings |
+| G-7 | §4's subsections run 4 → 4.0 → 4.4 → 4.1 → 4.2 → 4.3; the load-bearing normative block is out of sequence — the same locality problem that let E-2 survive | Learnings |
+| G-8 | `query_sql` cannot show torn queue+archive copies (`items.id` is PK); containment must be `backlogit_doctor --check-duplicates` only | Agent-Native Parity |
+
+### Affirmative clearances (recorded as evidence, not findings)
+
+* **Security Lens Reviewer returned 0/0/0/0 for the second consecutive attempt.** The
+  declared-status exemption remains fail-closed; the five §5.0 gates still hold conjunctively;
+  `archived_status: queued` still never proves completion; the allowlist contract still
+  prevents a future skill naming a new destructive verdict; `evidence_commit_sha` = LAST commit
+  genuinely defeats post-merge replacement/replay; the two fixture hashes are separable; the
+  MATCH-set reordering does not weaken the fail-closed handoff; the committed `.txt` carries
+  **no** secrets, tokens, emails or user-profile paths; and **no hardcoded absolute executable
+  path is a runtime requirement of any check**.
+* **Go Reviewer returned 0/0/0/1 — a clean mechanical sheet.** Independently re-measured, at
+  the current tree rather than at `d19b954`: all five ABSENT literals present **exactly once**
+  and single-line (rows 14/L255, 15/L777, 9/L819, 10/L790, 7/L810); row 3's anchors unique at
+  L767/L773 with the `a1` anchor correctly **absent** pre-implementation; all four reconciled
+  PRESENT phrases **absent today**, so every `compound +/−` row is a real red→green.
+  **C-1, C-2, C-3, D-2 and D-5 are mechanically verified FIXED.** `8+18+4+4+12+4+4+4+29+10 =
+  97` re-added independently; margin **23 min**. `repoRoot(t)` confirmed package-level in
+  `build_script_test.go` and already reused by two other tests; the three new helpers collide
+  with nothing; **testify confirmed absent from `go.mod`**.
+* **B-1 (P0) RESOLVED — unanimous among the personas that could adjudicate it.** The
+  Learnings Researcher independently re-derived the transcript: the `.ps1`'s STEP 5 classifies
+  by declared status (`$st -eq 'archived' → pre-archived`, `$st -eq 'done' → matched`) with
+  location consulted only for existence/uniqueness, so `MEMBERS_QUEUE_LOCATED=0` with
+  `PREMODE_MATCHED=2`/`PREMODE_PRE_ARCHIVED=11` is **exactly consistent**. *"The transcript was
+  never wrong; rev 5's restatement of the rule was"* is confirmed accurate. **No
+  re-measurement was performed or required.**
+* **B-5, B-8, C-1, C-2, C-3, C-6, C-7, C-8, C-9, C-10, D-1, D-2, D-5, D-6, D-8, D-9 CLOSED.**
+  Verified by the Architecture, Go, Constitution, Learnings and Agent-Native Parity personas
+  respectively. `session_id` **is** exposed by `backlogit checkpoint list` summaries —
+  empirically confirmed against the live tool (14 records), closing B-8's second half.
+* **No scope expansion.** *(Scope Boundary.)* Rev 6 stays inside the 2-file surface; no third
+  implementation file, no new shipment, backlog item or dependency edge; **every** rev-6 change
+  maps 1:1 to an attempt-2 finding; AC-27/28/29 are finding-justified, not invented.
+
+### Required before re-review (P0/P1 remediation queue — cycle 4)
+
+**Max re-entry cycles are EXHAUSTED.** Attempt 3 was the last cycle available under the
+plan-review gate's 2-re-entry limit. **The Escalation Protocol applies** — see the cycle-3
+disposition below. Stage does **not** self-remediate these findings.
+
+## Plan Review — Remediation Cycle 3 disposition
+
+This session is **remediation cycle 3**. It closed the attempt-2 **P0 (B-1)** and **B-2, B-5,
+B-8** outright, closed **B-3, B-4, B-6** in substance while introducing internal
+contradictions in their *representation*, and closed the same-surface P2/P3 queue.
+The re-run gate returned **`decision: FAIL`** on 10 P1s.
+
+| Attempt-2 finding | Disposition |
+|---|---|
+| **B-1** (P0) | **CLOSED** — declared-status re-basing; unanimous across personas; corroborated by the committed transcript and by recorded institutional knowledge |
+| **B-2** | **CLOSED in §4.4**; **residual in §4's inventory table** re-opened as **E-2** |
+| **B-3** | **CLOSED in substance** (allowlist contract); *representation* re-opened as **E-4**, **E-5**, **E-6** |
+| **B-4** | **CLOSED** — no-override language deleted; four distinct identity fields defined; `evidence_commit_sha` = LAST commit closes the replacement hole (Security Lens confirmed). Recovery-path consistency re-opened as **E-8** |
+| **B-5** | **CLOSED** — a1 runs before pre-mode with no back-edge; narrow completion precondition |
+| **B-6** | **CLOSED in substance** (no-fallback contract, honest reachability); *representation* re-opened as **E-6**, **E-7** |
+| **B-7** | **RE-OPENED as E-9** — third consecutive recurrence. **Record-state half CLOSED this session** (see below); the **process** fix is recorded |
+| **B-8** | **CLOSED** — MATCH-set ordering; `session_id` availability empirically confirmed |
+| **C-1, C-2, C-3, C-6, C-7, C-8, C-9, C-10, D-1, D-2, D-5, D-6, D-8, D-9** | **CLOSED** — verified by the owning personas |
+| **D-3, D-4, D-7, D-10** | **DEFERRED, explicitly** — recorded as **E-10**/**F-10**/**F-11**/**G-2**/**G-3**; D-7 is a one-line tool pin and should be taken in cycle 4 |
+
+**Stage action taken this cycle (closes the record-state half of E-9):** `022-F` and
+`022.001-T` are resynced to **rev 6** and re-banner-ed **NOT CLAIMABLE — attempt 3 FAIL**,
+with the rev-4 locational C7/C8 wording and the invalid `blocked` shipment status explicitly
+withdrawn. **Standing process fix recorded:** the backlog resync MUST travel in the same commit
+as any plan revision bump, rather than being rediscovered as a finding each cycle — three
+cycles have now each re-found it.
+
+**The gate verdict is `decision: FAIL`.** `status:` stays `planned`. The plan is **not**
+harvest-ready. **`021-S` must not be claimed**, and `017-S` behind it stays ineligible.
+**No backlog items are created from this plan. No shipment is claimed.**
+
+
 
 **This section is the operative provenance record.** It is the **last** `## Plan Review`
 section in this file and restates the markers of the **most recent** gate run, so a
@@ -2300,7 +3053,7 @@ section in this file and restates the markers of the **most recent** gate run, s
 **attempt 1**. Attempt 1's section is retained **only** for audit history and is
 **superseded**.
 
-<!-- plan-review-attempt: 2 -->
+<!-- plan-review-attempt: 3 -->
 
 ```text
 dispatch_mode: multi-agent
@@ -2309,15 +3062,22 @@ decision: FAIL
 
 | Field | Value |
 |---|---|
-| **Latest attempt** | **2** (of max 3 — **cycle 3 is the last**) |
-| **Reviewed revision** | rev 5 |
+| **Latest attempt** | **3** (of max 3 — **cycles EXHAUSTED; Escalation Protocol applies**) |
+| **Reviewed revision** | rev 6 |
 | **Decision** | **FAIL** |
 | **Dispatch mode** | `multi-agent` (7/7 personas; anchor `openai`/`gpt-5.6-sol`/`high`) |
+| **Anchor verdict** | **FAIL** (0 P0 / 6 P1) |
 | **Harvest-ready** | **NO** |
 | **Plan `status:`** | `planned` (unchanged — **not** advanced to `reviewed`) |
 | **`021-S` claimable** | **NO** |
-| **Blocking** | 1 P0 (**B-1**) + 7 P1 (**B-2**…**B-8**, less the closed **B-7**) |
-| **Superseded** | attempt 1 (`<!-- plan-review-attempt: 1 -->`, rev 4, FAIL) |
+| **Shipment harvest provenance** | **NOT SET** — no shipment assembled, none claimed |
+| **Blocking** | **0 P0** + **10 P1** (`E-1`…`E-10`) |
+| **Attempt-2 P0 `B-1`** | **CLOSED** (unanimous; corroborated by committed evidence) |
+| **Clean sheets** | Security Lens `0/0/0/0` (2nd consecutive) · Go Reviewer `0/0/0/1` |
+| **Superseded** | attempt 1 (rev 4, FAIL) · attempt 2 (rev 5, FAIL) — their marker comments remain in their own sections above, earlier in the file |
 
 **Harvest MUST halt on this plan.** `decision: FAIL` is the operative value.
+**Stage has STOPPED remediating** — cycle 3 was the final permitted cycle, and the
+Escalation Protocol (P-013.6) governs from here. Findings `E-1`…`E-10` are handed off, not
+self-fixed.
 
