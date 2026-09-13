@@ -1,10 +1,27 @@
 # Deliberation — Verified Task-Only Shipment Finalization (A10EF3D0)
 
+> **SUPERSEDED FOR CURRENT SCOPE — DEFERRED PLATFORM WORK (2026-09-13).**
+> Governing authority:
+> `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`).
+>
+> **This deliberation no longer blocks `017-S`.** It chose `TASK_ONLY_FINALIZE` because
+> the `CASCADE` path was judged unreachable for a covering feature that no Ship step could
+> move to `done`. **Shipment A (`021-S`) creates exactly that step** (Ship Step 6.1(a1)),
+> so `017-S` was restored to a **13-entry fully-covered root** and closes by the
+> **existing** `CASCADE` exception. No new verdict is needed.
+>
+> The `TASK_ONLY_FINALIZE` work (`023-F`/`024-F`, shipments `022-S`/`023-S`) is **deferred
+> generalized platform work** — items `blocked`, shipment records archived
+> non-destructively. Re-entry requires a **fired trigger** (a genuinely task-only shipment
+> that cannot be re-shaped to a covered root) and a **fresh, separately reviewed**
+> shipment. The reasoning below is retained **as historical record**; do not route from it.
+
 - **Date:** 2026-09-12
 - **Stage route:** `claude-opus-5` (tier 3), resolved from fresh `.autoharness/config.yaml` (`schema_version: 1.1.0`)
 - **Chartered scope:** EXACTLY one stash entry — `A10EF3D0` (`kind: deliberation`, `priority: critical`). No other stash entry triaged, edited, harvested or archived.
 - **Measured at:** clean worktree, branch `chore/stage-task-only-shipment-finalization`, base `fdff9e4` (fresh `origin/main`)
-- **Blocks:** closure of shipment `017-S` (and every future SAFE_CLOSE-classified shipment)
+- **Blocks:** ~~closure of shipment `017-S`~~ — **NO LONGER TRUE (2026-09-13).** See the banner below. This work blocks only **future SAFE_CLOSE-classified shipments**, not `017-S`.
 - **Upstream refs:** `docs/decisions/2026-09-12-intercom-go-deferred-split-and-readiness-lock-decision.md` §1.6 / OQ-2; `docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md` §R16.3.3
 
 ---

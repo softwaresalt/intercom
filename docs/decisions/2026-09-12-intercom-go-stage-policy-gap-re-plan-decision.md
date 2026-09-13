@@ -2,8 +2,8 @@
 title: "Decision — Re-plan of the Stage Artifact Branch/PR Policy Gap release unit"
 date: 2026-09-12
 status: superseded-in-part
-superseded_in_part_by: docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md
-superseded_decision: "4.2 — 017-S manifest shape; the live 12-member task-only shape governs"
+superseded_in_part_by: docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md
+superseded_decision: "4.2 — 017-S manifest shape; the live 13-member fully-covered-root shape governs"
 agent: Stage
 governs: feature 018-F, shipment 017-S
 supersedes_scope_of: docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md
@@ -76,23 +76,37 @@ deliberated decision.
 
 > ### ⚠️ SUPERSEDED IN PART — decision 2 no longer describes the live manifest
 >
-> **Decision 2 below (`017-S` manifest becomes `[018-F, 018.008-T]`) is SUPERSEDED and
-> MUST NOT be used as the manifest of record.**
+> **Decision 2 below (`017-S` manifest becomes `[018-F, 018.008-T]`) is SUPERSEDED on
+> MEMBERSHIP and MUST NOT be used as the manifest of record — but its core principle,
+> that the covering feature belongs INSIDE the manifest, is now VINDICATED.**
 >
-> | | This decision (stale) | Live / governing |
-> |---|---|---|
-> | `017-S` manifest | `[018-F, 018.008-T]` (fully-covered root, 2 members) | **12-member TASK-ONLY**: `018.008-T`, `018.001-T` + 3 `-ST`, `018.002-T` + 3 `-ST`, `018.003-T` + 2 `-ST` |
-> | Member states | both live | **11 pre-archived, 1 live** (`018.008-T`, `queued`) |
-> | Covering feature | `018-F` **inside** the manifest | `018-F` **outside** the manifest. `backlogit shipment get 017-S` populates **no** `covering_feature`; Ship resolves it through each task's `parent_id` per Step 0.5 item 2 |
-> | Close path | `CASCADE` (fully-covered root) | `TASK_ONLY_FINALIZE` — the verdict the three-shipment bootstrap exists to install |
+> **Rev 2 of this note (2026-09-13).** The intervening "12-member task-only" shape is
+> itself **withdrawn**. Governing authority is now
+> `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`).
 >
-> **The live `017-S` 12-member task-only shape governs.** Superseding authorities, in
-> order: the task-only shipment finalization plan
-> (`docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md`), the
-> three-shipment bootstrap deliberation
-> (`docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md`), and
-> plans A/B/C. Read decision 2 as a record of what was decided on 2026-09-12 **before**
-> the task-only route was adopted — not as a current instruction.
+> | | This decision (stale) | Intervening task-only shape (WITHDRAWN) | Live / governing |
+> |---|---|---|---|
+> | `017-S` manifest | `[018-F, 018.008-T]` (fully-covered root, 2 members) | 12-member TASK-ONLY, `018-F` excluded | **13-member FULLY-COVERED ROOT**: `018-F` + `018.008-T` + `018.001-T` + 3 `-ST` + `018.002-T` + 3 `-ST` + `018.003-T` + 2 `-ST` |
+> | Member states | both live | 11 pre-archived, 1 live | **11 pre-archived, 1 live task (`018.008-T`), 1 live root (`018-F`)** |
+> | Covering feature | `018-F` **inside** the manifest | `018-F` **outside**; resolved via `parent_id` | **`018-F` INSIDE the manifest.** `backlogit shipment get 017-S` populates `covering_feature: 018-F` |
+> | Close path | `CASCADE` (fully-covered root) | `TASK_ONLY_FINALIZE` | **`CASCADE`** — the **existing** P-015 exception, enabled by shipment A's Step 6.1(a1) |
+>
+> **Why the membership differs from decision 2.** Decision 2's 2-member manifest omitted
+> the 11 pre-archived legacy descendants. A fully-covered root requires the manifest to
+> contain the root **and its complete descendant set at every depth**, so the correct
+> shape is **13**, not 2. Decision 2 had the right principle and the wrong membership.
+>
+> **Why the task-only shape was withdrawn.** It rested on the clause *"no Ship step ever
+> moves a covering FEATURE to done"*. Shipment A (`021-S`) introduces exactly that step,
+> so the exclusion built on it falls. `017-S` never needs `TASK_ONLY_FINALIZE`, which is
+> now **deferred generalized platform work** (`023-F`/`024-F` `blocked`; shipments
+> `022-S`/`023-S` archived).
+>
+> Superseding authorities, in order: the **A-only simplification decision**, plan A rev 3
+> (`docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md`), and
+> the umbrella evidence document at rev 8. Read decision 2 as a record of what was decided
+> on 2026-09-12 — not as a current instruction.
 >
 > Decisions **1, 3, 4, 5 and 6 below remain in force.** Only the manifest shape in
 > decision 2 changed. Nothing here alters `018-F`'s reduction to a single executable task,

@@ -1,15 +1,39 @@
 ---
 title: "Deliberation — Three-shipment bootstrap for task-only shipment finalization"
 date: 2026-09-12
-status: decided
+status: superseded-in-part
+superseded_in_part_by: docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md
+superseded_scope: "the A → B → C three-shipment chain, for the CURRENT release scope only; A's own analysis stands"
 agent: Stage
-governs: features 022-F, 023-F, 024-F; shipments 021-S, 022-S, 023-S
+governs: features 022-F, 023-F, 024-F; shipments 021-S, 022-S (archived), 023-S (archived)
 supersedes_scope_of: docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md
 source_stash: A10EF3D0 (archived)
 umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md
 ---
 
 # Deliberation — Three-shipment bootstrap for task-only shipment finalization
+
+> **SUPERSEDED IN PART — read this first.**
+> The **three-shipment chain** decided here is **superseded for the current release
+> scope** by
+> `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`).
+>
+> **What changed.** This deliberation assumed `017-S` must stay a **task-only** manifest
+> and therefore required a new `TASK_ONLY_FINALIZE` close verdict (**B**) and its
+> classifier (**C**). Shipment **A** introduces **Step 6.1(a1)**, which moves a covering
+> feature `active -> done` before pre-mode. That dissolves the assumption: `017-S` is
+> restored to a **fully-covered root** (13 members) and closes by the **existing** P-015
+> `CASCADE` exception. B and C are therefore **not** current prerequisites.
+>
+> **What still stands.** Everything about **A** (`021-S` / `022-F` / `022.001-T`), the
+> adopted rev-6 `MUST_REPLAN` premises, and the `021.001-T` one-queued-test-bearing-task
+> arithmetic. **B and C are deferred generalized platform work**, `blocked`, with their
+> shipment records `022-S` / `023-S` archived non-destructively. Their rev-2 correctness
+> notes are preserved for whenever they are re-entered under fresh, separately reviewed
+> shipments.
+>
+> The chain reasoning below is retained **as historical record**. Do not route from it.
 
 ## 1. Problem frame
 

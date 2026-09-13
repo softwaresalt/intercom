@@ -13,6 +13,22 @@ strand_b_plan: docs/plans/2026-09-12-intercom-go-stage-contract-enforcement-plat
 
 # Decision — Deferred-work split, shipment-free readiness, and `017-S` closure repair
 
+> **SUPERSEDED IN PART (2026-09-13) — the `017-S` manifest and closure sections below no
+> longer describe the live state.** Governing authority:
+> `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`).
+>
+> * `017-S`'s manifest is a **13-entry FULLY-COVERED ROOT** (root `018-F` + all 12
+>   descendants), **not** the 12-entry task-only shape recorded below. `018-F` **is** a
+>   member.
+> * `017-S` depends on **`021-S` only** and closes by the **existing** P-015 `CASCADE`
+>   exception once shipment A lands Ship Step 6.1(a1).
+> * The **`SAFE_CLOSE` step-8 exit-9 conflict is NO LONGER `017-S`'s blocker** — that path
+>   is not reached. It remains a recorded workspace-wide follow-up for any future
+>   `SAFE_CLOSE`-classified shipment.
+>
+> All **other** decisions here — the deferred strands `019-F`/`020-F`, the readiness lock,
+> and the operator-only persistence route — **remain in force**.
 **Revision 2 (rev-18 remediation cycle, 2026-09-12).** Second bounded Stage remediation cycle,
 against the adversarial re-review of `9e44bfe` (branch `chore/stage-pipeline-policy-gap`). Verdict
 was **MUST_REMEDIATE**, not `MUST_REPLAN`: the one-task `017-S` decomposition and the two cohesive
@@ -24,7 +40,8 @@ in git at `9e44bfe`.
 **What rev 2 changed, in one line each:**
 
 1. `017-S`'s manifest became **task-only (12 entries)**; `018-F` was removed so Step 6 pre-mode can
-   ever pass (§1).
+   ever pass (§1). **SUPERSEDED 2026-09-13** — see the banner at the top of this document. The
+   manifest is now a **13-entry fully-covered root** with `018-F` restored as a member.
 2. The safe-close **step-8 shipment-record closure conflict** was traced, proven tool-blocked, and
    escalated as a **P0** rather than asserted away (§1.6).
 3. The interim persistence route became **operator-only**, and two rev-17 Orchestrator-authority
