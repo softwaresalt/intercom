@@ -52,7 +52,7 @@ Rev 6 §10.1 enumerated four candidate directions and deliberately took none:
 
 | # | Direction | Disposition here |
 |---|---|---|
-| 1 | Defer CONSISTENCY edits, re-measure | **Partially adopted** — retained as C's declared overflow valve (§7.3), not as the primary mechanism |
+| 1 | Defer CONSISTENCY edits, re-measure | **Rejected (rev 2)** — was "partially adopted" as C's overflow valve; §7.3 removes the valve entirely. Deferring any site is no longer authorized |
 | 2 | Move the skill's normative bulk into P-015 | **Rejected** — §4 option 2 |
 | 3 | Operator-authorized 2-hour-rule exception (P-005 deviation) | **Rejected** — §4 option 3 |
 | 4 | Change the self-hosting approach so the unit need not close itself | **ADOPTED and extended** — §4 option 4 |
@@ -124,7 +124,7 @@ needs it**.
 |---|---|---|---|
 | **A** Foundation | `_ship.agent.md` + 1 Go test | fully-covered root | **existing** `CASCADE` |
 | **B** Policy gate | `workflow-policies.md` P-015 + 1 Go test | fully-covered root | A's feature-completion + existing `CASCADE` |
-| **C** Skill impl. | `shipment-reconcile/SKILL.md` + 1 Go test | **task-only** | the new `TASK_ONLY_FINALIZE` |
+| **C** Skill impl. | `shipment-reconcile/SKILL.md` + 1 Go test | fully-covered root *(rev 2 — was task-only)* | the existing `CASCADE` *(rev 2 — was the new `TASK_ONLY_FINALIZE`)* |
 
 The bootstrap property: **A and B close by the existing, already-reviewed `CASCADE`
 path. Only C closes by the new path — and by then A, B and C's own change are all
@@ -139,8 +139,13 @@ live.** Nothing closes by a path that does not yet exist.
   reconciliation skill advertises the required capability/schema token**. No installed
   skill advertises it, so it can never be selected. Behavior is byte-for-byte today's
   behavior. **Fail-closed by construction, not by discipline.** Coherent.
-* **After C merges.** The token appears, the classifier activates, and C self-closes
-  task-only. Coherent, and the self-close is the durable runtime proof.
+* **After C merges.** The token appears and the classifier activates. **Rev 2:** C does
+  **not** self-close by it — C's manifest is a fully-covered root, so T3 excludes
+  `TASK_ONLY_FINALIZE` and C closes by `CASCADE` like A and B. The activated verdict's
+  first live selection is at **`017-S`**. Still coherent; the runtime proof is relocated to
+  Probe 21's post-half against the exact `017-S` 12-member fixture (plan C §8.4), and the
+  residual that no *live* task-only closure precedes `017-S` is recorded as plan C **R-8**.
+  See §8.1 for the measured basis.
 
 The dormant-token gate is what makes B safe to land alone. It is not a feature flag
 that someone must remember to leave off; **absence of the token is the default and
@@ -221,28 +226,40 @@ to the measurement that produced `MUST_REPLAN`.
 
 | Shipment | Work | Estimate |
 |---|---|---|
-| **A** | Role Boundary narrowing (~8) + parent-completion step (~10) + C1 (~4) + C2 (~4) + C3/C4/C5 delegation (~12) + C6 (~4) + Go test (~18) + verification (~10) | **~70 min ≈ 1.2 h** |
-| **B** | A1 (~1.5) + A2/A3 (~3) + A4/A5/A6 (~12) + A7 dormant block (~20) + A8 (~1) + Go test (~18) + verification (~10) | **~66 min ≈ 1.1 h** |
-| **C** | 8 MUST clause edits (~28.5) + B17 (~1.5) + 7 CONSISTENCY (~10.5) + B11 (~3) + B18 (~28) + §6.1-E (~5) + Go test (~20) + verification (~10) | **~107 min ≈ 1.8 h** |
+| **A** | Role Boundary narrowing (~8) + parent-completion step incl. applicability/idempotence (~15) + C1 (~4) + C2 (~4) + C3/C4/C5 delegation (~12) + C6 (~4) + Go test 13 rows (~21) + verification (~10) | **~78 min ≈ 1.3 h** |
+| **B** | A1 (~1.5) + A2/A3 (~3) + A4/A5/A6 (~12) + A7 dormant block (~20) + A8 (~1) + Go test 12 rows (~19) + verification (~10) | **~67 min ≈ 1.1 h** |
+| **C** | 8 MUST clause edits (~28.5) + B17 two lines (~3) + 7 CONSISTENCY (~10.5) + B11 (~3) + B18 (~29) + Go test 13 rows (~21) + verification (~10) | **~105 min ≈ 1.75 h** |
 
 All three close under the 2-hour rule. **A and B carry comfortable margin; C is tight
-(~13 min).**
+(~15 min).**
 
-### 7.3 C's declared overflow valve
+**Rev 2 re-measurement.** A **+7** (the §5.1 three-way a1 applicability and §5.2 idempotent
+resume, plus Go rows 12–13). B **+1** (the §7.1 row-count text said 11 while the table
+listed 12; corrected to 12). C **−1.5** net (`B17` +1.5 for its second line, `B18` +1 for
+the token-activation rule, Go test +1 for row 13, committed inventory re-scan **−5**
+removed). Evidence generation — including Probe 21's relocated post-half — is budgeted
+under **Ship closure**, not task coding.
 
-C's margin is thin enough to name a pre-authorized reduction rather than leave the
-implementer to improvise one. If C crosses **100 minutes** with CONSISTENCY edits
-outstanding, a **bounded 5-clause subset** (`B2 B4 B6 B14 B16`, ~7.5 min) is deferred to a
-follow-up hygiene stash entry. Those five are branch-local descriptive statements that
-remain **literally true** after the amendment.
+### 7.3 C's declared overflow valve — **REMOVED in rev 2**
 
-**`B7` and `B12` are explicitly NOT deferrable** (review correction): they assert
-*sufficiency* and *exclusivity* respectively, which the amendment falsifies, so deferring
-them would leave the contract **incorrect**, not merely uneven.
+Rev 1 declared a pre-authorized overflow valve for C: crossing 100 minutes with
+CONSISTENCY edits outstanding would defer a bounded 5-clause subset (`B2 B4 B6 B14 B16`,
+~7.5 min) to a follow-up hygiene stash entry, with `B7`/`B12` explicitly non-deferrable.
 
-**The valve's limits are stated, not glossed.** It sheds ~7.5 min and therefore cannot
-rescue a `B18` or Go-test overrun. That case is an explicit **HALT and return to Stage**.
-Deferring any **MUST** site is **not** authorized. See plan C §12.1.
+**That valve is removed in its entirety.** Review established the valve was itself the
+defect: it authorized marking `024.001-T` **`Done`** while clause sites named in that
+task's own completion acceptance criteria were unimplemented. A completion criterion the
+completion path is pre-authorized to skip is not a criterion. The five "deferrable"
+clauses are all statements about which close paths exist or are permitted; leaving any of
+them describing a two-verdict world after a third verdict ships leaves the contract
+**incorrect**, not merely uneven — the same defect class rev 1 already recognised for
+`B7` and `B12`. The line between the two groups did not survive review.
+
+**The rule now:** every MUST and CONSISTENCY site in plan C §3 is implemented. An overrun
+is **HALT and return to Stage** — never a partial `Done`, never a deferral. C's budget is
+re-stated honestly at **~105 min / ~15 min margin** (plan C §12), with the margin
+acknowledged as still thinner than `B18`'s own estimating variance and **no** slack
+mechanism to hide that. See plan C §12.1.
 
 ### 7.4 Cross-surface coupling matrix
 
@@ -252,7 +269,7 @@ match*, but not the only one. The full set, each with a producer, consumer and g
 
 | # | Coupling | Producer | Consumer | Guard |
 |---|---|---|---|---|
-| **CO-1** | Capability token `task-only-finalize/v1` | C (skill frontmatter) | B (P-015 gate) | exact-parity test row, **both** sides |
+| **CO-1** | Capability token `task-only-finalize/v1` | C (skill frontmatter) | B (P-015 gate) | **C's** exact-parity test row 2. *(B cannot assert parity — B merges before C exists; B's row 3 asserts only that A7 states the token requirement with an exact version.)* |
 | **CO-2** | Verdict literal `TASK_ONLY_FINALIZE` | B (authorizes) | C (emits), A (invokes) | B row 1, C rows 3–4 |
 | **CO-3** | Classifier order `CASCADE → TASK_ONLY_FINALIZE → SAFE_CLOSE/HALT` | B | C (selector) | B row 2, C row 3 |
 | **CO-4** | Topology `T1–T5` ↔ guards `G1–G5` | B (asserts) | C (implements) | C row 12 (cite-not-restate); **semantic**, not textual |
@@ -262,15 +279,29 @@ match*, but not the only one. The full set, each with a producer, consumer and g
 | **CO-8** | Feature-completion authority (a1) | A | B (needs it to close) | `022-S depends_on 021-S` |
 | **CO-9** | `P1–P10` ordering vs P-007 archive restoration | C | C | C row 6 |
 | **CO-10** | Engine CLI version + digest | C | C | §5 HALT |
-| **CO-11** | P-001 single-in-flight vs C's live `024-F` | C | `017-S` routing | plan C §8.3 disposition |
+| **CO-11** | **(rev 2 — re-scoped)** P-001 single-in-flight vs a live covering feature left by a task-only close | engine claim semantics | `017-S` routing | **Mechanical**: C's manifest re-shape puts `024-F` inside the manifest so the cascade archives it (Probe 24). **Not** prose disposition — Probe 23 proved no feature-endpoint dependency edge is constructible |
+| **CO-12** | **(rev 2 — new)** Post-archive `--phase lifecycle` topology gate fails closed | Probe 20 | A, B, C closure sequences | `a0` runs **while the shipment is still active**; **no** lifecycle invocation after the archive. A AC-19, B AC-16, C AC-21 |
+| **CO-13** | **(rev 2 — new)** Installed Ship lifecycle order (4.5 before 5; 6.0 branch before 6.1(e); closure artifacts + P-020 before the closure PR push) | `_ship.agent.md` | A, B, C closure sequences | A AC-18, B AC-15, C AC-22 |
+| **CO-14** | **(rev 2 — new)** Token-activation session boundary: a session must not select a verdict whose authorizing token it merged | C (`B18`) | C's own closure | C row 13, C AC-14; **distinct from** A's Role-Boundary-scoped §6 carve-out, which is deliberately **not** widened |
 
 **CO-4 is semantic, not textual, and that is the honest characterization.** `G1–G5`
 necessarily *implement* `T1–T5`. C cites rather than restates them (row 12), which prevents
 textual duplication but does **not** eliminate the semantic dependency. Drift between them
 is a **real residual**, accepted: a CI coupling gate is out of scope for this chain.
 
-**CO-8 and CO-11 are why the ordering is load-bearing**, not merely tidy: B cannot close
-before A is live, and `017-S` cannot route before `024-F` is disposed of.
+**CO-8 is why the ordering is load-bearing**, not merely tidy: B cannot close before A is
+live.
+
+**CO-11 changed kind in rev 2, and that is the point.** Rev 1 discharged it with a
+Stage-owned disposition step — a **prose** gate. Probe 23 established that the mechanical
+alternative everyone would reach for (a `blocks` edge from `017-S` to `024-F`) is
+**refused by the engine**: *"both endpoints must be shipments"*. With no feature-endpoint
+edge available and no shipment `blocked` status, there was **no valid barrier to build**.
+Rev 2 therefore removes the hazard rather than gating it: `024-F` joins C's manifest and
+the engine's own cascade archives it (Probe 24 — `archived_ids` contains the feature,
+**0** other active top-level units remain, successor eligible with no further action).
+The residual case — `017-S`'s own `018-F` — is recorded rather than fixed **because
+`017-S` is terminal and has no downstream consumer to block**.
 
 ## 8. Decision
 
@@ -288,6 +319,52 @@ eligibility window opens.
 Each shipment carries exactly **one covering feature and one ≤2 h task**, satisfying
 P-004 / Ship Step 4.3 / Ship Step 2 item 1 simultaneously.
 
+### 8.1 Rev 2 amendment — C's manifest shape, forced by measurement
+
+The decision above is **retained unchanged** in its structure: three shipments, the same
+IDs (`021-S`, `022-S`, `023-S`), the same dependency chain, the same inventory split, the
+same one-feature-one-task shape. **One thing changed**: C's manifest.
+
+| | Rev 1 | Rev 2 |
+|---|---|---|
+| `023-S` manifest | task-only `[024.001-T]` | fully-covered root `[024.001-T, 024-F]` |
+| C's close path | the **new** `TASK_ONLY_FINALIZE` (self-proof) | the **existing** `CASCADE` |
+| `024-F` afterwards | live `active`, disposed by a Stage follow-up | **archived by the cascade** |
+| First live use of `TASK_ONLY_FINALIZE` | C itself | **`017-S`** |
+| Barrier before `017-S` | Stage disposition step (prose) | **none needed** |
+
+**Why.** Rev 1 assumed a task-only close would leave `024-F` in a state that a Stage
+follow-up could tidy before `017-S` routed. Three executed probes falsified the assumption
+and then falsified the remedy:
+
+* **Probe 22** — claiming a task-only shipment moves the **out-of-manifest** covering
+  feature to `active`, and it **stays `active`** after the close. `024-F` would be a live
+  top-level release unit at `017-S`'s P-001 gate (which tests for status `Active`).
+* **Probe 23** — the obvious mechanical barrier, `017-S depends_on 024-F`, is **refused by
+  the engine**: *"both endpoints must be shipments"*. No feature-endpoint dependency edge
+  can be written at all, and backlogit defines no shipment `blocked` status. **There was
+  no valid barrier available to build.**
+* **Probe 24** — with the feature **inside** the manifest, the cascade archives it
+  (`archived_ids` contains the feature), leaving **zero** other active top-level units and
+  the successor eligible with no barrier and no follow-up. The control arm confirms the
+  difference is attributable to manifest shape alone.
+
+**What this costs, stated plainly.** C no longer proves the new path by closing with it.
+That was rev 1's strongest property and it is genuinely weakened. It is **relocated, not
+deleted**: plan C §8.4's Probe 21 post-half exercises the classifier against the **exact
+`017-S` 12-member fixture** — a closer analogue of the real consumer than C's own one-task
+manifest ever was — and plan C carries the un-hedged residual (**R-8**) that no *live*
+task-only closure occurs before `017-S` depends on one.
+
+**Why this was preferred to returning `MUST_REPLAN`.** The alternative to re-shaping is a
+chain that closes C successfully and then **deadlocks**: `017-S` claimed, P-001 tripped by
+a feature nothing is authorized to dispose, and no constructible edge to prevent it. Given
+a measured choice between a weakened proof and a measured deadlock, the weakened proof
+wins — and the weakening is recorded here rather than absorbed silently.
+
+**Preserved.** Shipment IDs, the dependency chain `021-S → 022-S → 023-S → 017-S`, the
+28-site inventory split (6 + 6 + 16), and the one-covering-feature-one-task invariant.
+
 ## 9. Rejected-option reasoning, recorded
 
 | Option | Why rejected |
@@ -303,11 +380,16 @@ P-004 / Ship Step 4.3 / Ship Step 2 item 1 simultaneously.
    **fails closed** (correctly) and A cannot self-close. A's plan carries this as an
    explicit **probe obligation** and a fail-closed HALT, not an assumption. Resolved in
    A's plan §Plan Hardening.
-2. **C leaves `024-F` live after task-only closure.** T4 requires the root parent feature
-   live and outside the manifest, so this is by design, not a leak. **Review escalated
-   this**: a live `024-F` can trip Ship Step 1's P-001 single-in-flight gate (line 308) and
-   stall `017-S`. Disposition is now an **ordered, Stage-owned step** (plan C §8.3,
-   AC-17), executed before `017-S` routes — **not** a vague follow-up.
+2. **C leaves `024-F` live after task-only closure.** — **RESOLVED IN REV 2; the step this
+   question mandated has been removed.** T4 does require the root parent live and outside
+   the manifest, and review correctly escalated that a live `024-F` can trip Ship Step 1's
+   P-001 gate (line 308) and stall `017-S`. Rev 1's answer was an ordered Stage-owned
+   disposition step. **Probe 23 falsified that answer**: no dependency edge can be written
+   against a feature endpoint, so the step could never be mechanically enforced — it was
+   prose. **Probe 24 replaced it**: `024-F` is now a member of C's manifest and the
+   engine's own cascade archives it, leaving zero other active top-level units. Plan C §8.3
+   is now titled *"No `024-F` disposition step is required"* and **AC-17** asserts the
+   mechanical outcome. See §7.4 CO-11 and §8.1.
 3. **Engine digest.** Mismatch against
    `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98` remains **HALT +
    full probe refresh** for C. Unchanged from rev 6; the rev-4.1 advisory fallback stays
@@ -328,14 +410,14 @@ P1 findings were same-surface fixable and were fixed in this revision.
 | # | Finding | Severity | Remediation |
 |---|---|---|---|
 | 1 | Plan B claimed items **1–7** byte-preserved while `A5` edits item 6 — unimplementable as written | **P1** | Preserved region corrected to items **1–5 + 7 + SUPERSESSION NOTE**; item 6 scoped by `A5`; new test row 12 bounds it to scoping only (B §4.1, AC-6) |
-| 2 | C leaves `024-F` live, which can trip Ship's **P-001** single-in-flight gate (line 308) and stall `017-S` | **P1** | New **§8.3**: ordered, Stage-owned disposition with named operations and preconditions, before `017-S` routes (C AC-17) |
+| 2 | C leaves `024-F` live, which can trip Ship's **P-001** single-in-flight gate (line 308) and stall `017-S` | **P1** | **Superseded in rev 2.** Rev 1's answer was an ordered Stage-owned disposition step; Probe 23 showed it could never be mechanically enforced. **§8.3 now removes the hazard**: `024-F` is a manifest member and the cascade archives it (Probe 24, C AC-17) |
 | 3 | Rollback described as independently revertible; reverting B with C installed leaves an **unauthorized** implemented verdict | **P1** | New **§10.1 rollback matrix**; `C → B → A` reverse order **mandatory** after activation |
 | 4 | Skill references `src/autoharness/gates/shipment_closure.py`, which **does not exist** here; "0 source changes" was an unchecked assumption | **P1** | Verified absent; **§2.2** records the skill markdown as the execution boundary; stale refs reconciled inside existing `B9`/`B17` (C AC-16) |
-| 5 | C's overflow valve mis-targeted, ordering-incoherent, and over-broad (`B7`/`B12` are not branch-local) | **P2** | **§12.1** rewritten: CONSISTENCY sequenced **last**; deferrable subset reduced to 5 clauses/~7.5 min with per-clause justification; `B7`/`B12` non-deferrable; `B18` overrun ⇒ **HALT** |
+| 5 | C's overflow valve mis-targeted, ordering-incoherent, and over-broad (`B7`/`B12` are not branch-local) | **P2** | **Superseded in rev 2.** Rev 1 rewrote the valve (CONSISTENCY last, 5-clause subset, `B7`/`B12` non-deferrable). **§12.1 now removes the valve entirely** — every site is implemented; an overrun is HALT to Stage, never a partial `Done` (C AC-18) |
 | 6 | C1's carve-out and the retained *"close under the just-merged contract"* left unreconciled and untested | **P2** | **§4.2** pins the reconciled wording; new Go test row 11 guards it (A AC-14) |
 | 7 | Manifest re-shape to `[022-F, 022.001-T]` had no named owner or AC | **P2** | **§4.3** names Stage as owner, pre-claim; A AC-12 |
 | 8 | `PO-1` ran at closure — the most expensive moment to discover a claim-shape mismatch | **P2** | Split into **PO-1a** (pre-execution) + **PO-1b** (at gate); A AC-10 |
-| 9 | "CO-1 is the only cross-shipment coupling" — false | **P2** | Replaced by the **§7.4 coupling matrix** (CO-1…CO-11); CO-4 named as semantic and its drift accepted as residual |
+| 9 | "CO-1 is the only cross-shipment coupling" — false | **P2** | Replaced by the **§7.4 coupling matrix** (CO-1…**CO-14** as of rev 2); CO-4 named as semantic and its drift accepted as residual |
 | 10 | Token bound to incidental skill revision rather than contract compatibility | **P2** | Compatibility-level token `task-only-finalize/v1` (B §5) |
 | 11 | Plan A §9 step 1 showed Ship moving `022-F queued -> active` — unauthorized, and contradicted PO-1 | **P2** | §9 step 1 corrected: `022.001-T -> active` only; `022-F` status **observed**, not asserted |
 | 12 | Probe 18 justifies A's `C2` but was listed only under C | **P3** | **§10.1.1** — Probe 18 travels with A (A AC-13) |
@@ -354,7 +436,12 @@ P1 findings were same-surface fixable and were fixed in this revision.
 
 * **CO-4 semantic drift** between `T1–T5` (policy) and `G1–G5` (skill) — accepted; a CI
   coupling gate is out of scope.
-* **C's ~13.5 min margin** — real, bounded to one shipment, with a HALT path.
+* **C's ~15 min margin** — real, bounded to one shipment, with a HALT path and **no**
+  overflow valve (rev 2; the rev-1 figure was ~13.5 min against a ~106.5 min budget).
+* **(rev 2)** `TASK_ONLY_FINALIZE` is not exercised by a **live** closure before `017-S`
+  depends on it — plan C **R-8**, mitigated but not eliminated by Probe 21's post-half.
+* **(rev 2)** `017-S`'s own task-only close will leave `018-F` `active` — plan C **R-10**,
+  accepted and **not** gated, because `017-S` is terminal and has no downstream consumer.
 * **A AC-9 tamper-evidence** — the checkpoint is evidence, not enforcement.
 
 ## 12. What this deliberation does not change

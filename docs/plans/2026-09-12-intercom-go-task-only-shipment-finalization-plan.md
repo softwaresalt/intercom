@@ -1719,7 +1719,7 @@ merge**:
 | Policy-gap backlog records | already on the branch (unchanged) |
 | **A** | `022-F`, `022.001-T` (re-scoped), `021-S` re-shaped to `[022-F, 022.001-T]` |
 | **B** | `023-F`, `023.001-T`, `022-S` = `[023-F, 023.001-T]` |
-| **C** | `024-F`, `024.001-T`, `023-S` = `[024.001-T]` (task-only) |
+| **C** | `024-F`, `024.001-T`, `023-S` = `[024.001-T, 024-F]` (**rev 7.1: fully-covered root**, re-shaped after Probes 22/23/24) |
 | **Dependency chain** | `022-S -> 021-S`, `023-S -> 022-S`, `017-S -> 023-S`; stale `017-S -> 021-S` **removed** |
 | Planning artifacts | the bootstrap deliberation + plans A/B/C + this rev-7 role change |
 
@@ -1747,15 +1747,32 @@ release unit in flight) and **P-016** (one branch/worktree):
 ```text
 PR #54 merge
   -> route 021-S (A)  -> implement -> merge -> S1 checkpoint+end -> S2 closes via CASCADE
-  -> route 022-S (B)  -> implement -> merge -> close via a1 + CASCADE
-  -> route 023-S (C)  -> implement -> merge -> close via TASK_ONLY_FINALIZE (self-proof)
-  -> Stage disposes of 024-F (plan C §8.3)
-  -> route 017-S
+  -> route 022-S (B)  -> implement -> merge -> close via a1 + CASCADE (one session)
+  -> route 023-S (C)  -> implement -> merge -> S1 checkpoint+end -> S2 closes via CASCADE
+                                                (C's merge ACTIVATES the token; the
+                                                 merging session must not use it)
+  -> route 017-S      -> first live use of TASK_ONLY_FINALIZE
 ```
+
+**Rev 7.1 corrections to this routing.** Two changes, both forced by measurement:
+
+1. **C is now a two-session close, like A.** C's merge activates the
+   `TASK_ONLY_FINALIZE` capability token. A session that merged the token and then selected
+   the verdict it authorizes would be authorizing itself — the same failure A's §6 prevents
+   for Role Boundary changes, in a form A's carve-out deliberately does **not** cover. Plan
+   C §8.1 places the rule in C's own `B18`: S1 implements, merges, verifies, checkpoints and
+   **ends**; a fresh S2 runs the full owner-selected, operator-confirmed recovery protocol,
+   re-verifies current `main` / the merge SHA / the merged P-015 + skill + Ship tokens, and
+   only then classifies and finalizes.
+2. **The `Stage disposes of 024-F` step is GONE.** Probe 23 proved that step could never be
+   mechanically enforced (no feature-endpoint dependency edge exists), and Probe 24 proved
+   it is unnecessary once `024-F` is a manifest member — the cascade archives it. C now
+   closes by `CASCADE` and leaves **zero** other active top-level units.
 
 **Never more than one active Ship shipment or PR at a time.** Each shipment completes
 **P-020** and full closure requirements before the next is routed. `017-S` remains
-`queued` and **unclaimed** throughout.
+`queued` and **unclaimed** throughout, and is released only per gate 9's release condition
+(C archived `shipped` **and** C's closure complete).
 
 The rejected two-PR sequence is **withdrawn**. Its defect: landing the policy-gap
 records first would leave `017-S` queued on `main` with **no** dependency edge
@@ -1790,7 +1807,22 @@ therefore dissolved rather than deferred.
 | 6 | **P-018 Copilot review** | Completed against the **current HEAD**, with **zero** unresolved Copilot threads. |
 | 7 | **Fresh merge approval** | **Rev 6 correction.** Approval MUST be obtained **after** gates 4–6 complete on the **current** HEAD. A pre-existing/standing merge preauthorization does **NOT** satisfy this gate. The only exception is a **currently valid, bounded dark-mode activation record that explicitly preauthorizes this exact PR number and this exact head SHA** — Stage has **not** verified that such a record exists and does **not** assume one. Absent that exact record, approval is fresh-or-nothing. Ship's own contract says the same thing for closure PRs: `_ship.agent.md` **L723**, *"the prior main PR approval does not transfer."* |
 | 8 | **P-009 merge commit** | No squash, no rebase. |
-| 9 | **Post-merge verification** | Two-parent merge commit confirmed; merged **artifact set** present on `main`; the **`017-S -> 021-S` dependency edge** verified present on `main`. |
+| 9 | **Post-merge verification** | Two-parent merge commit confirmed; merged **artifact set** present on `main`; the **exact dependency chain `017-S -> 023-S -> 022-S -> 021-S`** verified present on `main` (all three `blocks` edges), and the stale `017-S -> 021-S` edge verified **absent**. `dag-readiness` on merged `main` must report `ready_set` containing **`021-S` only**. |
+
+**Gate 9 corrected (rev 7.1).** An earlier draft of this gate named only the
+**`017-S -> 021-S`** edge — the edge this very re-plan **removes**. Verifying a deleted
+edge would have passed only if the surgery had failed. The gate now verifies the exact
+three-edge chain that replaces it, plus the absence of the stale edge, plus the derived
+eligibility set. All four are machine-checkable from the merged tree.
+
+**Gate 9 release condition (rev 7.1, NON-NEGOTIABLE).** Passing gate 9 releases **`021-S`
+(A) only**. It does **not** release `017-S`. `017-S` is released only after **C (`023-S`)
+is archived `shipped` AND C's post-merge closure is complete** — meaning its closure PR is
+merged and its `operational-closure` artifact carries a **`done`/`degraded` compaction
+status** (P-020), not `pending`/unset. Until then the Orchestrator's closure-gated routing
+holds `017-S`, and `017-S` stays `queued` and **unclaimed**. Treating gate 9 as a release
+of the whole chain would re-open exactly the eligibility window this atomic merge exists to
+prevent.
 
 **Actor for every gate above: the OPERATOR.** Per §11 and Probe 17, Ship cannot
 execute this PR — its Step 5 topology gate fails closed without an active
@@ -1822,12 +1854,32 @@ Role-Boundary rule about *who authors planning artifacts*, not about who pushes.
 2. **`021-S` is present on `main`** (verified by reading the merged
    `.backlogit/queue/021-S.md` on `main`, not on the branch).
 
-Only then does the Orchestrator route **`021-S`** — and only `021-S`. Probe 14
-confirms `017-S` remains suppressed while `021-S` is `queued` or `active`, and
-becomes eligible only once `021-S` is `archived` with
-`archived_status: shipped` and the index is synced. The live workspace already
-reports exactly this: `ready_set: ["021-S"]`, `downstream_dependents: {"021-S":
-["017-S"]}`, `cycle_detected: false`.
+Only then does the Orchestrator route **`021-S`** — and only `021-S`.
+
+**Rev 7.1 correction — `017-S` is NOT released by `021-S` closing.** The sentence this
+paragraph originally carried ("Probe 14 confirms `017-S` remains suppressed while `021-S`
+is `queued` or `active`, and becomes eligible only once `021-S` is `archived` …") described
+the **stale direct `017-S -> 021-S` edge**, which this re-plan **removed**. Read literally
+it would release `017-S` two shipments early — the exact eligibility window the atomic
+merge exists to prevent.
+
+The live edge set is the chain **`017-S -> 023-S -> 022-S -> 021-S`**
+(`.backlogit/queue/017-S.md` carries `dependencies: [023-S]`), so the engine already
+enforces the correct order; this paragraph was text-only drift. The corrected statement:
+
+* `021-S` archiving `shipped` releases **`022-S`** only.
+* `022-S` archiving `shipped` releases **`023-S`** only.
+* `023-S` (C) archiving `shipped` **and** completing its post-merge closure (P-020
+  compaction status `done`/`degraded`, not `pending`) releases **`017-S`** — see the Gate 9
+  release condition above.
+
+Probe 14's actual finding is retained and unchanged: a `blocks` edge suppresses its
+successor while the predecessor is `queued` **or** `active`, and releases it only after the
+predecessor is `archived` with `archived_status: shipped` and the index is synced. That
+finding is about the **shape** of a `blocks` edge; it is now applied to each link of the
+three-edge chain rather than to a single direct edge. The live workspace reports
+`ready_set: ["021-S"]`, `critical_path: ["021-S","022-S","023-S","017-S"]`,
+`cycle_detected: false`.
 
 Planning artifacts from the sibling branch `chore/stage-task-only-shipment-finalization`
 (commit `2701906`) were brought across by a clean `git cherry-pick`, preserving

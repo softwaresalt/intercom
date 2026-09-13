@@ -1,7 +1,9 @@
 ---
 title: "Decision — Re-plan of the Stage Artifact Branch/PR Policy Gap release unit"
 date: 2026-09-12
-status: decided
+status: superseded-in-part
+superseded_in_part_by: docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md
+superseded_decision: "4.2 — 017-S manifest shape; the live 12-member task-only shape governs"
 agent: Stage
 governs: feature 018-F, shipment 017-S
 supersedes_scope_of: docs/plans/2026-09-11-intercom-go-stage-artifact-branch-pr-policy-gap-plan.md
@@ -72,9 +74,33 @@ deliberated decision.
 
 ## 4. Decisions
 
+> ### ⚠️ SUPERSEDED IN PART — decision 2 no longer describes the live manifest
+>
+> **Decision 2 below (`017-S` manifest becomes `[018-F, 018.008-T]`) is SUPERSEDED and
+> MUST NOT be used as the manifest of record.**
+>
+> | | This decision (stale) | Live / governing |
+> |---|---|---|
+> | `017-S` manifest | `[018-F, 018.008-T]` (fully-covered root, 2 members) | **12-member TASK-ONLY**: `018.008-T`, `018.001-T` + 3 `-ST`, `018.002-T` + 3 `-ST`, `018.003-T` + 2 `-ST` |
+> | Member states | both live | **11 pre-archived, 1 live** (`018.008-T`, `queued`) |
+> | Covering feature | `018-F` **inside** the manifest | `018-F` **outside** the manifest. `backlogit shipment get 017-S` populates **no** `covering_feature`; Ship resolves it through each task's `parent_id` per Step 0.5 item 2 |
+> | Close path | `CASCADE` (fully-covered root) | `TASK_ONLY_FINALIZE` — the verdict the three-shipment bootstrap exists to install |
+>
+> **The live `017-S` 12-member task-only shape governs.** Superseding authorities, in
+> order: the task-only shipment finalization plan
+> (`docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md`), the
+> three-shipment bootstrap deliberation
+> (`docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md`), and
+> plans A/B/C. Read decision 2 as a record of what was decided on 2026-09-12 **before**
+> the task-only route was adopted — not as a current instruction.
+>
+> Decisions **1, 3, 4, 5 and 6 below remain in force.** Only the manifest shape in
+> decision 2 changed. Nothing here alters `018-F`'s reduction to a single executable task,
+> the `019-F`/`018-S` deferral, or the dependency direction.
+
 1. **`018-F` is reduced to one executable task**, `018.008-T` (M / medium), covering P-010,
    the Stage Role Boundary rows, and the new Step 1.9 branch gate.
-2. **`017-S` manifest becomes `[018-F, 018.008-T]`.**
+2. **`017-S` manifest becomes `[018-F, 018.008-T]`.** — **SUPERSEDED, see the note above.**
 3. **New feature `019-F` + new shipment `018-S`** carry the deferred persistence route and the
    mechanical enforcement platform (nine tasks).
 4. **Dependency direction is future → current.** `019.001-T`, `019.007-T`, `019.009-T` block on
