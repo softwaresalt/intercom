@@ -32,7 +32,7 @@ chain has since been **simplified to A alone** per the rev-8 banner above.
 
 | Successor | Surface | Plan | Current status |
 |---|---|---|---|
-| **A** `021-S` / `022-F` / `022.001-T` | `_ship.agent.md` + 1 Go test | `docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md` | **CURRENT — sole prerequisite** (plan rev 3) |
+| **A** `021-S` / `022-F` / `022.001-T` | `_ship.agent.md` + 1 Go test | `docs/plans/2026-09-13-intercom-go-ship-feature-completion-decided-plan.md` | **CURRENT — sole prerequisite** (plan rev 3) |
 | **B** `022-S` / `023-F` / `023.001-T` | `workflow-policies.md` P-015 + 1 Go test | `docs/plans/2026-09-12-intercom-go-p015-taskonly-authorization-plan.md` | **DEFERRED** — blocked; `022-S` archived |
 | **C** `023-S` / `024-F` / `024.001-T` | `shipment-reconcile/SKILL.md` + 1 Go test | `docs/plans/2026-09-12-intercom-go-taskonly-finalize-skill-implementation-plan.md` | **DEFERRED** — blocked; `023-S` archived |
 

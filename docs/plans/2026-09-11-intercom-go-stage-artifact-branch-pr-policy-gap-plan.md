@@ -111,7 +111,7 @@ its descendants — `018.008-T`, the three pre-archived legacy tasks `018.001-T`
 Governing decision:
 `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
 (`SIMPLIFICATION_VALID`). Governing plan for the enabling shipment:
-`docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md`.
+`docs/plans/2026-09-13-intercom-go-ship-feature-completion-decided-plan.md`.
 
 **Why the rev-18 blocker no longer applies.** Rev 18 concluded that a manifest containing
 `018-F` must fail Step 6 pre-mode, because pre-mode uses `expected_status: done` over every
@@ -209,7 +209,7 @@ merges normally, then pauses at Ship Step 6 closure for operator disposition."*
 **That conclusion is superseded.** It was true only under the assumption that Ship's contract
 could not be amended. A Stage planning cycle **did** remediate it, in the only way this subsection
 itself identified as valid: by planning a **separate, reviewed release unit** (`021-S`, plan
-`docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md`) that amends
+`docs/plans/2026-09-13-intercom-go-ship-feature-completion-decided-plan.md`) that amends
 `.github/agents/_ship.agent.md` to add Step 6.1(a1) and the narrow feature-completion grant. That
 is not a Stage-authored permission source — the objection this subsection correctly raises — it is
 an amendment to Ship's own Role Boundary table, which is the authoritative permission set.
@@ -628,7 +628,7 @@ does not create a `current → future` dependency.
 | No automated persistence route until Strand A lands | **Accepted, operator-only.** Stage halts at `STAGE_ARTIFACTS_UNCOMMITTED`; the Orchestrator must halt and must not run Step 1.5 item 3; only the operator may commit, push, open/approve the merge-commit staging PR and re-verify. **The dark run cannot finish autonomously past that checkpoint while the operator is AFK.** Tracked by `019-F`. |
 | Deferred work cannot be scheduled until the harness execution model is decided | **Accepted.** `021.001-T` is the decision; both deferred features are `blocked` with no shipment, so nothing is claimable. |
 | `SAFE_CLOSE` shipment-record close is tool-blocked (backlogit exit 9) | **P0, pre-existing, OUT OF SCOPE AND OFF-ROUTE (rev 20)** — see §R16.3.3. `017-S`'s operative 13-entry fully-covered root classifies **`CASCADE`**, so safe-close step 8 is never reached and there is **no pause at Ship Step 6 closure**. The rev-18/rev-19 "pauses for operator disposition" disposition is **WITHDRAWN**. The conflict remains recorded as a stash entry against `shipment-reconcile` step 8 / P-015 / backlogit, and would only resurface for a future `SAFE_CLOSE`-classified shipment. |
-| **(rev 20)** `017-S` closure depends on shipment **A** (`021-S`) landing Ship Step 6.1(a1) | **Accepted, and enforced by topology.** `017-S.dependencies == [021-S]` exactly, so `017-S` is not eligible until `021-S` is archived shipped. If A is re-planned, reverted or abandoned, `017-S` must be **held by Stage** and either restored to a task-only shape or re-planned — it must **not** be re-routed on the current contract once a1 is gone. Plan A `docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md` §10.2 states this obligation normatively. **Current status: Plan A's `plan-review` gate returned `decision: FAIL` (attempt 1), so `021-S` is NOT claimable and `017-S` remains blocked.** |
+| **(rev 20)** `017-S` closure depends on shipment **A** (`021-S`) landing Ship Step 6.1(a1) | **Accepted, and enforced by topology.** `017-S.dependencies == [021-S]` exactly, so `017-S` is not eligible until `021-S` is archived shipped. If A is re-planned, reverted or abandoned, `017-S` must be **held by Stage** and either restored to a task-only shape or re-planned — it must **not** be re-routed on the current contract once a1 is gone. Plan A `docs/plans/2026-09-13-intercom-go-ship-feature-completion-decided-plan.md` §10.2 states this obligation normatively. **Current status: Plan A's `plan-review` gate returned `decision: FAIL` (attempt 1), so `021-S` is NOT claimable and `017-S` remains blocked.** |
 
 Neither capability risk is a regression: both describe capability **not yet added**, not protection
 removed. The closure blocker is **not** a regression either — it predates this unit and affects

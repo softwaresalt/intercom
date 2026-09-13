@@ -1,9 +1,11 @@
 ---
 title: "Plan — Ship covering-feature completion and close-path delegation (Foundation)"
 date: 2026-09-12
-status: planned
+status: superseded
 agent: Stage
 revision: 7
+superseded_by: docs/plans/2026-09-13-intercom-go-ship-feature-completion-decided-plan.md
+superseded_date: 2026-09-13
 feature: 022-F
 task: 022.001-T
 shipment: 021-S
@@ -13,6 +15,36 @@ umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finaliza
 ---
 
 # Plan — Ship covering-feature completion and close-path delegation (Foundation)
+
+> ## ⚠️ SUPERSEDED — ARCHIVED HISTORY, NON-GOVERNING
+>
+> **This file is retained verbatim for audit and traceability ONLY. Nothing in it governs
+> execution.** It accumulated seven revisions and four plan-review attempts in a single
+> append-only artifact, which is itself the defect that made it non-convergent: later
+> reviewers repeatedly treated superseded prose as current contract.
+>
+> **The SOLE GOVERNING ARTIFACT is:**
+> **`docs/plans/2026-09-13-intercom-go-ship-feature-completion-decided-plan.md`**
+>
+> | | |
+> |---|---|
+> | **Superseded on** | 2026-09-13 |
+> | **Last revision here** | rev 7 |
+> | **Last gate recorded here** | attempt 4 — `decision: FAIL` (0 P0, 9 P1: `H-1`…`H-9`) |
+> | **Successor revision** | rev 8 (decided plan) |
+> | **Feature / task / shipment** | `022-F` / `022.001-T` / `021-S` (unchanged) |
+> | **Releases** | `017-S` (unchanged) |
+> | **Evidence** | Probe 25 — unchanged, still committed, still PASSing |
+>
+> **Where this file and the decided plan disagree, the DECIDED PLAN GOVERNS.** Do not apply
+> any clause wording, acceptance criterion, recovery path or review finding from this file.
+> The decided plan carries the final executable contract; every `E-*` and `H-*` finding
+> recorded below was either resolved into that contract or is obsolete because the construct
+> it described no longer exists.
+>
+> **Label mapping**: clause sites `C1`–`C8` here are **`CS1`–`CS8`** in the decided plan
+> (renamed to end the collision with the Probe-25 criterion tokens `C1…C8`).
+
 
 > **Requires plan hardening**: **yes — applied in rev 2, re-affirmed in rev 3, re-stated in
 > rev 6** (see `## Plan Hardening`, including **Hardening 9a**).
