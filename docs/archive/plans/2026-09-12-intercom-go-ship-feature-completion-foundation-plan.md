@@ -31,13 +31,24 @@ umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finaliza
 > | **Superseded on** | 2026-09-13 |
 > | **Last revision here** | rev 7 |
 > | **Last gate recorded here** | attempt 4 — `decision: FAIL` (0 P0, 9 P1: `H-1`…`H-9`) |
-> | **Successor revision** | rev 8 (decided plan) |
+> | **Successor revision** | rev 9 (decided plan) |
+> | **Next gate (true lineage)** | **attempt 5**, run against the decided plan — the counter continues, it does **not** restart |
+> | **Where `H-1`…`H-9` are DISPOSED** | decided plan **§13.2** — carried verbatim, each with a disposition and evidence |
 > | **Feature / task / shipment** | `022-F` / `022.001-T` / `021-S` (unchanged) |
 > | **Releases** | `017-S` (unchanged) |
 > | **Evidence** | Probe 25 — unchanged, still committed, still PASSing |
 >
 > **Where this file and the decided plan disagree, the DECIDED PLAN GOVERNS.** Do not apply
-> any clause wording, acceptance criterion, recovery path or review finding from this file.
+> any clause wording, acceptance criterion or recovery path from this file.
+>
+> **REVIEW FINDINGS ARE THE EXPLICIT EXCEPTION.** The earlier form of this banner said not to
+> apply *review findings* from this file either. That was **wrong and is withdrawn**: it let
+> nine unremediated P1 findings become invisible by relocation rather than remediation.
+> **Superseding an artifact does not discharge findings raised against it.** `H-1`…`H-9` are
+> **carried into decided-plan §13.2** and disposed there individually. This file remains the
+> **authoritative record of the finding WORDING and the review history**; the decided plan is
+> the authoritative record of their **disposition**. Read them together, and never treat this
+> file's archival as a closure event.
 > The decided plan carries the final executable contract; every `E-*` and `H-*` finding
 > recorded below was either resolved into that contract or is obsolete because the construct
 > it described no longer exists.

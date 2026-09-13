@@ -3,7 +3,7 @@ title: "Decided Plan — Ship covering-feature completion and close-path delegat
 date: 2026-09-13
 status: planned
 agent: Stage
-revision: 8
+revision: 9
 feature: 022-F
 task: 022.001-T
 shipment: 021-S
@@ -18,6 +18,11 @@ evidence: docs/plans/evidence/2026-09-12-task-only-shipment-finalization/probe25
 > **This is the SOLE GOVERNING ARTIFACT for `021-S`.** It contains only the final executable
 > contract. All review history, superseded revisions and withdrawn language live in the
 > archived full plan named in `archived_full_plan:` and are **non-governing**.
+>
+> **It inherits the archive's plan-review LINEAGE in full.** Supersession transfers the
+> contract *and* its review history: the pending gate here is **true-lineage attempt 5**, and
+> the attempt-4 findings `H-1`…`H-9` are **carried and disposed in §13.2**. Superseding an
+> artifact never discharges findings raised against it.
 
 ## 1. Objective
 
@@ -169,8 +174,8 @@ Apply by **anchor text**, never by line ordinal.
 | **CS4** | 802–823 | **Delete the re-derived classification prose.** Replace with generic delegation |
 | **CS5** | 821–823 | Remove the *"in place of the safe-close sequence"* single-exception framing (subsumed by CS4) |
 | **CS6** | new bullet | **NEW** delegation bullet: Ship invokes whichever close path the verdict names, and no path absent from the verdict |
-| **CS7** | 255–256 | **Pointer-only delegation.** Replace the queue-only summary with a pointer to the installed `mode: pre` contract at the `expected_status` already named one line above; continue **only** on an authoritative `PROCEED`. **Preserve** the orphan scan, the `record-consistent` conjunct, and the adjacent `Scope note (139-F/139.001-T)` |
-| **CS8** | 775–777 | Same pointer-only delegation at `expected_status: done`. **Preserve** the single-writer lock clause, the orphan scan and the `record-consistent` conjunct |
+| **CS7** | 255–256 | **Pointer-only delegation.** Replace the queue-only summary with a pointer to the installed `mode: pre` contract at the `expected_status` already named one line above; continue **only** on an authoritative `PROCEED`. **PRESERVE** the orphan scan (already present) and the adjacent `Scope note (139-F/139.001-T)`; **ADD** the `record-consistent` conjunct (**not** currently in the file) |
+| **CS8** | 775–777 | Same pointer-only delegation at `expected_status: done`. **PRESERVE** the single-writer lock clause and the orphan scan (both already present); **ADD** the `record-consistent` conjunct |
 | **ADD-1** | 38 | Role Boundary row — the §3.2 narrow grant |
 | **ADD-2** | new | **Step 6.1(a1)** — the covering-feature completion gate (§5) |
 
@@ -255,22 +260,31 @@ One table-driven function, ≤4 helpers, **stdlib assertions only** (`testing`, 
 
 ### 6.1 Pinned literals (normative — all single-line, CRLF-safe)
 
-| Row | MUST BE ABSENT (exact, occurs once) | MUST BE PRESENT (absent today) |
-|---|---|---|
-| 14 | ``every manifest item is present in `.backlogit/queue/` with the`` (L255) | ``defers every per-item status decision to that skill's `mode: pre` classification`` |
-| 15 | ``queue with `status: done`, and scans for orphan items.`` (L777) | ``defers every per-item status decision to the `mode: pre` classification at `expected_status: done``` |
-| 9 | ``qualification is never per-member, and no feature ID is ever special-cased.`` (L819) | ``HALT on any result token the installed classification did not name`` |
-| 10 | ``<shipment_id> --status shipped`` (L790) | ``the authoritative close sequence defined by the `shipment-reconcile` skill`` |
-| 7 | ``it is fully covered (every one of its children,`` (L810) | — (ABSENT-only) |
-| 16 | — | ``evaluated before `n` is computed`` **and** ``halts with no feature mutation`` |
-| 8 | ``TASK_ONLY_FINALIZE`` | — (ABSENT-only) |
-| 17 | — | ``scans for orphan items`` (survival; occurs twice — L256, L777) |
-| 18 | — | ``Scope note (139-F/139.001-T)`` (survival) |
+| Row | Class | MUST BE ABSENT | MUST BE PRESENT |
+|---|---|---|---|
+| 14 | transition | ``every manifest item is present in `.backlogit/queue/` with the`` (L255, ×1) | ``defers every per-item status decision to that skill's `mode: pre` classification`` (×0 today) |
+| 15 | transition | ``queue with `status: done`, and scans for orphan items.`` (L777, ×1) | ``defers every per-item status decision to the `mode: pre` classification at `expected_status: done``` (×0 today) |
+| 9 | transition | ``qualification is never per-member, and no feature ID is ever special-cased.`` (L819, ×1) | ``HALT on any result token the installed classification did not name`` (×0 today) |
+| 10 | transition | ``<shipment_id> --status shipped`` (L790, ×1) | ``the authoritative close sequence defined by the `shipment-reconcile` skill`` (×0 today) |
+| 7 | transition | ``it is fully covered (every one of its children,`` (L810, ×1) | — (ABSENT-only) |
+| 16 | transition | — | ``evaluated before `n` is computed`` **and** ``halts with no feature mutation`` (both ×0 today) |
+| 8 | **guard** (regression) | ``TASK_ONLY_FINALIZE`` — **already ×0; must stay ×0** | — |
+| 17 | **guard** (preservation) | — | ``scans for orphan items`` — **already ×2 (L256, L777); must stay ≥2** |
+| 18 | **guard** (preservation) | — | ``Scope note (139-F/139.001-T)`` — **already ×1 (L259); must stay ×1** |
 
-**Measured at the current tree**: all ABSENT literals occur **exactly once**; all PRESENT
-literals occur **zero** times, so every `compound +/−` row is a genuine **red → green** and
-none can be vacuously green at H0. Row 3's `a1` anchor is absent pre-implementation **by
-design** — that absence is the H0 readiness guard.
+**Measured at the current tree — the rows fall into TWO classes, and only one is red → green:**
+
+| Class | Rows | Current counts | H0 state |
+|---|---|---|---|
+| **Transition rows** — must change | **9, 10, 14, 15** (`compound +/−`); **7** (ABSENT-only); **16** (`compound ++`) | 9/10/14/15: ABSENT = **1** each, PRESENT = **0** each · 7: ABSENT = **1** · 16: both PRESENT needles = **0** | **RED.** None can be vacuously green |
+| **Guard rows** — must NOT change | **8** (regression), **17** (preservation), **18** (preservation), plus the `018.` decoupling guard | 8: `TASK_ONLY_FINALIZE` = **0** · 17: `scans for orphan items` = **2** (L256, L777) · 18: `Scope note (139-F/139.001-T)` = **1** (L259) · `018.` = **0** | **GREEN today, by design.** They assert a property that already holds and must survive |
+
+**The guard rows are green at H0 and that is correct** — their purpose is to fail if the
+implementation *breaks* something, not to record a transition. Row 3's `a1` anchor is absent
+pre-implementation **by design**; that absence is the H0 readiness guard.
+
+**Only the transition rows constitute the red → green evidence** for AC-3/AC-8. Do not read
+the guard rows as proof the contract changed.
 
 **Negative decoupling guard**: the test also asserts `_ship.agent.md` contains **no `018.`
 literal**, so the release-instance allowlist of §3.3 cannot silently migrate into the global
@@ -344,26 +358,39 @@ descendant set is exactly `{022.001-T}`; the manifest contains nothing else).
 | Step | Session | Action |
 |---|---|---|
 | 0a | **Stage** | Probe 25 authored, executed, committed. **DISCHARGED.** `021-S` not claimable until PASSing |
-| 1 | **S1** | Verify on `main`; pre-claim topology gate; **claim `021-S`**; `022.001-T -> active`; `022-F` left `active` |
-| 2 | S1 | H0 red → implement → H1 green |
+| 1 | **S1** | **Step 0.5 Shipment Intake.** Verify on `main`; **P-011** branch-before-mutation + **P-016** single-worktree check; pre-claim topology gate; **claim `021-S`** |
+| **1a** | S1 | **POST-CLAIM CONDITION — `022-F` must be `active` (checked, not assumed).** Re-read `022-F` after the claim and require its live status to be **exactly `active`**. **Any other value ⇒ HALT** and return to Stage. **Ship is granted NO authority to transition a feature `queued -> active`** — §3.2 grants exactly one transition, `active -> done`. *(Live state at planning time is `queued`; the shipment claim is what is expected to activate it. If it does not, that is a planning-state error only Stage can reconcile.)* |
+| **1b** | S1 | **Step 2 Harness Generation (P-002 / P-004).** The **harness-architect** produces the 18-row harness: `go vet ./...` exits 0, `go test ./...` exits non-zero with expected failure markers ⇒ **H0 RED CONFIRMED** ⇒ `harness-ready` applied to `022.001-T`. **This precedes the TASK claim** — P-002 permits claiming a task only after red-phase confirmation |
+| **1c** | S1 | **Step 3 Build Ready Queue** — filtered to tasks carrying `harness-ready` |
+| **1d** | S1 | **Step 4.1 Claim Task** — `022.001-T -> active` |
+| 2 | S1 | **Step 4.2 implement** → apply ADD-1, ADD-2 and **CS1–CS8** → **H1 green** |
 | 3 | S1 | Quality gates; review gate |
 | 4 | S1 | Complete Task — commit the implementation, then **`022.001-T -> done`**, then **commit the resulting `.backlogit/` change** and verify a clean worktree. **Both commits must be in the PR that merges at step 5** — otherwise merged `main` still shows the task `queued` and a1 halts at step 13 |
 | 5 | S1 | PR lifecycle — gates, build, push, PR, **P-018 Copilot engagement**, operator approval, **merge** |
 | 6 | S1 | Merge Confirmation Gate — `gh pr view` `MERGED`; `git fetch origin main`; `git merge-base --is-ancestor {merge_sha} origin/main` |
 | 7 | S1 | Reload merged `main`; detect the Role Boundary change; per §3.6 the new authority is **not** available to this session |
 | 8 | S1 | **Write checkpoint** (§9.1) and **END**. Record the emitted filename |
-| 9 | **S2** | **Fresh session.** Full checkpoint recovery (§9.1) |
-| 10 | S2 | Verify merge SHA is an ancestor of `origin/main`; validate the same active shipment |
-| 11 | S2 | Post-Merge Branch Protocol — `git checkout main`, pull, `git checkout -b post-merge/022-ship-feature-completion` **before** any backlog mutation |
+| 9 | **S2** | **Fresh session.** §9.1 items **1–6** — enumerate, anomaly gate, MATCH-set filter, restore, Engram prune/gate, **resume**. **All reads and in-memory work; NO mutation.** The **resolve is deferred to step 11a** |
+| 10 | S2 | Verify merge SHA is an ancestor of `origin/main`; validate the same active shipment. **Reads only** |
+| 11 | S2 | **Post-Merge Branch Protocol (P-011)** — `git checkout main`, pull, `git checkout -b post-merge/022-ship-feature-completion`. **This PRECEDES EVERY S2 MUTATION**, including the checkpoint resolve at 11a. `main` is never the active branch for any mutation |
+| **11a** | S2 | **Resolve the checkpoint** (§9.1 item 7) — the **first** S2 mutation, performed **on the closure branch**, and only after the resume at step 9 was confirmed successful |
 | 12 | S2 | `--phase lifecycle` topology gate — **while `021-S` is still `active`**; never re-run after the close |
 | **12a** | S2 | **READ-ONLY re-verification** of Stage's committed evidence (§9.2). FAIL ⇒ HALT, `021-S` stays `active`, no a1 mutation |
 | 13 | S2 | **Step 6.1(a1)** — §5 **S4**. `022.001-T` declares `done` (archive-located = completed, not pre-archived) ⇒ all five conditions hold ⇒ `022-F active -> done` via `backlogit_move_item` |
+| **13a** | S2 | **PRE-CASCADE BASELINE COMMIT (mandatory).** Commit a1's `.backlogit/` mutation **on the existing closure branch** — no new branch, no new worktree. **`{pre_cascade_sha}` := this commit.** Then satisfy §10.3 step 1 **against this commit**: verify `git status --porcelain -- .backlogit/queue/ .backlogit/archive/` is **empty**, and capture `{pre_paths}` from that clean baseline. **Without 13a the trees are dirty from step 13 and the cascade MUST NOT be invoked** |
 | 14 | S2 | **Pre-mode**, `expected_status: done`. **Requires an authoritative `PROCEED`**; anything else HALTs |
-| 15 | S2 | Classification **must return `CASCADE`** (§3.5) ⇒ close via the **pre-existing** cascade op; P-007 archive-integrity verify; post-mode; commit `.backlogit/` on the closure branch |
+| 15 | S2 | Classification **must return `CASCADE`** (§3.5) ⇒ close via the **pre-existing** cascade op; P-007 archive-integrity verify; post-mode. **The cascade output is committed ONLY after every postcheck passes** (§10.3) |
 | 16 | S2 | Operational closure → `docs/closure/`; P-020 compact-context — on the closure branch, before the closure PR is pushed |
 | 17 | S2 | Sync — **MCP `backlogit_sync_index` first**, CLI `backlogit sync` as declared fallback — then push, closure PR, **P-018 Copilot engagement**, local review, operator approval, merge |
 | 18 | S2 | Return to `main`; pull |
 | 19 | — | Orchestrator routes **`017-S`** |
+
+> **Step ordering is derived from the installed Ship contract, not invented.** `_ship.agent.md`
+> orders **Step 0.5 Shipment Intake** → **Step 1 Pre-Flight** → **Step 2 Harness Generation
+> (P-002/P-004)** → **Step 3 Build Ready Queue** → **Step 4.1 Claim Task**. The **shipment**
+> claim therefore correctly precedes harness generation; only the **task** claim must follow
+> red-phase confirmation. Steps 1 → 1d above reproduce that order exactly.
+
 
 **P-018 engagement is mandatory before BOTH merges** (steps 5 and 17) and the window closes
 permanently at merge. Use the workspace-verified `[bot]`-suffixed REST fallback; judge blocking
@@ -378,10 +405,21 @@ comments". See `docs/compound/2026-09-06-requesting-copilot-review-non-collabora
 in the handoff. **S2 carries both as the expected identity.**
 
 1. **Enumerate ALL** via `backlogit_list_checkpoints` — **pass NO parameters**. **Do not pass
-   `consumer_id`, and do not use the CLI `--agent` flag: both are FILTERS.** Measured:
-   `consumer_id=ship` → `total=1`; `--agent ship` → 1; `--agent stage` → 14; unfiltered → 15.
-   A filtered enumeration hides records and silently disables the anomaly gate and the
-   leftover warning below.
+   `consumer_id`, and do not use the CLI `--agent` flag: both are FILTERS.** The tool manifest
+   describes `consumer_id` as *"Filter by consumer/agent ID"*. A filtered enumeration hides
+   records and silently disables the anomaly gate and the leftover warning below.
+
+   **The durable rule is "pass no parameters"; the counts below are a dated observation, not
+   an invariant.** Checkpoint totals grow every session, so no absolute count may be asserted
+   as a live expectation or used as an identity.
+
+   | Observed at | unfiltered | `--agent ship` | `--agent stage` |
+   |---|---|---|---|
+   | 2026-09-13 (attempt-4 review) | 15 | 1 | 14 |
+   | 2026-09-13 (attempt-5 remediation, re-measured) | **17** | **1** | **16** |
+
+   The filter behaviour — *strictly fewer records returned than unfiltered* — is the invariant;
+   **an executor MUST re-derive it at run time and MUST NOT compare against either row.**
 2. **Anomaly gate FIRST**, over the full enumeration, before any filtering or counting.
    The signal is the **top-level counters** — there is no per-summary quarantine flag:
    `needs_quarantine > 0`, `quarantined > 0`, or `total != checkpoints.length` ⇒ **FAIL
@@ -395,9 +433,15 @@ in the handoff. **S2 carries both as the expected identity.**
 5. **Non-matching active records are a WARNING**, surfaced in the handoff report and otherwise
    ignored. They never strand a valid handoff, and S2 **never** resolves, prunes or touches
    them — least of all a `stage`-owned record.
-6. **Restore → Engram prune/gate → resume**, then **resolve only after a confirmed successful
-   resume**, for that one checkpoint. Engram unreachable ⇒ **FAIL CLOSED**, no prune, no
-   resume. A file-based prune degradation is not permitted.
+6. **Restore → Engram prune/gate → resume.** Engram unreachable ⇒ **FAIL CLOSED**, no prune,
+   no resume. A file-based prune degradation is not permitted. **Everything through this item
+   is reads and in-memory work — no mutation.**
+7. **Resolve — deferred until AFTER the closure branch exists (P-011).**
+   `backlogit_resolve_checkpoint` is a **backlog mutation**, so it runs at **§9 step 11a**,
+   **on the closure branch**, never on `main` and never before §9 step 11 creates that branch.
+   It still runs **only after a confirmed successful resume** (item 6), for **that one
+   checkpoint only** — the resume cursor and checkpoint identity semantics are unchanged; only
+   the *position* of the write moved.
 
 **Checkpoint payload**: `schema_version: 1`, `agent: ship`, `session_id`, `phase`,
 `resume_hint` naming `021-S`, `022-F`, `022.001-T` and the merge SHA; domain data under
@@ -425,6 +469,14 @@ in the handoff. **S2 carries both as the expected identity.**
    `PRE_ARCHIVED_COUNT == PREMODE_PRE_ARCHIVED`; `TOPOLOGY_MEMBERS == MANIFEST_COUNT`;
    `FAILED_CRITERIA` agrees with the per-criterion tokens. *(Current: `2+11+0+0+0 == 13`,
    `11 == 11`, `13 == 13`, `0`.)*
+
+   > **Scope of check 6 (explicit, so it is not read as a taxonomy claim).** These
+   > `PREMODE_*` names are **fields Stage's own Probe-25 transcript emits**, and §8 records
+   > that criteria 2 and 3 are **PowerShell-derived simulations**. Check 6 therefore asserts
+   > only that **Stage's committed evidence file is internally self-consistent**. It is
+   > **not** an assertion about how the installed pre-mode allocates any live record, and
+   > nothing in this plan may be read as claiming the installed pre-mode's internal taxonomy
+   > — per §4, this plan depends only on the **outcome** `PROCEED`.
 
 ## 10. Recovery
 
@@ -479,16 +531,18 @@ The installed cascade verifies **after** it mutates. **Every** post-CASCADE fail
 
 **Obligation, in order:**
 
-1. **Capture is a precondition, not a reaction.** Before the cascade runs, S2 must establish
-   **all three** of the following. **If any is unavailable, do not invoke the cascade.**
-   a. **Clean trees** — `git status --porcelain -- .backlogit/queue/ .backlogit/archive/`
-      returns **empty** (no modified and no untracked paths). A dirty baseline makes
-      "what the cascade created" undecidable.
-   b. **A real pre-cascade commit** — commit the closure branch so the pre-cascade state is
-      restorable: `{pre_cascade_sha}`.
-   c. **A complete path inventory** — record the full sorted path list of both trees,
-      `{pre_paths}`, alongside the skill's in-memory Step 0(b) snapshot of declared `status`,
-      `parent_id` and location for every watched record.
+1. **Capture is a precondition, not a reaction — and it is §9 step 13a.** The baseline is
+   established by the **named pre-cascade baseline commit at §9 step 13a**, on the **existing**
+   closure branch. **If any of the following is unavailable, do not invoke the cascade.**
+   a. **`{pre_cascade_sha}`** — the step-13a commit. It exists specifically because §9 step 13
+      (a1's `active -> done`) dirties `.backlogit/`, so **`HEAD` before 13a is NOT the
+      pre-cascade state** and restoring from it would discard a1's valid result.
+   b. **Clean trees, verified against that commit** —
+      `git status --porcelain -- .backlogit/queue/ .backlogit/archive/` returns **empty** at
+      `{pre_cascade_sha}`. A dirty baseline makes "what the cascade created" undecidable.
+   c. **A complete path inventory `{pre_paths}`** — the full sorted path list of both trees as
+      of `{pre_cascade_sha}`, captured alongside the skill's in-memory Step 0(b) snapshot of
+      declared `status`, `parent_id` and location for every watched record.
 2. **Restore**, in this order:
    * `git restore --source {pre_cascade_sha} -- .backlogit/queue/ .backlogit/archive/`
      — restores **tracked** content; and
@@ -506,6 +560,25 @@ The installed cascade verifies **after** it mutates. **Every** post-CASCADE fail
 
    **An unverified restore is not a restore.**
 4. **HALT.** No retry, no second close path, no re-invocation of the cascade.
+
+> **The cascade result is NEVER committed before its postchecks pass (F6 — bounded state
+> machine).** The authorized flow is strictly:
+>
+> ```text
+> 13a commit baseline  ->  {pre_cascade_sha}, clean trees, {pre_paths}
+> 15  invoke cascade   ->  mutates the WORKTREE only
+> 15  postchecks       ->  returned_ids / two-set / parent_id / P-007 / post-mode
+>        pass  -> commit the cascade result (first commit after 13a)
+>        fail  -> restore (step 2) -> verify (step 3) -> HALT. NOTHING is committed
+> ```
+>
+> **A committed cascade awaiting postchecks is therefore unreachable in this plan**, which is
+> why §10.3 is worktree-level and sufficient. P-015's `git revert` remedy addresses the
+> general case where a cascade was already committed; **on this route that state cannot
+> arise**, and §10.4's `git revert` is reserved for the *merge*, not the cascade.
+> **If an executor ever finds the cascade result already committed before its postchecks
+> completed, that is an out-of-contract state: HALT immediately, do not restore, and return to
+> the operator** — the §10.3 worktree restore is not valid against committed history.
 
 **If the restore cannot be verified**, HALT with the backlog flagged
 **operator-reconcile-required**.
@@ -577,8 +650,10 @@ Operator authorization timestamp for both: **`2026-09-13T11:35:43-07:00`**.
    full; archive placement applies only after declared `status: archived`.
 7. **AC-7** The §3.3 exemption is triggered only by declared `status: archived`, applies only
    to the 11 enumerated IDs, requires all five gates, and lives **only in this plan**.
-8. **AC-8** CS7/CS8 are pointer-only, preserve lock / orphan scan / `record-consistent` /
-   `Scope note`, and state no per-item predicate. Rows 14/15/17/18 pass.
+8. **AC-8** CS7/CS8 are pointer-only; they **preserve** the single-writer lock, the orphan
+   scan and the `Scope note` (all three already present in the file), **add** the
+   `record-consistent` conjunct (not previously present), and state no per-item predicate.
+   Rows 14/15/17/18 pass.
 9. **AC-9** a1 runs **before** pre-mode and is self-sufficient; all evaluation (S0–S3, S5) is
    read-only and its **only** write is S4's single `active -> done` transition; the S0–S5
    selector is total and disjoint. Row 16 passes.
@@ -600,22 +675,128 @@ Operator authorization timestamp for both: **`2026-09-13T11:35:43-07:00`**.
 17. **AC-17** The lifecycle order of §9 holds; the `--phase lifecycle` gate never runs after
     the archive.
 18. **AC-18** P-018 engagement precedes **both** merges.
+19. **AC-19** **(F3)** After claiming `021-S`, `022-F`'s live status is **re-read** and
+    required to be **exactly `active`**; any other value **HALTs**. Ship performs no
+    `queued -> active` transition on a feature.
+20. **AC-20** **(F4, P-002/P-004)** The **task** claim `022.001-T -> active` occurs **after**
+    harness-architect has confirmed the red phase and applied `harness-ready` — `go vet ./...`
+    exits 0 and `go test ./...` fails with expected markers. *(The **shipment** claim correctly
+    precedes harness generation, per the installed Step 0.5 → Step 2 → Step 4.1 order.)*
+21. **AC-21** **(F5, P-011)** The post-merge closure branch exists **before any S2 mutation**,
+    including `backlogit_resolve_checkpoint`, which runs at §9 step 11a on that branch. No S2
+    mutation occurs on `main`. Resume-before-resolve semantics are unchanged.
+22. **AC-22** **(F1)** §9 step **13a** commits a1's mutation on the **existing** closure
+    branch, designates that commit `{pre_cascade_sha}`, and verifies clean
+    `.backlogit/queue/` + `.backlogit/archive/` trees and captures `{pre_paths}` **against that
+    commit**, before pre-mode or the cascade runs. No second branch and no second worktree is
+    created. §10.3's restore uses **exactly** this baseline.
+23. **AC-23** **(F6)** The cascade result is **not committed until every postcheck passes**; a
+    committed-cascade-awaiting-postchecks state is unreachable, and if observed is an
+    out-of-contract HALT to the operator rather than a §10.3 restore.
 
 ## 13. Gate state
 
 ```text
-plan-review-attempt: 1
+plan-review-attempt: 5
 dispatch_mode: multi-agent
 decision: PENDING
 ```
 
+### 13.1 Review-lineage correction (TRUE LINEAGE — do not renumber)
+
+**This gate is TRUE-LINEAGE ATTEMPT 5.** The counter above is corrected, not reset.
+
+When the append-only foundation plan was compacted into this decided plan, the
+`plan-review-attempt` marker **restarted at 1** and a subsequent edit bumped it to **2**. That
+was a **counter reset across an artifact rename**, not a new lineage: the plan-review history
+follows the *plan*, not the *filename*. This plan declares itself the **sole governing
+artifact** and makes the archive non-governing, so it inherits the archive's review lineage
+**in full**.
+
+| True attempt | Revision | Artifact | Decision |
+|---|---|---|---|
+| 1 | rev 4 | foundation plan (now archived) | **FAIL** |
+| 2 | rev 5 | foundation plan | **FAIL** |
+| 3 | rev 6 | foundation plan | **FAIL** — re-entry cycles exhausted, **ESCALATED** |
+| 4 | rev 7 | foundation plan | **FAIL** — operator-authorized exceptional cycle, budget **SPENT** (`H-1`…`H-9`) |
+| **5** | **rev 8** (this plan) | **this decided plan** | **PENDING** — this gate |
+
+The archived plan's markers read `1, 2, 3, 3, 4` (attempt 3 appears twice: the gate marker and
+its remediation-disposition echo). The two values `1` and `2` that appeared in this file were
+**never independent attempts** and are superseded by the corrected counter above.
+
+**Authorization for this attempt.** Attempt 5 runs under an **explicit operator
+authorization** naming it as true-lineage attempt 5 and authorizing the carry-and-remediate of
+`H-1`…`H-9`, the counter correction and the backlog resynchronization. **This authorization
+covers exactly ONE exceptional attempt.** A further remediation-and-review cycle is **not**
+self-authorized: if this gate returns FAIL, Stage halts and returns to the operator.
+
+### 13.2 Attempt-4 findings `H-1`…`H-9` — CARRIED and DISPOSED
+
+Attempt 4 returned **0 P0 / 9 P1** against rev 7. Those findings were raised against the
+foundation plan, which this plan supersedes; **relocation is not remediation**, so all nine are
+**carried here verbatim** with an auditable disposition. Wording is the attempt-4 review's own.
+
+Dispositions are one of: **REMEDIATED-BY-REWRITE** (the defective text no longer exists in the
+governing contract — verified by measurement, not assumed), **REMEDIATED-THIS-PASS** (the
+defect survived the rewrite and was corrected now), or **CARRIED-OPEN**.
+
+| Ref | Finding (attempt-4 wording, abridged to the defect) | Disposition | Evidence / landing site |
+|---|---|---|---|
+| **H-1** | **Claimed-but-unapplied.** The rev-7 header asserted the literal `## Plan Review — AUTHORITATIVE GATE STATE` heading was *"inserted before the operative marker"* — **it did not exist at review time**. Three live cross-references dangled, including one **inside a destructive-action approval record**. | **REMEDIATED-THIS-PASS** | The heading does **not** exist in this plan (measured: **0** occurrences) — the operative marker lives in **§13** and nowhere else. The dangling references survived in the **backlog records** (`021-S` cited the non-existent heading inside `PA-021-CASCADE`; `022-F` cited it as "OPERATIVE MARKER LOCATION"); both were repointed to **§13** in the same commit as this revision. |
+| **H-2** | **Backlog split-brain, FOURTH consecutive recurrence (`A-14` → `B-7` → `E-9` → `H-2`).** Records carried superseded revision/attempt state and no `PA-*` cross-reference. The standing process fix mandates the resync travel in the **same commit** as the revision bump — and it did not. | **REMEDIATED-THIS-PASS** (recurrence **5**) | `022.001-T` still identified the plan as *"Plan rev 3: docs/plans/2026-09-12-…-foundation-plan.md"* — the **archived** path at a **five-revision-stale** revision. All four records (`022-F`, `022.001-T`, `021-S`, `017-S`) resynced to this plan / rev 8 / **attempt 5**, **in this same commit**. |
+| **H-3** | **Rev 7's `F-8` correction is FACTUALLY FALSE — a NEW defect.** Rev 7 asserted `consumer_id: "ship"` is *"access identity, not a filter."* **Measured live: it IS a filter.** Passing it **hides all 14 stage records**, defeating the full-enumeration anomaly gate. **Correct instruction: OMIT `consumer_id` entirely.** | **REMEDIATED-BY-REWRITE**, hardened this pass | §9.1 item 1 already instructs **pass NO parameters** and names both `consumer_id` and CLI `--agent` as filters. **Hardened now**: the attempt-4 counts (15/1/14) had already drifted to **17/1/16**, so pinned counts were demoted to a **dated observation** and the invariant restated as *"strictly fewer than unfiltered, re-derived at run time"* — a pinned count is the same drifting-identity class as `F-8`. |
+| **H-4** | **§4.1's own opening still contradicts the rev-7 allowlist.** The operative first line still read *"The replacement text MUST NOT enumerate the authorized verdicts"*, while the rev-7 block and `AC-25` **permit** an explicit `{CASCADE, SAFE_CLOSE}` allowlist. The *"future close-path work lands without touching this file again"* claim also contradicted the bound-to-installed-contract rule. | **REMEDIATED-BY-REWRITE** | Measured in this plan: `MUST NOT enumerate` = **0**; `without touching this file again` = **0**. §3.4 states the permission positively and bounds it to the **currently installed** skill; §4.1 is now pinned replacement wording only. |
+| **H-5** | **§13 still instructs reviewers to validate SUPERSEDED rev-6 behavior.** Item 5 asked for rows 14/15's *rev-6 declared-status* phrases (since replaced); item 7 asked whether the *P-015/skill-disagreement HALT* is correct (explicitly **deleted** by rev 7). | **REMEDIATED-BY-REWRITE** | The reviewer-instruction section does not exist in this plan; §13 is **gate state only**. The deleted disagreement check is stated as deleted in §3.4 (*"performs **no** runtime `policy_id`, policy-version or source-disagreement check"*). |
+| **H-6** | **The pointer-only decision was not swept into the execution path.** §9 step 14, §9.3 step 5 and §9.4.1 still asserted per-item `matched` / `pre-archived` allocations of the installed pre-mode — exactly what `E-2`/`E-3` forbade. The aggregate `PROCEED` outcome is correct and measured; the **per-item allocation** is not the plan's to assert. | **REMEDIATED-BY-REWRITE**, scoped this pass | §9 step 14 now requires only *"an authoritative `PROCEED`"*; §9.3/§9.4.1 no longer exist. The one surviving `PREMODE_*` use (§9.2 check 6) is a consistency check on **Stage's own probe transcript**; an explicit scoping note was added so it cannot be misread as a taxonomy claim about live records. |
+| **H-7** | **Evidence identity is internally inconsistent — NEW in rev 7.** Hardening 9a and `AC-20a` named **`_sha256`** fields, but the normative derivation compared **Git blob object IDs**, and the "measured" values shown were **abbreviated blob IDs**, not SHA-256 digests. An executor cannot satisfy the stated SHA-256 contract using the prescribed algorithm. | **REMEDIATED-BY-REWRITE** | §8.1 is **ONE scheme**: file identity is **Git blob OIDs** throughout. The only SHA-256 remaining is `ENGINE_SHA256_EXPECTED`, which identifies an **external** object (the resolved engine binary) — no self-reference and no algorithm mismatch. Measured: no `_sha256` **file-identity** field exists. |
+| **H-8** | **The mandatory "verified snapshot restore" is not executable as specified.** The only restore command was `git restore -- .backlogit/queue/ .backlogit/archive/`, which restores **tracked paths from Git HEAD**, not the skill's in-memory snapshot, and does not remove newly-created untracked archive files. Because a1 sets the feature `done` **before** the cascade, a HEAD restore can disagree with the pre-call snapshot. The `PA-*` records additionally required verifying a *"protected set"* the installed skill says **does not exist**. | **REMEDIATED-THIS-PASS** | §10.3 is now executable: a **named pre-cascade baseline commit** (§9 step **13a**, so a1's result is inside the baseline), `git restore --source {pre_cascade_sha}`, **plus** deletion of exactly `{post_paths} − {pre_paths}` for untracked creations, **plus** a two-halves verification. `protected set` = **0** occurrences. The **stale unexecutable command survived verbatim in `PA-021-CASCADE`'s backlog record** and was replaced there this pass. |
+| **H-9** | **Inventory vs implementation sequence mismatch.** §4 made **C1–C8** mandatory, but §3 described the change as **C1–C6** and §7's H1 instructed applying only ADD-1, ADD-2 and **C1–C6**. Following §7 omits C7/C8, which rows 14–15 and `AC-22` require — the documented H1 state is unreachable from the documented action. | **REMEDIATED-BY-REWRITE** | §2, §4, §7, §9 step 2, `AC-3` and the 18-row table now all read **CS1–CS8** (8 sites, all mandatory). The `Cn` → `CSn` rename also removed the `C1…C8` collision with the Probe-25 criterion tokens that made the mismatch easy to miss. |
+
+**Open after this pass: NONE.** `P0 = 0`, `P1 = 0` carried open. Every disposition above is
+either measured in this file or landed in the backlog records in the same commit.
+
+**Why the rewrite closed six of nine without editing them.** `H-4`, `H-5`, `H-6`, `H-7` and
+`H-9` were all defects of **stale surviving prose in an append-only artifact** — the exact
+failure mode the attempt-4 review named as the binding constraint (*"a plan that is ~3,800
+lines with four stacked review histories cannot be swept consistently by any single pass"*).
+Compaction to a single governing contract removed the contradictory text rather than patching
+around it. **This is recorded, not assumed**: each row above cites a measurement.
+
+**The three that did NOT close by rewrite are the lesson.** `H-1`, `H-2` and `H-8` all
+survived because they lived in the **backlog records**, not the plan — the compaction swept
+the plan and left the records pointing at a heading that no longer exists, a plan revision
+five versions stale, and a restore command the plan had already replaced. **A split-brain that
+spans two artifact classes is not closed by fixing one of them.**
+
+### 13.3 Gate state
+
 | Field | Value |
 |---|---|
 | **Plan `status:`** | `planned` |
+| **True-lineage attempt** | **5** (see §13.1) |
 | **Harvest-ready** | **NO** until this gate returns PASS / ADVISORY with P0=0 and P1=0 |
 | **`021-S`** | `queued` — **not claimable** until the gate passes |
 | **`017-S`** | `queued`, dependency `[021-S]` — ineligible until `021-S` ships |
 | **`PA-*`** | recorded, **unexercised**; gated on this state |
+| **Re-entry budget** | **EXHAUSTED.** A FAIL here halts to the operator; attempt 6 is not self-authorized |
+
+**Correction pass `F1`–`F8` applied before this gate** (adjudicated against the installed
+contracts, not self-directed). **This is a SEPARATE, EARLIER finding set from `H-1`…`H-9`** —
+`F1`–`F8` came from the internal correction pass over the compacted plan; `H-1`…`H-9` are the
+carried attempt-4 gate findings disposed in §13.2. The two sets do **not** overlap and neither
+renumbers the other:
+
+| Ref | Disposition | Landed in |
+|---|---|---|
+| **F1** (P0) | **CONFIRMED.** Step 13 dirtied `.backlogit/` with no commit before the §10.3 clean-tree precondition | §9 step **13a**, §10.3 step 1, AC-22 |
+| **F2** (P1) | **CONFIRMED.** The red/green summary was false for the guard rows | §6.1 two-class table + measured counts |
+| **F3** (P1) | **CONFIRMED.** Live `022-F` is `queued`; the plan asserted `active` | §9 step **1a**, AC-19 |
+| **F4** (P1) | **CONFIRMED, narrowly.** Installed order is Step 0.5 intake → Step 2 harness (P-002/P-004) → Step 4.1 task claim. The **shipment** claim before harness is the established contract and was **NOT** reordered; only the **task** activation was moved after red-phase confirmation | §9 steps **1b–1d**, AC-20 |
+| **F5** (P1) | **CONFIRMED.** `resolve_checkpoint` is a mutation and ran on `main` before branch creation (P-011) | §9.1 item 7, §9 step **11a**, AC-21 |
+| **F6** (P2) | **CONFIRMED as a clarification only.** The cascade is never committed before postchecks, so a committed-cascade recovery is unreachable; scope not broadened | §10.3 state machine, AC-23 |
+| **F7** (P3) | **CONFIRMED.** `record-consistent` occurs **0×** in `_ship.agent.md` — it is **added**, not preserved | §4 CS7/CS8, AC-8 |
+| **F8** (P3) | **CONFIRMED.** Records identified the plan by a stale line count | Records now use **path + revision** |
 
 ## 14. Sizing
 
@@ -690,8 +871,15 @@ which is an inherited residual recorded as a follow-up against P-015 and the ski
 
 ## 17. Full history
 
-Superseded revisions 1–7, four plan-review attempts, and all withdrawn language are preserved
-**verbatim and non-governing** in
+Superseded revisions 1–8, plan-review attempts **1–4**, and all withdrawn language are
+preserved **verbatim and non-governing** in
 `docs/archive/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md`.
 Git history is preserved; no content was deleted. **Where the archive and this plan disagree,
 this plan governs.**
+
+**Findings are the ONE exception to "non-governing".** The archive's *contract wording* is
+non-governing, but **review findings raised against it remain live until disposed here**. The
+attempt-4 findings `H-1`…`H-9` are carried into **§13.2** with per-finding dispositions and
+evidence. **Do not read "the archive is non-governing" as "the archive's findings are
+closed"** — that reading is what allowed nine unremediated P1s to become invisible when the
+plan was compacted, and §13.2 exists to prevent it recurring.
