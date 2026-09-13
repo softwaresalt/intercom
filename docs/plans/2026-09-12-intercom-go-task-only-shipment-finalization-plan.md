@@ -1,16 +1,16 @@
 # Plan — Verified Task-Only Shipment Finalization
 
-> **Requires plan hardening**: **yes — applied in rev 2, extended in rev 3, re-hardened in rev 4, rev 4.1 and rev 5** (see `## Plan Hardening`).
+> **Requires plan hardening**: **yes — applied in rev 2, extended in rev 3, re-hardened in rev 4, rev 4.1, rev 5 and rev 6** (see `## Plan Hardening`).
 
 - **Date:** 2026-09-12
-- **Revision:** 5 (rev 1 → **FAIL**; rev 2 → **FAIL**; rev 3 → **ADVISORY**; rev 3 → independent adversarial **MUST_REPLAN**; rev 4 → internal review **FAIL**; rev 4.1 → internal re-review **ADVISORY**; rev 4.1 → independent adversarial **MUST_REPLAN**; see §12)
+- **Revision:** 6 (rev 1 → **FAIL**; rev 2 → **FAIL**; rev 3 → **ADVISORY**; rev 3 → independent adversarial **MUST_REPLAN**; rev 4 → internal review **FAIL**; rev 4.1 → internal re-review **ADVISORY**; rev 4.1 → independent adversarial **MUST_REPLAN**; rev 5 → independent adversarial **MUST_REMEDIATE**; rev 6 → **MUST_REPLAN on budget**, see §10.1; see §12)
 - **Source deliberation:** `docs/decisions/2026-09-12-intercom-go-task-only-shipment-finalization-deliberation.md`
 - **Stash origin:** `A10EF3D0` (`kind: deliberation`, `priority: critical`)
 - **Branch:** `chore/stage-pipeline-policy-gap` (planning artifacts carried over by cherry-pick; see §14)
 - **Engine identity of record (binding):** `backlogit 1.10.1-0.20260823032255-b07729386a31+dirty`, **SHA-256 `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98`** — the digest, not the version string, is the binding identity (§6.3)
 - **Probe evidence (durable, in-repo):** `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/`
 - **Harvested backlog:** feature `022-F`, task `022.001-T`, shipment `021-S` (task-only manifest); `017-S depends_on 021-S --type blocks`
-- **Status:** planning complete; **BLOCKED** — PR #54 has no agent-executable route and requires the **operator** as PR actor (§11); harvest **COMPLETE** on the policy branch (§14)
+- **Status:** planning **NOT** complete — **MUST_REPLAN** on the §10.1 budget: the closed clause inventory (§6.1, rev 6) enumerates **28 normative edit sites**, and the resulting itemized budget does **not** close under the 2-hour rule as a single atomic task (§10.1). Harvested topology (`022-F`, `022.001-T`, `021-S`, `017-S -> 021-S`) is **unchanged** and is **not** re-harvested by this revision. Separately still **BLOCKED** — PR #54 has no agent-executable route and requires the **operator** as PR actor (§11).
 
 ---
 
@@ -64,8 +64,11 @@ raw `.db`/`-wal`/`-shm` file is committed.
 | **11** | `shipment ship` against a **`queued`** shipment | **refused**, exit 1, `shipment status conflict` — the record must be `active` |
 | **14** | **executed, committed.** Two task-only shipments; successor `depends_on` predecessor `--type blocks` (the live `017-S -> 021-S` shape) | Predecessor `queued` → `ready_set=["001-S"]`, successor **suppressed**. Predecessor `active` → `ready_set=[]`, successor **still suppressed**. Predecessor closed → `archived` + `archived_status: shipped` + `commit` retained; after `sync`, `ready_set=["002-S"]` — successor **eligible**. All verdicts `status: ok`, `degraded_reason: null` |
 | **15** | **executed, committed. EXACT `017-S` fixture**: 12-member task-only manifest = 1 live `done` task + **3 archived tasks + 8 archived subtasks (3/3/2)**, root covering feature live and excluded | `archived_ids=[T_live,S]`, `returned_ids=[]`; **all 11 pre-archived members and the root parent `byte=SAME`, `path=SAME`, `parent=SAME`; `INVARIANCE_FAILURES=0`** |
-| **16** | **executed, committed. Injected partial failure**: archive destination of the shipment record occupied by a directory, then ship | **exit 1** *after* partial mutation — task archived, shipment left in the queue declaring `status: shipped` (**torn**). Bounded recovery then executed: approval gate → quarantine (move, never delete) → enumerated restore → `backlogit sync` → `MUTABLE_EQUIVALENCE_FAILURES=0`, `RESIDUAL_UNEXPECTED_PATHS=0`, `APPEND_ONLY_REWIND_VIOLATIONS=0`, engine view restored, quarantine preserved |
+| **16** | **SUPERSEDED by Probe 19 — retained for history only.** Injected partial failure: archive destination of the shipment record occupied by a directory, then ship | **exit 1** *after* partial mutation (torn state observed). **Withdrawn as evidence for the §6.5.3 procedure**: it swept whole directories instead of an enumerated set, compared append-only streams by **length only**, never ran the approval-withheld branch, resolved its repo root to `docs\` (so the committed script does not reproduce as written), and ran on stock `init` defaults. See §6.5.3 and the evidence-integrity table below |
 | **17** | **executed, committed.** Ship Step 5 `pipeline-topology` gate in a PR-lifecycle-only (unclaimed) session, all four routes | **Every route fails closed** — exit 2 `agent mode requires --shipment`, exit 1 `LIFECYCLE_NO_ACTIVE_SHIPMENT`, exit 2 `--phase lifecycle requires --shipment … in any mode`, exit 2 ambient. See §11 |
+| **18** | **executed, committed. LIVE-CONFIG-SEEDED** exact prerequisite topology: root feature outside the manifest, one live `done` task, task-only shipment, **plus a second shipment holding the inbound `depends_on … --type blocks` edge** (the live `017-S -> 021-S` shape) | `DIGEST_GATE=PASS`; seeded from live `config.yaml`/`header-def.yaml`/`hooks.yaml`/`registry.yaml`/`migration.yaml`/`templates` with each seed file's SHA-256 recorded. **`INBOUND_EDGE_BYTE_IDENTICAL=True`**, `INBOUND_RECORD_PATH_CHANGED=False`, `PARENT_FEATURE_BYTE_IDENTICAL=True`, `returned_ids=[]`, archived record retains `archived_status: shipped` + `commit`. Root cause re-confirmed **under live config**: `MOVE_SHIPPED_EXIT=9`. Config delta confirmed material: `SEED_STATUS_ENUM_HAS_SHIPPED=False`, `SEED_HOOKS_VALIDATE_TRANSITION=True`, `SEED_HOOKS_PRE_TASK_GATE=True` |
+| **19** | **executed, committed. Bounded recovery, rewritten to §6.5.3 and run on BOTH approval branches**, live-config-seeded, real errored invocation (`SHIP_EXIT=1`, torn state) | **Withheld:** quarantine 0, restore 0, torn state preserved, `TERMINAL_DISPOSITION=HALT`. **Granted:** 1 quarantined (moved, never deleted), 4 restored from the **enumerated** inventory, `MUTABLE_BYTE_EQUIVALENCE_FAILURES=0`, `MUTABLE_PATH_EQUIVALENCE_FAILURES=0`, `DEPENDENCY_EQUIVALENCE_OK=True`, `RESIDUAL_UNEXPECTED_PATHS_IN_BOUNDED_SET=0`. Both: `APPEND_ONLY_PREFIX_VIOLATIONS=0` (**full byte prefix**, not length), `APPEND_ONLY_DELETIONS=0`, out-of-bounds lock file **reported, not moved**, cache rehydrated only via official `sync` |
+| **20** | **executed, committed. O-6 post-archive closure route**, live-config- **and** live-`.autoharness`-seeded, driven to the exact post-archive state | **Q1:** all **4** post-archive routes non-zero — `LIFECYCLE_NO_ACTIVE_SHIPMENT` (exit 1) on both shipment-bearing routes, exit 2 on the two invalid ones; `POST_ARCHIVE_ROUTES_NONZERO_EXIT=4`. **Q2:** the installed Ship contract mandates the lifecycle gate at L559/L571/L767 but **not** before the closure PR (L741–744). See §8.1.1 |
 
 **Withdrawn probes.** Rev 4.1's Probes 5, 5b, 10, 12 and 13 are **superseded and
 withdrawn as evidence**: they ran under `%TEMP%` and were deleted, so no
@@ -88,13 +91,58 @@ evidence-committed:
 | G13 / P1 (engine leaves dangling edges; return strips `parent_id`) | Probe 9 | degraded |
 | P5 (parent preserved) | Probes 2, 6 | degraded — **but** independently re-proven by **Probe 15** (parent `byte=SAME`) |
 | T5/G5 rationale (omitted descendants/siblings are damaging) | Probes 3, 4, 9 | degraded |
-| §2 root cause (`move --status shipped` → exit 9) | Probe 1 | degraded |
+| §2 root cause (`move --status shipped` → exit 9) | Probe 1 | degraded — **but** independently re-proven **under live config** by **Probe 18** (`MOVE_SHIPPED_EXIT=9`) |
 
 An earlier rev-5 draft asserted "No conclusion in this plan rests on a deleted
 sandbox." **That was false and is WITHDRAWN.** The accurate statement is: no
 conclusion rests on a *withdrawn* probe, and every conclusion resting on a
 *retained-but-uncommitted* probe is tabulated above. Re-executing and committing
-probes 1/2/3/4/6/7/9/11 is carried as a named residual (§10.3).
+probes 2/3/4/6/7/9/11 is carried as a named residual (§10.3).
+
+### 3.0 Evidence-integrity table (rev 6) — probe-vs-contract fidelity
+
+Rev 5 treated "a probe exists and is committed" as sufficient. It is not: a
+committed probe can still fail to implement the procedure it is cited for. Rev 6
+records fidelity explicitly.
+
+| Probe | Committed? | Live config? | Digest-gated? | Implements the cited contract? |
+|---|---|---|---|---|
+| 14 | yes | **no** (stock `init`) | no | yes, for dependency lifecycle |
+| 15 | yes | **no** (stock `init`) | no | yes, for the exact `017-S` member shape |
+| 16 | yes | **no** | no | **NO — superseded by 19** (5 divergences, §6.5.3) |
+| 17 | transcript only | live workspace | no | yes, for gate feasibility |
+| **18** | **yes** | **YES** | **YES** | **yes** |
+| **19** | **yes** | **YES** | **YES** | **yes — both approval branches** |
+| **20** | **yes** | **YES** | **YES** | **yes** |
+
+**Digest binding is now enforced in-script, not by convention.** Probes 18, 19
+and 20 each resolve the backlogit executable path, compute its SHA-256, compare
+it to the recorded identity, print `DIGEST_GATE=PASS`/`FAIL`, record
+`--version`, and **`exit 1` before performing any operation** on mismatch. The
+transcripts capture all four fields. Probes 14/15/16 predate this rule.
+
+**Committed artifacts for the rev-6 probes** (all under
+`docs/plans/evidence/2026-09-12-task-only-shipment-finalization/`):
+
+| Probe | Script | Transcript |
+|---|---|---|
+| 18 | `probe18-liveconfig-inbound-edge.ps1` | `probe18-liveconfig-inbound-edge.txt` |
+| 19 | `probe19-bounded-recovery-v2.ps1` | `probe19-bounded-recovery-v2.txt` |
+| 20 | `probe20-post-archive-closure-route.ps1` | `probe20-post-archive-closure-route.txt` |
+
+**Authorization surface — CLI only.** All runtime authorization in this plan is
+established **through the `backlogit` CLI**. The **MCP surface is neither probed
+nor authorized**: no probe exercises `backlogit mcp`, no transcript records MCP
+behavior, and **no MCP/CLI equivalence is claimed**. If the implementation or
+Ship intends to close through MCP, that surface requires its own digest binding
+and its own probes before any authorization transfers to it.
+
+**Residual config delta.** Probes 14, 15 and 16 remain stock-`init`-based.
+Probe 18 shows the delta is material — the live `config.yaml` status enum has
+**no `shipped` value** and the live `hooks.yaml` enables `validate_transition`
+and a `pre_task_completion_gate` — so their conclusions are re-derived under
+live config where load-bearing (18 re-proves the parent-preservation, merge-SHA
+retention and root-cause claims) and otherwise carried as a §10.3 residual.
 
 ### 3.1 What the probes establish
 
@@ -120,9 +168,10 @@ probes 1/2/3/4/6/7/9/11 is carried as a named residual (§10.3).
   `commit`. **P9** is therefore a satisfiable guard, and the *archive* path
   (lineage preserved) is distinguished from the *return* path (lineage stripped).
 - **A partial failure leaves a TORN, self-inconsistent state, and bounded
-  recovery restores it** (Probe 16). The engine applied mutations and *then*
-  failed, leaving the shipment record in the queue declaring `status: shipped` —
-  a state the engine itself refuses to create via `move` (Probe 1, exit 9).
+  recovery restores it** (Probe 19, both approval branches). The engine applied
+  mutations and *then* failed, leaving the shipment record in the queue declaring
+  `status: shipped` — a state the engine itself refuses to create via `move`
+  (Probe 18, exit 9, re-confirmed under live config).
   Recovery restored byte/path equivalence and the engine's view, **without**
   rewinding any append-only stream and **without** restoring any DB byte.
 - **A `blocks` edge is satisfied by predecessor STATUS, not by edge removal**
@@ -224,33 +273,96 @@ Authorization derives from the **P-015 amendment** (surface 1), not from orderin
 Any guard failure, ambiguity, or query error → **not** classified → fall through
 to `SAFE_CLOSE`/HALT exactly as today.
 
-**Normative-clause reconciliation (mandatory, AC-13) — enumerated, not a sweep
-instruction.** Rev 4.1 told the implementer to "locate and rewrite" exclusivity
-clauses. Rev 5 **enumerates them**, because an unenumerated sweep is neither
-falsifiable nor sizable. The inventory below was produced by scanning the three
-surface files in this workspace at `e06b4d8`; each entry must be reconciled to
-name **both** exceptions in the order CASCADE → `TASK_ONLY_FINALIZE` →
-`SAFE_CLOSE`/HALT.
+**Normative-clause reconciliation (mandatory, AC-13) — CLOSED inventory (rev 6).**
+Rev 4.1 told the implementer to "locate and rewrite" exclusivity clauses. Rev 5
+enumerated 11 rows / 14 sites and then recorded three *known* further sites as
+**open items** (O-1, O-2, O-3) — which is the same open-endedness in a different
+costume: a site you have already identified is not an open question, it is an
+unbudgeted edit. Rev 6 **closes** the inventory. The scan below was re-run against
+the installed files in this workspace at `1f55e6a`; it is **Inventory Table
+§6.1-A**, it is referenced by name from **AC-13** and **AC-7**, and it is the
+budget basis in §10.1.
 
-| File | Line | Clause (abbrev.) | Why it must change |
+Each site is classified:
+
+- **MUST** — the clause is *incorrect or blocking* if left unedited (it either
+  forbids the merged path, or asserts an exclusivity that the amendment falsifies).
+- **CONSISTENCY** — the clause remains *literally true* after the amendment because
+  it is already scoped to a branch that does not change, but it reads as
+  single-exception framing and is reconciled for coherence.
+
+Every entry must be reconciled to name both exceptions in the classifier order
+CASCADE → `TASK_ONLY_FINALIZE` → `SAFE_CLOSE`/HALT.
+
+**Inventory Table §6.1-A — `.github/policies/workflow-policies.md` (P-015)**
+
+| # | Line | Clause (abbrev.) | Class | Why |
+|---|---|---|---|---|
+| A1 | 410 | heading "Single-Artifact Shipment Closure (**No Cascade Ship**)" | CONSISTENCY | parenthetical now describes neither exception |
+| A2 | 420 | "It MUST NOT call the cascade `backlogit_ship_shipment` for closure" | **MUST** | the blanket prohibition *is* the authorization gate |
+| A3 | 426 | Postcondition: "the cascade … was never called" | **MUST** | unreachable postcondition once a 2nd exception exists |
+| A4 | 436 | "**VERIFIED FULLY-COVERED-ROOT EXCEPTION** … remains the DEFAULT" | **MUST** | asserts exclusivity; amended per §4.1 |
+| A5 | 443 | item 6 "IS permitted … in place of the single-artifact safe-close" | **MUST** | must scope the permission to the CASCADE branch |
+| A6 | 448 | "**This exception** is defined entirely in terms of the general shape above … a pure classification function … that Ship consults to **select the close path**" | **MUST** | the selector sentence; binary → ternary |
+| A7 | new block after 448 | **NEW** second exception block authorizing `TASK_ONLY_FINALIZE` (T1–T5, G0–G13, P1–P10 pointers) | **MUST** | the authorization itself |
+| A8 | 746 / after 774 | Amendment Log row naming `TASK_ONLY_FINALIZE` | **MUST** | required by AC-1 |
+
+**Inventory Table §6.1-B — `.github/skills/shipment-reconcile/SKILL.md`**
+
+| # | Line | Clause (abbrev.) | Class | Why |
+|---|---|---|---|---|
+| B1 | 3 | frontmatter: "**except for** the narrow, machine-verified P-015 fully-covered-root case" | **MUST** | literal sole-exception phrasing |
+| B2 | 10–11 | "run `mode: safe-close` **in place of** the destructive cascade" | CONSISTENCY | true of safe-close; reads binary |
+| B3 | 14–15 | "runs the P-015 verified fully-covered-root classification and, **only when** every precondition holds, delegates to the Cascade Close Sub-Procedure instead" | **MUST** | states the classifier as binary |
+| B4 | 28 | "**instead of** the cascade … call, then `mode: post`" | CONSISTENCY | binary framing |
+| B5 | 30–32 | "never calls the cascade op directly **unless** that classification confirms the narrow verified fully-covered-root exception" | **MUST** | sole-exception carve-out |
+| B6 | 232–233 | "It **never calls** the cascade `backlogit_ship_shipment`" | CONSISTENCY | scoped to safe-close mode; stays true |
+| B7 | 324 | pre-mode `RECONCILE_FAIL`: "Do NOT call `backlogit_ship_shipment`" | CONSISTENCY | pre-mode never closes on *any* path; already correct |
+| B8 | 356–358 | Safe-Close preamble: "Runs **in place of** the destructive cascade … Step 0 below, where the cascade op is **the** *permitted* close path" | **MUST** | names one permitted alternative |
+| B9 | 408–415 | **Step 0(c) "Classify the close path"** — classifier body | **MUST** | the classification function itself |
+| B10 | 505–512 | **Step 0 close-path SELECTOR** — `CASCADE selected` / `SAFE_CLOSE selected (default, including any classifier error…)` | **MUST** | **the binary selector**; must become ternary with `TASK_ONLY_FINALIZE` evaluated between them |
+| B11 | 591–605 | **Safe-Close step 8** ("Close the shipment record itself") | **MUST** | **AC-7 site.** Needs the fail-closed cross-reference; step 8's own text otherwise unchanged |
+| B12 | 618–620 | Cascade Close Sub-Procedure heading "(P-015 verified fully-covered-root exception **ONLY**)" + "Runs **only** when Step 0 … selects `CASCADE`" | CONSISTENCY | still true; scoped to the cascade branch |
+| B13 | 698–709 | No-substitution rule: "…grants no license to invoke cascade when Step 0 selects `SAFE_CLOSE`, which remains governed by the P-015 **default prohibition**" | **MUST** | the rule must also bind the third verdict |
+| B14 | 998 | lock-failure: "Do NOT call `backlogit_ship_shipment`" | CONSISTENCY | no close path is authorized without the lock; already correct |
+| B15 | 1015–1016 | Safety invariants: "runs **in place of** the cascade" + "Close-path selection is made **only** from the machine-checkable classification result (Step 0)" | **MUST** | invariant list must enumerate the new path |
+| B16 | 1022 | "Safe-close archives the shipment record as its own single artifact and **never via the cascade op**" | CONSISTENCY | scoped to safe-close; stays true |
+| B17 | 1074 | references line naming P-015 as "cascade prohibition" | CONSISTENCY | pointer text |
+| B18 | new section | **NEW** `TASK_ONLY_FINALIZE` classification section: T1–T5, G0–G13, P1–P10, §6.5 failure split, §6.5.3 recovery | **MUST** | the normative contract body |
+
+**Inventory Table §6.1-C — `.github/agents/_ship.agent.md`**
+
+| # | Line | Clause (abbrev.) | Class | Why |
+|---|---|---|---|---|
+| C1 | 756–764 | **Mandatory pre-self-close context reload** — names only Ship instructions + `shipment-reconcile` | **MUST** | §8 step 6 must also reload **P-015** and positively verify the merged tokens **and the merge commit** |
+| C2 | 789–791 | safe-close **summary** prescribing `backlogit move <shipment_id> --status shipped` | **MUST** | **O-1 site.** §2's root cause: the live engine **refuses** this (exit 9, re-confirmed under live config by **Probe 18**) |
+| C3 | 794–795 | "**Do NOT call** `backlogit shipment ship` … **unless** the P-015 **VERIFIED FULLY-COVERED-ROOT EXCEPTION** applies" | **MUST** | **load-bearing** — the clause a reloaded Ship actually reads (§4) |
+| C4 | 802–803 | "P-015 verified fully-covered-root exception (**select the close path** …): safe-close remains **the default**" | **MUST** | the agent-side selector; binary |
+| C5 | 821–823 | "invoke the cascade … **in place of** the safe-close sequence above" | **MUST** | single-exception framing at the invocation site |
+| C6 | new bullet | **NEW** `TASK_ONLY_FINALIZE` selector bullet naming the classification and its guards | **MUST** | so a fresh reload recognizes the path |
+
+**Inventory Table §6.1-D — `tests/integration/taskonly_finalize_contract_test.go`**
+
+| # | Site | Class | Why |
 |---|---|---|---|
-| `workflow-policies.md` | 420 | "MUST NOT call the cascade `backlogit_ship_shipment` for closure" | states the prohibition; must name both exceptions |
-| `workflow-policies.md` | 426 | Postcondition: "the cascade `backlogit_ship_shipment` was never called" | unreachable postcondition once a 2nd exception exists |
-| `workflow-policies.md` | 436 | "**VERIFIED FULLY-COVERED-ROOT EXCEPTION** … remains the DEFAULT" | must acknowledge a second, narrower exception |
-| `workflow-policies.md` | 443 | item 6 "IS permitted … in place of the single-artifact safe-close" | must scope to the CASCADE branch only |
-| `shipment-reconcile/SKILL.md` | 3 | frontmatter: "**except for** the narrow, machine-verified P-015 fully-covered-root case" | literal sole-exception phrasing |
-| `shipment-reconcile/SKILL.md` | 10, 356, 1015 | "run `mode: safe-close` **in place of** the destructive cascade" | must admit the third path |
-| `shipment-reconcile/SKILL.md` | 232 | "It **never calls** the cascade" | absolute; must be scoped |
-| `shipment-reconcile/SKILL.md` | 324, 998 | "Do NOT call `backlogit_ship_shipment`" | must carry the classification carve-out |
-| `_ship.agent.md` | **794** | "**Do NOT call** `backlogit shipment ship` … **unless** the P-015 **VERIFIED FULLY-COVERED-ROOT EXCEPTION** applies" | **load-bearing** — this is the clause a reloaded Ship reads; unamended, Ship refuses the merged path (§4) |
-| `_ship.agent.md` | 803 | "safe-close remains the default" | single-exception framing |
-| `_ship.agent.md` | 822 | "in place of the safe-close sequence above" | single-exception framing |
+| D1 | one table-driven test function over the §7.1 table | **MUST** | AC-18 |
+| D2 | ≤4 read/assert helpers | **MUST** | AC-18; counted separately from the "1 of 1" red count (see §7.1) |
 
-**Total: 11 inventory rows enumerating 14 clause sites across 3 files.** The
-implementing task re-runs the same scan and commits the resulting inventory so the
-reconciliation is falsifiable and re-runnable; a clause found by the re-scan that
-is absent from this table is added, not silently skipped. **§12.2 carries known
-candidate additions** already identified by internal review.
+**Closed totals: 28 normative edit sites across 4 files — 20 MUST + 8
+CONSISTENCY — comprising 26 clause/site edits, 2 new normative blocks, 1 new
+selector bullet, 1 Amendment Log row, 1 table-driven test function and ≤4
+helpers.** The three rev-5 open items are **closed into this table**: O-1 →
+**C2** and **B10**; O-2 → **B11**; O-3 → the inventory now has a name
+(**Inventory Table §6.1-A/B/C/D**) and a committed home (§6.1-E below).
+
+**§6.1-E — home of the committed inventory (closes O-3).** The implementing task
+re-runs this scan and commits the regenerated inventory to
+`docs/plans/evidence/2026-09-12-task-only-shipment-finalization/clause-inventory.md`.
+That is an **evidence** artifact, not a fifth implementation surface, so the
+"File count: 4" claim in §4 is unaffected. A clause found by the re-scan and
+absent from §6.1-A/B/C/D is **added, never skipped**; if the re-scan finds a
+**MUST** site not listed here, the budget in §10.1 is invalidated and the unit
+returns to Stage.
 
 The mandatory **pre-mode and post-mode reconciliation steps** of
 `shipment-reconcile` are **retained unchanged** — `TASK_ONLY_FINALIZE` adds a
@@ -272,7 +384,7 @@ ambiguity, or query error falls through to `SAFE_CLOSE`/HALT.
 | **T1** | The shipment is **task-only**: every **live** manifest member has `artifact_type: task`. | any live `feature`, `subtask`, `epic` or `shipment` member |
 | **T2** | **Exactly one** manifest member is live, and it declares `status: done`. | zero live members; two or more live members; a live member not `done` |
 | **T3** | **Zero** `feature` members and **zero** `subtask` members are live in the manifest. Archived members MAY be `task` or `subtask` (Probe 15). | a live covering feature in the manifest (the Probe-3/9 cascade vector) |
-| **T4** | **Exactly one** parent feature, **root** (`parent_id` absent), **live** in the queue directory, and **outside** the manifest. | non-root parent; parent inside the manifest; multiple parents; archived/missing parent |
+| **T4** | **Exactly one** parent feature, **root** (`parent_id` absent), **live** by its frontmatter `status`, and **outside** the manifest. | non-root parent; parent inside the manifest; multiple parents; archived/missing parent |
 | **T5** | **No omitted live descendants**: every non-archived descendant of that parent, at every depth, is a manifest member. | Probe 3 (omitted subtask) and Probes 4/9 (omitted live sibling) |
 
 **T3 is scoped to LIVE members deliberately, and Probe 15 is why.** The
@@ -285,8 +397,16 @@ path and `parent_id` unchanged with `returned_ids=[]`. Archived members are
 inert; **live** non-task members remain disqualifying.
 
 Type filtering is by the frontmatter `artifact_type` field — **never** by ID
-suffix (`-ST` ends in `T`). Liveness is by the frontmatter `status` field —
-**never** by queue-vs-archive location.
+suffix (`-ST` ends in `T`). **Liveness is by the frontmatter `status` field —
+never by queue-vs-archive location**, and T4 is stated that way in rev 6 for a
+reason that is now *measured*, not merely asserted: this workspace's live
+`.backlogit/registry.yaml` routes `done` artifacts to `archive/`, so **Probe 18**
+observed the sole `done` task residing in `archive/` **while still being a live,
+non-archived member**. A location-derived liveness test would have misclassified
+it. Directory location is used **only** as a location/integrity cross-check —
+that the record exists exactly once, at exactly one path, and that the path is
+consistent with its declared status — and never as the source of the liveness
+decision itself.
 
 #### 6.2.1 Guards
 
@@ -321,7 +441,7 @@ suffix (`-ST` ends in `T`). Liveness is by the frontmatter `status` field —
      both (torn) or neither (missing) → **HALT** before any mutation.
   2. **For every record that this call will archive, its computed destination
      path under `archive/` MUST be absent, and MUST NOT be occupied by a
-     directory or an unparseable file.** Probe 16's injected failure was exactly
+     directory or an unparseable file.** Probe 19's injected failure was exactly
      this: a **directory** named `001-S.md` at the shipment record's archive
      destination. That is *not* a record, so conjunct 1 alone would never see it.
      Without conjunct 2 the plan could not honestly claim §7.3's
@@ -372,13 +492,12 @@ internal-review P1):**
 3. **the entire append-only class** — `logs/*.jsonl`, `hooks_queue.jsonl`,
    `stash.jsonl`, and telemetry streams.
 
-Exclusion 3 is **load-bearing, not cosmetic.** Probe 16's transcript shows
-per-artifact logs grow on *every* operation (`001-S.jsonl` 341→1301,
-`001.001-T.jsonl` 614→1031). If the append-only class were inside the mutation
-comparison, **P4 would fail on every successful close** — the happy path would
-route straight to §6.5(B) bounded recovery and HALT, and §6.5.2 forbids ever
-restoring those files, so recovery could never re-establish equivalence either.
-The path would be permanently unusable.
+Exclusion 3 is **load-bearing, not cosmetic.** Probe 19's transcript shows
+per-artifact append-only logs grow on *every* operation. If the append-only class
+were inside the mutation comparison, **P4 would fail on every successful close** —
+the happy path would route straight to §6.5(B) bounded recovery and HALT, and
+§6.5.2 forbids ever restoring those files, so recovery could never re-establish
+equivalence either. The path would be permanently unusable.
 
 These are **not** compared for mutation because they are *expected* to change;
 they are **validated separately** — the report for well-formedness and expected
@@ -386,16 +505,30 @@ content, the lock for correct acquisition and release, the index by successful
 rehydration (§6.5.3 step 5), and the append-only class by the
 **monotonic-growth rule** of §6.5.2 (length must never decrease).
 
-#### 6.2.3 TOCTOU isolation (rev 5, normative)
+#### 6.2.3 TOCTOU isolation (rev 6, normative)
 
 **Execution-mode precondition (relied upon, not assumed).** This procedure runs
 only under the workspace's enforced **single-agent / single-worktree / P-001**
-execution mode: at most one top-level release unit in flight, no parallel
-implementation branch or worktree (verified by `git worktree list --porcelain`
-at Ship Step 0.5 item 3a, which halts with `WORKTREE_TOPOLOGY_BLOCKED` on any
-prohibited or ambiguous worktree). Under that precondition **concurrent creation
-of new backlog records by another agent is prohibited**, which is what bounds the
-residual below.
+execution mode. The preconditions are, explicitly and conjunctively:
+
+1. **exactly one agent** active in the workspace;
+2. **exactly one worktree** (verified by `git worktree list --porcelain` at Ship
+   Step 0.5 item 3a, which halts with `WORKTREE_TOPOLOGY_BLOCKED` on any
+   prohibited or ambiguous worktree);
+3. **no other active checkpoint or session** — verified by enumerating
+   checkpoints and confirming no second `active` record for either agent; and
+4. **no concurrent backlog mutation** in flight.
+
+If **any** of the four is not verifiable, the procedure **HALTs** before the
+call.
+
+**What is claimed: DETECTION, not prevention.** Rev 6 states this without
+hedging. This procedure does **not** and **cannot** prevent an external actor —
+a human editor, a foreign process, a second agent started out of band — from
+mutating a record. What the enforced execution mode plus the locking and
+re-hashing below give is **reliable detection**: any in-scope divergence between
+the G0 baseline and the immediately-pre-call re-scan is caught and fails closed.
+Any claim of prevention against external actors is **withdrawn**.
 
 1. **Bootstrap enumeration (unlocked).** Perform a first, unlocked G5 walk plus
    an inbound-reference scan to compute the **relation closure**: the shipment
@@ -412,18 +545,42 @@ residual below.
    be computed by a guard that itself requires the locks.
 4. Capture the G0 baseline and evaluate every guard entirely under lock.
 5. **Immediately before** invoking `ShipShipment`, **re-scan and re-hash** the
-   full relation closure and recompute the classification.
+   **complete relation closure** — every record enumerated in step 1, in both
+   directions (inbound **and** outbound dependency edges, links, and shipment
+   membership) — and recompute the classification.
 6. If **any** hash, path, declared status, dependency edge, link, or membership
-   differs from the G0 capture, **fail closed**: release locks, make no
-   destructive call, fall through to `SAFE_CLOSE`/HALT.
+   in that closure differs from the G0 capture, **or any relevant new or changed
+   record has appeared**, **fail closed**: release locks, make no destructive
+   call, fall through to `SAFE_CLOSE`/HALT.
 7. Release locks in a guaranteed-cleanup path on every exit, including failure.
 
+**The `017-S -> 021-S` inbound edge is explicitly in scope.** `017-S` holds an
+inbound `depends_on` edge naming this shipment. It is therefore a **relation
+closure member**, is captured in the G0 baseline (§6.2.2), is **locked** at step
+2, and is re-hashed at step 5 — even though it is not a manifest member, not a
+descendant of the parent feature, and never mutated by the call.
+
+**Probe 18 measures this end to end.** It builds the exact prerequisite shape
+(root feature outside the manifest; one live `done` task; task-only shipment;
+plus a second shipment holding `depends_on <prerequisite> --type blocks`),
+baselines the inbound-edge holder, runs a real `ShipShipment`, and re-hashes:
+
+- `INBOUND_EDGE_BYTE_IDENTICAL=True`
+- `INBOUND_RECORD_PATH_CHANGED=False`
+- `PARENT_FEATURE_BYTE_IDENTICAL=True`
+- the edge itself persists after archival (`002-S → 001-S (blocks)`)
+
+So the inbound-edge record is proven **byte-identical through the prerequisite
+close**, which is exactly the invariant §6.2.2 places it in the baseline to
+protect.
+
 **Honest bound (no overclaim).** This does **not** claim absolute prevention. It
-claims: every *existing* source-of-truth record in the relation closure is locked
-and re-verified immediately before the call, and *new* record creation is
-excluded by the execution-mode precondition rather than by a lock. **If that
-precondition is violated or a new in-scope record is observed anyway, the
-procedure HALTS** — it is caught post-call by P1/P10 and routed to §6.5(B).
+claims **detection**: every *existing* source-of-truth record in the relation
+closure is locked and re-verified immediately before the call, and *new* record
+creation is excluded by the execution-mode precondition rather than by a lock.
+**If that precondition is violated or a new in-scope record is observed anyway,
+the procedure HALTS** — and if it were somehow missed pre-call, it is caught
+post-call by P1/P10 and routed to §6.5(B).
 
 ### 6.3 Authorized call
 
@@ -483,7 +640,7 @@ Guards:
   and 6 establish this is achievable.
 - **P6 — no torn records.** No manifest task, **nor the parent feature**, nor the
   shipment record exists in both directories; none is missing from both.
-  Probe 16 shows a torn record is a real reachable state, not a theoretical one.
+  Probe 19 shows a torn record is a real reachable state, not a theoretical one.
 - **P7 — provenance.** The archived shipment record reports
   `archived_status: shipped` and retains the merge `commit`. Verified in Probes
   14 and 15; re-asserted after any P-007 restoration per §8.2 step 4.
@@ -527,7 +684,8 @@ compounds damage rather than avoiding it.
 
 **Recovery is BOUNDED RECOVERY, not atomic rollback.** The engine offers no
 transaction. What is specified is an evidence-based restoration of an enumerated
-file set, proven by **Probe 16** (a real errored/partial invocation). No claim of
+file set, executed end-to-end by **Probe 19** on a real errored/partial
+invocation, on **both** approval branches. No claim of
 atomicity is made anywhere in this plan.
 
 #### 6.5.1 Recovery path (named, gitignored, workspace-contained)
@@ -535,8 +693,9 @@ atomicity is made anywhere in this plan.
 The recovery root is **`.autoharness/backups/stage-recovery/`**, with per-run
 subdirectories `snapshot/`, `quarantine/` and `inventory.json`.
 
-It satisfies all four required properties, verified in Probe 16
-(`RECOVERY_PATH_GITIGNORED=True`):
+It satisfies all four required properties, verified in Probe 19
+(`RECOVERY_PATH_GITIGNORED=True`,
+`RECOVERY_PATH_OUTSIDE_COMPARED_INVENTORY=True`):
 
 - **workspace-contained** — never `%TEMP%`, never outside the repo root;
 - **gitignored** — via `.autoharness/.gitignore` (`backups/`), so recovery
@@ -554,13 +713,14 @@ Collapsing them is what makes naive "restore the backlog directory" unsound.
 | Class | Members | Rule |
 |---|---|---|
 | **Mutable current-state** | `queue/*.md`, `archive/*.md` | **MAY be restored** byte-for-byte from the snapshot, by inventory only |
-| **Append-only** | `logs/*.jsonl`, `hooks_queue.jsonl`, `stash.jsonl`, telemetry | **NEVER rewound, NEVER deleted, NEVER truncated.** Receives an appended **recovery event** referencing the run |
+| **Append-only** | `logs/*.jsonl`, `hooks_queue.jsonl`, `stash.jsonl`, telemetry | **NEVER rewound, NEVER deleted, NEVER truncated.** The **full prior byte sequence MUST remain an exact prefix** of the current file — length comparison alone is insufficient. Receives an appended **recovery event** referencing the run |
 | **Disposable cache** | `backlogit.db`, `-wal`, `-shm` | **NEVER byte-restored.** Rehydrated by the official `backlogit sync` |
 
-Probe 16 measured this: `APPEND_ONLY_REWIND_VIOLATIONS=0` with per-artifact logs
-growing across the failure and the recovery (341→1301 and 614→1031 bytes), a
+Probe 19 measured this on both approval branches:
+`APPEND_ONLY_PREFIX_VIOLATIONS=0` and `APPEND_ONLY_DELETIONS=0`, with the
+verification comparing **every prior byte**, not merely the stream length, a
 recovery event appended, and the engine's view restored from markdown alone with
-no DB byte restoration.
+`RECOVERY_STEP_5_DB_BYTE_RESTORED=False`.
 
 #### 6.5.3 Procedure
 
@@ -584,36 +744,74 @@ to the §6.5.1 recovery path.
    from the inventory, and **inside** that bounded set is moved into the recovery
    path's `quarantine/` directory. An unexpected path **outside** that set is
    **reported in the recovery record and left in place — never moved.**
-   - **Why this bound is mandatory.** The reference implementation in
-     `probe16-bounded-recovery.ps1` enumerates whole `queue/` + `archive/`
-     directories and moves everything absent from its inventory; in the probe's
-     3-record sandbox that was harmless (it relocated one engine lock file), but
-     against the **live** `.backlogit/queue/`, which holds many unrelated records
-     (`017-S`, `018-F`, `019-F`, …), the unbounded reading would relocate
-     **unrelated live backlog artifacts out of the queue during recovery** —
-     collateral damage strictly worse than the failure being recovered. The probe
-     script is evidence for the *procedure*, not a normative implementation; this
-     clause governs.
+   - **Why this bound is mandatory.** The superseded `probe16-bounded-recovery.ps1`
+     enumerated whole `queue/` + `archive/` directories and moved everything
+     absent from its inventory; in that probe's 3-record sandbox it looked
+     harmless (it relocated one engine lock file), but against the **live**
+     `.backlogit/queue/`, which holds many unrelated records (`017-S`, `018-F`,
+     `019-F`, …), the unbounded reading would relocate **unrelated live backlog
+     artifacts out of the queue during recovery** — collateral damage strictly
+     worse than the failure being recovered. **Probe 19** implements the bounded
+     rule instead and demonstrates it: the out-of-scope engine lock file
+     `.backlogit\queue\.001.001-T.md.lock` is **reported and left in place**
+     (`RECOVERY_STEP_3_OUT_OF_BOUNDS_MOVED=0`) on **both** approval branches,
+     while the single in-bounds unexpected path is quarantined by move.
 4. **Restore only the enumerated mutable files** from the snapshot, by inventory.
    Never perform a blanket restore of the backlog directory. Never touch the
    append-only or disposable classes.
 5. **Rehydrate the disposable index** by running the official `backlogit sync`.
 6. **Verify equivalence** against the inventory: every enumerated mutable file
-   present with a matching hash; **no unexpected residual paths**; and the
-   **dependency, link and membership edges** of the baseline scope unchanged.
-   Probe 16 records these as `MUTABLE_EQUIVALENCE_FAILURES=0` and
-   `RESIDUAL_UNEXPECTED_PATHS=0`.
+   present with a matching hash; **no unexpected residual paths *within the
+   enumerated bounded set*** (the residual check is scoped to that set exactly —
+   it is **not** a whole-directory assertion, because out-of-scope paths are
+   legitimately present and deliberately untouched); and the **dependency, link
+   and membership edges** of the baseline scope unchanged. Probe 19 records
+   `MUTABLE_BYTE_EQUIVALENCE_FAILURES=0`, `MUTABLE_PATH_EQUIVALENCE_FAILURES=0`,
+   `DEPENDENCY_EQUIVALENCE_OK=True` and
+   `RESIDUAL_UNEXPECTED_PATHS_IN_BOUNDED_SET=0`.
 7. **Append a recovery event** to the append-only stream — never a rewind.
 8. **HALT** with a named token and a **P-005** event, **preserving** the
    quarantine directory and the full diagnostic evidence for operator review.
 
-**Probe obligation — discharged.** **Probe 16** injected a real destination
-conflict, observed a **non-zero exit after partial mutation** leaving a torn
-record (shipment in `queue/` declaring `status: shipped` — a state the engine
-refuses to create directly), and executed this exact procedure to a verified
-equivalence PASS with the engine view restored and the quarantine preserved. Its
-script and transcript are committed under
-`docs/plans/evidence/2026-09-12-task-only-shipment-finalization/`.
+**Probe obligation — discharged by Probe 19 (rev 6).** Rev 5 rested this on
+**Probe 16**, and claimed the "exact procedure" was proven. That claim is
+**withdrawn**. Probe 16 diverged from this procedure in five ways, each now
+recorded in the evidence-integrity table (§3): it swept whole `queue/` +
+`archive/` directories instead of an enumerated set; it compared append-only
+streams by **length only**, so any equal-length or prefix mutation was invisible;
+it never executed the **approval-withheld** branch; it resolved its repo root by
+`..\..\..` from a four-deep directory (landing on `docs\`), so the committed
+script does not reproduce as written; and it ran against stock `backlogit init`
+defaults rather than the live configuration.
+
+**Probe 19** implements this procedure as specified and executes **both**
+approval branches against a real errored invocation (`SHIP_EXIT=1`, destination
+occupied by a directory, torn state observed: the shipment live in `queue/`
+declaring `status: shipped`, a state the engine refuses to create directly):
+
+| Assertion | Approval **withheld** | Approval **granted** |
+|---|---|---|
+| approval gate evaluated before any destructive step | **yes** | **yes** |
+| files quarantined | **0** | **1** (moved, never deleted) |
+| files restored | **0** | **4** (enumerated inventory only) |
+| out-of-bounds path (`.001.001-T.md.lock`) | **reported, not moved** | **reported, not moved** |
+| torn state preserved as evidence | **yes** | n/a (repaired) |
+| mutable byte / path equivalence failures | n/a | **0 / 0** |
+| dependency-edge equivalence | n/a | **True** |
+| residual unexpected paths *in bounded set* | n/a | **0** |
+| append-only **byte-prefix** violations | **0** | **0** |
+| append-only deletions | **0** | **0** |
+| cache rehydrated | n/a | official `backlogit sync` only; `DB_BYTE_RESTORED=False` |
+| terminal disposition | **HALT** (no quarantine, no restore) | **HALT** (quarantine preserved) |
+
+Both runs are seeded from the **live** `.backlogit` control files and gated on
+the engine SHA-256 before any operation. Script and transcript are committed as
+`probe19-bounded-recovery-v2.ps1` / `.txt`.
+
+**Byte-prefix, not length.** §6.5.2's monotonic-growth rule is strengthened in
+rev 6: an append-only stream satisfies the rule only if its **full prior byte
+sequence remains an exact prefix** of the current file. Length comparison is
+insufficient and is no longer accepted as evidence.
 
 ## 7. Verification obligations
 
@@ -631,7 +829,7 @@ load-bearing. The test fails if any token is absent from the installed file.
 | # | File | Required token / property |
 |---|---|---|
 | 1 | `workflow-policies.md` | P-015 names a **second** exception, literally `TASK_ONLY_FINALIZE` |
-| 2 | `workflow-policies.md` | the existing fully-covered-root exception paragraph is present and **unmodified** |
+| 2 | `workflow-policies.md` | the **§4.1 preserved region** of the fully-covered-root exception — preconditions **1–5**, **item 7**, and the **SUPERSESSION NOTE** — is present and **byte-for-byte unchanged**. (Scoped deliberately: lines 436, 443 and 448 **are** amended per §6.1 A4/A5/A6, so a whole-block "unmodified" assertion would contradict the intended edits and fail on a correct implementation.) |
 | 3 | `workflow-policies.md` | Amendment Log has a new row naming `TASK_ONLY_FINALIZE` |
 | 4 | `shipment-reconcile/SKILL.md` | classifier order `CASCADE` → `TASK_ONLY_FINALIZE` → `SAFE_CLOSE`/HALT |
 | 5 | `shipment-reconcile/SKILL.md` | the five topology assertions **T1–T5** are stated |
@@ -640,29 +838,67 @@ load-bearing. The test fails if any token is absent from the installed file.
 | 8 | `shipment-reconcile/SKILL.md` | recovery names the three state classes and disclaims atomic rollback |
 | 9 | `_ship.agent.md` | the Step 6 `Do NOT call … unless` clause names **both** exceptions |
 | 10 | `_ship.agent.md` | `TASK_ONLY_FINALIZE` is recognized by name, so a fresh reload authorizes it |
-| 11 | all three | no surviving "sole exception" / "only exception" phrasing about the cascade |
+| 11 | all three | no surviving "sole exception" / "only exception" phrasing **about the cascade being the single permitted alternative to safe-close**. The matcher is deliberately narrow: it targets the exclusivity claim, **not** the preserved block's legitimate "**only** when every one of the following preconditions holds" text, which must survive untouched (§4.1). |
 | 12 | `_ship.agent.md` | Ship Role Boundary is **unchanged** (no new privilege) |
 
 Rows 2 and 12 are **negative** assertions: they fail if the change widened
 something it was not authorized to widen.
 
-### 7.2 What the harness does and does **not** verify
+**The ≤4 helper functions are excluded from the "1 of 1" red count** (AC-8,
+§6.1 D2). The red count is over *generated test functions*, of which there is
+exactly one; helpers are not test functions and never report red.
 
-The Go harness reads installed markdown; it verifies **contract text**, not
-runtime behavior. It cannot execute the engine, and there are deliberately **no**
-executable negative cases in this unit.
+### 7.2 What the harness does and does **not** verify — stated exactly (rev 6)
 
-Engine behavior is verified separately by the **committed characterization
-probes** (§3). The plan claims only that:
+Rev 5's §7.2/AC-11 overstated what the Go harness covers (rev-5 open item O-4).
+Rev 6 states the boundary exactly, and the acceptance criteria in §9 are
+rewritten to match.
 
-- engine behavior is established by §3's executed probes, for the engine identity
-  of record (§6.3), with script and transcript committed;
-- contract text is established by the harness.
+**What the ONE Go table-driven contract test actually proves**, and the only
+things it proves:
 
-Guards G0/G6/G7/G8/G11/G13, §6.2.3 isolation, §6.5 recovery, and the §8 ordering
-are **behavioral obligations on Ship**; the harness verifies they are *specified*,
-not that they *executed*. Runtime enforcement (an executable classifier + negative
-fixtures) is explicitly **deferred** to a separate release unit.
+1. **Presence** — each required token/phrase literally occurs in the installed
+   file named by the row.
+2. **Parity across the three files** — the same `TASK_ONLY_FINALIZE` identifier
+   appears in all three instruction surfaces (rows 4, 5, 9, 10).
+3. **Selector ordering as written text** — that the classifier order
+   `CASCADE → TASK_ONLY_FINALIZE → SAFE_CLOSE`/HALT appears in the documented
+   order (row 4). This is a **string-order** assertion over prose, not an
+   executed classification.
+4. **Required negative tokens** — that the §4.1 preserved region is byte-identical
+   (row 2), that the narrow exclusivity phrasing is gone (row 11), and that the
+   Ship Role Boundary is unchanged (row 12).
+
+**What it does NOT prove, and must never be claimed to prove:**
+
+- It does **not** execute G0–G13. No guard is evaluated; no topology is
+  classified; no fixture is built.
+- It does **not** execute P1–P10. No post-condition is evaluated.
+- It does **not** execute `ShipShipment`, the §6.2.3 TOCTOU protocol, the §6.2.2
+  baseline capture, the §6.5 bounded-recovery procedure, or any step of §8.
+- It does **not** perform, simulate, or verify any destructive or recovery
+  operation.
+
+The harness reads installed markdown. It verifies **contract text**, not runtime
+behavior. There are deliberately **no** executable negative cases in this unit.
+
+**Engine behavior** is established separately and only by the **committed
+runtime fixture probes** (§3), for the engine identity of record (§6.3). The
+division of labour is:
+
+| Claim | Established by |
+|---|---|
+| the contract *says* the right thing, in all three files | the one Go table-driven test |
+| the engine *does* the right thing on the authorized topology | Probes 14, 15, **18** |
+| an errored/partial call *recovers* boundedly, both approval branches | Probe **19** |
+| the post-archive closure route's gate behavior | Probe **20** |
+| Ship's PR-lifecycle-only route is not executable | Probe 17 |
+
+Guards G0/G6/G7/G8/G11/G13, §6.2.3 isolation, §6.5 recovery and the §8 ordering
+are **behavioral obligations on Ship**, verified by **review and diff** against
+this plan — **not** by the harness and **not** by any automated gate in this
+unit. Runtime enforcement (an executable classifier + negative fixtures) is
+explicitly **deferred** to a separate release unit.
 
 ### 7.3 Probe obligations bound to supported topology
 
@@ -684,41 +920,124 @@ either **committed** (14–17, reproducible) or **retained-but-uncommitted**
 | unresolved blocking dependency / link expansion | 9 *(degraded)*, **14** *(committed)* | **no** — excluded by G13 |
 | destination conflict / torn record | **16** *(committed)* | **no** — excluded by **G9 conjunct 2**, detected by P6 |
 | `queued` shipment record | 11 *(degraded)* | **no** — excluded by G12 |
-| **errored/partial invocation → bounded recovery** | **16** *(committed)* | recovery path **proven** |
+| **errored/partial invocation → bounded recovery** | **19** *(committed)* | procedure **executed on both approval branches** — see note |
+| **post-archive closure route (O-6)** | **20** *(committed)* | lifecycle gate **blocks on all 4 routes**; §8.1.1 |
+| **inbound-edge holder byte-invariance through close** | **18** *(committed)* | **verified** |
 | engine-identity mismatch | — | **no** — excluded by §6.3 digest binding (HALT) |
 
 Multi-**live**-member manifests have **no** probe and are therefore
 **unsupported** (T2).
 
+**Recovery-claim scoping (rev 6).** Rev 5 recorded the recovery row as "recovery
+path **proven**". That phrasing is **withdrawn**: probe 16 exercised *a*
+recovery, not *this* procedure (it swept whole directories rather than an
+enumerated set, compared append-only streams by length only, and never ran the
+approval-withheld branch). **Probe 19** implements and executes the procedure as
+specified in §6.5.3, on **both** approval branches. The claim this plan makes is
+therefore exactly: *the §6.5.3 procedure has been executed end-to-end against a
+real errored invocation under live configuration, with byte/path/dependency
+equivalence verified and both approval outcomes demonstrated* — not that the
+procedure is proven correct for all failure modes.
+
 ## 8. Self-hosting closure sequence
 
 ### 8.1 The ordered sequence
 
-The prerequisite shipment closes itself using the contract it merges. The full
-ordered sequence, with actor, is:
+The prerequisite shipment closes itself using the contract it merges. This
+section is **self-contained** (rev 6): every step is stated here and aligned to
+the **installed** `_ship.agent.md`, with the governing clause cited by line so
+the sequence can be checked against the agent file without inference.
 
-| # | Actor | Step |
-|---|---|---|
-| 1 | **Ship** | Implement the sole task on an implementation branch; open the implementation PR. |
-| 2 | **Ship** | Merge the implementation PR (P-009 merge commit). |
-| 3 | **Ship** | **Verify the merge SHA** (two-parent merge commit confirmed) and record it. |
-| 4 | **Ship** | Check out a **fresh `main`** and cut the closure branch from it. |
-| 5 | **Ship** | **Reload** the merged P-015, `shipment-reconcile` skill **and `_ship.agent.md`**, and **positively verify** the `TASK_ONLY_FINALIZE` tokens and the merge commit are present in the working checkout. |
-| 6 | **Ship** | Run `shipment-reconcile` **pre-mode**. |
-| 7 | **Ship** | Classify and close via `TASK_ONLY_FINALIZE` (§6.2 → §6.2.3 → §6.3 → §6.4), passing `--sha <merge_sha>` from step 3. |
-| 8 | **Ship** | **P-007 handling, in the explicit order fixed by §8.2 below.** |
-| 9 | **Ship** | Run `shipment-reconcile` **post-mode**. |
-| 10 | **Ship** | Open and merge the closure PR. |
-| 11 | **Ship** | Operational closure. |
-| 12 | **Ship** | **P-020** compaction. |
-| 13 | — | **Only then** does the successor `017-S` become eligible. |
+Rev 5's ordering was wrong in one material way: it opened and merged the closure
+PR (step 10) **before** operational closure (11) and P-020 (12). The installed
+Ship contract requires the opposite — `_ship.agent.md` **L741**: *"**After all
+closure work is committed**, push the branch and create a PR"*. Closure work is
+authored **on the closure branch first**, then pushed, then reviewed, then
+merged. Rev 6 corrects this.
 
-**Step 5 must reload `_ship.agent.md` too.** This is why the file is surface 3
+| # | Actor | Step | Installed-Ship basis |
+|---|---|---|---|
+| 1 | **Ship** | **Verify `021-S` is present on `main`** (read the merged `.backlogit/queue/021-S.md` on `main`, not on the branch). | §14.1 gate |
+| 2 | **Ship** | **Claim `021-S`** — `queued -> active`. Required before any lifecycle gate can pass (**G12**; Probe 17/20 `LIFECYCLE_NO_ACTIVE_SHIPMENT`). | L169–207 pre_claim/post_claim gates |
+| 3 | **Ship** | Harness (H0 red) → build → review → implementation PR on the implementation branch. | Step 5, L559 `TOPOLOGY_GATE: lifecycle (before build)`, L571 (before PR creation) |
+| 4 | **Ship** | Merge the implementation PR (**P-009** merge commit). | Step 5 |
+| 5 | **Ship** | **Verify the merge SHA** — two-parent merge commit confirmed via `merge-base --is-ancestor`; record it. | L731–733 Merge Confirmation Gate |
+| 6 | **Ship** | Check out **fresh `main`**, cut the closure branch `post-merge/{feature_slug}` from it. | L734–738 |
+| 7 | **Ship** | **Reload and positively verify**: re-read the merged **P-015**, **`shipment-reconcile`** and **`_ship.agent.md`**; assert the `TASK_ONLY_FINALIZE` tokens are present in **all three**, and that the step-5 merge commit is an ancestor of the checkout. | L756–764 (amended by **C1**, §6.1) |
+| 8 | **Ship** | Run `shipment-reconcile` **pre-mode**. | L767 a0 `TOPOLOGY_GATE: lifecycle (before closure/safe-close)` — passes here because `021-S` is still **active** |
+| 9 | **Ship** | Classify and close via **`TASK_ONLY_FINALIZE`** (§6.2 → §6.2.3 → §6.3 → §6.4), passing `--sha <merge_sha>` from step 5. | §6.3 |
+| 10 | **Ship** | Evaluate **P1–P10 on the RAW post-call state**. No restoration of any kind first. | §8.2 |
+| 11 | **Ship** | **P-007** archive-integrity restore **and re-verification**, in the order fixed by §8.2 — only if step 10 passed. | §8.2, P-007 |
+| 12 | **Ship** | Run `shipment-reconcile` **post-mode**. | Step 6 |
+| 13 | **Ship** | Run the official **`backlogit sync`**. Successor eligibility is conditional on it (Probe 14). | Probe 14 |
+| 14 | **Ship** | **Verify** `021-S` is `archived` with `archived_status: shipped` and retains `commit: <merge_sha>`, and that `017-S` is now eligible. | Probes 14, 15, 18 |
+| 15 | **Ship** | **Author operational closure and P-020 compaction ON the closure branch**, and commit them there. | **L741** — all closure work committed *before* the PR |
+| 16 | **Ship** | `git push -u origin post-merge/{feature_slug}`; invoke `pr-lifecycle` to **open** the closure PR. | L741–744 |
+| 17 | **Ship** | **Current-HEAD** local review, CI green, and **P-018** Copilot review on the closure PR; `--admin` may **not** bypass `COPILOT_REVIEW_BLOCK`. | L715, L718–722 |
+| 18 | **Operator** | **Fresh explicit approval** — *"the prior main PR approval does not transfer."* | **L723** |
+| 19 | **Ship** | Merge the closure PR as a **P-009 merge commit**. | L745–746 |
+| 20 | **Ship** | Verify closure landed on `main`. | §14.1 |
+| 21 | **Orchestrator** | **Only then** route the successor `017-S`. | §14.1 |
+
+**Step 2 is new in rev 6 and closes rev-5 open item O-5 (claim).** Probe 17 and
+Probe 20 both show every `--phase lifecycle` route fails closed with
+`LIFECYCLE_NO_ACTIVE_SHIPMENT` unless exactly one shipment is **active**. Steps
+3 and 8 both sit behind that gate, so the claim must precede them. **Step 13 is
+the second half of O-5 (`backlogit sync`)**: Probe 14 makes successor
+eligibility conditional on it, and rev 5's sequence never ran it.
+
+**Step 7 must reload `_ship.agent.md` too.** This is why the file is surface 3
 (§4): the clause a reloaded Ship actually reads (`_ship.agent.md` line 794) names
-only the fully-covered-root exception. If it is not amended, step 5's positive
-verification **fails** — and if the verification were skipped, step 7 would be
+only the fully-covered-root exception. If it is not amended, step 7's positive
+verification **fails** — and if the verification were skipped, step 9 would be
 executed by an agent whose own contract forbids the call. Either way the sequence
-deadlocks. Step 5 therefore verifies the token in **all three** instruction files.
+deadlocks. Step 7 therefore verifies the token in **all three** instruction files
+**and** verifies the merge commit, so a stale checkout cannot satisfy it.
+
+#### 8.1.1 O-6 — the post-archive closure route, **probed** (rev 6)
+
+Rev 5 recorded O-6 as the highest-risk open item: after step 9 archives the
+shipment there are **zero active shipments**, so a topology gate firing on the
+closure PR would deadlock **after** the destructive call. **Probe 20** measured
+it rather than reasoning about it, and the answer has two separable halves.
+
+**Q1 — does a lifecycle gate block post-archive? YES, on every route.** Probe 20
+drove a live-config-seeded fixture to the exact post-archive state and ran all
+four routes:
+
+| Route | Exit | Token |
+|---|---|---|
+| `--mode agent --shipment <archived> --phase lifecycle` | **1** | `LIFECYCLE_NO_ACTIVE_SHIPMENT` |
+| `--mode agent --phase ambient` | **2** | `agent mode requires --shipment` |
+| `--mode manual --shipment <archived> --phase lifecycle` | **1** | `LIFECYCLE_NO_ACTIVE_SHIPMENT` |
+| `--mode ci --phase lifecycle` | **2** | `--phase lifecycle requires --shipment` |
+
+`POST_ARCHIVE_ROUTES_NONZERO_EXIT=4`. There is no active shipment left to
+satisfy the gate, and re-claiming an archived shipment is not a supported
+transition — so this deadlock, if entered, is **unrecoverable in-band**.
+
+**Q2 — does the installed Ship contract actually run that gate before the
+closure PR? NO.** Probe 20 step 5 cites the installed file directly: the
+lifecycle topology gate is mandated at **L559** (before build), **L571** (before
+*implementation* PR creation), and **L767** (before closure/safe-close, while the
+shipment is still active). The closure-PR step at **L741–744** invokes
+`pr-lifecycle` **without** a topology-gate precondition.
+
+**Disposition — not a deadlock, but a one-clause-deep hazard.** The §8 sequence
+as ordered above does not enter the deadlock, because no step between 15 and 19
+runs a lifecycle-phase topology gate. This is **not** a comfortable margin: any
+agent that defensively runs the lifecycle gate before the closure PR — a
+plausible reading of "run the topology gate before `pr-lifecycle`" generalized
+from L571 — **will** deadlock with the destructive call already committed.
+
+Therefore, and normatively:
+
+- **Steps 15–19 MUST NOT run `autoharness gate pipeline-topology --phase
+  lifecycle`.** The gate's precondition is structurally unsatisfiable there.
+- If a future harness change adds such a gate to the closure-PR path, this
+  sequence is **invalidated** and must return to Stage before any close.
+- The residual is recorded in §10.3 as **accepted-with-tripwire**, not as
+  "proven safe".
 
 ### 8.2 P-007 ordering relative to P1–P10 (rev 5, normative)
 
@@ -744,14 +1063,15 @@ The fixed order is:
    enumerate → approve → quarantine → restore sequence supersedes it, and it
    preserves the deletion as diagnostic evidence instead of quietly repairing it.
 
-**Merge-metadata preservation and verification.** The merge SHA from step 3 is
-passed at §6.3 and **verified twice**: by **P7** (the archived shipment record
+**Merge-metadata preservation and verification.** The merge SHA from **step 5**
+is passed at §6.3 and **verified twice**: by **P7** (the archived shipment record
 reports `archived_status: shipped` **and** retains `commit: <merge_sha>`) and
-again at step 4 above after any P-007 restoration. Probes 14 and 15 both confirm
-the archived shipment record carries `status: archived`, `archived_status:
-shipped`, and the `commit` value passed to `--sha`.
+again at item 4 of the ordering list above after any P-007 restoration. Probes
+14, 15 and **18** all confirm the archived shipment record carries
+`status: archived`, `archived_status: shipped`, and the `commit` value passed to
+`--sha`.
 
-**Eligibility at step 7.** The harvested artifacts MUST satisfy:
+**Eligibility at step 9.** The harvested artifacts MUST satisfy:
 
 - the covering feature has **exactly one** descendant at any depth — the sole
   task — so T5/G5 holds trivially, T2 holds, and P1 `returned_ids == []` follows;
@@ -765,13 +1085,14 @@ shipped`, and the `commit` value passed to `--sha`.
   Probe 14 shows an archived predecessor **satisfies** the edge rather than
   leaving it unresolved. G13 is satisfied.
 
-**Non-circular:** the authorization used at step 7 is the *merged* artifact from
-step 2, not the in-flight working copy. Step 5 (reload + positive verification
-across all three files) is the load-bearing ordering constraint, bound as AC-9.
+**Non-circular:** the authorization used at step 9 is the *merged* artifact from
+step 4, not the in-flight working copy. Step 7 (reload + positive verification
+across all three files, plus merge-commit ancestry) is the load-bearing ordering
+constraint, bound as AC-9.
 
 ### 8.3 Contingency — first real self-close fails after the implementation merged
 
-If step 7 fails after step 2 has already merged:
+If step 9 fails after step 4 has already merged:
 
 1. Execute §6.5 path (B): bounded recovery, then HALT.
 2. Leave the prerequisite shipment **unresolved** — do not force it to any
@@ -794,23 +1115,23 @@ If step 7 fails after step 2 has already merged:
 
 - **AC-1** P-015 gains a second named exception authorizing `TASK_ONLY_FINALIZE`; the **preserved region defined in §4.1** (preconditions 1–5, item 7, SUPERSESSION NOTE) is **byte-for-byte unchanged** (verified by diff), while the header sentence and item 6 are amended to remove exclusivity; Amendment Log entry appended.
 - **AC-2** `shipment-reconcile` documents the classification, evaluated **after** `CASCADE` and **before** `SAFE_CLOSE`/HALT, with the mutual-exclusivity rationale (§6.1).
-- **AC-3** The five topology assertions **T1–T5** and guards G0–G13 are specified (§6.2.0, §6.2.1).
-- **AC-4** All of P1–P10 are specified, with `allowed_ids`/`required_ids` defined normatively.
-- **AC-5** P1 is justified by reference to G5; P4 requires independent filesystem diffing derived from `required_ids`; P9 post-compares each task's declared status, single location, and `parent_id`; P10 asserts descendant byte-identity.
-- **AC-6** §6.5 specifies **two separate** failure paths: (A) pre-call guard failure → existing SAFE_CLOSE/HALT with **no** destructive call and **no** recovery; (B) post-call **or any errored/indeterminate** invocation → bounded recovery + HALT, **never** a fallback close path.
-- **AC-7** Safe-Close step 8 carries a fail-closed cross-reference to the new path; step 8's existing text is otherwise unchanged.
-- **AC-8** P-004: at H0 `go vet ./...` exits 0, `go test ./...` exits non-zero, the marker `not implemented: task-only finalize contract` is present, red count 1 of 1. At H1 the marker is gone and full `go test ./...` exits 0.
-- **AC-9** The task records the §8 step 4–5 fresh-`main` checkout, reload and **positive verification of merged tokens in all three instruction files**, including `_ship.agent.md`, as an execution obligation on Ship.
+- **AC-3** The five topology assertions **T1–T5** and guards G0–G13 are **specified in contract text** (§6.2.0, §6.2.1). **Verification method: review/diff, plus §7.1 row 5 token presence only.** The Go harness asserts that T1–T5 are *stated*; it does **not** evaluate any of them and does **not** execute G0–G13.
+- **AC-4** All of P1–P10 are **specified in contract text**, with `allowed_ids`/`required_ids` defined normatively. **Verification method: review/diff.** No automated verification exists in this unit; the Go harness does **not** execute P1–P10.
+- **AC-5** P1 is justified by reference to G5; P4 requires independent filesystem diffing derived from `required_ids`; P9 post-compares each task's declared status, single location, and `parent_id`; P10 asserts descendant byte-identity. **Verification method: review/diff.**
+- **AC-6** §6.5 specifies **two separate** failure paths: (A) pre-call guard failure → existing SAFE_CLOSE/HALT with **no** destructive call and **no** recovery; (B) post-call **or any errored/indeterminate** invocation → bounded recovery + HALT, **never** a fallback close path. **Verification: §7.1 row 7 (token presence) + Probe 19 (executed behavior).**
+- **AC-7** **Safe-Close step 8** — enumerated as **§6.1 site B11** (`shipment-reconcile/SKILL.md` lines **591–605**) — carries a fail-closed cross-reference to the new path; step 8's existing text is otherwise unchanged. This site is in **Inventory Table §6.1-B** and is budgeted in §10.1.
+- **AC-8** P-004: at H0 `go vet ./...` exits 0, `go test ./...` exits non-zero, the marker `not implemented: task-only finalize contract` is present, red count **1 of 1 over generated test functions** (the ≤4 helpers are **not** test functions and are excluded from the count). At H1 the marker is gone and full `go test ./...` exits 0.
+- **AC-9** The task records the §8 step 6–7 fresh-`main` checkout, reload and **positive verification of merged tokens in all three instruction files** (including `_ship.agent.md`) **and of the step-5 merge-commit ancestry**, as an execution obligation on Ship.
 - **AC-10** The generated function executes unconditionally — no `t.Skip`, build tag, env gate, or selector flag.
-- **AC-11** No Ship Role Boundary change, no generic `move shipment → shipped`, no pre-mode bypass, no unrestricted cascade. Asserted **negatively** by harness rows 2 and 12 (§7.1).
-- **AC-12** The authorized call passes merge-commit metadata (`--sha`, and `--message`/`--author` where declared); **P7** re-asserts `archived_status: shipped` **and** `commit` retention; §8.2 fixes P-007 ordering **after** P1–P10 with a re-verification pass.
-- **AC-13** All three surface files are reconciled against the **enumerated 14-clause inventory in §6.1**. The implementing task re-runs the scan and commits the resulting inventory (clause text + file + line); any clause found by the re-scan but absent from the table is added, never skipped. Mandatory pre/post reconciliation steps are retained unchanged.
-- **AC-14** §6.2.2 baseline scope is specified, including **inbound** edge/link/membership holders outside the parent subtree, and the explicit exclusion of expected pre-mode report/lock outputs from mutation comparison.
-- **AC-15** §6.2.3 TOCTOU isolation is specified: the single-agent/single-worktree/P-001 execution-mode precondition, bootstrap enumeration of the **relation closure** (including existing outside relationship holders), locks over that closure, re-run under lock, **re-scan and re-hash immediately before the call**, fail-closed on any difference, and an honest statement that new-record creation is excluded by the execution mode rather than by a lock — with HALT if that precondition is violated.
+- **AC-11** No Ship Role Boundary change, no generic `move shipment → shipped`, no pre-mode bypass, no unrestricted cascade. Asserted **negatively, as token/text assertions only**, by harness rows 2 and 12 (§7.1). This is a *contract-text* guarantee; it is **not** a runtime guarantee, and §7.2 states the boundary exactly.
+- **AC-12** The authorized call passes merge-commit metadata (`--sha`, and `--message`/`--author` where declared); **P7** re-asserts `archived_status: shipped` **and** `commit` retention; §8.2 fixes P-007 ordering **after** P1–P10 with a re-verification pass. **Verified by Probes 14, 15, 18.**
+- **AC-13** All three instruction surfaces are reconciled against the **closed inventory in §6.1 — Inventory Tables §6.1-A, §6.1-B, §6.1-C** (28 sites; 20 MUST + 8 CONSISTENCY). The implementing task re-runs the scan and commits the resulting inventory to the path fixed in **§6.1-E**; any clause found by the re-scan but absent from the tables is added, never skipped, and a newly-found **MUST** site invalidates the §10.1 budget and returns the unit to Stage. Mandatory pre/post reconciliation steps are retained unchanged.
+- **AC-14** §6.2.2 baseline scope is **specified in contract text**, including **inbound** edge/link/membership holders outside the parent subtree, and the explicit exclusion of expected pre-mode report/lock outputs from mutation comparison. **Verification method: review/diff for the specification; Probe 18 for the inbound-edge byte-invariance claim specifically.** The Go harness verifies neither.
+- **AC-15** §6.2.3 TOCTOU isolation is **specified in contract text**: the four-part execution-mode precondition (one agent, one worktree, no other active checkpoint/session, no concurrent backlog mutation), bootstrap enumeration of the **relation closure** (including existing outside inbound/outbound relationship holders), locks over that closure, re-run under lock, **re-scan and re-hash immediately before the call**, fail-closed on any difference **or any relevant new or changed record**, and an honest statement that the claim is **detection, not prevention against external actors**, with HALT if the precondition is violated. **Verification method: review/diff.** The Go harness does **not** execute the protocol.
 - **AC-16** §6.3 records the engine version **and the SHA-256 digest** of the executable, and **HALTs** on mismatch of either, requiring a probe refresh. No advisory fallback exists.
 - **AC-17** The unit contains **exactly one** task and one generated (table-driven) function; no sequential split is permitted.
-- **AC-18** The harness is **one table-driven test** over the 12-row assertion table in §7.1, including the two negative rows.
-- **AC-19** The committed probe evidence directory `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/` is referenced by the contract as the engine-behavior basis, and the recorded digest matches the engine used at closure.
+- **AC-18** The harness is **one table-driven test** over the 12-row assertion table in §7.1, including the two negative rows, plus **≤4** non-test helper functions.
+- **AC-19** The committed probe evidence directory `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/` is referenced by the contract as the **engine-behavior** basis, and the recorded digest matches the engine used at closure. **Scope statement:** that directory establishes *runtime engine behavior* via executed fixture probes (14, 15, 17, 18, 19, 20); it does **not** establish contract text, and the Go harness does **not** establish engine behavior. Neither substitutes for the other.
 
 ## 10. Sizing, risks, residuals
 
@@ -820,44 +1141,101 @@ structured `size` (with `size_source: agent` and a `size_ruleset_version`) plus
 `.backlogit/header-def.yaml` defines **no** `complexity` field on the `task`
 type. That partial degradation is flagged explicitly in the Stage report.
 
-### 10.1 Concrete edit budget (rev 5) — the 2-hour claim, itemized
+**Rev-6 note.** The recorded `size: M` is now **contradicted** by §10.1's
+recalculated budget (~2.5–2.7 h). The task record is deliberately **not**
+re-sized in this remediation cycle, because re-sizing would change harvested
+state while the unit is returning **MUST_REPLAN**; the correct fix is made by
+the re-planning cycle, not smuggled into a remediation commit.
 
-Rev 4.1 asserted "upper bound of M" and left the estimate contestable. Rev 5
-**itemizes** it. The file count (4) is a **heuristic, not a waiver**; the budget
-below is the actual claim.
+### 10.1 Concrete edit budget (rev 6) — the 2-hour claim, **recalculated and NOT closing**
+
+Rev 5 itemized a budget over a **14-site** inventory and simultaneously carried
+three *known* further sites as open items (O-1/O-2/O-3). Rev 6 closed the
+inventory (§6.1) to **28 sites**. The budget must be recalculated against the
+closed inventory, and when it is, **it does not close**.
 
 | Work item | Unit | Count | Basis |
 |---|---|---|---|
-| Clause reconciliations | small pre-located text edits | **14** | enumerated with file + line in §6.1 |
-| New P-015 exception block | one additive block | **1** | mirrors the existing exception's shape |
-| New `shipment-reconcile` classification section | one additive block | **1** | T1–T5 + guards + failure split |
-| Amendment Log row | one table row | **1** | mechanical |
-| Committed clause inventory | one generated table | **1** | output of re-running the §6.1 scan |
-| Go harness | **one table-driven test function** | **1** | 12-row table (§7.1) |
-| Go helpers | small file-read/assert helpers | **≤4** | e.g. `readContract`, `assertContains`, `assertAbsent`, `assertUnchanged` |
+| **MUST** clause edits — mechanical phrase reconciliation | small pre-located text edits | **9** | §6.1: A2, A3, B1, B5, C3, C4, C5, B15, B17-adjacent |
+| **MUST** clause edits — structural rewrites | multi-sentence clause rewrites | **8** | §6.1: A4, A5, A6, B3, B8, B13, C1, C2 |
+| **MUST** selector edits | ternary classifier surgery | **3** | §6.1: B9, B10, C6 |
+| **CONSISTENCY** edits | coherence-only text edits | **8** | §6.1: A1, B2, B4, B6, B7, B12, B14, B16 |
+| AC-7 step-8 cross-reference | one fail-closed pointer | **1** | §6.1 **B11** (was rev-5 open item O-2) |
+| New P-015 exception block | one additive normative block | **1** | §6.1 A7 — mirrors the existing exception's shape |
+| New `shipment-reconcile` classification section | one **large** additive normative block | **1** | §6.1 B18 — T1–T5 + G0–G13 + P1–P10 + failure split + recovery |
+| Amendment Log row | one table row | **1** | §6.1 A8 |
+| Committed clause inventory | one generated artifact | **1** | §6.1-E |
+| Go harness | one table-driven test function | **1** | 12-row table (§7.1) |
+| Go helpers | small file-read/assert helpers | **≤4** | `readContract`, `assertContains`, `assertAbsent`, `assertPreservedRegion` |
 
-**Totals: 14 clause edits + 4 additive blocks/rows + 1 table-driven test function
-+ ≤4 helpers. Zero new production files. Zero design work** — every edit location
-is pre-identified in this plan, and the required token for each is stated.
+**Closed totals: 28 normative edit sites + 2 additive normative blocks + 1
+Amendment Log row + 1 committed inventory + 1 table-driven test function + ≤4
+helpers, across 4 files.**
 
-Rev 5 **reduced** the budget relative to rev 4.1 in two material ways:
+#### Why the budget does not close (the honest arithmetic)
 
-- §7.1 went from **29 prose-precision assertions to a 12-row table** driven by one
-  function — the single largest cost reduction;
-- §6.1 replaced a "locate and rewrite every equivalent paraphrase" **sweep** (open
-  ended, unsizable) with a **closed 11-row inventory enumerating 14 clause sites**
-  across the three *contract* files (the fourth surface is the test harness).
+| Work item | Estimate |
+|---|---|
+| 9 mechanical clause edits @ ~1.5 min | ~14 min |
+| 8 structural clause rewrites @ ~4 min | ~32 min |
+| 3 selector edits @ ~6 min | ~18 min |
+| 8 consistency edits @ ~1.5 min | ~12 min |
+| B11 step-8 cross-reference | ~3 min |
+| A7 new P-015 exception block | ~15 min |
+| **B18 new classification section** | **~30 min** |
+| A8 Amendment Log row | ~1 min |
+| §6.1-E committed inventory | ~5 min |
+| Go table-driven test + ≤4 helpers | ~22 min |
+| H0→H1 verification, `go vet`, `go test`, markdownlint | ~10 min |
+| **Total** | **~162 min ≈ 2.7 h** |
 
-Those reductions are what make the budget defensible rather than asserted. The
-added `_ship.agent.md` surface costs **3 of the 14** clause edits and no new
-block, so the net change from rev 4.1 is a **decrease**.
+Even on the **MUST-only** reading (dropping all 8 CONSISTENCY edits, which
+leaves the contract coherent but internally uneven) the total is **~150 min ≈
+2.5 h**. Both readings exceed the 2-hour rule.
 
-**Honest limit.** This is a drafting task with pre-located edits, which is why it
-fits. If Ship finds the actual work exceeding two hours **mid-execution**, the
-required response is **HALT and return the unit to Stage for re-planning** —
-never split it (see below), and never rush contract prose. Stage does **not**
-claim the estimate is beyond challenge; it claims the estimate is now *itemized*
-and therefore falsifiable.
+The single largest irreducible item is **B18**: the `shipment-reconcile`
+classification section is the *normative home* of the whole contract — T1–T5,
+G0–G13, P1–P10, the two-path failure split and the bounded-recovery procedure.
+The plan can point at it, but the plan does not ship; the skill does. It cannot
+be compressed to a pointer without moving the contract somewhere that Ship does
+not reload.
+
+#### Verdict: **MUST_REPLAN**
+
+§10.2 establishes that this unit **cannot be split** — T2 admits exactly one
+live manifest member at closure, so a second task under `022-F` breaks the §8
+self-hosting topology. §5 and AC-17 restate the same constraint.
+
+So the two constraints are jointly unsatisfiable as currently scoped:
+
+- the work is **~2.5–2.7 h**, which violates the 2-hour rule; and
+- the work **cannot be split**, which is the only in-band remedy.
+
+Per §10's own stated contingency ("if the work is judged to exceed the 2-hour
+budget, the correct response is **HALT and return to Stage**"), this plan
+therefore returns **MUST_REPLAN**. Rev 6 does **not** paper over the overrun by
+re-labelling known sites as open items, which is precisely what rev 5 did.
+
+**The harvested topology is deliberately left untouched** (`022-F`,
+`022.001-T`, task-only `021-S`, `017-S -> 021-S`). Re-scoping is a *future*
+Stage decision, not a silent edit inside a remediation cycle. Candidate
+directions for that decision, none of them taken here:
+
+1. **Reduce the contract surface** — land `TASK_ONLY_FINALIZE` with the
+   CONSISTENCY edits deferred to a follow-up hygiene unit, and re-measure.
+2. **Move B18's bulk into P-015** so the skill carries a short normative
+   pointer, accepting that the skill is then not self-contained.
+3. **Accept a documented, operator-authorized 2-hour-rule exception** for this
+   one structurally-indivisible unit, recorded as a P-005 deviation with
+   rationale.
+4. **Change the self-hosting approach** so the unit need not close itself,
+   which dissolves the T2 one-live-member constraint and re-enables splitting.
+
+**Honest limit.** This is a drafting task with pre-located edits, which is why
+rev 5 believed it fit. What changed in rev 6 is not the work — it is the
+*measurement*. Stage does not claim the estimate is beyond challenge; it claims
+the estimate is now itemized against a **closed** inventory and therefore
+falsifiable in both directions.
 
 ### 10.2 Why splitting is unavailable (structural, not stylistic)
 
@@ -883,6 +1261,18 @@ an inconvenient one.
   deferred to a separate unit.
 - **Residual — runtime enforcement deferred** (§7.2). The harness proves contract
   *text*, not engine *behavior*; behavior is proven by the committed probes.
+- **Residual — O-6 post-archive gate hazard (rev 6, accepted WITH TRIPWIRE).**
+  Probe 20 proves a lifecycle-phase topology gate **blocks on all four routes**
+  once the shipment is archived, and the state is not recoverable in band. The
+  §8 sequence avoids it only because the installed closure-PR path (L741–744)
+  does not invoke that gate. **Tripwire:** if any harness change adds a
+  lifecycle-phase topology gate to the closure-PR path, §8 is invalidated and
+  must return to Stage before any close.
+- **Residual — authorization surface is CLI-only** (§3.0). The MCP surface is
+  unprobed and unauthorized; no equivalence is claimed.
+- **Residual — probes 14/15/16 remain stock-`init`-seeded.** Probe 18 shows the
+  config delta is material; load-bearing claims are re-derived under live config
+  by probes 18–20, the rest is carried here.
 - **Residual — multi-live-member and multi-parent manifests unsupported** (T2/T4).
 - **Residual — engine-identity coupling.** Safety claims bind to the SHA-256 in
   §6.3. An upgrade **HALTs** and requires re-running every probe in the evidence
@@ -898,18 +1288,25 @@ an inconvenient one.
   confirms the edge enforces this without further action.
 - **BLOCKER — PR #54 has no agent-executable route.** See §11. This is an open
   blocker returned to the operator, not a residual Stage has closed.
+- **BLOCKER — the §10.1 budget does not close (rev 6).** The unit prices at
+  ~2.5–2.7 h against the closed 28-site inventory and cannot be split (§10.2).
+  Verdict **MUST_REPLAN**; harvested topology deliberately left unchanged.
 
 ## Plan Hardening
 
-*(Literal section title, current as of rev 5. **Probes 14–17** referenced below
+*(Literal section title, current as of rev 6. **Probes 14–20** referenced below
 are committed with script and transcript under
-`docs/plans/evidence/2026-09-12-task-only-shipment-finalization/`. **Probes 1, 3,
-4 and 9** are retained rev-4.1 characterizations **without** committed
-transcripts — see §3's evidence-degraded table.)*
+`docs/plans/evidence/2026-09-12-task-only-shipment-finalization/`; **probes
+18–20 are additionally live-config-seeded and digest-gated in-script** (§3.0).
+**Probes 1, 3, 4 and 9** are retained rev-4.1 characterizations **without**
+committed transcripts — see §3's evidence-degraded table. **Probe 16 is
+superseded by Probe 19** and is no longer cited as evidence for the §6.5.3
+procedure.)*
 
 1. **Destructive-operation adjacency.** The authorized call mutates the backlog
    with no transaction. Mitigated by T1–T5 plus G0–G13, §6.2.3 isolation, P1–P10,
-   and the §6.5(B) bounded recovery proven by **Probe 16**.
+   and the §6.5(B) bounded recovery **executed on both approval branches** by
+   **Probe 19**.
 2. **Silent scope expansion is reachable and confirmed damaging.** Probe 3
    archives omitted descendants; Probes 4 and 9 return omitted live siblings —
    and Probe 9 proves the return **strips `parent_id`**, orphaning the record and
@@ -917,21 +1314,26 @@ transcripts — see §3's evidence-degraded table.)*
    requirements derived from executed evidence.
 3. **Recovery is bounded, not atomic rollback.** Stated plainly in §6.5. No
    DB/WAL/SHM byte restoration is claimed; the index is a disposable cache
-   rehydrated by the official `backlogit sync`. **Probe 16 proves a partial
+   rehydrated by the official `backlogit sync`. **Probe 19 shows a partial
    failure is real**: the engine applied mutations and *then* errored, leaving the
    shipment record declaring `status: shipped` while still in the queue directory
-   — a torn state the engine itself refuses to create directly (Probe 1, exit 9).
-   Bounded recovery restored byte/path equivalence
-   (`MUTABLE_EQUIVALENCE_FAILURES=0`) and the engine's own view, with
-   `APPEND_ONLY_REWIND_VIOLATIONS=0`. **Live destructive recovery requires
-   explicit operator action-risk approval BEFORE quarantine or restore.**
+   — a torn state the engine itself refuses to create directly (Probe 18, exit 9).
+   Bounded recovery restored byte/path/dependency equivalence
+   (`MUTABLE_BYTE_EQUIVALENCE_FAILURES=0`,
+   `MUTABLE_PATH_EQUIVALENCE_FAILURES=0`, `DEPENDENCY_EQUIVALENCE_OK=True`) and
+   the engine's own view, with `APPEND_ONLY_PREFIX_VIOLATIONS=0` verified over
+   **every prior byte**, not merely stream length. **Live destructive recovery
+   requires explicit operator action-risk approval BEFORE quarantine or restore
+   — and Probe 19 executes the withheld branch to demonstrate it.**
 4. **TOCTOU.** §6.2.3 locks the **entire relation closure** — including existing
-   records outside the parent subtree that hold inbound edges, links, or
-   shipment membership — re-runs enumeration under lock, and **re-scans and
-   re-hashes immediately before the call**. New-record creation is excluded by
-   the enforced **single-agent / single-worktree / P-001 execution mode**, not by
-   a lock; if that precondition is violated or a new in-scope record is observed,
-   the procedure **HALTs**. **No claim of absolute prevention is made.**
+   records outside the parent subtree that hold **inbound or outbound** edges,
+   links, or shipment membership (explicitly including the `017-S -> 021-S`
+   record, proven byte-identical through close by **Probe 18**) — re-runs
+   enumeration under lock, and **re-scans and re-hashes immediately before the
+   call**, HALTing on any relevant new or changed record. New-record creation is
+   excluded by the enforced **one-agent / one-worktree / no-other-active-
+   checkpoint-or-session / no-concurrent-mutation** execution mode, not by a
+   lock. **The claim is DETECTION, not prevention against external actors.**
 5. **Guard scoping is itself a hazard.** A blanket "any subtask member
    disqualifies" rule would have rendered the path unusable on `017-S`, the one
    shipment it exists to close. **T3** scopes task-only to **live** members on the
@@ -939,11 +1341,16 @@ transcripts — see §3's evidence-degraded table.)*
    set (3 archived tasks + 8 archived subtasks) and found every member byte, path
    and `parent_id` unchanged. Over-tightening a safety guard can destroy the
    objective as surely as under-tightening destroys safety.
-6. **Self-hosting.** §8's thirteen-step sequence is mandatory and ordered; step 5
-   (reload + positive verification on fresh `main`, across **all three**
-   instruction files) is load-bearing (AC-9). §8.2 fixes P-007 ordering **after**
-   P1–P10 so a repair can never erase detection evidence. §8.3 gives the
-   no-fallback contingency.
+6. **Self-hosting.** §8.1's **twenty-one-step** sequence is mandatory and
+   ordered; step 2 (**claim**, required for every lifecycle gate), step 7 (reload
+   + positive verification on fresh `main`, across **all three** instruction
+   files **and** the merge commit, AC-9), step 13 (**official `backlogit sync`**)
+   and step 15 (**operational closure + P-020 authored on the closure branch
+   before the PR opens**, installed Ship L741) are all load-bearing. §8.2 fixes
+   P-007 ordering **after** P1–P10 so a repair can never erase detection
+   evidence. §8.1.1 records the measured post-archive gate hazard (O-6) and
+   **prohibits** running a lifecycle-phase topology gate in steps 15–19. §8.3
+   gives the no-fallback contingency.
 7. **Contract/engine divergence.** `header-def.yaml` permits shipment
    `status: shipped` while the engine refuses the generic transition. The path
    depends on *engine* behavior established by the committed probes, never on the
@@ -952,18 +1359,25 @@ transcripts — see §3's evidence-degraded table.)*
 8. **Blast radius.** P-015, `shipment-reconcile` and `_ship.agent.md` govern every
    shipment closure workspace-wide. Mitigated by additive-only drafting,
    byte-for-byte preservation of the existing exception, mutual exclusivity
-   (§6.1), the enumerated 14-clause reconciliation that prevents a
+   (§6.1), the **closed 28-site reconciliation inventory** that prevents a
    self-contradictory contract, and two **negative** harness assertions (§7.1
    rows 2 and 12) that fail if anything was widened.
-9. **Verification honesty.** §7.2 states what is and is not verified; §7.3 binds
-   supported topology strictly to shapes with a **committed** probe. Rev 4.1's
+9. **Verification honesty.** §7.2 states exactly what the one Go table-driven
+   test proves and does not prove; §7.3 binds supported topology strictly to
+   shapes with a **committed** probe, and §3.0 adds a probe-vs-contract fidelity
+   table plus the **CLI-only** authorization statement. Rev 4.1's
    `%TEMP%`-and-deleted probes are **withdrawn as evidence** (§3).
 10. **An executing agent that cannot execute is a planning defect, not a runtime
     surprise.** Rev 5 tested the actor assumption instead of asserting it, and
     found the PR-lifecycle-only Ship route **unexecutable** (Probe 17, §11). The
     blocker is returned to the operator rather than papered over.
+11. **A budget that does not close is a planning defect, not an execution
+    problem (rev 6).** Closing the §6.1 inventory raised the honest cost to
+    ~2.5–2.7 h in a unit that structurally cannot be split (§10.2). Rev 6
+    returns **MUST_REPLAN** rather than re-labelling known edit sites as open
+    items to keep the estimate inside the 2-hour rule.
 
-## 11. Authorized actors and PR boundary (rev 5, normative) — **BLOCKER**
+## 11. Authorized actors and PR boundary (rev 6, normative) — **BLOCKER**
 
 This plan's artifacts ship as **one artifacts-only Stage PR**, PR #54 (§14).
 
@@ -1157,77 +1571,102 @@ citation against the installed contract files** (all 14 confirmed accurate).
 | **P3** | header Status showed an unblocked plan | now reads **BLOCKED** with the §11 pointer |
 | **P3** | §8 had no `§8.1` | step table now carries an explicit **§8.1** heading |
 
-**OPEN — carried into the independent adversarial re-review** (8 items, all P2/P3,
-none blocking the artifact-only PR because none is reachable before implementation
-begins):
+**OPEN AT REV 5 — all eight CLOSED in rev 6 (§12.3).** Recorded here as the
+rev-5 record; see §12.3 for each item's disposition. None was carried forward.
 
 | # | Sev | Open item |
 |---|---|---|
-| O-1 | P2 | §6.1's inventory is likely **incomplete**: reviewer identified two further sites — `shipment-reconcile/SKILL.md` ~366–368 (Safe-Close Step 0's **binary** close-path selector, which must become ternary) and `_ship.agent.md` 789–791 (the safe-close summary still prescribing `move --status shipped`, which §2 says the engine **refuses** with exit 9). Both plausibly raise the count to ~16 sites. |
+| O-1 | P2 | §6.1's inventory is likely **incomplete**: reviewer identified two further sites — `shipment-reconcile/SKILL.md` Safe-Close Step 0's **binary** close-path selector, which must become ternary, and `_ship.agent.md`'s safe-close summary still prescribing `move --status shipped`, which §2 says the engine **refuses** with exit 9. |
 | O-2 | P2 | **AC-7's** Safe-Close step-8 cross-reference site is not in the §6.1 table and not in the §10.1 budget. |
 | O-3 | P2 | The **committed clause inventory** artifact has no named path and no home in the 4-file surface. |
-| O-4 | P2 | §7.2 / AC-11 **overstate harness coverage**: the 12-row table verifies none of G0–G13, the TOCTOU protocol, the baseline scope, or the §8 ordering, so AC-3/4/14/15/19 have **no** automated verification. Either add rows (raising the budget) or state plainly that these are verified by review/diff. |
+| O-4 | P2 | §7.2 / AC-11 **overstate harness coverage**: the 12-row table verifies none of G0–G13, the TOCTOU protocol, the baseline scope, or the §8 ordering, so AC-3/4/14/15/19 have **no** automated verification. |
 | O-5 | P2 | §8 omits two steps its own evidence requires: an explicit **claim** step (G12 needs `active`) and an explicit **`backlogit sync`** step (Probe 14 makes successor eligibility conditional on it). |
-| O-6 | P2 | The **post-archival closure route** (§8 steps 9–12) was never probed against the same gate Probe 17 falsified. After step 7 archives the shipment there are **zero active shipments**, so a topology gate firing on the closure PR would deadlock **after** the destructive call. |
-| O-7 | P2 | Probes ran against a default `backlogit init` workspace (`.backlog/`, stock config); the live workspace is `.backlogit/` with custom `header-def.yaml`, `hooks.yaml`, and `.locks/`. **Configuration is unbound** — configured hooks could mutate records the probes never observed. |
-| O-8 | P3 | Residual precision: T4 states liveness by location while §6.2.0 forbids location-derived liveness; §7.1's semantics sentence omits negative row 11 and does not specify a matcher narrow enough to avoid colliding with the preserved block's legitimate "only when" text; and the ≤4 Go helpers are not explicitly excluded from the "1 of 1" red count. |
+| O-6 | P2 | The **post-archival closure route** was never probed against the same gate Probe 17 falsified. |
+| O-7 | P2 | Probes ran against a default `backlogit init` workspace; the live workspace has custom `header-def.yaml`, `hooks.yaml`, `.locks/`. **Configuration is unbound.** |
+| O-8 | P3 | Residual precision: T4 liveness-by-location wording; §7.1's row-11 matcher breadth; the ≤4 Go helpers vs the "1 of 1" red count. |
 
-**Verdict: ADVISORY.** No P0 and no P1 outstanding. The eight open items are
-recorded rather than silently closed, and they form part of the re-review scope
-in §13.
+### 12.3 Rev 6 — adversarial remediation cycle 1 of 3 (against HEAD `1f55e6a`)
+
+Independent adversarial re-review of rev 5 returned **MUST_REMEDIATE**, architecture
+retained. **All eight open items are CLOSED in this revision** — none is carried
+forward, and no known edit site is left labelled "open".
+
+| # | Rev-6 disposition | Where |
+|---|---|---|
+| **O-1** | **CLOSED.** Both sites enumerated: the binary selector is **B10** (`SKILL.md` 505–512), the `move --status shipped` summary is **C2** (`_ship.agent.md` 789–791). Inventory closed at **28 sites**. | §6.1-B, §6.1-C |
+| **O-2** | **CLOSED.** Safe-Close step 8 is **B11** (lines 591–605), in the table and in the budget. AC-7 rewritten to cite it by inventory ID. | §6.1-B, AC-7, §10.1 |
+| **O-3** | **CLOSED.** The inventory has a name (**Inventory Table §6.1-A/B/C/D**) and a committed path (**§6.1-E**), recorded as *evidence*, so the 4-file surface is unchanged. | §6.1-E, AC-13 |
+| **O-4** | **CLOSED.** §7.2 rewritten to state exactly what the one Go test proves (presence / parity / selector **text** ordering / required tokens) and exactly what it does not (no G0–G13, no P1–P10, no recovery, no `ShipShipment`). AC-3/4/11/14/15/19 restated with explicit verification methods. | §7.2, §9 |
+| **O-5** | **CLOSED.** §8.1 gains **step 2 (claim)** and **step 13 (`backlogit sync`)**, both cited to the evidence that requires them. | §8.1 |
+| **O-6** | **CLOSED by measurement.** **Probe 20** drove a live-config fixture to the post-archive state: **all 4 routes fail closed** (`POST_ARCHIVE_ROUTES_NONZERO_EXIT=4`). But the installed Ship contract does **not** run that gate before the closure PR (L741–744), so §8 is **not** deadlocked. Recorded as a normative prohibition on steps 15–19 plus a tripwire, not as "proven safe". | §8.1.1, §10.3 |
+| **O-7** | **CLOSED.** Probes **18/19/20** are seeded from the **live** `.backlogit` control files with each seed file's SHA-256 recorded, and are **digest-gated in-script**. The delta is confirmed material (`SEED_STATUS_ENUM_HAS_SHIPPED=False`; hooks `validate_transition` + `pre_task_completion_gate` both present). | §3.0, §3 |
+| **O-8** | **CLOSED.** T4 now reads liveness from frontmatter `status` with directory used only as a location/integrity cross-check — and Probe 18 **measured** why (live `registry.yaml` routes `done` to `archive/`). §7.1 row 11's matcher is narrowed to the exclusivity claim and explicitly spares the preserved block's "only when" text. Helpers explicitly excluded from the "1 of 1" red count. | §6.2.0, §7.1, AC-8 |
+
+**Additional rev-6 findings, discovered by remediation rather than review:**
+
+| Sev | Finding | Disposition |
+|---|---|---|
+| **P0** | **The §10.1 budget does not close.** The closed 28-site inventory prices at **~2.5–2.7 h**, and §10.2/§5/AC-17 establish the unit **cannot be split**. | **MUST_REPLAN** (§10.1). Topology deliberately left unchanged. |
+| **P1** | Rev 5's §8 ordered the closure PR **before** operational closure and P-020, contradicting installed Ship **L741** ("after all closure work is committed, push … and create a PR"). | **Fixed** — §8.1 reordered; closure work is authored on the closure branch at step 15, PR opens at step 16. |
+| **P1** | Rev 5 claimed the §6.5.3 recovery procedure was **proven** by Probe 16, which diverged from it in five ways and never ran the approval-withheld branch. | **Fixed** — claim withdrawn; **Probe 19** implements and executes the procedure on **both** branches. |
+| **P1** | Rev 5 relied on an **unconditional** standing merge preauthorization for PR #54. | **Fixed** — §14 gate 7 now requires **fresh** approval after current-HEAD review/CI/P-018, with the bounded dark-mode exception named but **not assumed**. |
+| **P2** | The committed `probe16-bounded-recovery.ps1` resolves its repo root by `..\..\..` from a 4-deep directory, landing on `docs\` — it does not reproduce as written. | **Recorded** in §3/§3.0; probes 18–20 resolve the root via `git rev-parse --show-toplevel`. |
+| **P2** | No probe ever exercised the **MCP** surface, yet the plan spoke of tool operations generically. | **Fixed** — §3.0 states **CLI-only** authorization and explicitly disclaims MCP equivalence. |
+| **P2** | TOCTOU claimed more than detection. | **Fixed** — §6.2.3 claims **detection, not prevention**; preconditions expanded to four; the inbound `017-S -> 021-S` record is explicitly in baseline/lock/re-hash and **proven byte-identical** by Probe 18. |
+
+**Deferred, deliberately not widened:** the **P-017 blocked-status mismatch** remains
+an unrelated finding outside this unit's scope and is **not** addressed here.
+
+**Verdict: MUST_REPLAN** — on the §10.1 budget only. No P0 or P1 remains on
+*correctness*; the blocking defect is that the honestly-measured work does not fit
+the 2-hour rule in a unit that structurally cannot be split.
 
 ## 13. Scope for independent adversarial plan review
 
 Reviewers should focus on, in priority order:
 
-1. **Guard sufficiency.** Can any topology satisfy **T1–T5** and G0–G13 yet cause
+1. **The §10.1 budget verdict — highest priority.** Is the 28-site closed
+   inventory in §6.1 genuinely complete against the installed files at
+   `1f55e6a`, is the MUST/CONSISTENCY split defensible, and is
+   **MUST_REPLAN** the correct verdict — or is there a scoping the plan has
+   missed that closes the budget without breaking T2/§10.2?
+2. **Inventory completeness.** Re-run the §6.1 scan independently. A **MUST**
+   site present in the files but absent from Inventory Tables §6.1-A/B/C
+   invalidates both the budget and AC-13.
+3. **Guard sufficiency.** Can any topology satisfy **T1–T5** and G0–G13 yet cause
    `backlogit shipment ship` to archive, return, or reparent an artifact outside
    `allowed_ids`? Committed probes cover the shapes in §7.3.
-2. **Detection completeness.** Can any violation escape P1–P10 given detection is
+4. **Detection completeness.** Can any violation escape P1–P10 given detection is
    post-destructive — and is §8.2's "detect before repair" ordering correct?
-3. **Recovery soundness.** Is §6.5 sufficient — named gitignored recovery path,
-   approval-before-destruction, three-class discipline, enumerated restore,
-   `backlogit sync` rehydration, byte/path/dependency equivalence — for errored or
-   partially-applied invocations, given that **no** DB restoration and **no**
-   atomicity is claimed?
-4. **TOCTOU boundary.** §6.2.3 relies on an *execution-mode precondition* for
-   new-record exclusion and on *relation-closure locking* for existing records. Is
-   that closure complete (inbound edges, links, membership, both directions), and
-   is relying on the P-001 precondition legitimate rather than an unfalsifiable
-   assumption?
-5. **P-015 amendment drafting risk.** Does adding a second exception interact
-   badly with the existing fully-covered-root exception or Ship Step 6 pre-mode,
-   and is the **14-clause inventory** in §6.1 complete?
-6. **Self-hosting ordering (§8) and contingency (§8.3).** Is merge → verify SHA →
-   fresh `main` → reload+verify **all three files** → pre-mode → close → P-007
-   (per §8.2) → post-mode → closure PR → operational closure → P-020 sound, and
-   does the prerequisite's own topology provably satisfy T1–T5?
-7. **§7.2/§7.3 honesty and §10.1 sizing.** Is the documentation-vs-behavior
-   boundary stated accurately, is supported topology bound to **committed** probes
-   only, and is the itemized edit budget (14 clause edits + 4 blocks + 1
-   table-driven test + ≤4 helpers) genuinely ≤2 hours?
-8. **§11 blocker.** Is the conclusion that Ship cannot execute PR #54 correct, and
-   is recording it as an operator blocker the right disposition versus amending
-   Ship's Step 5 gate in a separate unit?
-9. **The eight OPEN items in §12.2 (O-1 … O-8).** These were raised by internal
-   review and **deliberately left open** rather than closed under time pressure.
-   Re-reviewers should treat them as in-scope and adjudicate each:
-   - **O-1/O-2/O-3** — is the §6.1 clause inventory genuinely complete, and are
-     AC-7's step-8 site and the clause-inventory artifact's path accounted for in
-     both the inventory and the §10.1 budget?
-   - **O-4** — does the 12-row harness actually verify what §7.2 and AC-11 claim,
-     or must those claims be narrowed to "verified by review/diff"?
-   - **O-5** — does §8 need explicit **claim** and **`backlogit sync`** steps?
-   - **O-6** — **highest-risk open item.** The post-archival closure route
-     (§8 steps 9–12) is unprobed against the gate Probe 17 falsified; after the
-     shipment archives there are **zero active shipments**, so a deadlock there
-     lands *after* the destructive call. Should §8 be gated on probing it first?
-   - **O-7** — probes ran on a default `backlogit init` workspace, not the live
-     `.backlogit` configuration (custom `header-def.yaml`, `hooks.yaml`,
-     `.locks/`). Is the configuration delta a material threat to the probe
-     conclusions, or a nameable residual?
-   - **O-8** — residual precision items (T4 liveness wording, §7.1 row-11 matcher
-     breadth, helper functions vs the "1 of 1" red count).
+5. **Recovery soundness (now executed, both branches).** Is §6.5 sufficient given
+   **Probe 19**'s evidence — enumerated-set-only restore, approval-before-any-
+   destructive-step, byte-prefix append-only preservation, out-of-bounds paths
+   reported-not-moved, sync-only rehydration, byte/path/dependency equivalence —
+   and is the residual scoping (bounded set, not whole directory) correct?
+6. **TOCTOU boundary.** §6.2.3 now claims **detection, not prevention**. Is the
+   relation closure complete in both directions, is the four-part execution-mode
+   precondition legitimate rather than unfalsifiable, and does Probe 18's
+   inbound-edge byte-invariance result actually discharge the `017-S -> 021-S`
+   obligation?
+7. **§8 ordering and §8.1.1.** Is the corrected order (verify on main → **claim**
+   → implement/merge → verify SHA → fresh main → reload+verify all three files
+   and the merge commit → pre-mode → close → raw P1–P10 → P-007 → post-mode →
+   **sync** → verify → **operational closure + P-020 on the branch** → push/open
+   PR → current-HEAD review/CI/P-018 → **fresh** approval → merge → verify →
+   route `017-S`) correct against the installed Ship agent? Is the §8.1.1
+   disposition of O-6 — *gate blocks post-archive, but the closure-PR path does
+   not invoke it, therefore prohibit invoking it and set a tripwire* — sound, or
+   should §8 be gated harder?
+8. **Harness honesty.** Does §7.2 now describe the single Go table-driven test
+   accurately, and do AC-3/4/11/14/15/19 correctly separate *review/diff* from
+   *runtime fixture probe* from *contract-text token assertion*?
+9. **Evidence integrity and authorization surface.** Is §3.0's fidelity table
+   right? Is the **CLI-only** authorization statement and the explicit refusal to
+   claim MCP equivalence adequate, given the registry advertises MCP tools?
+10. **§11/§14 actor and gates.** Is the conclusion that no agent can carry PR #54
+    still correct, and is the **fresh-approval** requirement (gate 7) correctly
+    stated, including the bounded dark-mode carve-out that Stage explicitly does
+    **not** assume exists?
 
 ## 14. Sequencing — one artifacts-only Stage PR
 
@@ -1262,7 +1701,7 @@ therefore dissolved rather than deferred.
 | 4 | **Exact-HEAD local adversarial READY** | The readiness record must cover the **exact** merge HEAD, not an ancestor. |
 | 5 | **CI green** | Full pipeline green on that HEAD. |
 | 6 | **P-018 Copilot review** | Completed against the **current HEAD**, with **zero** unresolved Copilot threads. |
-| 7 | **User merge preauthorization** | The operator's existing merge preauthorization. |
+| 7 | **Fresh merge approval** | **Rev 6 correction.** Approval MUST be obtained **after** gates 4–6 complete on the **current** HEAD. A pre-existing/standing merge preauthorization does **NOT** satisfy this gate. The only exception is a **currently valid, bounded dark-mode activation record that explicitly preauthorizes this exact PR number and this exact head SHA** — Stage has **not** verified that such a record exists and does **not** assume one. Absent that exact record, approval is fresh-or-nothing. Ship's own contract says the same thing for closure PRs: `_ship.agent.md` **L723**, *"the prior main PR approval does not transfer."* |
 | 8 | **P-009 merge commit** | No squash, no rebase. |
 | 9 | **Post-merge verification** | Two-parent merge commit confirmed; merged **artifact set** present on `main`; the **`017-S -> 021-S` dependency edge** verified present on `main`. |
 
@@ -1270,6 +1709,17 @@ therefore dissolved rather than deferred.
 execute this PR — its Step 5 topology gate fails closed without an active
 shipment, and claiming one is forbidden here. This supersedes rev 4.1's
 "Ship, in PR-lifecycle-only mode" designation.
+
+**Rev 6 — the actor conclusion is retained unchanged and re-affirmed.** No agent
+can push or merge PR #54 under the currently installed topology; the operator is
+the only possible actor. **No push is performed at this stage**, by any actor.
+Stage's output remains local commits on `chore/stage-pipeline-policy-gap`.
+
+**Gate ordering is normative (rev 6).** Gates 4 → 5 → 6 → 7 → 8 run in that
+order. Approval (gate 7) is the **last** gate before the merge mechanic (gate 8)
+precisely because it must attest to a HEAD that has already passed local
+adversarial review, CI, and P-018. Obtaining approval earlier and then pushing
+further commits **invalidates** it and re-opens gate 7.
 
 **Review-comment routing (unchanged and still binding).** If any review comment
 requires a **planning or contract mutation**, the PR actor **pauses and routes to

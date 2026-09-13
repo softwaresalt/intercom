@@ -1,5 +1,15 @@
 # Stage session — rev-5 adversarial remediation (task-only shipment finalization)
 
+> **SUPERSEDED (2026-09-12).** This artifact records the **rev-5** remediation
+> cycle and its conclusions. It is superseded by
+> `docs/memory/2026-09-12-stage-rev6-adversarial-remediation.md` (rev-6 cycle,
+> commit on `chore/stage-pipeline-policy-gap`). Statements below that the plan is
+> "rev 5", that eight items O-1…O-8 remain **open**, that Probe 16 proves the
+> bounded-recovery procedure, or that the §10.1 budget closes at ≤2 h are **no
+> longer current**: rev 6 closes all eight items, supersedes Probe 16 with Probe
+> 19, and returns **MUST_REPLAN** on the recalculated budget. Harvested topology
+> (`022-F`, `022.001-T`, `021-S`, `017-S -> 021-S`) is unchanged in both cycles.
+
 - **Date:** 2026-09-12
 - **Agent:** Stage
 - **Branch / base HEAD:** `chore/stage-pipeline-policy-gap` @ `e06b4d8`
