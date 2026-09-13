@@ -10,6 +10,20 @@ base_commit: 9e44bfe
 
 # Stage memory — rev-18 adversarial remediation cycle
 
+> **HISTORICAL SESSION SNAPSHOT — SUPERSEDED (2026-09-13).**
+> Governing authority: `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`).
+>
+> **Do NOT route from this file.** The current route is **`021-S` (A) → `017-S`**, two
+> shipments only. `017-S` is a **13-member fully-covered root** (root `018-F` + all 12
+> descendants) depending on **`021-S` only**, and closes by the **existing** P-015
+> `CASCADE` exception. The three-shipment `A → B → C` chain is retired: `023-F`,
+> `023.001-T`, `024-F`, `024.001-T` are `blocked` and shipment records `022-S` / `023-S`
+> are archived. `TASK_ONLY_FINALIZE` is deferred platform work with **no current
+> consumer**, and the `SAFE_CLOSE` exit-9 conflict is **off `017-S`'s route**.
+>
+> Everything below is retained as a record of what was true during that session.
+
 Second bounded Stage remediation cycle against the adversarial re-review of `9e44bfe`. Verdict
 **MUST_REMEDIATE**, not `MUST_REPLAN`. The one-task `017-S` decomposition and the two cohesive
 future feature strands were **preserved**; only mechanics were corrected. No generalized

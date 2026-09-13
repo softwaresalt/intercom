@@ -1,5 +1,19 @@
 # Stage session — rev-5 adversarial remediation (task-only shipment finalization)
 
+> **HISTORICAL SESSION SNAPSHOT — SUPERSEDED (2026-09-13).**
+> Governing authority: `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`).
+>
+> **Do NOT route from this file.** The current route is **`021-S` (A) → `017-S`**, two
+> shipments only. `017-S` is a **13-member fully-covered root** (root `018-F` + all 12
+> descendants) depending on **`021-S` only**, and closes by the **existing** P-015
+> `CASCADE` exception. The three-shipment `A → B → C` chain is retired: `023-F`,
+> `023.001-T`, `024-F`, `024.001-T` are `blocked` and shipment records `022-S` / `023-S`
+> are archived. `TASK_ONLY_FINALIZE` is deferred platform work with **no current
+> consumer**, and the `SAFE_CLOSE` exit-9 conflict is **off `017-S`'s route**.
+>
+> Everything below is retained as a record of what was true during that session.
+
 > **SUPERSEDED (2026-09-12).** This artifact records the **rev-5** remediation
 > cycle and its conclusions. It is superseded by
 > `docs/memory/2026-09-12-stage-rev6-adversarial-remediation.md` (rev-6 cycle,
