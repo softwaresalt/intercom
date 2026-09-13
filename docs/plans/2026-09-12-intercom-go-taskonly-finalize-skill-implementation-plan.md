@@ -1,13 +1,13 @@
 ---
 title: "Plan — TASK_ONLY_FINALIZE classifier, guards and recovery in shipment-reconcile (Skill implementation)"
 date: 2026-09-12
-status: planned
+status: deferred
+deferred_by: docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md
 agent: Stage
 revision: 2
 feature: 024-F
 task: 024.001-T
-shipment: 023-S
-depends_on_shipment: 022-S
+shipment: 023-S (archived)
 deliberation: docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md
 umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md
 evidence_dir: docs/plans/evidence/2026-09-12-task-only-shipment-finalization/
@@ -15,13 +15,47 @@ evidence_dir: docs/plans/evidence/2026-09-12-task-only-shipment-finalization/
 
 # Plan — TASK_ONLY_FINALIZE classifier, guards and recovery in shipment-reconcile
 
-> **Requires plan hardening**: **yes — applied in rev 2** (see `## Plan Hardening`).
+> **DEFERRED — NOT A CURRENT PREREQUISITE.**
+> Deferred by `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`).
+>
+> **Why.** This plan implements the classifier for a **task-only** close verdict. The
+> current scope has no task-only shipment: `017-S` has been restored to a
+> **fully-covered root** (13 members) and closes by the **existing** `CASCADE`
+> exception once shipment **A** (`021-S`) lands Step 6.1(a1). The claim below that
+> *"`TASK_ONLY_FINALIZE`'s first real exercise is `017-S`"* is **withdrawn for the
+> current scope** — `017-S` no longer exercises it at all.
+>
+> **Status.** `024-F` and `024.001-T` are `blocked`. Shipment record `023-S` is
+> **archived** non-destructively (manifest and dependency provenance preserved); it is
+> **not** a live shipment and must **not** be re-routed. The former
+> `depends_on_shipment: 022-S` no longer expresses a current prerequisite and has been
+> removed from the frontmatter.
+>
+> **PRESERVED REV-2 CORRECTNESS NOTES — the reason this plan is kept verbatim.** These
+> are measured findings that survive deferral and must be re-read before any re-entry:
+>
+> * **Probe 22** — claiming a task-only shipment moves the **out-of-manifest** covering
+>   feature to `active`, and it **stays** `active` after the close.
+> * **Probe 23** — the obvious barrier is **not constructible**: backlogit refuses a
+>   `blocks` edge whose prerequisite is a feature (*"both endpoints must be shipments"*)
+>   and defines **no** shipment `blocked` status.
+> * **Probe 24** — with the covering feature **inside** the manifest, the cascade
+>   archives it (`archived_ids` includes the feature), leaving zero other active
+>   top-level units. *This is the measurement the A-only decision now relies on for
+>   `017-S`'s 13-member shape.*
+> * **Execution boundary** — intercom-go has **no** `src/` directory and **no**
+>   executable close-path classifier; classification is **agent-driven from the skill
+>   markdown**. The stale references to `src/autoharness/gates/shipment_closure.py` at
+>   B9 and B17 are reconciled in place and remain a recorded follow-up.
+>
+> Re-entry requires a **fired trigger** and a **fresh, separately reviewed** shipment.
 
-- **Shipment**: `023-S` (C, Skill implementation) — third of three
-- **Depends on**: `022-S` (B), which depends on `021-S` (A)
-- **Closes by**: the **existing** `CASCADE` exception — **rev 2, forced by measurement**
+- **Shipment**: `023-S` (C, Skill implementation) — **archived; deferred**
+- **Formerly depended on**: `022-S` (B) → `021-S` (A) — historical chain, no longer current
+- **Would close by**: the **existing** `CASCADE` exception — **rev 2, forced by measurement**
 - **Manifest**: **fully-covered root** `[024.001-T, 024-F]`
-- **Activates**: `TASK_ONLY_FINALIZE`, whose **first real exercise is `017-S`**
+- **Activates**: `TASK_ONLY_FINALIZE` — **no current consumer** (see banner)
 
 > **Rev 2 — why the manifest shape changed.** Rev 1 kept `023-S` task-only so C would
 > close by the path it ships. Probes 22/23/24 falsified that design:

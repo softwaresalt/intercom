@@ -7,48 +7,74 @@
 **This document is NO LONGER AN EXECUTABLE PLAN.** Its rev-6 `MUST_REPLAN` verdict was
 **accepted, not overturned**. Acting on it as a plan is a process error.
 
-The work it scoped has been **structurally re-planned** as a dependency-ordered
-**three-shipment bootstrap**. See
-`docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md`.
+> **REV 8 (2026-09-13) — THE CURRENT SCOPE IS A-ONLY.**
+> `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`) retires the **three-shipment chain** for the current
+> scope. **Only A is a current prerequisite.** B and C are **deferred generalized platform
+> work**: `023-F`, `023.001-T`, `024-F`, `024.001-T` are `blocked`, and shipment records
+> `022-S` / `023-S` are **archived non-destructively** (manifests and dependency
+> provenance preserved). They belong to **no live shipment** and must **not** be re-routed.
+>
+> **Why.** The chain existed to invent a `TASK_ONLY_FINALIZE` verdict so a **task-only**
+> `017-S` could close. A's own **Step 6.1(a1)** moves a covering feature `active -> done`
+> before pre-mode, which dissolves the premise: `017-S` is **restored to a 13-member
+> fully-covered root** (root `018-F` + all 12 existing descendant members) and closes by
+> the **existing** P-015 `CASCADE` exception — the same path A uses.
+>
+> **Current route:** `A (021-S)` → `017-S`. Two shipments, one new gate, **zero** new
+> close-path verdicts. Sections **§14.0**, **§14.0.1**, **gate 9** and **§14.1** below are
+> updated accordingly; the three-shipment text in them is superseded.
 
-| Successor | Surface | Plan |
-|---|---|---|
-| **A** `021-S` / `022-F` / `022.001-T` | `_ship.agent.md` + 1 Go test | `docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md` |
-| **B** `022-S` / `023-F` / `023.001-T` | `workflow-policies.md` P-015 + 1 Go test | `docs/plans/2026-09-12-intercom-go-p015-taskonly-authorization-plan.md` |
-| **C** `023-S` / `024-F` / `024.001-T` | `shipment-reconcile/SKILL.md` + 1 Go test | `docs/plans/2026-09-12-intercom-go-taskonly-finalize-skill-implementation-plan.md` |
+The work it scoped was **structurally re-planned** as a dependency-ordered
+**three-shipment bootstrap** (see
+`docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md`), and that
+chain has since been **simplified to A alone** per the rev-8 banner above.
 
-**What this document REMAINS AUTHORITATIVE for**, and what A/B/C cite it as:
+| Successor | Surface | Plan | Current status |
+|---|---|---|---|
+| **A** `021-S` / `022-F` / `022.001-T` | `_ship.agent.md` + 1 Go test | `docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md` | **CURRENT — sole prerequisite** (plan rev 3) |
+| **B** `022-S` / `023-F` / `023.001-T` | `workflow-policies.md` P-015 + 1 Go test | `docs/plans/2026-09-12-intercom-go-p015-taskonly-authorization-plan.md` | **DEFERRED** — blocked; `022-S` archived |
+| **C** `023-S` / `024-F` / `024.001-T` | `shipment-reconcile/SKILL.md` + 1 Go test | `docs/plans/2026-09-12-intercom-go-taskonly-finalize-skill-implementation-plan.md` | **DEFERRED** — blocked; `023-S` archived |
+
+**What this document REMAINS AUTHORITATIVE for**, and what A cites it as:
 
 - **§3 / §3.0 / §3.1** — the probe evidence base (Probes 14–20), its fidelity table, and
-  the withdrawal of rev-4.1 probes 5/5b/10/12/13.
-- **§6.1 Inventory Tables §6.1-A/B/C/D** — the **closed 28-site clause inventory**, split
-  across A/B/C **exactly** (`C1–C6` → A; `A1–A6` → B; `B1–B10`, `B12–B17` → C) with the
-  additive rows `A7`, `A8`, `B11`, `B18` assigned to B, B, C, C respectively.
+  the withdrawal of rev-4.1 probes 5/5b/10/12/13. **Retained in full**, including the
+  later Probes 21–24, which the A-only decision relies on (Probe 24 for `017-S`'s
+  13-member shape; Probe 22 for covering-feature status at claim; Probe 18 for the
+  shipment exit-9 refusal).
+- **§6.1 Inventory Tables §6.1-A/B/C/D** — the **closed 28-site clause inventory**.
+  **A's share is `C1–C6` (6 sites) and is unchanged.** The remaining 22 sites (`A1–A6`,
+  `A7`, `A8` → B; `B1–B10`, `B12–B17`, `B11`, `B18` → C) travel with the **deferred**
+  plans and are **not in current scope**.
 - **§6.2–§6.5** — topology assertions `T1–T5`, guards `G0–G13`, post-guards `P1–P10`, the
-  TOCTOU boundary, the two-path failure split and bounded-recovery semantics. **T1–T5**
-  land in **B**; the rest land in **C**.
+  TOCTOU boundary, the two-path failure split and bounded-recovery semantics. **All of
+  these land in the DEFERRED B/C work; none is in current scope.**
 - **§8.2** — P-007 ordering (`P1–P10` evaluate on the **raw** post-call state **before**
-  any archive restoration).
+  any archive restoration). **Deferred with C.**
 - **§8.3** — the "first real self-close fails after the implementation merged" contingency.
-- **§6.3** — the binding engine digest.
+- **§6.3** — the binding engine digest. **Deferred with C** — A introduces no
+  digest-bound engine invocation.
 - **§11 / §14** — the PR #54 actor boundary and merge gates (**operator** is the sole
-  push/merge actor; no agent push).
+  push/merge actor; no agent push). **Unchanged and still binding.**
 
 **What is SUPERSEDED**: §4 (surface), §5 (ordering), §7.1 (assertion set), §9 (acceptance
 criteria), §10.1/§10.2 (budget and the no-split finding), and §13 (adversarial scope) —
-all now carried per-shipment by the A/B/C plans. §10.2's "splitting is unavailable"
-finding was correct **for the task-only close shape** and is dissolved by the bootstrap,
-which closes A and B under the **existing** `CASCADE` exception.
+all now carried by the A plan for current scope, and by the deferred B/C plans otherwise.
+§10.2's "splitting is unavailable" finding was correct **for the task-only close shape**
+and is dissolved: A closes under the **existing** `CASCADE` exception, and so does
+`017-S`.
 
 - **Date:** 2026-09-12
-- **Revision:** 7 — role changed to umbrella evidence/decision source (rev 1 → **FAIL**; rev 2 → **FAIL**; rev 3 → **ADVISORY**; rev 3 → independent adversarial **MUST_REPLAN**; rev 4 → internal review **FAIL**; rev 4.1 → internal re-review **ADVISORY**; rev 4.1 → independent adversarial **MUST_REPLAN**; rev 5 → independent adversarial **MUST_REMEDIATE**; rev 6 → **MUST_REPLAN on budget**, see §10.1; rev 7 → **re-planned as the three-shipment bootstrap**; see §12)
+- **Revision:** 8 — **A-only simplification** (rev 1 → **FAIL**; rev 2 → **FAIL**; rev 3 → **ADVISORY**; rev 3 → independent adversarial **MUST_REPLAN**; rev 4 → internal review **FAIL**; rev 4.1 → internal re-review **ADVISORY**; rev 4.1 → independent adversarial **MUST_REPLAN**; rev 5 → independent adversarial **MUST_REMEDIATE**; rev 6 → **MUST_REPLAN on budget**, see §10.1; rev 7 → re-planned as the three-shipment bootstrap; rev 8 → **`SIMPLIFICATION_VALID`, A-only**; see §12)
 - **Source deliberation:** `docs/decisions/2026-09-12-intercom-go-task-only-shipment-finalization-deliberation.md`
+- **Governing decision (current):** `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
 - **Stash origin:** `A10EF3D0` (`kind: deliberation`, `priority: critical`)
 - **Branch:** `chore/stage-pipeline-policy-gap` (planning artifacts carried over by cherry-pick; see §14)
-- **Engine identity of record (binding):** `backlogit 1.10.1-0.20260823032255-b07729386a31+dirty`, **SHA-256 `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98`** — the digest, not the version string, is the binding identity (§6.3)
-- **Probe evidence (durable, in-repo):** `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/`
-- **Harvested backlog:** feature `022-F`, task `022.001-T`, shipment `021-S` — **rev 7: `021-S`'s manifest is re-shaped from task-only `[022.001-T]` to the FULLY-COVERED ROOT `[022-F, 022.001-T]`, and `022-F`/`022.001-T` are re-scoped to bootstrap shipment A.** Dependency chain becomes `017-S -> C(023-S) -> B(022-S) -> A(021-S)`; the direct `017-S -> 021-S` edge is removed only **after** the `017-S -> 023-S` edge exists, so no eligibility window opens.
-- **Status:** **SUPERSEDED AS A PLAN (rev 7); RETAINED AS EVIDENCE.** The rev-6 **MUST_REPLAN** verdict on the §10.1 budget stands and was **accepted**: the closed clause inventory (§6.1) enumerates **28 normative edit sites** and does **not** close under the 2-hour rule as one atomic task. Rev 7 re-plans the work as the **three-shipment bootstrap** above, in which each shipment carries exactly one covering feature and one ≤2 h task. Separately still **BLOCKED** — PR #54 has no agent-executable route and requires the **operator** as PR actor (§11); this is **unchanged** by rev 7.
+- **Engine identity of record (binding):** `backlogit 1.10.1-0.20260823032255-b07729386a31+dirty`, **SHA-256 `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98`** — the digest, not the version string, is the binding identity (§6.3). **Rev 8: binding only for the DEFERRED C work; A makes no digest-bound call.**
+- **Probe evidence (durable, in-repo):** `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/` — **retained; not deferred**
+- **Harvested backlog:** feature `022-F`, task `022.001-T`, shipment `021-S` — **rev 8: `021-S`'s manifest is the FULLY-COVERED ROOT `[022-F, 022.001-T]`, and `022-F`/`022.001-T` are renamed and re-scoped to the Ship covering-feature completion foundation.** The dependency chain is now exactly **`017-S -> 021-S`**; the three-edge chain `017-S -> 023-S -> 022-S -> 021-S` is **withdrawn**. The rewrite was performed **add-before-remove** (`017-S -> 021-S` created while `017-S -> 023-S` still blocked; the stale edge removed **last**), so **no eligibility window opened**. `017-S`'s manifest is restored to **13** members.
+- **Status:** **SUPERSEDED AS A PLAN (rev 7); RETAINED AS EVIDENCE; CURRENT SCOPE IS A-ONLY (rev 8).** The rev-6 **MUST_REPLAN** verdict on the §10.1 budget stands and was **accepted**. Rev 7 re-planned the work as a three-shipment bootstrap; **rev 8 simplifies that to A alone** — A alone is **~78 min** (margin ~42 min), well inside the 2-hour rule, and `017-S` needs no new close path. Separately still **BLOCKED** — PR #54 has no agent-executable route and requires the **operator** as PR actor (§11); this is **unchanged** by rev 8.
 
 ---
 
@@ -1708,27 +1734,27 @@ Reviewers should focus on, in priority order:
 
 ## 14. Sequencing — one artifacts-only Stage PR
 
-### 14.0 REV 7 UPDATE — PR #54 now carries all THREE shipments atomically
+### 14.0 REV 8 UPDATE — PR #54 carries shipment A, plus the deferral of B and C
 
-The adopted single-PR sequencing below is **retained and extended**. PR #54 now carries
-the **entire three-shipment bootstrap** and **every dependency edge** in **one atomic
-merge**:
+The adopted single-PR sequencing below is **retained**. Rev 7's "all THREE shipments
+atomically" framing is **superseded**: PR #54 now carries **shipment A as the sole live
+prerequisite**, together with the **deferral records** for B and C.
 
 | Carried by PR #54 | Detail |
 |---|---|
-| Policy-gap backlog records | already on the branch (unchanged) |
-| **A** | `022-F`, `022.001-T` (re-scoped), `021-S` re-shaped to `[022-F, 022.001-T]` |
-| **B** | `023-F`, `023.001-T`, `022-S` = `[023-F, 023.001-T]` |
-| **C** | `024-F`, `024.001-T`, `023-S` = `[024.001-T, 024-F]` (**rev 7.1: fully-covered root**, re-shaped after Probes 22/23/24) |
-| **Dependency chain** | `022-S -> 021-S`, `023-S -> 022-S`, `017-S -> 023-S`; stale `017-S -> 021-S` **removed** |
-| Planning artifacts | the bootstrap deliberation + plans A/B/C + this rev-7 role change |
+| Policy-gap backlog records | already on the branch; **`017-S` restored to a 13-member fully-covered root** (root `018-F` + all 12 existing descendant members) |
+| **A (LIVE)** | `022-F`, `022.001-T` (renamed + re-scoped), `021-S` = `[022-F, 022.001-T]` |
+| **B (DEFERRED)** | `023-F`, `023.001-T` moved `blocked`; shipment record `022-S` **archived** non-destructively |
+| **C (DEFERRED)** | `024-F`, `024.001-T` moved `blocked`; shipment record `023-S` **archived** non-destructively |
+| **Dependency edge** | exactly **`017-S -> 021-S`**; the stale `017-S -> 023-S` edge **removed**; `022-S -> 021-S` and `023-S -> 022-S` retired with their archived records |
+| Planning artifacts | the A-only decision, the superseded-in-part bootstrap deliberation, plan A rev 3, the deferred B/C plans, and this rev-8 update |
 
-**Why atomic is still required, and now more so.** The rev-6 rationale — the
-`017-S` edge must land in the same merge as `017-S`'s own records so no eligibility
-window opens — applies with **three** edges instead of one. Landing A's records without
-C's would leave `017-S` with a **dangling or absent** blocker. The edge surgery was
-performed in the safe order (**add `017-S -> 023-S` first, remove `017-S -> 021-S`
-second**), so at no point in the branch history is `017-S` unblocked.
+**Why atomic is still required.** Unchanged in substance: the `017-S` edge must land in the
+same merge as `017-S`'s own records so **no eligibility window opens**. The edge surgery
+was performed in the safe order — **add `017-S -> 021-S` first (while `017-S -> 023-S`
+still blocked), remove the stale edge last** — so at no point in the branch history is
+`017-S` unblocked. Archiving `022-S`/`023-S` between those two steps is safe for the same
+reason: `017-S` was already blocked by `021-S` before either archive occurred.
 
 **Gates 1–9 below apply unchanged.** Gate 3 (artifact-only diff) is satisfied: the diff is
 limited to `docs/**` and `.backlogit/**`, with **zero** source, test, skill, agent or
@@ -1738,7 +1764,7 @@ policy implementation files.
 merge PR #54. **No push is performed by Stage.** Output is local commits on
 `chore/stage-pipeline-policy-gap`.
 
-### 14.0.1 Post-merge routing (normative, rev 7)
+### 14.0.1 Post-merge routing (normative, rev 8)
 
 After PR #54 merges and the records are verified present on `main`, the Orchestrator
 routes **`021-S` (A) only**. Then, strictly sequentially, each under **P-001** (one
@@ -1747,32 +1773,30 @@ release unit in flight) and **P-016** (one branch/worktree):
 ```text
 PR #54 merge
   -> route 021-S (A)  -> implement -> merge -> S1 checkpoint+end -> S2 closes via CASCADE
-  -> route 022-S (B)  -> implement -> merge -> close via a1 + CASCADE (one session)
-  -> route 023-S (C)  -> implement -> merge -> S1 checkpoint+end -> S2 closes via CASCADE
-                                                (C's merge ACTIVATES the token; the
-                                                 merging session must not use it)
-  -> route 017-S      -> first live use of TASK_ONLY_FINALIZE
+  -> route 017-S      -> implement 018.008-T -> merge
+                         -> Step 6.1(a1) moves 018-F active -> done  (case ii)
+                         -> pre-mode PROCEED -> closes via the SAME EXISTING CASCADE
 ```
 
-**Rev 7.1 corrections to this routing.** Two changes, both forced by measurement:
+**Rev 8 corrections to this routing.** Three changes, all following from the A-only
+decision:
 
-1. **C is now a two-session close, like A.** C's merge activates the
-   `TASK_ONLY_FINALIZE` capability token. A session that merged the token and then selected
-   the verdict it authorizes would be authorizing itself — the same failure A's §6 prevents
-   for Role Boundary changes, in a form A's carve-out deliberately does **not** cover. Plan
-   C §8.1 places the rule in C's own `B18`: S1 implements, merges, verifies, checkpoints and
-   **ends**; a fresh S2 runs the full owner-selected, operator-confirmed recovery protocol,
-   re-verifies current `main` / the merge SHA / the merged P-015 + skill + Ship tokens, and
-   only then classifies and finalizes.
-2. **The `Stage disposes of 024-F` step is GONE.** Probe 23 proved that step could never be
-   mechanically enforced (no feature-endpoint dependency edge exists), and Probe 24 proved
-   it is unnecessary once `024-F` is a manifest member — the cascade archives it. C now
-   closes by `CASCADE` and leaves **zero** other active top-level units.
+1. **B and C are no longer routed.** They are deferred generalized platform work with
+   `blocked` items and archived shipment records. Re-entry requires a fired trigger and a
+   **fresh, separately reviewed** shipment — never a re-route of the archived records.
+2. **`017-S` is the second and final shipment**, not the fourth. It is a **feature-present
+   `CASCADE`** case: with Step 6.1(a1) live, a1 moves `018-F active -> done` (§5.1 case
+   **ii** of plan A), pre-mode's `expected_status: done` sweep passes over all 13 members
+   (`018-F` done, `018.008-T` done, 11 legacy members pre-archived), and classification
+   returns **`CASCADE`**.
+3. **`TASK_ONLY_FINALIZE` is never used.** `017-S` is no longer task-only, so the rev-7
+   claim that `017-S` is its "first live use" is **withdrawn**. The selectable verdict set
+   stays exactly `CASCADE`, `SAFE_CLOSE`, `HALT` — today's behavior.
 
 **Never more than one active Ship shipment or PR at a time.** Each shipment completes
 **P-020** and full closure requirements before the next is routed. `017-S` remains
 `queued` and **unclaimed** throughout, and is released only per gate 9's release condition
-(C archived `shipped` **and** C's closure complete).
+(**A** archived `shipped` **and** A's post-merge closure complete).
 
 The rejected two-PR sequence is **withdrawn**. Its defect: landing the policy-gap
 records first would leave `017-S` queued on `main` with **no** dependency edge
@@ -1807,21 +1831,23 @@ therefore dissolved rather than deferred.
 | 6 | **P-018 Copilot review** | Completed against the **current HEAD**, with **zero** unresolved Copilot threads. |
 | 7 | **Fresh merge approval** | **Rev 6 correction.** Approval MUST be obtained **after** gates 4–6 complete on the **current** HEAD. A pre-existing/standing merge preauthorization does **NOT** satisfy this gate. The only exception is a **currently valid, bounded dark-mode activation record that explicitly preauthorizes this exact PR number and this exact head SHA** — Stage has **not** verified that such a record exists and does **not** assume one. Absent that exact record, approval is fresh-or-nothing. Ship's own contract says the same thing for closure PRs: `_ship.agent.md` **L723**, *"the prior main PR approval does not transfer."* |
 | 8 | **P-009 merge commit** | No squash, no rebase. |
-| 9 | **Post-merge verification** | Two-parent merge commit confirmed; merged **artifact set** present on `main`; the **exact dependency chain `017-S -> 023-S -> 022-S -> 021-S`** verified present on `main` (all three `blocks` edges), and the stale `017-S -> 021-S` edge verified **absent**. `dag-readiness` on merged `main` must report `ready_set` containing **`021-S` only**. |
+| 9 | **Post-merge verification** | Two-parent merge commit confirmed; merged **artifact set** present on `main`; the **exact dependency edge `017-S -> 021-S`** verified present on `main`, and the stale `017-S -> 023-S` edge verified **absent**. `017-S`'s manifest verified at **13** members (root `018-F` + all 12 descendants). `022-S` and `023-S` verified **archived** and absent from the live shipment set; `023-F`/`023.001-T`/`024-F`/`024.001-T` verified `blocked`. `dag-readiness` on merged `main` must report `ready_set` containing **`021-S` only**. |
 
-**Gate 9 corrected (rev 7.1).** An earlier draft of this gate named only the
-**`017-S -> 021-S`** edge — the edge this very re-plan **removes**. Verifying a deleted
-edge would have passed only if the surgery had failed. The gate now verifies the exact
-three-edge chain that replaces it, plus the absence of the stale edge, plus the derived
-eligibility set. All four are machine-checkable from the merged tree.
+**Gate 9 corrected (rev 8).** Rev 7.1 corrected an earlier draft that named only the
+**`017-S -> 021-S`** edge, on the grounds that the re-plan **removed** it and verifying a
+deleted edge would pass only if the surgery had failed. **Rev 8 restores that edge as the
+correct one to verify** — the A-only simplification re-creates `017-S -> 021-S` and
+removes `017-S -> 023-S` instead. The gate now verifies the single live edge, the absence
+of the stale edge, the restored 13-member manifest, the deferral of B/C, and the derived
+eligibility set. All five are machine-checkable from the merged tree.
 
-**Gate 9 release condition (rev 7.1, NON-NEGOTIABLE).** Passing gate 9 releases **`021-S`
-(A) only**. It does **not** release `017-S`. `017-S` is released only after **C (`023-S`)
-is archived `shipped` AND C's post-merge closure is complete** — meaning its closure PR is
+**Gate 9 release condition (rev 8, NON-NEGOTIABLE).** Passing gate 9 releases **`021-S`
+(A) only**. It does **not** release `017-S`. `017-S` is released only after **A (`021-S`)
+is archived `shipped` AND A's post-merge closure is complete** — meaning its closure PR is
 merged and its `operational-closure` artifact carries a **`done`/`degraded` compaction
 status** (P-020), not `pending`/unset. Until then the Orchestrator's closure-gated routing
 holds `017-S`, and `017-S` stays `queued` and **unclaimed**. Treating gate 9 as a release
-of the whole chain would re-open exactly the eligibility window this atomic merge exists to
+of both shipments would re-open exactly the eligibility window this atomic merge exists to
 prevent.
 
 **Actor for every gate above: the OPERATOR.** Per §11 and Probe 17, Ship cannot
@@ -1856,29 +1882,29 @@ Role-Boundary rule about *who authors planning artifacts*, not about who pushes.
 
 Only then does the Orchestrator route **`021-S`** — and only `021-S`.
 
-**Rev 7.1 correction — `017-S` is NOT released by `021-S` closing.** The sentence this
-paragraph originally carried ("Probe 14 confirms `017-S` remains suppressed while `021-S`
-is `queued` or `active`, and becomes eligible only once `021-S` is `archived` …") described
-the **stale direct `017-S -> 021-S` edge**, which this re-plan **removed**. Read literally
-it would release `017-S` two shipments early — the exact eligibility window the atomic
-merge exists to prevent.
+**Rev 8 — `017-S` IS released by `021-S` closing, and by nothing else.** Rev 7.1 corrected
+an earlier paragraph that read *"Probe 14 confirms `017-S` remains suppressed while
+`021-S` is `queued` or `active`, and becomes eligible only once `021-S` is `archived` …"*,
+on the grounds that it described a **stale direct edge** which the three-shipment re-plan
+had removed. **The A-only simplification restores exactly that edge**, so the original
+statement is now **correct again** and is reinstated.
 
-The live edge set is the chain **`017-S -> 023-S -> 022-S -> 021-S`**
-(`.backlogit/queue/017-S.md` carries `dependencies: [023-S]`), so the engine already
-enforces the correct order; this paragraph was text-only drift. The corrected statement:
+The live edge set is the single edge **`017-S -> 021-S`**
+(`.backlogit/queue/017-S.md` carries `dependencies: [021-S]`), so the engine enforces the
+correct order directly. The corrected statement:
 
-* `021-S` archiving `shipped` releases **`022-S`** only.
-* `022-S` archiving `shipped` releases **`023-S`** only.
-* `023-S` (C) archiving `shipped` **and** completing its post-merge closure (P-020
+* `021-S` (A) archiving `shipped` **and** completing its post-merge closure (P-020
   compaction status `done`/`degraded`, not `pending`) releases **`017-S`** — see the Gate 9
   release condition above.
+* `022-S` and `023-S` are **archived** and release nothing. Their retired edges
+  (`022-S -> 021-S`, `023-S -> 022-S`) are preserved in the archived records as provenance
+  only.
 
 Probe 14's actual finding is retained and unchanged: a `blocks` edge suppresses its
 successor while the predecessor is `queued` **or** `active`, and releases it only after the
 predecessor is `archived` with `archived_status: shipped` and the index is synced. That
-finding is about the **shape** of a `blocks` edge; it is now applied to each link of the
-three-edge chain rather than to a single direct edge. The live workspace reports
-`ready_set: ["021-S"]`, `critical_path: ["021-S","022-S","023-S","017-S"]`,
+finding is about the **shape** of a `blocks` edge; it applies to the single live edge. The
+live workspace reports `ready_set: ["021-S"]`, `critical_path: ["021-S","017-S"]`,
 `cycle_detected: false`.
 
 Planning artifacts from the sibling branch `chore/stage-task-only-shipment-finalization`

@@ -1,24 +1,43 @@
 ---
 title: "Plan — Dormant token-gated TASK_ONLY_FINALIZE authorization in P-015 (Policy gate)"
 date: 2026-09-12
-status: planned
+status: deferred
+deferred_by: docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md
 agent: Stage
 revision: 2
 feature: 023-F
 task: 023.001-T
-shipment: 022-S
-depends_on_shipment: 021-S
+shipment: 022-S (archived)
 deliberation: docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md
 umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md
 ---
 
 # Plan — Dormant token-gated TASK_ONLY_FINALIZE authorization in P-015 (Policy gate)
 
-> **Requires plan hardening**: **yes — applied in rev 1** (see `## Plan Hardening`).
+> **DEFERRED — NOT A CURRENT PREREQUISITE.**
+> Deferred by `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (verdict `SIMPLIFICATION_VALID`).
+>
+> **Why.** This plan exists to authorize a close verdict for **task-only** manifests.
+> The current scope no longer has one: `017-S` has been restored to a **fully-covered
+> root** (13 members) and closes by the **existing** P-015 `CASCADE` exception once
+> shipment **A** (`021-S`) lands Step 6.1(a1). No current route selects
+> `TASK_ONLY_FINALIZE`.
+>
+> **Status.** `023-F` and `023.001-T` are `blocked`. Shipment record `022-S` is
+> **archived** non-destructively (manifest and dependency provenance preserved); it is
+> **not** a live shipment and must **not** be re-routed. The former
+> `depends_on_shipment: 021-S` no longer expresses a current prerequisite and has been
+> removed from the frontmatter.
+>
+> **This plan remains correct at rev 2** and is retained in full as **deferred
+> generalized platform work**. Re-entry requires a **fired trigger** — an actual
+> task-only shipment that cannot be re-shaped to a covered root — and a **fresh,
+> separately reviewed** shipment. Do not resurrect it by re-routing the archived record.
 
-- **Shipment**: `022-S` (B, Policy gate) — second of three
-- **Depends on**: `021-S` (A) — B's closure requires A's covering-feature completion authority
-- **Closes by**: A's parent-completion authority + the **existing** P-015 `CASCADE`
+- **Shipment**: `022-S` (B, Policy gate) — **archived; deferred**
+- **Formerly depended on**: `021-S` (A) — historical; no longer a current prerequisite
+- **Would close by**: A's parent-completion authority + the **existing** P-015 `CASCADE`
 - **Activates**: nothing. The branch it authorizes is **dormant** until C ships
 
 ## 1. Objective

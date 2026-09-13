@@ -3,21 +3,34 @@ title: "Plan — Ship covering-feature completion and close-path delegation (Fou
 date: 2026-09-12
 status: planned
 agent: Stage
-revision: 2
+revision: 3
 feature: 022-F
 task: 022.001-T
 shipment: 021-S
-deliberation: docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md
+deliberation: docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md
+superseded_deliberation: docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md
 umbrella_evidence: docs/plans/2026-09-12-intercom-go-task-only-shipment-finalization-plan.md
 ---
 
 # Plan — Ship covering-feature completion and close-path delegation (Foundation)
 
-> **Requires plan hardening**: **yes — applied in rev 2** (see `## Plan Hardening`).
+> **Requires plan hardening**: **yes — applied in rev 2, re-affirmed in rev 3** (see
+> `## Plan Hardening`).
 
-- **Shipment**: `021-S` (A, Foundation) — first of three in the bootstrap chain
+> **Rev 3 — A is now the SOLE prerequisite.**
+> `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (`SIMPLIFICATION_VALID`) retires the three-shipment chain for the current scope.
+> Shipments **B** (`022-S`) and **C** (`023-S`) are **deferred generalized platform
+> work** — `blocked`, records archived non-destructively, **not** current prerequisites.
+> **A's own scope, surface, inventory, budget and closure sequence are UNCHANGED.**
+> What changed is only what comes *after* A: the route now goes **A → `017-S`**, and
+> `017-S` is a **feature-present** `CASCADE` case, not the zero-feature example rev 2
+> used.
+
+- **Shipment**: `021-S` (A, Foundation) — **the sole prerequisite**; the only eligible shipment
 - **Closes by**: the **existing** P-015 `VERIFIED FULLY-COVERED-ROOT EXCEPTION` (`CASCADE`)
 - **Authorizes**: nothing new in the close-path verdict set
+- **Releases**: `017-S` (13-member fully-covered root), which then closes by the **same existing** `CASCADE`
 
 ## 1. Objective
 
@@ -35,7 +48,7 @@ Three deliveries, one surface plus one test:
 
 Current behavior after this lands remains exactly `CASCADE` or `SAFE_CLOSE`/`HALT`.
 
-## 2. Why this is first
+## 2. Why this is the sole prerequisite
 
 Two independent reasons, both verified at `e7e981d`:
 
@@ -44,8 +57,11 @@ Two independent reasons, both verified at `e7e981d`:
 present in queue with `status: done`"*. A manifest `[022-F, 022.001-T]` therefore needs
 the **feature** `done`. Ship's Role Boundary permits only *"move **tasks** to
 active/done"* (line 38). No feature-completion authority exists, so no fully-covered-root
-manifest can ever reach closure. B's manifest has the same shape, so **B cannot close
-until A is live**.
+manifest can ever reach closure.
+
+**`017-S` has exactly this shape**, now that its root `018-F` has been restored to the
+manifest (13 members). So `017-S` cannot close until A is live — which is precisely why A
+is the sole prerequisite, and why nothing else is needed between them.
 
 **2.2 The duplicate has already drifted unsafe.** This is a pre-existing defect found
 during re-planning, independent of the bootstrap:
@@ -113,7 +129,9 @@ The replacement text MUST NOT enumerate the authorized verdicts. It delegates:
 > any close path the classification did not name. Ship does not re-derive, restate,
 > extend or narrow that classification.
 
-This is what lets B and C land **without touching this file again**. It also forbids Ship
+This is what lets **future** close-path work land **without touching this file again** —
+including the deferred `TASK_ONLY_FINALIZE` platform work, if a fired trigger ever brings
+it back. It also forbids Ship
 from authorizing a verdict on its own — A adds **no** verdict.
 
 ### 4.2 Pinned reconciled C1 wording (normative)
@@ -169,13 +187,12 @@ grant. The authority is **not** general feature lifecycle management: it may not
 feature to `done` outside Step 6.1(a1), and it grants nothing over features outside the
 active shipment's manifest.
 
-### 5.1 Step 6.1(a1) applicability — three outcomes, stated exhaustively (rev 2)
+### 5.1 Step 6.1(a1) applicability — three outcomes, stated exhaustively (rev 2; re-scoped rev 3)
 
 Rev 1 specified what a1 does when it applies, but never said what a1 does when the
-manifest has **no** feature member. That gap matters immediately: `017-S` is a 12-member
-**task-only** manifest, so a1 will encounter that case in this very chain, and an
-unspecified step invites an implementer to either skip the gate silently or invent a
-transition. Both are wrong. The step MUST be written with an explicit three-way outcome:
+manifest has **no** feature member. An unspecified step invites an implementer to either
+skip the gate silently or invent a transition. Both are wrong. The step MUST be written
+with an explicit three-way outcome:
 
 | Case | Condition | Outcome |
 |---|---|---|
@@ -183,13 +200,28 @@ transition. Both are wrong. The step MUST be written with an explicit three-way 
 | **(ii) APPLIES — proceed** | The manifest contains a feature member and **all five** §5 conditions hold for it | Perform `active -> done`; record the transition |
 | **(iii) APPLIES — halt** | The manifest contains a feature member and **any** §5 condition is unmet | **HALT, fail closed.** Surface which condition failed. Do **not** proceed to Step 6.1(a). Do **not** widen any condition in-flight |
 
+> **Rev 3 — `017-S` is case (ii), NOT case (i).** Rev 2 cited `017-S` as the live example
+> of case (i), on the basis that it was a **12-member task-only** manifest. That is no
+> longer true. Per
+> `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`, `017-S`'s
+> root `018-F` has been **restored to the manifest**, giving **13** members and making it
+> a **fully-covered root**. At `017-S`'s gate, a1 therefore takes **case (ii)**: `018-F`
+> is a present feature member, the five §5 conditions hold, and a1 moves it
+> `active -> done` — after which pre-mode passes and classification returns **`CASCADE`**.
+>
+> **Case (i) is retained regardless**, and is still asserted by Go test row 12. It is now
+> a **defensive completeness** requirement rather than a case this chain is known to
+> exercise: the step must be total over its input, and a future task-only manifest must
+> not be able to reach an unspecified branch. Retaining it costs one recorded no-op and
+> removes an entire class of ambiguity.
+
 **The distinction between (i) and (iii) is load-bearing.** Case (i) is "there is nothing
 here for this gate to do". Case (iii) is "there is something here and it is not in the
 required state". Collapsing them — treating an unmet guard on a real feature member as a
 benign no-op — would let a shipment close with a covering feature left `active` or with
 descendants unfinished, which is precisely the corruption the gate exists to prevent. A
 zero-feature-member manifest must never be reported as a guard failure either: that would
-make every task-only shipment, including `017-S`, un-closable.
+make any task-only shipment un-closable at the gate.
 
 Asserted by **AC-15** (case i) and **AC-16** (case iii).
 
@@ -263,9 +295,14 @@ Rows 7–10 are the **widening guards**: they fail if this change authorized any
 Row 11 is the **coherence guard**: it fails if C1 ships with the carve-out and the
 "close under the just-merged contract" directive unreconciled.
 **Rows 12–13 are the applicability guards** (rev 2): they fail if a1 ships without an
-explicit not-applicable outcome — which would make every task-only shipment, `017-S`
-included, ambiguous at the gate — or without idempotent resume, which would make a
-partially-completed A permanently unclosable.
+explicit not-applicable outcome — which would leave any task-only manifest ambiguous at
+the gate — or without idempotent resume, which would make a partially-completed A
+permanently unclosable.
+
+> **Rev 3 note.** The row count is **unchanged at 13**, and every row's assertion text is
+> unchanged. Only the *rationale* for row 12 is re-scoped: rev 2 justified it by `017-S`
+> being task-only, which is no longer the case (§5.1). Row 12 now stands on **defensive
+> totality** of the step. The Go test is **not** modified by rev 3.
 
 ### 8.2 What it does **not** prove
 
@@ -302,7 +339,7 @@ else. It therefore qualifies under the **existing, already-reviewed** P-015 exce
 | 16 | S2 | **Step 6 item 2** `operational-closure mode=post-merge` → `docs/closure/`; **P-020** compact-context finalizes the compaction status — **all on the closure branch, before the closure PR is pushed** |
 | 17 | S2 | **Step 6 item 9** `backlogit sync`, then push the closure branch, closure PR, P-014 local review, operator approval, merge |
 | 18 | S2 | **Step 6 item 10** return to `main`; `git pull` |
-| 19 | — | Orchestrator routes **B** only |
+| 19 | — | Orchestrator routes **`017-S`** only (rev 3 — A is the sole prerequisite; there is no B) |
 
 **Why the order in steps 4–5 and 11–17 is exactly this.** Read from the **installed**
 `_ship.agent.md`, not inferred:
@@ -354,6 +391,72 @@ short-circuited, so it is specified in full. S2 MUST:
 * **A closes by an existing path.** At step 15, P-015 still has exactly one exception.
   A introduces no verdict and closes by the pre-existing one.
 
+### 9.3 What A releases — `017-S` (rev 3)
+
+A's full post-merge closure (step 15) and its P-020 operational closure (step 16) are the
+release condition for **`017-S`**, which is the **only** dependent. `017-S.dependencies`
+is exactly `[021-S]`.
+
+`017-S` then closes **by the same existing path A used** — no new verdict, no new gate:
+
+| Step | Action |
+|---|---|
+| 1 | `017-S` becomes eligible once `021-S` is archived shipped **and** A's post-merge closure is complete (P-020 compaction status `done`/`degraded`, not `pending`) |
+| 2 | Ship claims `017-S`. Manifest is the **13-member fully-covered root**: root `018-F` + `018.008-T` (live) + 11 pre-archived legacy descendants |
+| 3 | Step 4.5 moves `018.008-T -> done` |
+| 4 | **Step 6.1(a1)** — §5.1 **case (ii)**: `018-F` is a present feature member; conditions hold; `018-F active -> done` |
+| 5 | **Step 6.1(a)** pre-mode `expected_status: done`: `018-F` `done`, `018.008-T` `done`, 11 legacy members **pre-archived** (accepted without a status check) → **`PROCEED`** |
+| 6 | Classification returns **`CASCADE`** — the **existing** exception |
+
+**Why the rev-18 `SAFE_CLOSE` exit-9 blocker is not reached.** Rev 18 recorded that a
+`SAFE_CLOSE`-classified shipment halts at skill step 8 because
+`backlogit move <shipment_id> --status shipped` is refused (exit 9, Probe 18), and argued
+no manifest shape could avoid it *"because the only shape that reaches the permitted
+cascade path is one containing `018-F`, which fails pre-mode first."* **Step 6.1(a1) is
+exactly what repeals that clause** — with a1 live, a manifest containing `018-F` no longer
+fails pre-mode first. `017-S` classifies `CASCADE`, never `SAFE_CLOSE`, so step 8 is never
+reached. The underlying tool/contract conflict is **not fixed** here; it is simply **off
+this route**, and remains a recorded follow-up.
+
+> **Verification scope of this claim — stated honestly (rev 3, internal review P2).**
+> The `CASCADE` result above is established at the **classification** level: the manifest
+> shape provably satisfies P-015's fully-covered-root preconditions, and pre-mode provably
+> accepts pre-archived members. It is **not** established at the **engine-execution**
+> level *for this exact member shape*. A's own closure (§9) archives a clean root with
+> **no** truly-archived members; Probe 15 measured the **old** root-*excluded* 12-member
+> shape, which is the inverse case. **No committed probe or Go test exercises a
+> root-*included* cascade whose siblings are genuinely `status: archived`.**
+>
+> This is a **confidence** residual, not a safety one. The path is **fail-closed** at two
+> independent gates — the skill's cascade step 2 HALTs on non-empty `returned_ids`, and
+> step 3's two-set gate HALTs on any required/returned mismatch — so a mis-derivation
+> cannot silently corrupt the backlog. The realistic downside is that `017-S` **HALTs**
+> and falls back to `SAFE_CLOSE`, re-exposing the exit-9 blocker. That outcome returns
+> `017-S` to **Stage**, costs no data, and is recoverable.
+>
+> **Not a current blocker**, and deliberately **not** charged to A: `017-S`'s closure is a
+> separate shipment executed after A ships. Recorded as a follow-up — a root-included
+> cascade fixture probe against the exact 13-member shape — to be run before `017-S` is
+> routed, **not** before A is.
+
+> **Deliberately OUT OF A's INVENTORY — `_ship.agent.md` pre-mode summary (rev 3,
+> internal review P3).** The installed Step 6.1(a) summary at **L776–777** says pre-mode
+> *"verifies that every manifest item is present in queue with `status: done`"*. On
+> `017-S`'s route that sentence is **literally false** — 11 of 13 members live in
+> `.backlogit/archive/`, and `018-F` relocates there once a1 completes. It is a further
+> instance of exactly the duplication defect §2.2 describes.
+>
+> It is **NOT added to A's clause inventory**, for two reasons. **(1) Budget.** A's
+> inventory is closed at **6 sites** and its budget is pinned at **~78 min**; the site
+> falls in the gap between C1 (756–764) and C2 (789+) and would open a seventh. **(2) It
+> is not load-bearing.** The authoritative `shipment-reconcile` skill — which C1–C6 make
+> Ship delegate to unconditionally — already classifies archived members as `pre-archived`
+> and accepts them without a status check, so the **runtime outcome is correct
+> regardless**. The defect is descriptive drift in a summary, not an operative gate.
+>
+> Recorded as a follow-up for a future `_ship.agent.md` pass. A reviewer MUST NOT fail A
+> for its absence.
+
 ## 10. Risks, residuals, rollback
 
 | ID | Risk | Disposition |
@@ -361,7 +464,7 @@ short-circuited, so it is specified in full. S2 MUST:
 | **R-1** | `022-F` may be `queued`, not `active`, at the a1 gate, so §5 condition 5 fails closed and A cannot self-close | **(rev 2 — DISCHARGED by measurement.)** Probe 22 ARM AB measured `022-F`'s analogue at **`active`** after claim of a fully-covered-root manifest. PO-1a is closed; **PO-1b** remains as the at-the-gate re-read (§10.1). Fail-closed HALT is still correct if the live read disagrees |
 | **R-2** | S1 might use the new authority anyway, defeating the proof | §6 is stated normatively **and** asserted by Go test row 6 |
 | **R-3** | Delegation could be read as authorizing any verdict the skill invents | §4.1 binds Ship to verdicts the **classification** names; P-015 remains the authorization surface. Go test row 9 guards it |
-| **R-4** | C2's correction touches the safe-close summary, which C also edits in its own file | **No overlap**: C2 is in `_ship.agent.md`; the skill's step 8 is C's file. Disjoint surfaces |
+| **R-4** | C2's correction touches the safe-close summary, which the deferred C plan would also edit in its own file | **No overlap, and now moot**: C2 is in `_ship.agent.md`; the skill's step 8 is C's file — disjoint surfaces. **Rev 3**: C is deferred and lands nothing, so there is no concurrent editor at all |
 | **R-5** | Removing Ship's restatement loses reviewer-visible context | Accepted. The classification stays fully specified in P-015 and the skill; duplication is what caused the §2.2 drift |
 
 ### 10.1 PO-1 — covering-feature status at claim (**PO-1a discharged in rev 2**)
@@ -416,24 +519,35 @@ it is A's justification, not C's. A cites
 and the compound note
 `docs/compound/2026-05-07-backlogit-shipment-status-constraints.md`. Asserted by **AC-13**.
 
+> **Rev 3 — evidence directory is RETAINED.** The evidence directory was nominally
+> *"owned by C"*. C is deferred, but the directory is **not** deferred with it: A cites
+> **Probe 18** here and **Probe 22** in §10.1, and the A-only decision relies on **Probe
+> 24** for `017-S`'s 13-member shape. The directory stays in place and untouched.
+
 ### 10.2 Rollback
 
 Two files on a feature branch. `git revert` the merge commit; Ship's closure behavior
 returns to today's state (including, knowingly, the §2.2 drift). No backlog mutation is
 performed by the implementation commit itself, so no backlog rollback is required.
 
-**That simple statement holds only BEFORE the chain is activated.** Once B and/or C are
-installed, **A must not be reverted alone** — it would restore Ship's stale binary
-restatement and the `children`-only drift while newer surfaces depend on the delegation A
-introduced. After activation the mandatory order is **`C → B → A`**: reverting A requires
-B and C already reverted. See plan C §10.1 for the full ordering table.
+**Rev 3 — the rollback chain is now A-only.** Rev 2 required a mandatory `C → B → A`
+revert order because B and C would have layered on top of A's delegation. B and C are
+**deferred and archived** and land on nothing, so **no downstream contract surface depends
+on A's delegation**. A can be reverted **on its own**, with one obligation below.
 
-**Downstream shipments must be held before any upstream contract is reverted.** Reverse
-order is necessary but not sufficient — a revert changes the contract queued work was
-planned against. Before reverting A: confirm no downstream shipment is `active`; explicitly
-hold `017-S` (a **Stage** action, recorded in the backlog, taken **before** the revert);
-and re-plan the affected shipments rather than re-routing them on the old plan. Plan C
-§10.1 states this rule once, normatively, for all three shipments.
+**The one remaining obligation: hold `017-S` before reverting A.** Reverting A removes
+Step 6.1(a1), which is the sole reason `017-S`'s 13-member fully-covered root can close.
+A revert therefore changes the contract `017-S` was planned against. Before reverting A:
+
+1. confirm `017-S` is **not** `active` (it must not be mid-execution);
+2. explicitly **hold `017-S`** — a **Stage** action, recorded in the backlog, taken
+   **before** the revert;
+3. either restore `017-S` to its former task-only 12-member shape **or** re-plan it —
+   do **not** re-route it on this plan once a1 is gone.
+
+This is the general rule *"a revert changes the contract queued work was planned against"*
+applied to the only dependent that now exists. It is stated here normatively; rev 2
+delegated it to plan C §10.1, which is now **deferred** and must not be routed from.
 
 ### 10.3 Failure paths
 
@@ -506,8 +620,12 @@ Rates are rev 6 §10.1's own, so this is directly comparable to the measurement 
 produced `MUST_REPLAN`. Margin to the 2-hour rule: **~42 min**.
 
 *(Rev-2 delta: ADD-2 **+5** for the §5.1/§5.2 applicability and idempotence text; Go test
-**+2** for rows 12–13. Total ~71 → ~78 min, margin ~49 → ~42 min. A remains the
-second-most comfortable of the three.)*
+**+2** for rows 12–13. Total ~71 → ~78 min, margin ~49 → ~42 min.)*
+
+*(Rev-3 delta: **none**. The A-only simplification changes no surface, no clause site and
+no test row, so the budget stands at **~78 min** with a **~42 min** margin. Rev 2's
+comparative remark that A was *"the second-most comfortable of the three"* is withdrawn —
+there is no longer a set of three to compare against.)*
 
 *(Rev-1 review: +1 min for the C1 coherence row 11. PO-1a is a Stage/pre-execution read
 and is not charged to the task budget.)*
@@ -539,7 +657,10 @@ rows 12–13.
 **Hardening 2 — delegation must not become a blank cheque.** §4.1's wording binds Ship to
 the verdict **named by the classification**, and P-015 remains the sole authorization
 surface. Go test row 9 fails if `_ship.agent.md` ever re-enumerates verdicts. Ship cannot
-authorize `TASK_ONLY_FINALIZE`; only B can, and only under C's token.
+authorize `TASK_ONLY_FINALIZE` — and after rev 3 **nothing currently authorizes it at
+all**: the policy branch (B) and its classifier (C) are deferred, so the selectable
+verdict set stays exactly `CASCADE`, `SAFE_CLOSE`, `HALT`. Go test row 8 independently
+asserts `_ship.agent.md` never names the token.
 
 **Hardening 3 — the self-hosting boundary is the highest-risk step.** The S1→S2 handoff is
 where an impatient implementer would "just finish it". Three independent defenses: §6 is
@@ -564,8 +685,10 @@ Stage rather than widening the grant in-flight.
 
 **Hardening 5 — engine coupling.** A performs **no** engine call that depends on the
 1.10.1 digest beyond what every closure already does. The digest binding
-(`1E106F5F…959A98`) is **C's** obligation. A's cascade invocation is the same call every
-fully-covered-root closure already makes today.
+(`1E106F5F…959A98`) was **C's** obligation and is **deferred with C** — A never needed it.
+A's cascade invocation is the same call every
+fully-covered-root closure already makes today. **Rev 3**: this is now strictly simpler —
+with C deferred, **no** digest-bound engine invocation is introduced on any current route.
 
 **Hardening 6 — what could make this plan wrong.** If `expected_status: done` is not
 actually enforced over feature members, the a1 gate is unnecessary (harmless but

@@ -50,12 +50,25 @@ in this release unit.
 
 ### R16.2 The reduced release unit
 
+> **REV 19 UPDATE (2026-09-13) — the manifest row below is CORRECTED.** Governing
+> decision: `docs/decisions/2026-09-13-intercom-go-a-only-simplification-decision.md`
+> (`SIMPLIFICATION_VALID`). `017-S` is **no longer task-only**. Its root `018-F` has been
+> restored to the manifest, giving a **13-entry fully-covered root**, and it depends on
+> **`021-S` only**. It closes by the **existing** P-015 `CASCADE` exception once shipment
+> A lands Ship Step 6.1(a1). The `SAFE_CLOSE` step-8 exit-9 conflict is **off this route**.
+
 | Item | Value |
 |---|---|
-| Feature | `018-F` (root; no `parent_id`; **not** a shipment member) |
-| Shipment | `017-S` (the only shipment in the workspace; **task-only** 12-entry manifest) |
+| Feature | `018-F` (root; no `parent_id`; **IS** a shipment member — rev 19) |
+| Shipment | `017-S` (**13-entry fully-covered root**: `018-F` + all 12 descendants; depends on `021-S`) |
 | Executable tasks | **1** — `018.008-T` (size **M**, complexity **medium**) |
 | Harness | ONE function `TestStageBranchGate_ContractCorrected`, ONE expected marker |
+
+**Superseded row, retained for audit:** rev 18 recorded *"`018-F` … **not** a shipment
+member"* and *"`017-S` … **task-only** 12-entry manifest"*. Both are **withdrawn**. The
+membership change does **not** widen the executable set — Ship Step 3 filters the manifest
+by `artifact_type`, so `018-F` is excluded from execution before any status is read, and
+the derived executable set remains exactly `[018.008-T]`.
 
 `018.008-T` carries exactly three surfaces: **(1)** P-010 in
 `.github/policies/workflow-policies.md`; **(2)** the `.github/agents/_stage.agent.md` Role
