@@ -1,0 +1,205 @@
+Initialized backlogit workspace at C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p14\.backlog
+### STEP 1: build two independent feature/task trees
+Created feature: 001-F
+Created task: 001.001-T
+Created feature: 002-F
+Created task: 002.001-T
+### STEP 2: create two TASK-ONLY shipments
+{
+  "id": "001-S",
+  "title": "Predecessor shipment",
+  "status": "queued",
+  "artifact_type": "shipment",
+  "custom_fields": {
+    "items": [
+      "001.001-T"
+    ]
+  },
+  "created_at": "2026-09-13T02:39:10.2197253Z",
+  "updated_at": "2026-09-13T02:39:10.2197253Z",
+  "level": 1
+}
+{
+  "id": "002-S",
+  "title": "Successor shipment",
+  "status": "queued",
+  "artifact_type": "shipment",
+  "custom_fields": {
+    "items": [
+      "002.001-T"
+    ]
+  },
+  "created_at": "2026-09-13T02:39:10.3730468Z",
+  "updated_at": "2026-09-13T02:39:10.3730468Z",
+  "level": 1
+}
+### STEP 3: write the blocks edge  successor(002-S) depends_on predecessor(001-S)
+Added dependency 002-S → 001-S
+### edge readback (002-S):
+002-S → 001-S (blocks)
+### STEP 4: BASELINE readiness - predecessor QUEUED, successor MUST be suppressed
+{
+  "ready_set": [
+    "001-S"
+  ],
+  "critical_path": [
+    "001-S",
+    "002-S"
+  ],
+  "downstream_dependents": {
+    "001-S": [
+      "002-S"
+    ],
+    "002-S": []
+  },
+  "cycle_detected": false,
+  "cycle_nodes": [],
+  "degraded_reason": null,
+  "status": "ok",
+  "next_eligible": "001-S",
+  "next_eligible_reason": "ready_set_head",
+  "next_eligible_detail": {
+    "candidate_ids": [
+      "001-S"
+    ],
+    "offending_ids": []
+  }
+}
+GATE_EXIT=0
+### STEP 5: claim predecessor (queued -> active); successor MUST STILL be suppressed
+{
+  "id": "001-S",
+  "title": "Predecessor shipment",
+  "status": "active",
+  "artifact_type": "shipment",
+  "custom_fields": {
+    "items": [
+      "001.001-T"
+    ]
+  },
+  "created_at": "2026-09-13T02:39:10.2197253Z",
+  "updated_at": "2026-09-13T02:39:11.6478574Z",
+  "level": 1,
+  "hierarchy_path": "001"
+}
+{
+  "ready_set": [],
+  "critical_path": [
+    "001-S",
+    "002-S"
+  ],
+  "downstream_dependents": {
+    "001-S": [
+      "002-S"
+    ],
+    "002-S": []
+  },
+  "cycle_detected": false,
+  "cycle_nodes": [],
+  "degraded_reason": null,
+  "status": "ok",
+  "next_eligible": "001-S",
+  "next_eligible_reason": "resume_active",
+  "next_eligible_detail": {
+    "candidate_ids": [],
+    "offending_ids": []
+  }
+}
+GATE_EXIT=0
+### STEP 6: complete the predecessor's sole task, then close predecessor via ShipShipment
+Moved 001.001-T → done
+{
+  "shipment_id": "001-S",
+  "shipment_status": "shipped",
+  "archived_ids": [
+    "001.001-T",
+    "001-S"
+  ],
+  "returned_ids": [],
+  "commit_sha": "0000000000000000000000000000000000000000"
+}
+SHIP_EXIT=0
+### STEP 7: predecessor archived-record provenance (status + archived_status)
+PATH=.backlog/archive/001-S.md
+---
+archived_from: .backlog/queue/001-S.md
+archived_status: shipped
+artifact_type: shipment
+commit: "0000000000000000000000000000000000000000"
+created_at: 2026-09-13T02:39:10.2197253Z
+custom_fields:
+    items:
+        - 001.001-T
+id: 001-S
+status: archived
+title: Predecessor shipment
+updated_at: 2026-09-13T02:39:16.6592439Z
+---
+
+
+### STEP 8: official sync (index rehydration)
+Indexed 6 artifacts
+### STEP 9: POST-CLOSE readiness - successor MUST now be eligible
+{
+  "ready_set": [
+    "002-S"
+  ],
+  "critical_path": [
+    "001-S",
+    "002-S"
+  ],
+  "downstream_dependents": {
+    "001-S": [
+      "002-S"
+    ],
+    "002-S": []
+  },
+  "cycle_detected": false,
+  "cycle_nodes": [],
+  "degraded_reason": null,
+  "status": "ok",
+  "next_eligible": "002-S",
+  "next_eligible_reason": "ready_set_head",
+  "next_eligible_detail": {
+    "candidate_ids": [
+      "002-S"
+    ],
+    "offending_ids": []
+  }
+}
+GATE_EXIT=0
+### STEP 10: successor + its edge after predecessor archival
+002-S → 001-S (blocks)
+{
+  "artifact_type": "shipment",
+  "created_at": "2026-09-13T02:39:10.3730468Z",
+  "custom_fields": {
+    "items": [
+      "002.001-T"
+    ]
+  },
+  "dependencies": [
+    {
+      "id": "001-S",
+      "type": "blocks"
+    }
+  ],
+  "hierarchy_path": "002",
+  "id": "002-S",
+  "level": 1,
+  "size_composition": {
+    "histogram": {},
+    "unsized": 1,
+    "members": [
+      {
+        "id": "002.001-T",
+        "artifact_type": "task"
+      }
+    ],
+    "skipped": [],
+    "ruleset_version": null
+  },
+  "status": "queued",
+  "title": "Successor shipment",
+  "updated_at": "2026-09-13T02:39:10.3730468Z"
+}

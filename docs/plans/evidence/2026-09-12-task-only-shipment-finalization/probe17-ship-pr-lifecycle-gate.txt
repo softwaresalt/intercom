@@ -1,0 +1,77 @@
+PROBE 17 - Ship PR-lifecycle-only Step 5 gate feasibility
+engine: autoharness gate pipeline-topology (installed; force-audit log present)
+
+=== autoharness gate pipeline-topology --mode agent --phase lifecycle --json ===
+{
+  "mode": "agent",
+  "phase": "lifecycle",
+  "target_shipment_id": null,
+  "exit_code": 2,
+  "blocked": false,
+  "invalid": true,
+  "message": "agent mode requires --shipment <shipment_id>",
+  "checks": [],
+  "token": null,
+  "forced": false,
+  "telemetry_log": null
+}
+EXIT=2
+
+=== autoharness gate pipeline-topology --mode agent --shipment 021-S --phase lifecycle --json ===
+{
+  "mode": "agent",
+  "phase": "lifecycle",
+  "target_shipment_id": "021-S",
+  "exit_code": 1,
+  "blocked": true,
+  "invalid": false,
+  "message": "LIFECYCLE_NO_ACTIVE_SHIPMENT: expected exactly one active shipment",
+  "checks": [
+    {
+      "name": "active_shipment_invariant",
+      "status": "blocked",
+      "token": "LIFECYCLE_NO_ACTIVE_SHIPMENT",
+      "message": "LIFECYCLE_NO_ACTIVE_SHIPMENT: expected exactly one active shipment",
+      "details": {
+        "active_shipment_ids": [],
+        "target_shipment_id": "021-S"
+      }
+    }
+  ],
+  "token": "LIFECYCLE_NO_ACTIVE_SHIPMENT",
+  "forced": false,
+  "telemetry_log": null
+}
+EXIT=1
+
+=== autoharness gate pipeline-topology --mode manual --phase lifecycle --json ===
+{
+  "mode": "manual",
+  "phase": "lifecycle",
+  "target_shipment_id": null,
+  "exit_code": 2,
+  "blocked": false,
+  "invalid": true,
+  "message": "--phase lifecycle requires --shipment <shipment_id> in any mode",
+  "checks": [],
+  "token": null,
+  "forced": false,
+  "telemetry_log": null
+}
+EXIT=2
+
+=== autoharness gate pipeline-topology --mode agent --phase ambient --json ===
+{
+  "mode": "agent",
+  "phase": "ambient",
+  "target_shipment_id": null,
+  "exit_code": 2,
+  "blocked": false,
+  "invalid": true,
+  "message": "agent mode requires --shipment <shipment_id>",
+  "checks": [],
+  "token": null,
+  "forced": false,
+  "telemetry_log": null
+}
+EXIT=2

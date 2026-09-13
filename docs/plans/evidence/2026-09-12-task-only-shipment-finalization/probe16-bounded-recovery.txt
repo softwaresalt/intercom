@@ -1,0 +1,85 @@
+Initialized backlogit workspace at C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p16\.backlog
+RECOVERY_PATH=\.autoharness\backups\stage-recovery\p16
+RECOVERY_PATH_GITIGNORED=True
+### STEP 1: minimal authorized topology (root feature + 1 live task), shipment claimed, task done
+### STEP 2: PRE-CALL snapshot of MUTABLE source-of-truth markdown only + inventory manifest
+INVENTORY .backlog\queue\001-F.md            EE2EEF19A6905CA0E1FC8666D5D70FCA09E12E5C57A4FD7990EDCB5610ADE3A3
+INVENTORY .backlog\queue\001-S.md            B34CF7300EBFD5CAC1F9D78B1326F476567D8368F1D19FC9AEB864B9D1595D2A
+INVENTORY .backlog\archive\001.001-T.md      44B6BC64CD95BCA0A6561E7B81BD87316DF0F124BA0F0EC77784166B8BF80821
+### STEP 2b: append-only + disposable baselines (recorded, NEVER restored)
+APPEND_ONLY_BASELINE 001-S.jsonl                  bytes=341
+APPEND_ONLY_BASELINE .001-F.jsonl.lock            bytes=0
+APPEND_ONLY_BASELINE stash.jsonl                  bytes=0
+APPEND_ONLY_BASELINE hooks_queue.jsonl            bytes=1458
+APPEND_ONLY_BASELINE .001.001-T.jsonl.lock        bytes=0
+APPEND_ONLY_BASELINE 001.001-T.jsonl              bytes=614
+APPEND_ONLY_BASELINE 001-F.jsonl                  bytes=189
+APPEND_ONLY_BASELINE .001-S.jsonl.lock            bytes=0
+DISPOSABLE_CACHE backlogit.db present=True (never byte-restored)
+### STEP 3: INJECT partial failure - occupy the shipment record's archive destination with a directory
+### STEP 4: AUTHORIZED CALL (expected to fail AFTER partial mutation)
+Error: ship shipment: ship shipment 001-S: archive release scope: archive item 001-S: archive "001-S": destination ".backlog/archive/001-S.md" is occupied by an unparseable file (read C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p16\.backlog\archive\001-S.md: Incorrect function.): backlogit: archive destination already occupied by a different item
+SHIP_EXIT=1
+### STEP 5: observe TORN state
+TORN_SCAN 001-S          queue    status: shipped
+TORN_SCAN 001-S          archive  <DIRECTORY>
+TORN_SCAN 001.001-T      archive  status: archived
+### STEP 6: APPROVAL GATE - destructive quarantine/restore requires explicit approval FIRST
+OPERATOR_ACTION_RISK_APPROVAL=True (gate evaluated BEFORE any destructive move)
+### STEP 7: RECOVERY (a) enumerate, (b) quarantine unexpected paths - move, never delete
+QUARANTINED .backlog\queue\.001.001-T.md.lock
+QUARANTINED .backlog\archive\001-S.md
+### STEP 8: RECOVERY (c) restore ONLY enumerated mutable markdown from snapshot
+RESTORED .backlog\queue\001-F.md
+RESTORED .backlog\queue\001-S.md
+RESTORED .backlog\archive\001.001-T.md
+### STEP 9: RECOVERY (d) rehydrate disposable index via OFFICIAL sync (no DB/WAL byte restore)
+Indexed 3 artifacts
+### STEP 10: VERIFY byte/path equivalence for mutable state
+PASS .backlog\queue\001-F.md            byte=SAME
+PASS .backlog\queue\001-S.md            byte=SAME
+PASS .backlog\archive\001.001-T.md      byte=SAME
+RESIDUAL_UNEXPECTED_PATHS=0
+ENGINE_VIEW_AFTER_RECOVERY:
+{
+  "artifact_type": "shipment",
+  "created_at": "2026-09-13T02:42:11.202227Z",
+  "custom_fields": {
+    "items": [
+      "001.001-T"
+    ]
+  },
+  "hierarchy_path": "001",
+  "id": "001-S",
+  "level": 1,
+  "size_composition": {
+    "histogram": {},
+    "unsized": 1,
+    "members": [
+      {
+        "id": "001.001-T",
+        "artifact_type": "task"
+      }
+    ],
+    "skipped": [],
+    "ruleset_version": null
+  },
+  "status": "active",
+  "title": "Recovery probe shipment",
+  "updated_at": "2026-09-13T02:42:11.3290892Z"
+}
+### STEP 11: VERIFY append-only streams were NOT rewound (length must be >= baseline)
+APPEND_ONLY 001-S.jsonl                  baseline=341 current=1301 not_rewound=True
+APPEND_ONLY .001-F.jsonl.lock            baseline=0 current=0 not_rewound=True
+APPEND_ONLY stash.jsonl                  baseline=0 current=0 not_rewound=True
+APPEND_ONLY hooks_queue.jsonl            baseline=1458 current=1458 not_rewound=True
+APPEND_ONLY .001.001-T.jsonl.lock        baseline=0 current=0 not_rewound=True
+APPEND_ONLY 001.001-T.jsonl              baseline=614 current=1031 not_rewound=True
+APPEND_ONLY 001-F.jsonl                  baseline=189 current=189 not_rewound=True
+APPEND_ONLY .001-S.jsonl.lock            baseline=0 current=0 not_rewound=True
+APPEND_ONLY_REWIND_VIOLATIONS=0
+### STEP 12: append a RECOVERY EVENT to the append-only stream (never a rewind)
+RECOVERY_EVENT_APPENDED={"ts":"2026-09-13T02:42:16.6206892Z","event":"stage_bounded_recovery","probe":"16","shipment":"001-S","ship_exit":1,"restored":3,"quarantine":"\\.autoharness\\backups\\stage-recovery\\p16\\quarantine","note":"bounded recovery; NOT atomic rollback"}
+MUTABLE_EQUIVALENCE_FAILURES=0
+QUARANTINE_PRESERVED=5 entries at \.autoharness\backups\stage-recovery\p16\quarantine
+TERMINAL_DISPOSITION=HALT (bounded recovery complete; diagnostic evidence preserved)
