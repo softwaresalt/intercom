@@ -699,7 +699,7 @@ Operator authorization timestamp for both: **`2026-09-13T11:35:43-07:00`**.
 ```text
 plan-review-attempt: 5
 dispatch_mode: multi-agent
-decision: PENDING
+decision: FAIL
 ```
 
 ### 13.1 Review-lineage correction (TRUE LINEAGE — do not renumber)
@@ -774,12 +774,12 @@ spans two artifact classes is not closed by fixing one of them.**
 | Field | Value |
 |---|---|
 | **Plan `status:`** | `planned` |
-| **True-lineage attempt** | **5** (see §13.1) |
-| **Harvest-ready** | **NO** until this gate returns PASS / ADVISORY with P0=0 and P1=0 |
-| **`021-S`** | `queued` — **not claimable** until the gate passes |
+| **True-lineage attempt** | **5** (see §13.1) — **`decision: FAIL`** (see §13.4) |
+| **Harvest-ready** | **NO** — attempt 5 returned FAIL with 0 P0 and 9 P1 |
+| **`021-S`** | `queued` — **not claimable** |
 | **`017-S`** | `queued`, dependency `[021-S]` — ineligible until `021-S` ships |
 | **`PA-*`** | recorded, **unexercised**; gated on this state |
-| **Re-entry budget** | **EXHAUSTED.** A FAIL here halts to the operator; attempt 6 is not self-authorized |
+| **Re-entry budget** | **EXHAUSTED AND SPENT.** Attempt 6 is **NOT** self-authorized. Stage has halted to the operator |
 
 **Correction pass `F1`–`F8` applied before this gate** (adjudicated against the installed
 contracts, not self-directed). **This is a SEPARATE, EARLIER finding set from `H-1`…`H-9`** —
@@ -797,6 +797,94 @@ renumbers the other:
 | **F6** (P2) | **CONFIRMED as a clarification only.** The cascade is never committed before postchecks, so a committed-cascade recovery is unreachable; scope not broadened | §10.3 state machine, AC-23 |
 | **F7** (P3) | **CONFIRMED.** `record-consistent` occurs **0×** in `_ship.agent.md` — it is **added**, not preserved | §4 CS7/CS8, AC-8 |
 | **F8** (P3) | **CONFIRMED.** Records identified the plan by a stale line count | Records now use **path + revision** |
+
+### 13.4 Plan Review — TRUE-LINEAGE ATTEMPT 5 — **VERDICT: FAIL**
+
+**Executed** under the operator's one-attempt exceptional authorization (§13.1). `dispatch_mode:
+multi-agent`, 7/7 personas returned. Anchor route resolved live from `.autoharness/config.yaml`
+→ `model_routing.anchor_review` = `openai` / `gpt-5.6-sol` / `high`.
+
+**`ANCHOR VERDICT: FAIL`.** Aggregate **P0 = 0, P1 = 9, P2 = 9, P3 = 12**.
+
+**Revision scope:** the artifact reviewed was **revision 9**. This section records the *verdict about*
+revision 9 and deliberately does **NOT** bump the revision — a bump would desynchronize the four backlog
+records (which name rev 9) and create a **7th** instance of the very split-brain class `J-1` reports.
+The `J-1` "rev 8" occurrences in §13.1 and §13.2 are **left uncorrected on purpose**: correcting them
+would be remediation, which this authorization does not cover.
+
+| Persona | Route | P0/P1/P2/P3 |
+|---|---|---|
+| **Architecture Strategist (ANCHOR)** | `gpt-5.6-sol` / high | **0 / 7 / 1 / 0** — `FAIL` |
+| Constitution Reviewer | `claude-opus-4.8` | 0 / 1 / 2 / 3 |
+| Go Reviewer | `claude-opus-4.8` | **0 / 0 / 1 / 3** |
+| Scope Boundary Auditor | `claude-opus-4.8` | 0 / 0 / 2 / 2 |
+| Learnings Researcher | default | 0 / 2 / 5 / 4 |
+| Security Lens Reviewer | `gpt-5.5` / high | 0 / 1 / 2 / 0 |
+| Agent-Native Parity | `grok-4.6` / high | 0 / 1 / 0 / 1 |
+
+#### Deduplicated P1 findings (`J-1`…`J-9`) — **CARRIED OPEN, NOT REMEDIATED**
+
+The authorization covers **exactly one** attempt. These findings are **recorded, not fixed.**
+Remediating them would constitute an unauthorized attempt-6 cycle (P-005).
+
+| Ref | Convergence | Finding |
+|---|---|---|
+| **J-1** | **4 personas** (Anchor A5-2, Constitution C-1, Learnings L-1, Scope SB-1@P2) | **The revision sweep of this very pass is incomplete.** §13.1 lineage-table row 5 and the §13.2 `H-2` disposition still name **rev 8**, while frontmatter, the archive banner and all four backlog records name **rev 9**. **The lineage-correction section misstates its own revision.** This is the **6th** recurrence of the partial-sweep/split-brain class (`A-14` → `B-7` → `E-9` → `H-2` → this pass's record fix → now *inside* §13 itself) |
+| **J-2** | **3 personas** (Anchor A5-1, Constitution C-3, Learnings L-2) | **§13.2's "measured = 0" evidence claims are scope-silent and therefore false at face value.** The counts were taken over the plan body *before* the disposition table was written, and exclude (a) the disposition table itself, which now quotes the literals, and (b) the four backlog records, where the defect text survives verbatim (`022.001-T` still contains the `H-4` and `H-1` literals). The plan's own stated lesson — *"a split-brain that spans two artifact classes is not closed by fixing one of them"* — is **written but not executed**. Same inference-as-measurement class as `H-3` |
+| **J-3** | Anchor A5-3 | **`{post_paths}` is consumed by §10.3 but never defined or captured anywhere** in §9, §9.1, §10 or step 13a. A load-bearing variable in the **destructive** rollback path is undefined, so `H-8`'s "unexecutable mechanism" finding is only **partially** closed |
+| **J-4** | Anchor A5-4 | **Authority split.** `P-010` in `.github/policies/workflow-policies.md` grants Ship **task** transitions only. That file is **not** in the declared 2-file scope. On landing, Ship would be simultaneously **authorized** by its own agent-table row and **unauthorized** by the policy registry |
+| **J-5** | Anchor A5-5 | **The delegation target does not exist.** The installed `shipment-reconcile/SKILL.md` exposes exactly 4 modes (`pre`, `post`, `safe-close`, `detect-mixed-role`) and **no public classify API returning `CASCADE` / `SAFE_CLOSE`**. §3.4's delegation contract targets an API surface the installed skill does not expose |
+| **J-6** | Anchor A5-6 | **Two incompatible recovery algorithms.** Installed `_ship.agent.md` crash-resumption calls `backlogit_list_checkpoints` **with** `consumer_id: "ship"` and requires explicit operator selection **and** confirmation. §9.1 requires neither, and is not written as an override |
+| **J-7** | Anchor A5-7 | **`PA-017-CASCADE` cites §9 step 13a**, but §9 steps 1–18 execute **`021-S` only**; step 19 merely *routes* `017-S`. The cross-reference resolves syntactically but not to an applicable action — there is no `017-S` execution/baseline step for the approval to attach to |
+| **J-8** | Security Lens (0.86) | **Evidence-ancestry check is defeatable.** §8.1/§9.2 prove only *"last touch is not after the merge"*. A **same-PR** replacement of the Probe-25 transcript **and** script passes ancestry; and because `engine_expected` is read from that same transcript, a forged replacement passes **consistently** |
+| **J-9** | Agent-Native Parity ANP-1 | **False tool-capability claim.** §5 asserts `backlogit_query_sql` can reveal a torn duplicate. Measured: the index `items` table has **no path/location column**, and `backlogit get --json` exposes no path. **Only `backlogit doctor` can detect it.** Same factual-error class as `H-3` |
+
+#### P2 findings (recorded)
+
+`J-10` `protected set` survives in `_ship.agent.md` at **L792–793** and **L824–826**, which fall in the
+**gap** between `CS2` (789–791) and `CS3` (794–795) — so `H1` leaves the false claim in the shipped
+contract (Learnings L-4). ·
+`J-11` The never-prune allowlist lost **1 of 3** installed elements in compaction; §9.1 item 6 carries only
+2 (Learnings L-7). ·
+`J-12` AC-3 claims 8 sites are test-verified, but `CS3`/`CS5` have no pinned needle (Scope SB-2). ·
+`J-13` §6.1 pins literals for only **9 of 18** rows; the PRESENT needles for rows 9/10/16 are unpinned,
+leaving `H1` non-deterministic (Go G-1). ·
+`J-14` The four backlog records remain **append-only**; stale rev-3 body text reads as live instruction
+*ahead* of the governing block (Constitution C-2, Learnings L-3). ·
+`J-15` Classifier byte-identity is not verified (Security P2). ·
+`J-16` Condition-2 manifest-only vs. full-descendant-graph ambiguity (Security P2). ·
+`J-17` Uncited prior art in `docs/compound/` (Learnings L-5, L-6). ·
+`J-18` §5's `a1 n>1` halt is narrower than `P-015` (Anchor A5-8).
+
+#### Independently CONFIRMED SOUND — **do not re-litigate**
+
+* **Go Reviewer measured every §6.1 pinned literal, occurrence count and line number** against the real
+  `_ship.agent.md`: L255, L256, L259, L777, L790, L810, L819; `scans for orphan items` ×2;
+  `Scope note (139-F/139.001-T)` ×1; `TASK_ONLY_FINALIZE` ×0; `018.` ×0 — **all accurate**. The
+  transition rows are genuinely RED and the guard rows genuinely GREEN. `repoRoot(t)` exists at package
+  scope in `tests/integration/build_script_test.go`. `testify` is absent from `go.mod`.
+* **§14's complexity claim is TRUE, not stale.** `.backlogit/header-def.yaml` defines no `complexity`
+  field on any of the 7 artifact types (only `size`); the CLI's `--complexity` flag is WIT-gated.
+  Structured `size: M` + `size_source: agent` + `size_ruleset_version: stage-2h-rule-v1` **are** persisted.
+* **The attempt counter is consistently `5`** in every location (frontmatter marker, header, §13.1, §13.3,
+  archive banner, all four records). **`F-A` is closed.**
+* All §11 `PA-*` cross-references resolve to existing sections, and both explicitly disclaim being claim
+  authorizations.
+* Learnings Researcher verified all 4 cited `docs/compound/` documents exist and are accurately characterized.
+
+#### Scoping honesty note (required by `J-2`)
+
+Writing this section **re-introduces** the `H-1`/`H-4`/`H-8` literals into this file as *quoted finding
+text*. That is unavoidable when recording findings verbatim, and it is disclosed here rather than left to
+be discovered as another false zero-count. **Any future occurrence-count claim over this plan MUST state
+its scope** and MUST exclude — explicitly, not silently — §13.2 and §13.4 quotation contexts, and MUST be
+re-derived over **{plan} ∪ {4 backlog records}**, never over the plan alone.
+
+#### Gate outcome
+
+**FAIL. Stage has HALTED.** The single authorized exceptional attempt is **spent**. Attempt 6, any further
+remediation pass, harvest, `021-S` claim, `017-S` promotion, push, or PR mutation are **all unauthorized**
+and require fresh explicit operator adjudication. `J-1`…`J-18` are preserved **unremediated** above.
 
 ## 14. Sizing
 
