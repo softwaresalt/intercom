@@ -3,7 +3,7 @@ title: "Plan — TASK_ONLY_FINALIZE classifier, guards and recovery in shipment-
 date: 2026-09-12
 status: planned
 agent: Stage
-revision: 1
+revision: 2
 feature: 024-F
 task: 024.001-T
 shipment: 023-S
@@ -15,12 +15,28 @@ evidence_dir: docs/plans/evidence/2026-09-12-task-only-shipment-finalization/
 
 # Plan — TASK_ONLY_FINALIZE classifier, guards and recovery in shipment-reconcile
 
-> **Requires plan hardening**: **yes — applied in rev 1** (see `## Plan Hardening`).
+> **Requires plan hardening**: **yes — applied in rev 2** (see `## Plan Hardening`).
 
 - **Shipment**: `023-S` (C, Skill implementation) — third of three
 - **Depends on**: `022-S` (B), which depends on `021-S` (A)
-- **Closes by**: the **new** `TASK_ONLY_FINALIZE` path — **C is the self-proof**
-- **Manifest**: **task-only** `[024.001-T]`
+- **Closes by**: the **existing** `CASCADE` exception — **rev 2, forced by measurement**
+- **Manifest**: **fully-covered root** `[024.001-T, 024-F]`
+- **Activates**: `TASK_ONLY_FINALIZE`, whose **first real exercise is `017-S`**
+
+> **Rev 2 — why the manifest shape changed.** Rev 1 kept `023-S` task-only so C would
+> close by the path it ships. Probes 22/23/24 falsified that design:
+> **Probe 22** measured that claiming a task-only shipment transitions its
+> **out-of-manifest** covering feature to `active`, and that the feature **stays `active`**
+> after the task-only close — so `024-F` would become a live top-level release unit and
+> trip Ship Step 1's P-001 `Active` gate when `017-S` is routed.
+> **Probe 23** measured that the natural remedy — a `blocks` edge from `017-S` to `024-F` —
+> is **not constructible**: the engine refuses it (`both endpoints must be shipments`).
+> **No dependency-graph barrier against a feature exists at all.**
+> **Probe 24** measured the remedy adopted here: with `024-F` **inside** the manifest the
+> engine's own cascade archives it (`archived_ids: [task, feature, shipment]`), leaving
+> **zero** other active top-level units and `017-S` eligible with **no** barrier and **no**
+> Stage disposition step. The hazard is removed at its source rather than gated around.
+> The self-proof is **relocated, not lost** — see §7.3 Probe 21 and §8.4.
 
 ## 1. Objective
 
@@ -34,9 +50,10 @@ authorizes:
 5. the **two-path failure split** and **bounded recovery**;
 6. the **self-host ordering**.
 
-On merge, A's generic delegation + B's dormant authorization **activate together**, and C
-closes itself **task-only**. That closure is the durable runtime proof the umbrella plan
-could never obtain.
+On merge, A's generic delegation + B's dormant authorization **activate together**. The
+activated path's **first real exercise is `017-S`**, the 12-member task-only shipment this
+whole chain exists to make closable. C itself closes by the **pre-existing `CASCADE`**
+exception (§8), exactly as A and B do.
 
 ## 2. Surface — exactly 2 files
 
@@ -52,9 +69,17 @@ an existing integration file. Rationale: task isolation stays unambiguous, the H
 count is trivially `1 of 1`, and the file is the natural home for the token-parity
 assertion against P-015. Still exactly two files.
 
-**Evidence (§7.3) is not a third surface.** `docs/plans/evidence/…/clause-inventory.md`
-is an evidence artifact, as rev 6 §6.1-E established. A and B may **cite** shared
-observations from this directory; **C owns it.**
+**Evidence (§7.3) is not a third surface.** `docs/plans/evidence/…` is an evidence
+directory, as rev 6 §6.1-E established. A and B may **cite** shared observations from this
+directory; **C owns it.**
+
+**Rev 2 — no committed `clause-inventory.md` is required.** Rev 1 charged C with
+regenerating and committing an inventory file. That requirement is **removed**: the exact
+inventory already lives in **§3 of this committed plan** and in `024.001-T`'s acceptance
+criteria, both of which are on the branch and under review. A second copy would be a
+duplicate system of record, and duplication is precisely the defect class A exists to
+remove. Any runtime **Probe 21** transcript is **closure/runtime evidence** and is budgeted
+under **Ship closure**, not under task coding (§12).
 
 ### 2.1 Token feasibility — falsified in advance
 
@@ -76,9 +101,11 @@ classifier.** `.autoharness/gates` holds only a log; Ship Step 6 invokes only
 **agent-driven from the skill markdown**, which is what makes the "0 source changes" claim
 true and what makes C's markdown edits actually activate the path.
 
-Both stale references fall **inside C's existing inventory** (`B9`, `B17`) and are
-reconciled there — scoping them to *"workspaces with a Python implementation installed;
-in this workspace the skill text is authoritative"*. No new site, no budget change.
+Both stale references fall **inside C's existing inventory** (`B9` at 413, `B17` at 1075)
+and are reconciled there — scoping them to *"workspaces with a Python implementation
+installed; in this workspace the skill text is authoritative"*. **No new clause site** (the
+count stays 16); `B17`'s budget is corrected from ~1.5 to ~3 min in §12, because it is two
+lines rather than one (§3).
 
 Had the executable classifier actually been present, C's markdown-only edits would **not**
 activate the path and §8's runtime proof would fail. Recording the verification is what
@@ -106,7 +133,7 @@ against the installed file at `e7e981d`.
 | **B14** | 998 | lock-failure: *"Do NOT call `backlogit_ship_shipment`"* | CONSISTENCY |
 | **B15** | 1015–1016 | Safety invariants — must enumerate the new path | **MUST** |
 | **B16** | 1022 | *"… **never via the cascade op**"* | CONSISTENCY |
-| **B17** | 1074 | references line naming P-015 as *"cascade prohibition"* | **MUST** |
+| **B17** | 1074–1075 | **two adjacent reference-list lines**: (a) 1074 names P-015 as *"cascade prohibition"* — must also name the amended authorization; (b) 1075 names `src/autoharness/gates/shipment_closure.py` as *"this self-hosting repository's own `classify_shipment_close_path` implementation"* — a stale inherited reference (§2.2) that must be scoped | **MUST** |
 
 | # | Site | Content |
 |---|---|---|
@@ -118,6 +145,14 @@ against the installed file at `e7e981d`.
 **`B17` classification.** Rev 6 classes `B17` CONSISTENCY in Table §6.1-B but budgets it
 as MUST-mechanical in §10.1. This plan follows **§10.1 (MUST)** — the stricter reading —
 consistent with the deliberation §6 resolution.
+
+**Rev 2 — `B17` is two lines, not one.** Rev 1 anchored `B17` at line 1074 only, while
+§2.2 separately asserted that the stale `src/autoharness/...` reference at line **1075**
+would be "reconciled inside `B17`". Those two statements were inconsistent: 1075 is a
+**distinct line requiring its own edit**, and an inventory that does not name it cannot be
+used to verify completion. `B17` is therefore re-anchored to **1074–1075** as an explicit
+two-part site. The site **count** is unchanged (16) — this adds no new clause — but the
+budget is corrected honestly in §12 (`B17` ~1.5 → ~3 min).
 
 ### 3.1 Partition check
 
@@ -136,7 +171,7 @@ consistent with the deliberation §6 resolution.
 | **Failure split** | Two separate paths (umbrella §6.5) |
 | **Bounded recovery** | Enumerated-set-only restore; approval before any destructive step; byte-prefix append-only preservation; out-of-bounds paths reported-not-moved; sync-only rehydration (Probe 19) |
 | **Digest binding** | §5 |
-| **Self-host ordering** | §8 |
+| **Self-host ordering** | §8 — including the **token-activation rule** of §8.1: a session MUST NOT select a verdict whose authorizing token it merged in that same session (Go test row 13) |
 
 T1–T5 are **not** restated — they are B's surface. B18 **cites** P-015.
 
@@ -169,7 +204,7 @@ Exactly **one** generated test function — the `021.001-T` constraint.
 
 ### 7.1 What the Go test proves — text, parity, tokens
 
-12 rows over `SKILL.md` (+ P-015 for parity):
+**13 rows** over `SKILL.md` (+ P-015 for parity):
 
 | # | Assertion | Kind |
 |---|---|---|
@@ -185,8 +220,11 @@ Exactly **one** generated test function — the `021.001-T` constraint.
 | 10 | `B11` step-8 fail-closed cross-reference present; step 8's own text otherwise unchanged | **negative** |
 | 11 | The **existing** fully-covered-root exception's skill-side handling is unmodified | **negative** |
 | 12 | `SKILL.md` does **not** restate T1–T5 as its own authority (cites P-015 instead) | **negative** |
+| 13 | `B18` states the **self-host ordering rule**: a session MUST NOT select a verdict whose authorizing capability/schema token was merged by that same session (§8.1) | **ordering/consistency** |
 
-Rows 10–12 are the widening guards. Row 2 discharges **CO-1** from C's side.
+Rows 10–12 are the widening guards. Row 2 discharges **CO-1** from C's side. **Row 13 is
+the bootstrap guard** — it fails if C ships without the rule that forces its own closure
+into a second session.
 
 ### 7.2 What the Go test does **not** prove
 
@@ -197,87 +235,281 @@ separation is stated exactly so no acceptance criterion conflates them.
 
 ### 7.3 Durable runtime probes — behavior
 
-Retained from rev 6, committed and reproducible under
+Retained from rev 6 and extended in rev 2, committed and reproducible under
 `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/`:
 
 | Probe | Proves | Status |
 |---|---|---|
-| **14** | dependency lifecycle end-to-end | committed, reused |
+| **14** | dependency lifecycle end-to-end (shipment→shipment `blocks`) | committed, reused |
 | **15** | EXACT `017-S` 12-member fixture, `INVARIANCE_FAILURES=0` | committed, reused |
-| **16** | injected partial failure + bounded recovery | committed, reused |
-| **18** | live-config inbound-edge byte-invariance | committed, reused |
-| **19** | bounded recovery v2, both branches | committed, reused |
-| **20** | post-archive closure route (O-6) | committed, reused |
-| **21** | **NEW — activation probe** | see below |
-| — | `clause-inventory.md` re-scan (§6.1-E) | regenerated by C |
+| **16** | injected partial failure + bounded recovery | **WITHDRAWN as evidence** — see below |
+| **18** | live-config inbound-edge byte-invariance; `MOVE_SHIPPED_EXIT=9` | committed, reused |
+| **19** | **bounded recovery v2, both approval branches — AUTHORITATIVE** | committed, reused |
+| **20** | post-archive closure route (O-6) + **post-archive lifecycle-gate tripwire** | committed, reused |
+| **21** | activation probe — **relocated to closure/runtime evidence** (§8.4) | Ship closure |
+| **22** | **NEW** — covering-feature status at claim and after task-only close | **executed at `7bc0318`** |
+| **23** | **NEW** — shipment→feature dependency barrier is **not constructible** | **executed at `7bc0318`** |
+| **24** | **NEW** — fully-covered-root re-shape disposes the feature mechanically | **executed at `7bc0318`** |
 
 Rev 4.1's `%TEMP%`-and-deleted probes 5/5b/10/12/13 remain **WITHDRAWN** as evidence.
 
-**Probe 21 (new, and nearly free).** Before C's implementation merges, confirm the
-classifier returns **not-selected** with the token absent; after merge, confirm it returns
-`TASK_ONLY_FINALIZE`. The **post** half is discharged by **C's own closure** (§8), so
-Probe 21 costs only the pre-merge negative observation. This is the activation evidence
-for the whole three-shipment chain.
+**Probe 16 is withdrawn; Probe 19 is the authoritative recovery evidence.** Rev 1 listed
+Probe 16 as "committed, reused" and Hardening 4 claimed "Probes 16 **and** 19 executed
+against both recovery branches". Both statements are corrected. The umbrella plan already
+records (§ Probe table, and the rev-6 probe-obligation note) that Probe 16 **diverged from
+the specified procedure in five ways** and that the claim it proved "the exact procedure"
+is **withdrawn**. Probe 16 is retained **for history only** and MUST NOT be cited as
+evidence for the bounded-recovery procedure. **Probe 19** implements the procedure as
+specified and executes **both** the approval-granted and approval-withheld branches; it is
+the sole authority for `B18`'s recovery content.
 
-## 8. Self-hosting closure sequence — C is the proof
+**Probe 20's post-archive lifecycle-gate tripwire is load-bearing for §8.** Probe 20
+measured that a `--phase lifecycle` topology-gate invocation fails closed once the shipment
+is archived: on the two routes that are genuinely post-archive lifecycle invocations
+(`--mode agent` and `--mode manual`, each with `--shipment <archived> --phase lifecycle`)
+the gate exits **1** with `LIFECYCLE_NO_ACTIVE_SHIPMENT`. *(Stated precisely: the probe
+tabulates four routes and records `POST_ARCHIVE_ROUTES_NONZERO_EXIT=4`, but the other two
+exit **2** on argument validation — `agent mode requires --shipment` and `--phase lifecycle
+requires --shipment` — and Probe 17 records the identical exit-2 tokens against a queued,
+unclaimed shipment. Those two are archival-independent and one is not a lifecycle-phase
+route at all. The tripwire rests on the two valid routes; the "all four routes" framing
+does not, and is not relied on here.)* The consequence for every closure sequence in this
+chain: the `a0` lifecycle gate runs **while the shipment is still active**, immediately
+before the close; **no** `--phase lifecycle` invocation may occur after the archive. Probe
+20 step 5 further cites the installed contract directly: Ship Step 6.0 invokes
+`pr-lifecycle` for the closure PR **without** a lifecycle gate, so the closure PR is
+reachable post-archive. This tripwire is carried into §8 and into the deliberation's
+coupling matrix as **CO-12**.
 
-`023-S` manifest is **task-only** `[024.001-T]`. Covering feature `024-F` is live and
-**outside** the manifest — exactly **T4**.
+**Probe 21 (activation) — relocated, and strengthened.** Rev 1 discharged Probe 21's
+post-half by C's own task-only self-closure. Rev 2's re-shape removes that self-closure, so
+Probe 21 is **relocated to closure/runtime evidence** (§8.4) and is budgeted under **Ship
+closure**, not task coding (§12). This is a strengthening, not a loss: the relocated probe
+exercises the classifier against the **exact `017-S` 12-member fixture** (Probe 15's
+fixture) rather than C's trivial one-task shape, so it tests the shape the path actually
+has to serve.
+
+**Rev 2 probes 22/23/24 — what they measured, exactly.**
+
+| Probe | Measurement | Result |
+|---|---|---|
+| **22** | ARM C: task-only manifest, feature outside. Feature status pre-claim / after claim / after task-only close | `queued` → **`active`** → **`active`** |
+| **22** | ARM AB: fully-covered-root manifest, feature is a member. Feature status after claim | **`active`** (discharges A's PO-1a and B's §8 step 1) |
+| **23** | `backlogit dep add 002-S 001-F --type blocks` | **REFUSED**: *"prerequisite 001-F has type `feature`; both endpoints must be shipments"* (`Q0_FEATURE_ENDPOINT_EDGE_CONSTRUCTIBLE=False`). With the predecessor shipment archived and the feature still `active`, `ready_set=[002-S]` — the successor is **already eligible**, with nothing suppressing it |
+| **24** | ARM Q: cascade over `[feature, task]` | `archived_ids: [task, feature, shipment]`; **0** other active top-level units; successor eligible with **no** barrier |
+| **24** | ARM QR: **the exact live construction** — task-only manifest, then `shipment add` the feature | `MANIFEST_IS_TASK_FIRST=True`; same result as ARM Q; `ORDER_INDEPENDENCE_MEASURED=True` |
+| **24** | ARM T (control): identical topology, task-only | feature left **`active`**, **not** archived — difference attributable to manifest shape alone |
+
+All three ran CLI-only under `DIGEST_GATE=PASS`, seeded from the **live** `.backlogit`
+control files and the **live** `.autoharness` config, in a disposable gitignored
+workspace-contained scratch directory that was removed after the transcript was captured.
+The live backlog was never mutated by a probe.
+
+## 8. Self-hosting closure sequence — two sessions, no mid-session authority gain
+
+`023-S` manifest is the **fully-covered root** `[024.001-T, 024-F]` (rev 2). `024-F` is a
+root (no `parent_id`), its complete descendant set at every depth is exactly
+`{024.001-T}`, and the manifest contains nothing else. C therefore closes by the
+**existing, already-reviewed** `CASCADE` exception — the same path A and B use.
+
+**C's merge ACTIVATES the `TASK_ONLY_FINALIZE` token. The session that performs that merge
+MUST NOT use it.** This is the same property A establishes for Role Boundary changes,
+applied to **authorization-token activation**. C is therefore a **two-session** close.
+
+*Manifest item order note:* the live record is `[024.001-T, 024-F]` (the feature was
+appended to an existing task-only manifest; the engine exposes no manifest re-ordering
+operation). Order is **immaterial, and this was measured rather than assumed** — **Probe 24
+ARM QR** reproduces the live construction exactly (create task-only, then
+`backlogit shipment add`), confirms `MANIFEST_IS_TASK_FIRST=True`, and then closes it:
+`archived_ids: [task, feature, shipment]`, `QR_FEATURE_ARCHIVED_BY_CASCADE=True`,
+`QR_SUCCESSOR_ELIGIBLE=True`, `ORDER_INDEPENDENCE_MEASURED=True`. ARM Q had built the
+manifest feature-first, so ARM QR exists specifically because task-first was the one order
+the remedy had **not** been probed in — and it is the order the live re-shape produced.
+P-015 classification is over set membership, and Ship Step 0.5.1a filters `items` by
+artifact type, so neither depends on order either.
 
 | Step | Session | Action |
 |---|---|---|
-| 1 | S1 | Orchestrator routes `023-S` **only after** `022-S` is archived `shipped`; claim; `024.001-T -> active` |
-| 2 | S1 | **Probe 21 (pre)**: token absent ⇒ classifier does **not** select `TASK_ONLY_FINALIZE` |
-| 3 | S1 | H0 red → implement `B1–B18` → H1 green; commit; push; PR; operator approval; merge |
-| 4 | S1 | Verify merge SHA; `024.001-T -> done` |
-| 5 | S1 | **Mandatory pre-self-close reload** of merged `main`: Ship instructions, `shipment-reconcile`, **and P-015** (A's `C1`). Positively verify merged tokens **and** the merge commit |
-| 6 | S1 | **No Role Boundary change in this merge** ⇒ plan A §6 does **not** force a session end |
-| 7 | S1 | **Step 6.1(a1) is NOT run** — `024-F` is **not** a manifest member (T4). No feature completion occurs |
-| 8 | S1 | Pre-mode `expected_status: done` over the **task-only** manifest → `PROCEED` |
-| 9 | S1 | Classification: `CASCADE` **not** applicable (zero feature members, T3) → `TASK_ONLY_FINALIZE` evaluated → token now **present** → `G0–G13` → **selected** |
-| 10 | S1 | Digest check (§5). Mismatch ⇒ **HALT** |
-| 11 | S1 | Authorized call; then `P1–P10` on the **raw** post-call state **before** archive restoration; then P-007; post-mode; sync |
-| 12 | S1 | **Probe 21 (post)** discharged by this closure. Record the verdict as durable evidence |
-| 13 | S1 | Operational closure + P-020; closure PR; operator merge |
-| 14 | **Stage** | **Dispose of `024-F` (§8.3) — MANDATORY before `017-S` routes** |
-| 15 | — | Orchestrator routes **`017-S`** |
+| 1 | S1 | Orchestrator routes `023-S` **only after** `022-S` is archived `shipped`; Step 0.5 pre-claim topology gate; **claim** (`024.001-T -> active`, and — measured, Probe 22 — `024-F -> active` as an **observed claim effect**) |
+| 2 | S1 | **Probe 21 (pre)**: with the token still absent, the classifier does **not** select `TASK_ONLY_FINALIZE`. **Then remove the scratch workspace and re-run `backlogit sync`, confirming zero `duplicate source id` warnings, before any backlog mutation** (§8.4) |
+| 3 | S1 | H0 red → implement `B1–B18` → H1 green |
+| 4 | S1 | **Step 4.3 quality gates; Step 4.4 review gate** |
+| 5 | S1 | **Step 4.5 Complete Task — commit, then `024.001-T -> done`.** *(Installed order: Step 4.5 precedes Step 5. The task reaches `done` BEFORE the implementation PR merges.)* |
+| 6 | S1 | **Step 5 PR lifecycle** — full gate sequence, `--phase lifecycle` topology gate, build, push, PR, operator approval, **merge** |
+| 7 | S1 | **Step 6 Merge Confirmation Gate** — `gh pr view` state `MERGED`; `git fetch origin main`; `git merge-base --is-ancestor {merge_sha} origin/main` |
+| 8 | S1 | **Mandatory pre-self-close reload** of merged `main`: Ship instructions, `shipment-reconcile`, **and P-015** (A's `C1`). Positively verify the merged **tokens** and the **merge commit** |
+| 9 | S1 | **STOP. The reload just made this session's own merge the source of a new authorization token.** Per §8.1, S1 MUST NOT classify or close. Write a checkpoint and **END** |
+| 10 | **S2** | **Fresh session.** Full checkpoint-recovery protocol (§8.2) — enumeration, anomaly gate, explicit owner selection, operator confirmation, resolve-after-resume |
+| 11 | S2 | Re-verify: current `main`; the merge SHA is an ancestor of `origin/main`; the **merged P-015 token**, the **merged skill token** and the **merged Ship delegation** are all present and mutually consistent |
+| 12 | S2 | **Step 6.0 Post-Merge Branch Protocol** — `git checkout main`, `git pull`, `git checkout -b post-merge/024-taskonly-finalize`. **This branch is created BEFORE any post-merge backlog mutation**, because Step 6.1(e) commits `.backlogit/` and those commits must not land on `main` |
+| 13 | S2 | **Step 6.1(a0)** `--phase lifecycle` topology gate — run **while `023-S` is still `active`**. *(Probe 20 tripwire: after the archive this gate fails closed on every route. It must never be re-run post-archive.)* |
+| 14 | S2 | **Step 6.1(a1)** covering-feature completion — `024-F` **is** a manifest member, so a1 **applies**: verify A §5 conditions 1–5, then `024-F active -> done` |
+| 15 | S2 | **Step 6.1(a)** pre-mode, `expected_status: done` — both members `done` → `PROCEED` |
+| 16 | S2 | Classification → **`CASCADE`** (fully-covered root). `TASK_ONLY_FINALIZE` is **not** selected here (T3: the manifest has a live feature member). Digest check (§5); mismatch ⇒ **HALT** |
+| 17 | S2 | **Step 6.1(b)** cascade close; **6.1(c)** P-007 archive-integrity verify; **6.1(d)** post-mode; **6.1(e)** commit `.backlogit/` **on the closure branch** |
+| 18 | S2 | **Step 6 item 2** `operational-closure mode=post-merge` → `docs/closure/`; **P-020** compact-context finalizes the compaction status — **all on the closure branch, before the closure PR is pushed** |
+| 19 | S2 | **Probe 21 (post)** — §8.4 activation evidence, against the exact `017-S` 12-member fixture. **Then remove the scratch workspace and re-run `backlogit sync`, confirming zero `duplicate source id` warnings, BEFORE step 20's closure sync** (§8.4) |
+| 20 | S2 | **Step 6 item 9** `backlogit sync` (closure index resync), then push the closure branch, closure PR, P-014 local review, operator approval, merge |
+| 21 | S2 | **Step 6 item 10** return to `main`; `git pull` |
+| 22 | — | Orchestrator routes **`017-S`**. **No Stage disposition step is required** — the cascade archived `024-F` (Probe 24) |
 
-### 8.3 Disposition of `024-F` — required, not a vague follow-up
+**Why the order in steps 5–6 and 12–20 is exactly this.** It is read from the **installed**
+`_ship.agent.md`, not inferred:
 
-After C closes task-only, `024-F` remains **live** with all descendants archived. Ship
-Step 1's **P-001 gate** (line 308) reads: *"at most one top-level release unit may be in
-flight. Check that no other top-level release units…"*. A live `024-F` can therefore be
-read as an in-flight release unit and **block `017-S` from routing** — the chain would
-close C successfully and then stall.
-
-This is **not** deferred to an unscheduled follow-up. It is an ordered, owned step:
-
-| Field | Value |
+| Installed anchor | Consequence for this sequence |
 |---|---|
-| **Owner** | **Stage** (feature lifecycle outside Ship's narrow a1 grant is Stage's) |
-| **When** | Immediately after `023-S` is archived `shipped`, **before** `017-S` routes |
-| **Operations** | `backlogit move 024-F --status done`, then `backlogit archive 024-F` — both already-authorized, non-destructive |
-| **Precondition** | `024.001-T` archived; `024-F` has no live descendant |
-| **P-001** | Discharges the gate by leaving **zero** live top-level units before `017-S` |
+| Step 4.5 (L517) precedes Step 5 (L554) | task `-> done` **before** the implementation PR merges (step 5) |
+| Step 6.0 (L726) item 2–3: branch created from fresh `main`; *"All subsequent Step 6 work happens on this branch"* | closure branch exists **before** the 6.1(e) backlog commit (step 12) |
+| Step 6.1(a0) *"before the pre-archive reconciliation gate … the shipment-scoped check immediately preceding the safe-close mutation itself"* | lifecycle gate runs while `023-S` is still `active` (step 13) |
+| Step 6.1(a)→(b)→(c)→(d)→(e) | pre-mode → close → P-007 → post-mode → commit (step 17) |
+| Step 6 item 2 (`operational-closure`) and item 8 (P-020) precede item 9 (`sync`) and the 6.0 item 4 push | closure artifacts + P-020 land on the closure branch **before** the closure PR is pushed (steps 18–20) |
 
-Ship never performs this: `024-F` is outside C's manifest, so A's a1 gate does not and
-must not touch it (running a1 over `024-F` would violate **T4**, which requires the root
-parent **live and outside** the manifest at classification time). Asserted by **AC-17**.
+Rev 1 placed `024.001-T -> done` **after** the merge and placed operational closure + P-020
+**after** the close without establishing the branch first. Both contradicted the installed
+contract. Corrected above.
 
-### 8.1 Why C may close in one session
+**One deliberate deviation from the installed text's own order, stated rather than
+glossed.** In the installed file the *"Mandatory pre-self-close context reload"* paragraph
+sits at **L756–764**, i.e. **after** Step 6.0 items 1–5 including the branch creation at
+L734–737. This plan places the reload at **step 8**, before Step 6.0 (step 12). That is
+deliberate and necessary: §8.1 requires S1 to **end** at the reload, so S1 must not have
+created a closure branch it will never use, and S2 — a different session — is the one that
+runs Step 6.0. The installed ordering assumes a single session performs both; C (like A)
+does not. No installed requirement is skipped — the reload still happens after the merge
+is confirmed and before any close action, which is the property L756–764 exists to
+guarantee.
 
-Like B, C changes **no** Role Boundary. The authority-escalation rule binds **authority**
-changes; C changes procedure. A's reload clause (`C1`) requires reloading the merged skill
-and P-015 and **positively verifying the merged tokens**, which is exactly what makes the
-newly-merged token visible at step 9.
+### 8.1 Why C requires TWO sessions (rev 2 — this replaces "C may close in one session")
 
-### 8.2 If C's first real self-close fails after the implementation merged
+Rev 1 argued C could close in one session because C changes **no Role Boundary**, and A's
+authority-escalation rule binds **authority** changes only. That reasoning was **wrong in
+its premise**: it treated "authority" as meaning only the Role Boundary table. C's merge
+introduces the **capability/schema token** that flips B's dormant P-015 gate from
+not-selectable to selectable. That is an **authorization envelope change** — the session
+that merges it would be selecting a verdict that its own merge authorized.
+
+A's §4.2 pinned wording deliberately scopes A's carve-out to **Role Boundary** changes, and
+A's Go test row 11 asserts that scoping. Rev 2 does **not** widen A's carve-out and does
+**not** disturb row 11. Instead the rule lands where it belongs — in **C's own `B18`
+self-host ordering** — as a *procedure* rule, which A's §4.2 explicitly says takes effect
+on reload exactly as before:
+
+> A session MUST NOT select a close-path verdict whose authorizing capability/schema token
+> was merged **by that same session**. On detecting that condition at the mandatory
+> pre-self-close reload, the session writes a checkpoint and ends; a fresh session performs
+> the classification and closure.
+
+This is self-bootstrapping in the same way A is: S1 reloads merged `main` at step 8, reads
+the rule it just merged, and obeys it by ending. Asserted by **AC-14** and Go test row 13.
+
+**C gains no authority mid-session, and neither did A.** A proved the property for Role
+Boundary; C proves it for authorization tokens. The two together are why `017-S` can trust
+the path.
+
+### 8.2 S2's checkpoint recovery is the FULL protocol, not a resume shortcut
+
+S2 MUST execute the complete owner-selected, operator-confirmed recovery protocol. Naming
+it explicitly because "restore the checkpoint and continue" is the failure mode:
+
+1. **Enumeration** — `backlogit_list_checkpoints` with `consumer_id: "ship"` and **no**
+   `status`/`agent` filter, so a quarantined or schema-invalid record cannot be silently
+   excluded.
+2. **Anomaly gate FIRST** — any validation error, quarantine flag, or missing/malformed
+   required field in **any** enumerated summary ⇒ **FAIL CLOSED** to operator handoff
+   before the zero-candidate check is even evaluated.
+3. **Explicit owner selection** — never auto-pick, **even if exactly one candidate is
+   returned**. The operator selects a single checkpoint by filename; ambiguity fails closed.
+4. **Owner validation** — the CheckpointV1 `agent` field MUST be exactly `ship`. A
+   `stage`-owned checkpoint is never selectable here (P-001 role separation).
+5. **Operator confirmation before restore** — present `resume_hint` and recorded state;
+   no automatic resume. Checkpoint schema V1 carries no heartbeat/lease, so age can never
+   prove S1 dead.
+6. **Same cursor** — resume the **same** single active shipment `023-S`; no parallel
+   resume, no new worktree (P-001/P-016).
+7. **Resolve AFTER resume** — `backlogit_resolve_checkpoint` is called **only after** S2
+   confirms a successful resume, and **only** for that one selected checkpoint. No bulk
+   sweep.
+8. **Fail closed, no fresh-start fallback** — an invalid, torn, or unreadable checkpoint
+   halts to the operator. S2 MUST NOT discard it and start fresh.
+
+S1's checkpoint MUST be written through `backlogit_create_checkpoint` with
+`schema_version: 1`, `agent: ship`, `phase: awaiting-fresh-session-activation-close`, and a
+`resume_hint` naming `023-S`, `024-F`, `024.001-T` and the **merge SHA**. Domain data goes
+under `context`, never at the top level.
+
+### 8.3 No `024-F` disposition step is required (rev 2 — this replaces the Stage follow-up)
+
+Rev 1 carried a mandatory Stage-owned disposition of `024-F` between C's close and `017-S`
+routing, because a task-only close leaves the out-of-manifest root parent live. Probes
+22/23/24 replaced that prose step with a mechanical property:
+
+| Rev 1 claim | Rev 2 measurement |
+|---|---|
+| `024-F` is left live after a task-only close | **Confirmed** — Probe 22 ARM C and Probe 24 ARM T: feature stays **`active`** |
+| A live `024-F` can trip Ship Step 1's P-001 `Active` gate and stall `017-S` | **Confirmed** — P-001 (L308) tests for status `Active` |
+| A Stage disposition step before `017-S` discharges it | **Insufficient as a gate** — it is **prose-only**. Probe 23 proved no dependency-graph barrier against a feature is constructible (`both endpoints must be shipments`), so nothing mechanically prevents `017-S` from being routed first |
+| — | **Remedy (Probe 24):** with `024-F` **inside** the manifest, the cascade archives it (`archived_ids: [024.001-T-analogue, 024-F-analogue, 023-S-analogue]`), leaving **zero** other active top-level units and `017-S` eligible with no barrier and no follow-up |
+
+The P-001 hazard is therefore **eliminated at its source**, by the engine, inside C's own
+closure — not gated around by an instruction someone has to remember. Asserted by
+**AC-17**.
+
+**Residual, stated honestly.** `017-S` itself is a task-only shipment whose covering
+feature `018-F` sits outside its manifest, so `017-S`'s own close will leave `018-F`
+`active` by the same mechanism. That is **not** a routing blocker: `017-S` is terminal in
+this chain, so there is no downstream shipment for `018-F` to block. It is recorded as a
+**Stage hygiene disposition** after `017-S` closes, with no gate attached to it. This is
+the honest scope of the fix — C's residue is removed because it has a consumer; `017-S`'s
+residue is recorded because it does not.
+
+### 8.4 Probe 21 — activation evidence, budgeted under Ship closure
+
+| Half | When | What it shows |
+|---|---|---|
+| **pre** | S1, before merge (step 2) | token absent ⇒ classifier does **not** select `TASK_ONLY_FINALIZE` |
+| **post** | S2, at closure (step 19) | token present ⇒ classifier **selects** `TASK_ONLY_FINALIZE` for the **exact `017-S` 12-member task-only fixture** (Probe 15's fixture), and **does not** select it for C's own fully-covered-root manifest (T3) |
+
+The post-half runs in a disposable, live-config-seeded, digest-bound scratch workspace —
+never against the live backlog.
+
+**Mandatory scratch discipline (NON-NEGOTIABLE).** Both halves MUST, immediately after the
+transcript is captured: (1) remove the scratch directory under
+`.backlogit/runtime/stage-probe-scratch/`, and (2) re-run `backlogit sync` and confirm
+**zero** `duplicate source id` warnings — **before** any live backlog state is read,
+mutated, or reported. This is the evidence directory's own binding rule (evidence
+`README.md` §3), and it has already fired once for real: residual probe scratch was
+rehydrated into the live index and surfaced a phantom `002-S "Successor blocked shipment"`
+in `backlogit shipment list`. A **12-member `017-S` analogue fixture** is the single worst
+artifact to leave rehydratable, and the post-half sits immediately before the closure
+`backlogit sync` at §8 step 20. Asserted by **AC-23**.
+
+**Budget (charged to Ship closure, not to `024.001-T`).**
+
+| Item | Session | Estimate |
+|---|---|---|
+| Probe 21 **pre**-half — seed, run, capture, scratch-remove + sync-verify | S1 | **~8 min** |
+| Probe 21 **post**-half — seed the 12-member fixture, run, capture, scratch-remove + sync-verify | S2 | **~12 min** |
+| S1 checkpoint write + S2 full recovery protocol (§8.2) | S1 + S2 | **~10 min** |
+| **Total closure-evidence budget** | — | **~30 min** |
+
+This is **separate from** the ~105 min implementation budget in §12 and is **not** subject
+to the 2-hour task rule, which governs `024.001-T`'s coding scope. It is stated here so the
+work is priced rather than silently absorbed — the rev-1 draft made the pre-half mandatory
+via AC-13 while giving it no budget line anywhere, inside the tightest and now valve-free
+budget of the three.
+
+*Note on §7.3's status column:* Probe 21 is tagged "Ship closure" there to indicate which
+**budget** owns it. Its **pre**-half still executes in S1 before implementation begins
+(§8 step 2, AC-13); only the **post**-half runs at closure.
+
+### 8.5 If C's closure fails after the implementation merged
 
 The implementation is on `main`; only the **closure** failed. Do **not** revert. Follow
 the umbrella plan §8.3 contingency and §6.5 bounded recovery: `P1–P10` evaluate on the raw
 post-call state, recovery is enumerated-set-only with approval before any destructive step,
 and out-of-bounds paths are **reported, never moved**. If recovery cannot complete within
-its bound, **HALT** and return to Stage with the raw state preserved.
+its bound, **HALT** and return to Stage with the raw state preserved. Because the failure
+is in S2, S1's checkpoint remains the durable record of where the chain stood.
 
 ## 9. Intermediate and final state
 
@@ -289,17 +521,25 @@ its bound, **HALT** and return to Stage with the raw state preserved.
 
 Every intermediate row is coherent and fail-closed. Activation happens **once**, at C.
 
+**Rev 2 — C's own closure does not use the row it creates.** C closes by `CASCADE` (its
+manifest has a live feature member, so T3 excludes `TASK_ONLY_FINALIZE`). The activated
+verdict's first selection in the live workspace is at **`017-S`**. The final row therefore
+describes what is *available* after C, not what C itself selected.
+
 ## 10. Risks, residuals, rollback
 
 | ID | Risk | Disposition |
 |---|---|---|
-| **R-1** | **Budget is tight (~106.5 min, ~13.5 min margin — smaller than `B18`'s own estimating variance)** | §12.1 valve, **honestly bounded**: it sheds only ~7.5 min and **cannot** rescue a `B18` or test overrun. That case is an explicit **HALT to Stage**. Risk is real and bounded to one shipment |
+| **R-1** | **Budget is tight (~105 min, ~15 min margin — still smaller than `B18`'s own estimating variance)** | **No valve** (§12.1, rev 2). An overrun is an explicit **HALT to Stage**, never a partial `Done`. Risk is real, unhedged, and bounded to one shipment |
 | **R-2** | `B18` sprawls beyond its allotment | `B18` **cites** T1–T5 rather than restating them (test row 12); the failure split and recovery are **carried from rev 6**, not re-derived |
 | **R-3** | Token string drifts from P-015 (**CO-1**) | Test row 2 asserts **exact parity** against P-015. Any change routes through **Stage** into B's surface — never adjusted unilaterally here |
-| **R-4** | C's closure fails, leaving the chain half-activated | §8.2. Implementation stays on `main`; only closure retries |
-| **R-5** | `024-F` left live after task-only closure blocks `017-S` via Ship's P-001 gate | **§8.3** — an ordered, Stage-owned disposition step with named operations and preconditions, **before** `017-S` routes. Asserted by AC-17. *(Upgraded from a vague follow-up after review.)* |
+| **R-4** | C's closure fails, leaving the chain half-activated | §8.5. Implementation stays on `main`; only closure retries. S1's checkpoint is the durable record |
+| **R-5** | **(rev 2 — resolved)** `024-F` left live after closure blocks `017-S` via Ship's P-001 gate | **Eliminated at source.** `024-F` is a manifest member, so the cascade archives it (Probe 24: `archived_ids` contains the feature; **0** other active top-level units). No barrier, no follow-up. Asserted by **AC-17**. *(Rev 1's Stage-disposition step was prose-only and, per Probe 23, un-enforceable — no feature-endpoint dependency edge exists.)* |
 | **R-6** | Engine digest mismatch at closure | **HALT + full probe refresh** (§5). Not advisory |
 | **R-7** | Guard drift between `B18` and P-015 over time | Residual **accepted**; a CI coupling gate is out of scope. Test row 2 covers the token, not the full guard set |
+| **R-8** | **(rev 2)** `TASK_ONLY_FINALIZE` is never exercised by a **live** closure before `017-S` depends on it | Residual **accepted and named**. Mitigated by §8.4's relocated Probe 21 post-half against the **exact `017-S` 12-member fixture** (Probe 15's), plus Probe 15's own invariance run. Not equivalent to a live closure, and the plan does not claim it is |
+| **R-9** | **(rev 2)** S1 ignores §8.1 and closes in the same session that merged the token | `B18` contract text + **AC-14** + **Go test row 13**. Same three-defense structure as A's §6, and the same honest residual: the checkpoint is evidence, not enforcement |
+| **R-10** | **(rev 2)** `017-S`'s own task-only close leaves `018-F` `active` | Accepted, **not** gated. `017-S` is terminal in this chain, so no downstream shipment can be blocked. Recorded as a Stage hygiene disposition (§8.3) |
 
 ### 10.1 Rollback — reverse dependency order is MANDATORY after activation
 
@@ -317,6 +557,25 @@ already reverted; reverting A requires B and C already reverted. Reverting A alo
 additionally undesirable on its own merits — it reintroduces the §2.2 coverage drift that
 A fixed.
 
+**Downstream shipments MUST be held before any upstream contract is reverted (rev 2).**
+Reverse-order reverting is necessary but **not sufficient**: a revert changes the contract
+that a *queued* downstream shipment was planned against. Before reverting any of A/B/C:
+
+1. **Confirm no downstream shipment is `active`.** If one is, it must reach a terminal
+   state or be returned to Stage **first** — never revert the contract under a running
+   Ship session.
+2. **Hold `017-S` explicitly.** `017-S` is planned against the *activated* contract; with
+   C reverted it is unclosable by design (that is what the whole chain exists to fix).
+   Reverting C without holding `017-S` leaves a queued shipment whose close path has
+   silently disappeared. The hold is a **Stage** action, recorded in the backlog, taken
+   **before** the revert — not discovered afterwards by Ship.
+3. **Re-plan before re-routing.** After any revert, the affected shipments return to Stage
+   for re-planning. They are not re-routed on the assumption the old plan still applies.
+
+The ordering rule protects the *installed contracts* from becoming mutually incoherent.
+This hold rule protects the *queued work* from being routed against a contract that no
+longer exists. Both are required; neither substitutes for the other.
+
 Before activation (i.e. between merges) each shipment is independently revertible, because
 the downstream surfaces do not yet exist. The claim is **phase-relative**, and this table
 states which phase it holds in.
@@ -325,10 +584,15 @@ states which phase it holds in.
 
 | Failure | Response |
 |---|---|
-| MUST set alone cannot close in 2 h | **HALT, return to Stage.** Deferring a MUST site is **not** authorized |
+| Any §3 site (MUST **or** CONSISTENCY) incomplete at 2 h | **HALT, return to Stage.** Deferring **any** site is **not** authorized (§12.1, rev 2) |
 | Token cannot be advertised machine-readably | HALT — falsifies B's A7 gate. Return to Stage; B's surface is re-planned |
 | Digest mismatch | HALT + full probe refresh |
 | Classifier selects `TASK_ONLY_FINALIZE` for a non-conforming manifest during Probe 21 | HALT — guards are insufficient. Return to Stage |
+| Classification returns `TASK_ONLY_FINALIZE` at **C's own** closure | **HALT** — the manifest is not the fully-covered root rev 2 asserts (T3 should exclude it). Return to Stage |
+| Classification returns `SAFE_CLOSE` at C's closure | **HALT** — indicates `024-F` is not a qualifying root or the manifest carries something else. Return to Stage |
+| S1 reaches the classification step at all | **HALT** — §8.1 required S1 to checkpoint and end after the reload. Return to Stage; the two-session property has been violated |
+| S2's checkpoint recovery hits a validation/quarantine anomaly, ambiguity, or a `stage`-owned record | **FAIL CLOSED** to operator handoff (§8.2). No restore, no resume, no prune, no resolve |
+| `--phase lifecycle` gate invoked after the archive | **HALT** — Probe 20 tripwire; it fails closed with zero active shipments and there is nothing left to re-claim |
 | `P1–P10` detect an out-of-bounds artifact post-call | Bounded recovery; approval before any destructive step; HALT if unbounded |
 
 ## 11. Acceptance criteria
@@ -344,83 +608,80 @@ states which phase it holds in.
 - **AC-9** Exactly **one** Go test function; H0 red 1 of 1; H1 green; `go vet` clean.
 - **AC-10** `markdownlint` clean.
 - **AC-11** `workflow-policies.md` and `_ship.agent.md` are **unchanged** by this shipment.
-- **AC-12** `clause-inventory.md` (§6.1-E) regenerated and committed. A site found by the re-scan and absent from §3 is **added, never skipped**; a new **MUST** site invalidates the budget and returns the unit to Stage.
-- **AC-13** Probe 21 pre-half executed and recorded before merge.
-- **AC-14** Closure classifies **`TASK_ONLY_FINALIZE`** and completes task-only; the verdict is recorded as durable evidence.
+- **AC-12** **(rev 2)** No `clause-inventory.md` is produced. The §3 inventory in this committed plan is the single system of record. If implementation discovers a site absent from §3, it is **added to §3 by Stage, never skipped**; a newly discovered **MUST** site invalidates the budget and returns the unit to Stage.
+- **AC-13** Probe 21 **pre**-half executed and recorded before merge (S1 step 2).
+- **AC-14** **(rev 2)** Closure classifies **`CASCADE`** and completes as a fully-covered root. `TASK_ONLY_FINALIZE` is **not** selected at C's own closure (T3). **S1 does not classify or close**: it writes a checkpoint after the pre-self-close reload and ends; a **fresh S2** performs the full recovery protocol (§8.2) and the closure. AC-14 is **not** satisfied if one session performs both.
 - **AC-15** Exactly 2 files changed (+ the evidence directory). 0 new production files.
-- **AC-16** The absence of an executable close-path classifier in this workspace is **verified and recorded**; the stale `src/autoharness/...` references at `B9`/`B17` are reconciled (§2.2).
-- **AC-17** `024-F` is disposed of per §8.3 by **Stage**, before `017-S` routes.
-- **AC-18** The 7 CONSISTENCY edits are executed **last**; `B7` and `B12` are treated as **non-deferrable** (§12.1).
+- **AC-16** The absence of an executable close-path classifier in this workspace is **verified and recorded**; the stale `src/autoharness/...` references at `B9` (413) and `B17` (1075) are reconciled (§2.2).
+- **AC-17** **(rev 2)** `024-F` is archived **by C's own cascade close**, as a manifest member — not by a follow-up step. After `023-S` archives, **zero** other top-level release units are `active`, so Ship Step 1's P-001 gate passes for `017-S` with no Stage disposition and no barrier.
+- **AC-18** **(rev 2)** **Every** MUST and CONSISTENCY site in §3 is implemented. There is **no** overflow valve and **no** deferrable subset. An overrun is **HALT to Stage** — never a partial `Done`.
+- **AC-19** **(rev 2)** `B18` states the §8.1 token-activation self-host ordering rule; Go test row 13 passes.
+- **AC-20** **(rev 2)** S1's checkpoint is written via `backlogit_create_checkpoint` with `schema_version: 1`, `agent: ship`, a `phase`, and a `resume_hint` naming `023-S`, `024-F`, `024.001-T` and the merge SHA; domain data under `context`.
+- **AC-21** **(rev 2)** The Step 6.1(a0) `--phase lifecycle` gate is run **while `023-S` is still active**, and **no** `--phase lifecycle` invocation occurs after the archive (Probe 20 tripwire).
+- **AC-22** **(rev 2)** The post-merge closure branch is created from fresh `main` **before** any post-merge backlog mutation; the 6.1(e) backlog commit, the `operational-closure` artifact and the P-020 compaction status all land on that branch **before** the closure PR is pushed.
+- **AC-23** **(rev 2)** Both Probe 21 halves remove their scratch workspace and re-run `backlogit sync` with **zero** `duplicate source id` warnings **before** any live backlog read, mutation, or closure sync (§8.4).
 
 ## 12. Sizing
 
 **Size `M` · Complexity `high`.** Complexity carried as **enum-validated prose** —
 `header-def.yaml` defines `size` on tasks but no `complexity` field.
 
-| Work item | Estimate |
+**Rev 2 — implementation scope is exactly the skill + the Go test.** Evidence generation is
+**not** task coding and is budgeted separately in **§8.4** (~30 min, charged to Ship
+closure and not subject to the 2-hour task rule).
+
+| Work item (implementation — charged to `024.001-T`) | Estimate |
 |---|---|
 | 8 MUST clause edits (`B1 B3 B5 B8 B13 B15` + selectors `B9 B10`) | ~28.5 min |
-| `B17` mechanical MUST | ~1.5 min |
+| `B17` mechanical MUST — **two lines** (1074 + 1075), rev 2 | ~3 min |
 | 7 CONSISTENCY edits (`B2 B4 B6 B7 B12 B14 B16`) | ~10.5 min |
 | `B11` step-8 cross-reference | ~3 min |
-| **`B18` new classification section** | **~28 min** |
-| §6.1-E committed inventory re-scan | ~5 min |
-| Go table-driven test (12 rows) + ≤4 helpers | ~20 min |
+| **`B18` new classification section** (incl. the §8.1 token-activation rule) | **~29 min** |
+| Go table-driven test (**13** rows) + ≤4 helpers | ~21 min |
 | H0→H1, `go vet`, `go test`, `markdownlint` | ~10 min |
-| **Total** | **~106.5 min ≈ 1.8 h** |
+| **Total** | **~105 min ≈ 1.75 h** |
 
-Under the 2-hour rule with **~13 min** margin. This is the **tightest** of the three and
-the plan says so rather than rounding it away.
+Under the 2-hour rule with **~15 min** margin. This is still the **tightest** of the
+three and the plan says so rather than rounding it away.
 
-`B18` is ~28 min rather than rev 6's ~30 because **T1–T5 moved to B**. The rest of rev 6's
-`B18` content is carried, not re-derived.
+**Rev 2 delta, stated honestly rather than netted to zero.** `B17` **+1.5** (it is two
+lines, not one — §3); `B18` **+1** (the §8.1 token-activation rule); Go test **+1** (row
+13); committed inventory re-scan **−5** (removed, AC-12). Net **−1.5 min**, so margin
+moves ~13 → ~15 min. That margin is **still thinner than `B18`'s own estimating
+variance**, and rev 2 no longer offers a valve to hide behind.
 
-### 12.1 Declared overflow valve (pre-authorized, and honestly bounded)
+`B18` is ~29 min rather than rev 6's ~30 because **T1–T5 moved to B**. The rest of rev
+6's `B18` content is carried, not re-derived.
 
-**Mandatory execution order.** The 7 CONSISTENCY edits are sequenced **LAST**, after
-`B18` and after the Go test. The §12 cost table lists them earlier for *costing* clarity
-only; it is **not** the execution order. A valve that sheds already-completed work is no
-valve at all.
+### 12.1 No overflow valve (rev 2 — the valve is REMOVED)
 
-**Trigger.** At **100 minutes**, if the remaining CONSISTENCY edits are not yet done,
-defer the **deferrable subset** to a follow-up hygiene stash entry.
+Rev 1 declared a pre-authorized overflow valve that deferred a 5-clause CONSISTENCY
+subset at the 100-minute mark. **That valve is removed in its entirety.**
 
-**Deferrable subset — 5 clauses, ~7.5 min** (not 7):
+**Why.** The valve permitted a `024.001-T` marked `Done` while sites named in its own
+completion acceptance criteria were unimplemented. A completion criterion that the
+completion path is pre-authorized to skip is not a criterion. The five "deferrable"
+clauses are all statements about which close paths exist or are permitted; leaving any
+of them describing a two-verdict world after a third verdict ships leaves the contract
+**incorrect**, not merely uneven — the same defect class rev 1 already accepted for
+`B7` and `B12`. The distinction between the two groups did not survive review.
 
-| Clause | Why deferrable |
+**The rule now.** **Every** MUST and CONSISTENCY site in §3 is implemented. There is no
+deferrable subset, no trigger, and no partial-completion state.
+
+| Condition | Response |
 |---|---|
-| `B2` (10–11) | describes what safe-close does *in place of* the cascade — branch-local, still true |
-| `B4` (28) | same framing, "instead of the cascade … then `mode: post`" — branch-local |
-| `B6` (232–233) | *"It never calls the cascade"* — explicitly scoped to safe-close mode |
-| `B14` (998) | lock-failure prohibition — **no** close path is authorized without the lock, on any verdict |
-| `B16` (1022) | *"never via the cascade op"* — scoped to safe-close's own archival |
+| All §3 sites complete within 2 h | Proceed to closure |
+| Any §3 site incomplete at 2 h | **HALT and return to Stage.** Never mark `024.001-T` `Done`. Never defer a site to a follow-up stash entry |
+| `B18` materially incomplete at any point | **HALT and return to Stage** — it was never sheddable |
 
-**NOT deferrable (review correction):**
+**Execution order is still normative**, for a different reason than rev 1's. The 7
+CONSISTENCY edits run **after** `B18` and the Go test — not so they can be shed, but
+because `B18` is the highest-uncertainty item and an early overrun should be discovered
+while there is still time to HALT cleanly rather than at the 2-hour wall.
 
-* **`B7` (324)** — pre-mode `RECONCILE_FAIL` prohibition. It asserts *sufficiency* of a
-  single prohibition at a point that now precedes **three** verdicts. If a third verdict
-  exists and `B7` still reads as a one-path statement, a reader could infer `RECONCILE_FAIL`
-  blocks only the cascade.
-* **`B12` (618–620)** — *"Cascade Sub-Procedure (… exception **ONLY**)"*. The literal word
-  **ONLY** asserts **exclusivity**, which the amendment falsifies.
-
-Both assert exclusivity or sufficiency rather than describing a branch, so deferring them
-would leave the contract **incorrect**, not merely uneven — which violates the valve's own
-safety predicate. They are reclassified as **non-deferrable** and treated as MUST for
-scheduling.
-
-**What the valve can and cannot rescue — stated plainly.** It sheds **~7.5 min**. It
-therefore rescues an overrun in the *cheap early edits* only. **It cannot rescue a `B18`
-or Go-test overrun**, because neither can be shed and both are followed by ~30 min of test
-and verification. If `B18` is materially incomplete at 100 minutes, the valve is **not**
-the answer: **HALT and return to Stage.**
-
-**Deferring any MUST site is NOT authorized.** If the MUST set alone cannot close in 2 h,
-**HALT and return to Stage**.
-
-This valve is **reviewed in advance** so the implementer executes a decision rather than
-improvising one under time pressure — and its **limits** are stated so it is not mistaken
-for cover it does not provide.
+**If the MUST set alone cannot close in 2 h, HALT and return to Stage.** Deferring any
+site — MUST or CONSISTENCY — is **not** authorized.
 
 ## Plan Hardening
 
@@ -429,60 +690,72 @@ A removes duplication; B lands dormant; **C activates**. All three shipments' ri
 concentrates here — which is exactly why it is last, why it is smallest in surface (2
 files), and why its activation is observable in one place (the token).
 
-**Hardening 1 — the tight budget is the top risk, and the valve's limits are named.**
-~13.5 min of margin is thinner than the estimating variance of `B18` (28 min) alone.
-Review found the first draft's valve **mis-targeted** (it triggered on a `B18` overrun it
-could not shed), **inoperable** (CONSISTENCY was costed before `B18`, so it would already
-be done at the trigger), and **over-broad** (it deferred `B7`/`B12`, which assert
-sufficiency and exclusivity rather than describing a branch). §12.1 now fixes all three:
-CONSISTENCY is sequenced **last**, the deferrable subset is **5 clauses / ~7.5 min** with
-per-clause justification, and a `B18` overrun is an explicit **HALT to Stage** rather than
-a shed. Rev 6 failed by discovering its overrun **after** drafting; C names its overflow
-behavior **and that behavior's limits** before starting.
+**Hardening 1 — the tight budget is the top risk, and there is no longer a valve.**
+~15 min of margin is still thinner than the estimating variance of `B18` (~29 min)
+alone. Rev 1 answered that with a pre-authorized overflow valve; review established the
+valve was itself the defect — it authorized marking `024.001-T` `Done` with sites named
+in its own completion criteria unimplemented. §12.1 **removes it entirely**. The only
+response to an overrun is **HALT to Stage**, never a partial `Done`. This makes the
+budget risk **more** visible, not less: there is no slack left to absorb a bad estimate,
+and the plan says so.
 
-**Hardening 5 — T4's live orphan is a design consequence with an owned disposition.** After
-C closes task-only, `024-F` remains live with no live descendants. T4 **requires** the root
-parent live and outside the manifest, so this is the contract working as specified — but
-review established that a live `024-F` can trip Ship's P-001 single-in-flight gate (line
-308) and **stall `017-S`**. §8.3 therefore upgrades it from a vague follow-up to an
-**ordered, Stage-owned step** with named operations, preconditions and an acceptance
-criterion, executed **before** `017-S` routes. It is deliberately **not** absorbed into
-C's own scope: doing so would put a second live member in the manifest and destroy the
-very T2/T4 shape C exists to prove.
+**Hardening 2 — C no longer closes by the path it ships, and that is a measured
+downgrade, not a quiet one.** Rev 1's strongest property was that C self-proved
+`TASK_ONLY_FINALIZE` by closing with it. Probes 22/23/24 made that untenable: the
+task-only shape leaves `024-F` `active` (Probe 22), no barrier against a feature is
+constructible (Probe 23), and only manifest membership disposes it (Probe 24). C now
+closes by `CASCADE`. **What is lost:** an executed self-closure through the new path.
+**What replaces it:** §8.4's relocated Probe 21 post-half, which exercises the
+classifier against the **exact `017-S` 12-member fixture** rather than C's trivial
+one-task shape — a closer analogue of the real consumer. **What remains unproven until
+`017-S`:** an end-to-end *live* task-only closure. That is stated as a residual (R-8),
+not papered over.
 
-**Hardening 2 — C closes by the path it ships, which is the strongest and riskiest proof.**
-Strongest: no amount of contract text substitutes for an executed closure. Riskiest: a
-guard defect surfaces at the moment of a destructive engine call. Mitigations are ordered
-so detection precedes repair — `P1–P10` on the **raw** post-call state **before** archive
-restoration (`AC-5`), bounded recovery with approval before any destructive step, and
-out-of-bounds paths **reported, never moved**. §8.2 keeps the implementation on `main` and
-retries only closure, so a closure failure never strands the merged contract.
+**Hardening 3 — the token-activation boundary is the highest-risk step.** C's merge
+flips B's dormant gate live. A session that merged the token and then used it would be
+authorizing itself — the precise failure A's §6 exists to prevent, in a form A's
+Role-Boundary-scoped carve-out does **not** cover. §8.1 puts the rule in C's own
+`B18` as a *procedure* rule (which A §4.2 says takes effect on reload), forcing S1 to
+checkpoint and end. Three independent defenses, mirroring A's: normative contract text
+in `B18`; **AC-14** fails if one session performs both; **Go test row 13** asserts the
+rule is present in the merged file. A's row 11 scoping is **not** disturbed.
 
-**Hardening 3 — CO-1 is the only cross-shipment coupling, asserted from both sides.**
+**Hardening 4 — CO-1 is asserted from both sides, but it is not the only coupling.**
 B's row 3 asserts the token requirement exists; C's row 2 asserts **exact parity**. A
 mismatch fails C's harness at H1, **before** any closure attempt. Unilateral adjustment
-inside C is forbidden: a token change is a **policy** change and routes through Stage into
-B's surface. This prevents the failure where C "fixes" the mismatch by weakening B's gate.
+inside C is forbidden: a token change is a **policy** change and routes through Stage
+into B's surface. The full coupling set is the deliberation's §7.4 matrix (CO-1 …
+CO-14); CO-1 is only the one requiring a **literal string match**.
 
-**Hardening 4 — the guard set is inherited, not invented.** `G0–G13`, `P1–P10`, the failure
-split and bounded recovery are **carried from the umbrella plan** (rev 6 §6.2–§6.5), which
-survived six revisions and multiple adversarial rounds, with Probes 16 and 19 executed
-against both recovery branches. C's job is **transcription into the skill**, not
-re-derivation. That is what makes ~28 min for `B18` credible where inventing it would not be.
+**Hardening 5 — the guard set is inherited, not invented, and its evidence is Probe 19
+alone.** `G0–G13`, `P1–P10`, the failure split and bounded recovery are **carried from
+the umbrella plan** (rev 6 §6.2–§6.5), which survived six revisions and multiple
+adversarial rounds. **Correction (rev 2):** rev 1 cited "Probes 16 **and** 19". Probe 16
+is **withdrawn as evidence** — it diverged from the specified procedure in five ways —
+and is retained for history only. **Probe 19** implements the procedure as specified and
+executes **both** approval branches; it is the sole authority. C's job is
+**transcription into the skill**, not re-derivation. That is what makes ~29 min for
+`B18` credible where inventing it would not be.
 
-**Hardening 5 — T4's live orphan is a design consequence, stated not hidden.** After C
-closes task-only, `024-F` remains live with no live children. T4 **requires** the root
-parent live and outside the manifest, so this is the contract working as specified. It is
-recorded as residual **R-5** with a **Stage** follow-up rather than quietly absorbed into
-C's scope — absorbing it would put a second live member in the manifest and destroy the
-very T2/T4 shape C is proving.
+**Hardening 6 — the P-001 residue is eliminated mechanically, and the one that remains
+has no consumer.** Rev 1 carried T4's live orphan as a Stage follow-up. A follow-up is
+prose: nothing stops `017-S` being routed before someone remembers it, and Probe 23
+proved no dependency-graph barrier against a feature can be written. Rev 2 removes the
+hazard at its source — `024-F` is a manifest member, so the engine's own cascade
+archives it (Probe 24), leaving **zero** other active top-level units. The symmetric
+residue at `017-S` (`018-F` left `active`) is recorded rather than fixed **because it
+has no downstream consumer** — `017-S` is terminal. Fixing one and recording the other
+is a deliberate scope line, stated in §8.3.
 
-**Hardening 6 — what could make this plan wrong.** (a) If the token cannot be advertised
+**Hardening 7 — what could make this plan wrong.** (a) If the token cannot be advertised
 machine-readably, B's A7 gate is unimplementable and the chain re-plans — **falsified in
-advance** at §2.1, risk **low**. (b) If the re-scan (`AC-12`) finds a **MUST** site absent
-from §3, the budget is invalidated and the unit returns to Stage — the same tripwire rev 6
-set, retained deliberately. (c) If the engine digest has moved, §5 halts before any call.
-(d) If an **executable** classifier existed in this workspace, markdown-only edits would
-not activate the path — **verified false** at §2.2 (no `src/`, no classifier), which is why
-"0 source changes" holds here. Each failure mode has a **detector** and a **named owner**;
-none degrades silently.
+advance** at §2.1, risk **low**. (b) If implementation finds a **MUST** site absent from
+§3, the budget is invalidated and the unit returns to Stage (**AC-12**) — the same
+tripwire rev 6 set, retained deliberately, now enforced against the committed §3
+inventory rather than a regenerated file. (c) If the engine digest has moved, §5 halts
+before any call. (d) If an **executable** classifier existed in this workspace,
+markdown-only edits would not activate the path — **verified false** at §2.2 (no `src/`,
+no classifier), which is why "0 source changes" holds here. (e) If the cascade does
+**not** archive a manifest feature member, §8.3's remedy fails and `024-F` survives —
+**measured false** by Probe 24 (`archived_ids` contains the feature). Each failure mode
+has a **detector** and a **named owner**; none degrades silently.
