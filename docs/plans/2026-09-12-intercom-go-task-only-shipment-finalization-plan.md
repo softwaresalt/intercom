@@ -2,15 +2,53 @@
 
 > **Requires plan hardening**: **yes — applied in rev 2, extended in rev 3, re-hardened in rev 4, rev 4.1, rev 5 and rev 6** (see `## Plan Hardening`).
 
+## ROLE CHANGE (rev 7) — this document is now the UMBRELLA EVIDENCE AND DECISION SOURCE
+
+**This document is NO LONGER AN EXECUTABLE PLAN.** Its rev-6 `MUST_REPLAN` verdict was
+**accepted, not overturned**. Acting on it as a plan is a process error.
+
+The work it scoped has been **structurally re-planned** as a dependency-ordered
+**three-shipment bootstrap**. See
+`docs/decisions/2026-09-12-intercom-go-three-shipment-bootstrap-deliberation.md`.
+
+| Successor | Surface | Plan |
+|---|---|---|
+| **A** `021-S` / `022-F` / `022.001-T` | `_ship.agent.md` + 1 Go test | `docs/plans/2026-09-12-intercom-go-ship-feature-completion-foundation-plan.md` |
+| **B** `022-S` / `023-F` / `023.001-T` | `workflow-policies.md` P-015 + 1 Go test | `docs/plans/2026-09-12-intercom-go-p015-taskonly-authorization-plan.md` |
+| **C** `023-S` / `024-F` / `024.001-T` | `shipment-reconcile/SKILL.md` + 1 Go test | `docs/plans/2026-09-12-intercom-go-taskonly-finalize-skill-implementation-plan.md` |
+
+**What this document REMAINS AUTHORITATIVE for**, and what A/B/C cite it as:
+
+- **§3 / §3.0 / §3.1** — the probe evidence base (Probes 14–20), its fidelity table, and
+  the withdrawal of rev-4.1 probes 5/5b/10/12/13.
+- **§6.1 Inventory Tables §6.1-A/B/C/D** — the **closed 28-site clause inventory**, split
+  across A/B/C **exactly** (`C1–C6` → A; `A1–A6` → B; `B1–B10`, `B12–B17` → C) with the
+  additive rows `A7`, `A8`, `B11`, `B18` assigned to B, B, C, C respectively.
+- **§6.2–§6.5** — topology assertions `T1–T5`, guards `G0–G13`, post-guards `P1–P10`, the
+  TOCTOU boundary, the two-path failure split and bounded-recovery semantics. **T1–T5**
+  land in **B**; the rest land in **C**.
+- **§8.2** — P-007 ordering (`P1–P10` evaluate on the **raw** post-call state **before**
+  any archive restoration).
+- **§8.3** — the "first real self-close fails after the implementation merged" contingency.
+- **§6.3** — the binding engine digest.
+- **§11 / §14** — the PR #54 actor boundary and merge gates (**operator** is the sole
+  push/merge actor; no agent push).
+
+**What is SUPERSEDED**: §4 (surface), §5 (ordering), §7.1 (assertion set), §9 (acceptance
+criteria), §10.1/§10.2 (budget and the no-split finding), and §13 (adversarial scope) —
+all now carried per-shipment by the A/B/C plans. §10.2's "splitting is unavailable"
+finding was correct **for the task-only close shape** and is dissolved by the bootstrap,
+which closes A and B under the **existing** `CASCADE` exception.
+
 - **Date:** 2026-09-12
-- **Revision:** 6 (rev 1 → **FAIL**; rev 2 → **FAIL**; rev 3 → **ADVISORY**; rev 3 → independent adversarial **MUST_REPLAN**; rev 4 → internal review **FAIL**; rev 4.1 → internal re-review **ADVISORY**; rev 4.1 → independent adversarial **MUST_REPLAN**; rev 5 → independent adversarial **MUST_REMEDIATE**; rev 6 → **MUST_REPLAN on budget**, see §10.1; see §12)
+- **Revision:** 7 — role changed to umbrella evidence/decision source (rev 1 → **FAIL**; rev 2 → **FAIL**; rev 3 → **ADVISORY**; rev 3 → independent adversarial **MUST_REPLAN**; rev 4 → internal review **FAIL**; rev 4.1 → internal re-review **ADVISORY**; rev 4.1 → independent adversarial **MUST_REPLAN**; rev 5 → independent adversarial **MUST_REMEDIATE**; rev 6 → **MUST_REPLAN on budget**, see §10.1; rev 7 → **re-planned as the three-shipment bootstrap**; see §12)
 - **Source deliberation:** `docs/decisions/2026-09-12-intercom-go-task-only-shipment-finalization-deliberation.md`
 - **Stash origin:** `A10EF3D0` (`kind: deliberation`, `priority: critical`)
 - **Branch:** `chore/stage-pipeline-policy-gap` (planning artifacts carried over by cherry-pick; see §14)
 - **Engine identity of record (binding):** `backlogit 1.10.1-0.20260823032255-b07729386a31+dirty`, **SHA-256 `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98`** — the digest, not the version string, is the binding identity (§6.3)
 - **Probe evidence (durable, in-repo):** `docs/plans/evidence/2026-09-12-task-only-shipment-finalization/`
-- **Harvested backlog:** feature `022-F`, task `022.001-T`, shipment `021-S` (task-only manifest); `017-S depends_on 021-S --type blocks`
-- **Status:** planning **NOT** complete — **MUST_REPLAN** on the §10.1 budget: the closed clause inventory (§6.1, rev 6) enumerates **28 normative edit sites**, and the resulting itemized budget does **not** close under the 2-hour rule as a single atomic task (§10.1). Harvested topology (`022-F`, `022.001-T`, `021-S`, `017-S -> 021-S`) is **unchanged** and is **not** re-harvested by this revision. Separately still **BLOCKED** — PR #54 has no agent-executable route and requires the **operator** as PR actor (§11).
+- **Harvested backlog:** feature `022-F`, task `022.001-T`, shipment `021-S` — **rev 7: `021-S`'s manifest is re-shaped from task-only `[022.001-T]` to the FULLY-COVERED ROOT `[022-F, 022.001-T]`, and `022-F`/`022.001-T` are re-scoped to bootstrap shipment A.** Dependency chain becomes `017-S -> C(023-S) -> B(022-S) -> A(021-S)`; the direct `017-S -> 021-S` edge is removed only **after** the `017-S -> 023-S` edge exists, so no eligibility window opens.
+- **Status:** **SUPERSEDED AS A PLAN (rev 7); RETAINED AS EVIDENCE.** The rev-6 **MUST_REPLAN** verdict on the §10.1 budget stands and was **accepted**: the closed clause inventory (§6.1) enumerates **28 normative edit sites** and does **not** close under the 2-hour rule as one atomic task. Rev 7 re-plans the work as the **three-shipment bootstrap** above, in which each shipment carries exactly one covering feature and one ≤2 h task. Separately still **BLOCKED** — PR #54 has no agent-executable route and requires the **operator** as PR actor (§11); this is **unchanged** by rev 7.
 
 ---
 
@@ -1669,6 +1707,55 @@ Reviewers should focus on, in priority order:
     **not** assume exists?
 
 ## 14. Sequencing — one artifacts-only Stage PR
+
+### 14.0 REV 7 UPDATE — PR #54 now carries all THREE shipments atomically
+
+The adopted single-PR sequencing below is **retained and extended**. PR #54 now carries
+the **entire three-shipment bootstrap** and **every dependency edge** in **one atomic
+merge**:
+
+| Carried by PR #54 | Detail |
+|---|---|
+| Policy-gap backlog records | already on the branch (unchanged) |
+| **A** | `022-F`, `022.001-T` (re-scoped), `021-S` re-shaped to `[022-F, 022.001-T]` |
+| **B** | `023-F`, `023.001-T`, `022-S` = `[023-F, 023.001-T]` |
+| **C** | `024-F`, `024.001-T`, `023-S` = `[024.001-T]` (task-only) |
+| **Dependency chain** | `022-S -> 021-S`, `023-S -> 022-S`, `017-S -> 023-S`; stale `017-S -> 021-S` **removed** |
+| Planning artifacts | the bootstrap deliberation + plans A/B/C + this rev-7 role change |
+
+**Why atomic is still required, and now more so.** The rev-6 rationale — the
+`017-S` edge must land in the same merge as `017-S`'s own records so no eligibility
+window opens — applies with **three** edges instead of one. Landing A's records without
+C's would leave `017-S` with a **dangling or absent** blocker. The edge surgery was
+performed in the safe order (**add `017-S -> 023-S` first, remove `017-S -> 021-S`
+second**), so at no point in the branch history is `017-S` unblocked.
+
+**Gates 1–9 below apply unchanged.** Gate 3 (artifact-only diff) is satisfied: the diff is
+limited to `docs/**` and `.backlogit/**`, with **zero** source, test, skill, agent or
+policy implementation files.
+
+**Actor: the OPERATOR, unchanged.** §11 and Probe 17 still hold — no agent can push or
+merge PR #54. **No push is performed by Stage.** Output is local commits on
+`chore/stage-pipeline-policy-gap`.
+
+### 14.0.1 Post-merge routing (normative, rev 7)
+
+After PR #54 merges and the records are verified present on `main`, the Orchestrator
+routes **`021-S` (A) only**. Then, strictly sequentially, each under **P-001** (one
+release unit in flight) and **P-016** (one branch/worktree):
+
+```text
+PR #54 merge
+  -> route 021-S (A)  -> implement -> merge -> S1 checkpoint+end -> S2 closes via CASCADE
+  -> route 022-S (B)  -> implement -> merge -> close via a1 + CASCADE
+  -> route 023-S (C)  -> implement -> merge -> close via TASK_ONLY_FINALIZE (self-proof)
+  -> Stage disposes of 024-F (plan C §8.3)
+  -> route 017-S
+```
+
+**Never more than one active Ship shipment or PR at a time.** Each shipment completes
+**P-020** and full closure requirements before the next is routed. `017-S` remains
+`queued` and **unclaimed** throughout.
 
 The rejected two-PR sequence is **withdrawn**. Its defect: landing the policy-gap
 records first would leave `017-S` queued on `main` with **no** dependency edge
