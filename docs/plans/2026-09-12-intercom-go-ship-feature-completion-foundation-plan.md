@@ -2292,3 +2292,32 @@ introduced.
 harvest-ready. **`021-S` must not be claimed**, and `017-S` behind it stays ineligible.
 **No backlog items are created from this plan.**
 
+## Plan Review — AUTHORITATIVE GATE STATE (read this one)
+
+**This section is the operative provenance record.** It is the **last** `## Plan Review`
+section in this file and restates the markers of the **most recent** gate run, so a
+`harvest` provenance check that reads the latest section cannot accidentally bind to
+**attempt 1**. Attempt 1's section is retained **only** for audit history and is
+**superseded**.
+
+<!-- plan-review-attempt: 2 -->
+
+```text
+dispatch_mode: multi-agent
+decision: FAIL
+```
+
+| Field | Value |
+|---|---|
+| **Latest attempt** | **2** (of max 3 — **cycle 3 is the last**) |
+| **Reviewed revision** | rev 5 |
+| **Decision** | **FAIL** |
+| **Dispatch mode** | `multi-agent` (7/7 personas; anchor `openai`/`gpt-5.6-sol`/`high`) |
+| **Harvest-ready** | **NO** |
+| **Plan `status:`** | `planned` (unchanged — **not** advanced to `reviewed`) |
+| **`021-S` claimable** | **NO** |
+| **Blocking** | 1 P0 (**B-1**) + 7 P1 (**B-2**…**B-8**, less the closed **B-7**) |
+| **Superseded** | attempt 1 (`<!-- plan-review-attempt: 1 -->`, rev 4, FAIL) |
+
+**Harvest MUST halt on this plan.** `decision: FAIL` is the operative value.
+
