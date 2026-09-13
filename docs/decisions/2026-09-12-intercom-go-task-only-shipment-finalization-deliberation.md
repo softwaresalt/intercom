@@ -191,82 +191,67 @@ compliant Ship agent obligated to refuse the call. The amendment adds a
 **second, strictly narrower** exception and leaves the existing fully-covered-root
 exception byte-for-byte unchanged.
 
-### 3.2 Self-hosting closure order (proved in plan §6)
+### 3.3 Self-hosting closure order (full ordered sequence in plan §8)
 
 The prerequisite must close **itself** using the very path it introduces:
 
-1. Prerequisite implementation PR **merges** to `main`.
-2. Ship **reloads** the freshly merged `shipment-reconcile` skill.
-3. The reloaded skill classifies the prerequisite's own **task-only** shipment as
-   `TASK_ONLY_FINALIZE` and closes it.
-4. Only then does `017-S` become eligible.
+1. Prerequisite implementation PR **merges** to `main` (Ship).
+2. Ship verifies the merge SHA, checks out **fresh `main`**, and cuts the closure branch.
+3. Ship **reloads** the merged P-015 + `shipment-reconcile` skill and **positively
+   verifies** the new tokens and merge commit are present.
+4. Pre-mode → `TASK_ONLY_FINALIZE` close → P-007 handling → post-mode.
+5. Closure PR merged, operational closure, then **P-020** compaction.
+6. Only then does `017-S` become eligible.
 
 Step 3 is sound because the prerequisite's own shipment is deliberately built in
 the exact safe topology: the covering feature has **exactly one descendant at any
 depth** (the sole task), the feature is root and excluded from the manifest, the
-task is `done` at closure time, and no out-of-manifest record declares the
-shipment. Hence `live_descendants(parent) == manifest` holds trivially and
-`returned_ids == []` follows.
+task is `done` at closure time, the shipment record is `active`, and no
+out-of-manifest record declares the shipment. Hence
+`live_descendants(parent) == manifest` holds trivially and `returned_ids == []`
+follows. The full thirteen-step sequence, with actors, is normative in plan §8;
+the no-fallback contingency is plan §8.1.
 
 ---
 
-## 4. BLOCKER — dependency and ID allocation are unsatisfiable on this branch
+## 4. Sequencing — resolved (rev 2)
 
-This is a **hard blocker discovered during staging** and is the reason no
-backlog artifacts were created this session.
+The rev-1 blocker ("dependency and ID allocation are unsatisfiable on this
+branch") was an artifact of staging on an `origin/main`-based branch. It is
+**dissolved**, not deferred, by harvesting on the policy branch instead.
 
-`.backlogit/` is **tracked, branch-scoped state** (209 tracked files; only
-`checkpoints/`, `runtime/` and the SQLite DB are ignored). Therefore:
+**Root fact:** backlogit ID allocation is **branch-local**, because `.backlogit/`
+is tracked, branch-scoped state. `017-S`, `018-F` and stash `A10EF3D0` exist on
+`chore/stage-pipeline-policy-gap`. Harvesting there makes the dependency edge and
+the stash archival writable at once, with no collision and no renumbering.
 
-| Fact | Evidence |
-|---|---|
-| `017-S`, `018-F`, `018.008-T` exist **only** on `chore/stage-pipeline-policy-gap` | absent from `.backlogit/queue/` on this `origin/main`-based branch |
-| Max IDs on **this** branch | feature `017-F`, shipment `016-S` |
-| Next allocation on **this** branch | feature **`018-F`**, shipment **`017-S`** |
-| Those IDs on the policy branch | already taken, by **different** work |
+**The rev-1 recommendation is WITHDRAWN.** It proposed two sequential Stage PRs:
+land the policy-gap records first, then re-stage the prerequisite from fresh
+`main`. Independent adversarial review returned `MUST_REPLAN` against it for a
+decisive reason: that sequence lands `017-S` on `main` **before** any blocking
+dependency exists, opening a window in which Ship could legitimately claim `017-S`
+with no prerequisite in place. The two-PR split is both unsafe and unnecessary.
 
-Two consequences:
-
-1. **Requirement "add a dependency so `017-S` is blocked by the prerequisite
-   shipment" is unsatisfiable here.** `017-S` does not exist on this branch, so
-   the edge has no valid endpoint and no record to persist into.
-2. **Creating the feature/shipment here would allocate `018-F` and `017-S`** —
-   colliding head-on with different artifacts of the same IDs on the policy
-   branch, producing add/add merge conflicts on
-   `.backlogit/queue/018-F.md` and `.backlogit/queue/017-S.md` and corrupting
-   traceability. The prerequisite is required to merge *first*, so the collision
-   would land on `main` and force the policy branch to renumber.
-
-Creating colliding artifacts to satisfy the letter of the instruction would
-violate its intent (reliability). **Staging halted before backlog mutation.**
-
-### 4.1 Recommended resolution (operator decision required)
-
-Land the Stage-artifact PR carrying the policy-gap **backlog records** to `main`
-first. That PR is artifacts-only — it contains **no** source, test or config
-change, and landing `017-S` as a `queued`, unclaimed record does **not** execute,
-claim or ship it. Afterwards, re-run this staging session from fresh `main`:
-
-- IDs allocate cleanly (next feature `022-F`, next shipment `021-S` — no collision);
-- `017-S` exists, so `backlogit dep add 017-S 021-S --type blocks` is writable;
-- the required ordering (prerequisite ships before `017-S` is claimed) is preserved,
-  because the dependency edge — not branch topology — enforces it.
-
-Alternatives considered and rejected: staging on the policy branch (entangles two
-release units and contaminates PR #54), and branching *from* the policy branch
-(its commits become ancestors, so merging the prerequisite would also merge
-`017-S`'s implementation — inverting the required order).
-
----
+**Adopted:** a **single artifacts-only Stage PR (#54)** on the policy branch
+carrying the policy-gap records **and** the prerequisite feature/task/shipment
+**and** the `017-S depends_on <prerequisite shipment>` edge. The edge lands
+atomically in the same merge as `017-S`, so no eligibility window exists at any
+reachable state. Gates and the Ship PR-lifecycle-only actor boundary are
+normative in plan §14 and §11.
 
 ## 5. Open questions
 
-- **OQ-1:** Operator to choose the sequencing in §4.1 before backlog artifacts are created.
+- **OQ-1:** **RESOLVED.** Sequencing is the single artifacts-only Stage PR in §4;
+  harvest proceeds on the policy branch.
 - **OQ-2:** Should `TASK_ONLY_FINALIZE` also permit a manifest whose tasks span
   **multiple** protected parent features? Deliberately answered **no** for now —
-  single-parent keeps the protected set trivially computable. Revisit only on a fired trigger.
+  single-parent keeps the protected set trivially computable. Revisit only on a
+  fired trigger.
+- **OQ-3 (rev 2):** Should multi-**live**-task manifests be supported? Answered
+  **no** for this first authorization: no executed probe establishes their
+  safety, so plan G10 excludes them.
 
 ## 6. Stash lineage
 
-`A10EF3D0` remains **ACTIVE and unarchived**. Archival is gated on successful
-harvest and lineage verification, which cannot occur until OQ-1 is resolved.
+`A10EF3D0` is harvested in this session on the policy branch and archived only
+after lineage verification against the created feature, task and shipment IDs.
