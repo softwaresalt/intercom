@@ -4,6 +4,11 @@ date: 2026-09-13
 status: planned
 agent: Stage
 revision: 13
+revision_state: FROZEN
+disposition: OPERATOR-ACCEPTED-RESIDUALS
+disposition_date: 2026-09-14
+stage_gate: stage-ready-under-operator-residual-acceptance
+review_gate: FAIL (true-lineage attempt 8) — NOT a PASS
 feature: 022-F
 task: 022.001-T
 shipment: 021-S
@@ -48,12 +53,24 @@ evidence: docs/plans/evidence/2026-09-12-task-only-shipment-finalization/probe25
 > every test needle is a **verbatim substring of that pinned wording**.
 >
 > **GATE STATE — read this before acting on the plan.** The last plan-review gate that **RAN**
-> is **true-lineage attempt 7**, and it **FAILED** (P0 = 0, P1 = 27 raw / 15 deduplicated).
-> **Revision 13 is the AUTHORIZED CANDIDATE for true-lineage attempt 8**, authorized by the
-> operator on 2026-09-14 together with the adoption of `D-1`. The attempt counter is **not**
-> reset by this reauthoring. `021-S` remains `queued` and **not claimable**, and `017-S`
-> remains blocked, until a gate that actually ran returns P0 = 0 **and** P1 = 0. See §13 and
-> §13.1. **Revision 13 carries NO open operator decision**: `D-1` is **ADOPTED** (§3.4.3 J).
+> is **true-lineage attempt 8**, over **revision 13**, and it **FAILED** (P0 = 0,
+> P1 = 26 raw / **14** deduplicated, 7/7 personas). That FAIL stands and is **not** relabelled.
+> The single-invocation authorization is **SPENT**; **attempt 9 is NOT authorized** and no
+> revision 14 candidate exists. See §13, §13.1 and
+> `docs/reviews/2026-09-13-true-lineage-attempt-8-verdict.md`.
+>
+> **REVISION 13 IS FROZEN, AND THE OPERATOR HAS ACCEPTED THE REMAINING RESIDUALS.** On
+> 2026-09-14 the operator directed Stage to **stop iterating the plan**, freeze the engineering
+> contract, accept the remaining documentation / gating-evidence findings as **non-blocking
+> residuals**, and hand off to Ship behind a **failing (test-first) harness** covering the
+> implementation invariants. The five frozen invariants are **§12.1 `IV-1`…`IV-5`**; the
+> per-theme adjudication of `N-1`…`N-14` is **§13.7**. This disposition **does not** open a
+> revision 14, **does not** open an attempt 9, and **does not** convert the attempt-8 FAIL into
+> a PASS. It records a distinct state: **Stage-ready under operator residual acceptance**,
+> which is **not** a review-gate PASS.
+>
+> `021-S` remains `queued` and is **NOT claimed**; `017-S` remains blocked on its own separate
+> grounds. **Revision 13 carries NO open operator decision**: `D-1` is **ADOPTED** (§3.4.3 J).
 
 ## 1. Objective
 
@@ -1909,6 +1926,34 @@ syntactically but **not to an applicable action**, because step 13a is a `021-S`
     **HALT with no mutation performed** before any mutation (**CS6**, row 32). **No Ship call
     site reaches the destructive sink unbound**, and none proceeds past a refusal.
 
+### 12.1 FROZEN IMPLEMENTATION INVARIANTS — `IV-1`…`IV-5` (BINDING on Ship)
+
+Under the operator disposition of 2026-09-14 (§13.7) the engineering contract of revision 13 is
+**FROZEN** and reduced to **exactly five** invariants. These five are **binding acceptance
+criteria for implementation**. `AC-1`…`AC-47` above remain the detailed expression of the
+contract, but where any `AC-`, clause site, pinned-wording or measurement statement in this plan
+conflicts with `IV-1`…`IV-5`, **`IV-1`…`IV-5` govern**.
+
+1. **`IV-1`** — Classify the close path before any mutation.
+2. **`IV-2`** — Bind the classification to the manifest and dependency snapshot, and reject drift.
+3. **`IV-3`** — Require the binding on every mutating close path, including the direct `backlogit_ship_shipment` engine invocation, or replace that invocation with the guarded path.
+4. **`IV-4`** — Fail closed on missing, invalid, ambiguous, mixed, stale or non-matching classifications.
+5. **`IV-5`** — The TDD harness proves that refusal paths perform zero mutation and that valid `CASCADE` / `SAFE_CLOSE` paths preserve intended behaviour.
+
+> **Rendering rule (anti-`N-6`).** Each invariant above is a **single unwrapped line**, so it is
+> quotable character-for-character. Any restatement of `IV-1`…`IV-5` elsewhere MUST preserve that
+> property. This is the one wording-integrity discipline the freeze keeps.
+
+**Blocking rule (NON-NEGOTIABLE).** The residual acceptance in §13.7 applies **only** to
+plan-text, documentation and gating-evidence findings. It **never** applies to `IV-1`…`IV-5`.
+**Any failing implementation invariant is BLOCKING for Ship regardless of any accepted
+plan-evidence residual**, and is not dischargeable by editing this plan.
+
+**Ordering (NON-NEGOTIABLE, test-first).** The harness encoding `IV-1`…`IV-5` **lands and is RED
+before** any of the instruction-surface files is edited, and is **GREEN** before closure. A
+green-on-arrival harness is itself a failure of `IV-5`. This restates, and does not relax, the
+test-first ordering already required by §7 and `022.001-T`.
+
 ## 13. Gate state
 
 ```text
@@ -1924,6 +1969,11 @@ authorization: SPENT
 next-attempt: 9
 next-attempt-state: NOT AUTHORIZED — no candidate
 next-attempt-authorization: NOT GRANTED
+
+disposition: OPERATOR-ACCEPTED-RESIDUALS (2026-09-14)
+disposition-effect: revision 13 FROZEN; residuals accepted non-blocking; see §12.1 and §13.7
+stage-gate: stage-ready-under-operator-residual-acceptance
+review-gate: FAIL — NOT converted to PASS
 ```
 
 > **Read the block above as one fact: the last gate that RAN is attempt 8 and it FAILED.**
@@ -1963,9 +2013,9 @@ next-attempt-authorization: NOT GRANTED
 | **Revision** | **13** — reauthored, not patched |
 | **True-lineage attempt (last RUN)** | **8** — the counter continues across every reauthoring and is **not** reset |
 | **Gate decision (last RUN)** | **FAIL** — P0 = 0, P1 = **26 raw / 14 deduplicated**, 7/7 personas, anchor `gpt-5.6-sol` high. See `docs/reviews/2026-09-13-true-lineage-attempt-8-verdict.md` |
-| **Attempt 9** | **NOT AUTHORIZED, no candidate.** The 2026-09-14 authorization covered exactly one gate invocation and is **SPENT**. `N-1`…`N-14` in the attempt-8 verdict are open and **were deliberately not remediated in this session** |
-| **Harvest-ready** | **NO.** Requires a gate that actually ran returning P0 = 0 **and** P1 = 0; attempt 8 ran and returned P1 = 14 deduplicated |
-| **`021-S`** | `queued` — **not claimable.** Attempt 8 returned P1 = 14 deduplicated |
+| **Attempt 9** | **NOT AUTHORIZED, no candidate, and NOT REQUESTED.** The 2026-09-14 authorization covered exactly one gate invocation and is **SPENT**. `N-1`…`N-14` are **open** and were deliberately not remediated; they are **adjudicated, not fixed**, in §13.7 |
+| **Harvest-ready** | **NOT by gate.** A review-gate PASS still requires a gate that actually ran returning P0 = 0 **and** P1 = 0; attempt 8 ran and returned P1 = 14 deduplicated. **Handoff proceeds instead under the operator disposition of 2026-09-14 (§13.7): `stage-ready-under-operator-residual-acceptance`, which is NOT a review-gate PASS** |
+| **`021-S`** | `queued`, **NOT claimed**, manifest and dependencies unchanged. Released to Ship for **implementation under §12.1 `IV-1`…`IV-5`** by operator disposition; the claim itself remains a downstream Ship action gated on PR #54 merging to `main` |
 | **`017-S`** | `queued`, dependency `[021-S]` — ineligible until `021-S` ships, **and** separately ineligible until an `017-S` closure plan exists (§11.1) |
 | **`PA-021-CASCADE`** | recorded, **unexercised**; **manifest unchanged at `[022-F, 022.001-T]`**, so the approval is **not** re-scoped by revision 13 and needs no re-authorization. §11 condition 7 is satisfied **by measurement** (§13.6 T-11), which is why `M-11` required no re-scope |
 | **`PA-017-CASCADE`** | recorded, **unexercised**, **held in escrow** (§11.1) |
@@ -2327,6 +2377,75 @@ regardless of how confidently it is stated — that is the `K-1` lesson in one s
 > because P-015 mandates the bound `SAFE_CLOSE` path as its default. **A measurement scope
 > that is declared but never exercised is indistinguishable from one that does not exist** —
 > revision 11 declared Scope T and ran no probe in it.
+
+### 13.7 OPERATOR-ACCEPTED RESIDUALS — adjudication of `N-1`…`N-14` (2026-09-14)
+
+**What this section is.** On 2026-09-14 the operator, having reviewed the attempt-8 failures,
+directed: *stop iterating the plan; freeze the current engineering invariants; explicitly accept
+the documentation / gating-evidence findings as non-blocking residuals; move toward Ship with a
+failing test harness covering the implementation invariants; record this as an operator-approved
+Stage-gate disposition rather than pretending attempt 8 passed.* Operator confirmation:
+**`ok, make it so`**.
+
+**What this section is NOT.** It is **not** a remediation, **not** a revision 14, **not** an
+attempt 9, and **not** a conversion of the attempt-8 FAIL into a PASS. **No finding below is
+asserted fixed.** Every theme is recorded with its original verdict text intact in
+`docs/reviews/2026-09-13-true-lineage-attempt-8-verdict.md`, which remains authoritative for the
+findings themselves. This section records only their **disposition**.
+
+**Categories.**
+
+| Cat | Meaning | Effect on Ship |
+|---|---|---|
+| **(a)** | Folds into a frozen **implementation-guard acceptance criterion** (§12.1 `IV-1`…`IV-5`) | **BLOCKING** — must be proven by the harness |
+| **(b)** | **Non-blocking documentation / gating-evidence mismatch**, accepted by the operator | Not blocking; plan text stays as-is |
+| **(c)** | **Truly unresolved implementation blocker** — primary evidence proves actual infeasibility | Would halt handoff |
+
+#### Adjudication
+
+| Ref | Cat | Adjudication |
+|---|---|---|
+| **`N-1`** | **(a)** | `R5` branch-binding contradicted at §4.2 `CS11`/`CS3` and `AC-35`. The **semantics** are frozen into **`IV-4`** (fail closed only on missing / invalid / ambiguous / mixed / stale / non-matching) and **`IV-5`** (a valid matching `SAFE_CLOSE` preserves intended behaviour, i.e. routes to steps 1–10 and is **not** halted). The stale plan sentences are **not** corrected; the harness, not the prose, is authoritative |
+| **`N-2`** | **(b)** | `AC-39` certifies §4.0 against five checks where §4.0 defines six. This is a **certification-statement** defect inside the plan's own self-audit apparatus. It gates plan evidence, not implementation behaviour. **Accepted non-blocking.** Note: §4.0 check 6 (authority) is independently satisfied — the `D-1` grant trail is recorded in §2, §13.1 and `021-S`, and no persona found the narrowing self-authorized |
+| **`N-3`** | **(b)** | §13.4's "Bounded, not zero" table left on revision 12 (`30` rows / `15` sites, duplicate `attempt 8` cells). Pure **stale measurement-evidence** contradiction. **Accepted non-blocking.** Superseded in substance by the freeze: §12.1 `IV-1`…`IV-5`, not row/site counts, are the acceptance surface |
+| **`N-4`** | **(a) + (b)** | **Split.** **(a)** — *`_ship.agent.md` L822 is a direct `backlogit_ship_shipment` engine cascade call that a skill-side refusal cannot intercept.* This is the key technical observation of attempt 8 and it is **frozen as `IV-3`**: the binding is required on **every** mutating close path **including the direct engine invocation**, or that invocation is **replaced** with the guarded path. It is an **implementation consumer to guard or replace — explicitly NOT an architectural feasibility blocker**, and therefore **not category (c)**. **(b)** — the workspace-scoped *"closed for every caller"* / *"exactly two invocations in this workspace"* claims at §3.4.3 (F)/(K), `AC-46`/`AC-47` and §15 VII **overreach** a three-file probe. **Accepted non-blocking as an evidence-scope overclaim**; `IV-3` is stated as a guard obligation, not as a completed enumeration |
+| **`N-5`** | **(a)** | Independent falsifiability incomplete: row 21c counts a token three other sites also emit, row 24a carries a `CS13` literal under `CS14` provenance, rows 25/28/29/30 are whole-file or unbounded. This is a **harness-quality** defect and folds into **`IV-5`**: the harness must prove the invariants **independently**, each assertion resolving inside its own subject, with no assertion credited by another's output |
+| **`N-6`** | **(b)** | §4.2 pinned wording soft-wrapped mid-needle at ~16 rows; §4.0's "0 provenance failures" holds only under unauthorized whitespace normalization. This is a **plan-rendering / evidence** defect. **Accepted non-blocking** — and largely **moot under the freeze**, because `IV-1`…`IV-5` are **semantic** invariants, not verbatim-wording reproductions. **Consequence for Ship:** the harness asserts **behaviour**, and must **not** be built out of §4.2's wrapped literals |
+| **`N-7`** | **(b)** | §3.4.2 fact 2b (the review-diff comparison detecting unreviewed in-merge edits) has no execution site in §9.2 check 7 / `AC-29`. A **gating-evidence / process-control** gap in the plan's own verification choreography. **Accepted non-blocking.** The ordinary downstream PR review and CI gates cover in-merge edits for this change |
+| **`N-8`** | **(b)** | S1a/S1b session boundary declared but not implemented; `AC-12` (two sessions) contradicts `AC-44` (three). **Plan-internal consistency / sizing-narrative** defect with no effect on the shipped contract. **Accepted non-blocking.** Ship may re-split execution freely provided each stretch honours the 2-hour rule and the test-first ordering of §12.1 |
+| **`N-9`** | **(a)** | The privilege predicate *"the shipment **this session has claimed**"* is unsatisfied in fresh session S2, which **resumes** an S1-claimed shipment. This is a real **guard-predicate** defect, not a doc defect: as written the guard is unsatisfiable in the only session that exercises it. Folds into **`IV-4`** — the guard must fail closed on a genuinely unowned shipment while remaining **satisfiable by a legitimately resumed claim** (validate live claim ownership + `active` status, not in-session claim authorship). The harness must cover both polarities |
+| **`N-10`** | **(a)** | Binding-integrity gaps: `backlogit --version` is a version string not engine identity; the single-writer lock covers only `queue/{shipment_id}.md` while the cascade mutates feature, descendant, deliberation and archive records; dependency-tuple encoding and version-output normalization are undefined. Folds into **`IV-2`** — the binding must cover the **manifest and dependency snapshot** under a **deterministic, fully specified serialization**, and **reject drift** — and into **`IV-4`** for the stale case |
+| **`N-11`** | **(a)** | ADD-1 / `CS10` five-condition equivalence asserted but not test-enforced (rows 2a–2d, 20a, 28 check only the grant phrase, scope and set-equality). Folds into **`IV-5`**: the harness must enforce **all five** grant conditions on **both** surfaces, so neither can silently drop the completeness, no-live-descendant, containment or feature-status conjuncts |
+| **`N-12`** | **(a)** | §10.1 merges *"binding drift / bound refusal"* and routes both to reclassification, creating a path that resumes after a `BLOCK`. Folds into **`IV-4`**: **only drift may reclassify**; a bound `BLOCK`, an unknown token, and every ambiguous or mixed outcome are **terminal HALTs** requiring Stage handoff. **`IV-5`** requires a harness row proving the `BLOCK` path performs **zero mutation** and does **not** resume |
+| **`N-13`** | **(a)** | MCP/CLI parity incomplete: the a1 outcome contract is CLI-exit-code-only (0/6/7/8) with no MCP mapping; and the full descendant graph is specified as repeated `backlogit_get_item` over `parent_id`, an ID-addressed point lookup that **cannot enumerate unknown children**. The second half is a genuine **correctness** defect in `IV-1`'s input: a classification that cannot enumerate descendants cannot classify the close path. Folds into **`IV-1`** (complete descendant enumeration before classification, via a listing/query surface) and **`IV-4`** (an incompletely enumerated graph is **ambiguous** ⇒ fail closed) |
+| **`N-14`** | **(b)** | §15's Constitution cells still describe a two-file surface (Principle I "no I/O beyond reading two files"; Principle II omits `shipment-reconcile/SKILL.md`). Pure **documentation** staleness in the constitution-mapping table. **Accepted non-blocking.** The test-first obligation over **all three** instruction surfaces is restated normatively in §12.1 and in `022.001-T`, which govern |
+
+#### Result
+
+| Category | Count | Themes |
+|---|---|---|
+| **(a)** implementation-guard acceptance criterion | **8** | `N-1`, `N-4`(a), `N-5`, `N-9`, `N-10`, `N-11`, `N-12`, `N-13` |
+| **(b)** non-blocking documentation / evidence mismatch | **7** | `N-2`, `N-3`, `N-4`(b), `N-6`, `N-7`, `N-8`, `N-14` |
+| **(c)** truly unresolved implementation blocker | **0** | — |
+
+`N-4` is the only theme that splits across two categories; 14 themes yield 15 adjudication
+entries.
+
+**On category (c) being empty.** This was **adjudicated, not arranged**. Every theme was tested
+against one question: *does primary evidence prove the invariant cannot be implemented?* The
+nearest candidate is `N-4`(a) — the direct `backlogit_ship_shipment` engine call at
+`_ship.agent.md` L822, which a skill-side refusal provably cannot intercept. That is a **real,
+measured, currently-open defect**, and it is **not infeasible**: the call site can be guarded or
+replaced with the bound path, which is exactly what `IV-3` requires. **No finding was rewritten,
+downgraded or hidden to reach this result**, and the attempt-8 verdict is unedited. If
+implementation shows any `IV-` invariant cannot be satisfied, that is a **(c)** discovery at
+build time and it **blocks Ship** — §12.1's blocking rule applies without further operator
+consultation.
+
+**Traceability.** Every `N-` ref above resolves in
+`docs/reviews/2026-09-13-true-lineage-attempt-8-verdict.md`, which carries the originating
+per-persona finding IDs (`A8-`, `C8-`, `G8-`, `S8-`, `L8-`, `SL8-`, `AP8-`). Compact Stage
+readiness evidence: `docs/reviews/2026-09-14-stage-gate-operator-accepted-residual-disposition.md`.
 
 ## 14. Sizing
 
