@@ -3,7 +3,7 @@ title: "Decided Plan — Ship covering-feature completion and close-path delegat
 date: 2026-09-13
 status: planned
 agent: Stage
-revision: 12
+revision: 13
 feature: 022-F
 task: 022.001-T
 shipment: 021-S
@@ -21,7 +21,7 @@ evidence: docs/plans/evidence/2026-09-12-task-only-shipment-finalization/probe25
 > superseded wording are reachable through the audit pointers in §13.2, which resolve to Git
 > history, PR #54, the archived plan, `docs/memory/` and `.backlogit/checkpoints/`.
 >
-> **Reauthored, not patched.** Revision 12 replaces revision 11 under explicit operator
+> **Reauthored, not patched.** Revision 13 replaces revision 12 under explicit operator
 > direction to reauthor rather than append. Lineage is preserved by Git commits and PR
 > history; it is deliberately not restated inline.
 >
@@ -31,11 +31,17 @@ evidence: docs/plans/evidence/2026-09-12-task-only-shipment-finalization/probe25
 > detect-and-restore. The implementation surface is therefore **four files**, not three.
 > See §2, §3.4.3 and §4 (**CS11–CS14**).
 >
-> **Revision 12 closes the contract across ALL of its surfaces, not only the producer.**
-> Revision 11 added the read-only boundary to the skill and left the clauses that *consume*
-> it, the policy that *authorizes* its outcome, the sink that must *refuse* an unbound
-> cascade, and the probes that *measure* the tooling on the previous contract. That is the
-> single defect class that lost six of seven gates; it is analysed and generalised in
+> **Revision 13 closes the contract across ALL of its surfaces, including the destructive
+> sink itself.** Revision 11 added the read-only boundary to the skill and left the clauses
+> that *consume* it, the policy that *authorizes* its outcome, the sink that must *refuse* an
+> unbound cascade, and the probes that *measure* the tooling on the previous contract.
+> Revision 12 closed every one of those surfaces except the last: the **skill-side** refusal
+> at the unbound sink, which it carried as open operator decision **`D-1`** because adopting
+> it narrows a pre-existing public mode. **The operator ADOPTED `D-1` on 2026-09-14.**
+> Revision 13 applies that adoption at **every** surface the closure invariant names —
+> producer, **every** consumer (including the actual invocation site, **CS16**), authority,
+> refusal, **compatibility/migration**, tests and probes — and closes `M-5` outright. That is
+> the single defect class that lost six of seven gates; it is analysed and generalised in
 > `docs/compound/workflow-issues/cross-artifact-contract-closure-requires-every-surface-2026-09-13.md`.
 > **§4.0 is the structural remedy**: one contract-surface matrix that must be closed before
 > any site is claimed complete. Every clause site now has pinned replacement wording, and
@@ -43,11 +49,11 @@ evidence: docs/plans/evidence/2026-09-12-task-only-shipment-finalization/probe25
 >
 > **GATE STATE — read this before acting on the plan.** The last plan-review gate that **RAN**
 > is **true-lineage attempt 7**, and it **FAILED** (P0 = 0, P1 = 27 raw / 15 deduplicated).
-> **Revision 12 is a PREPARED CANDIDATE for attempt 8. The attempt-8 gate has NOT been
-> invoked, no attempt-8 verdict exists, and attempt 8 is NOT authorized.** The attempt counter
-> is **not** reset by this reauthoring. `021-S` remains `queued` and **not claimable**, and
-> `017-S` remains blocked. See §13 and §13.1. Revision 12 also carries one **open operator
-> decision, `D-1`** (§3.4.3 J, §13.1).
+> **Revision 13 is the AUTHORIZED CANDIDATE for true-lineage attempt 8**, authorized by the
+> operator on 2026-09-14 together with the adoption of `D-1`. The attempt counter is **not**
+> reset by this reauthoring. `021-S` remains `queued` and **not claimable**, and `017-S`
+> remains blocked, until a gate that actually ran returns P0 = 0 **and** P1 = 0. See §13 and
+> §13.1. **Revision 13 carries NO open operator decision**: `D-1` is **ADOPTED** (§3.4.3 J).
 
 ## 1. Objective
 
@@ -65,10 +71,10 @@ requires descendants **at every depth**.
 
 | File | Change |
 |---|---|
-| `.github/agents/_ship.agent.md` | 10 clause sites (**CS1–CS9**, **CS15**, all mandatory) + 2 additive (**ADD-1**, **ADD-2**) |
+| `.github/agents/_ship.agent.md` | 11 clause sites (**CS1–CS9**, **CS15**, **CS16**, all mandatory) + 2 additive (**ADD-1**, **ADD-2**) |
 | `.github/policies/workflow-policies.md` | 1 clause site (**CS10**) — the P-010 `Ship MAY` grant |
-| `.github/skills/shipment-reconcile/SKILL.md` | 4 clause sites (**CS11–CS14**) — the read-only pre-mutation classification boundary (§3.4.3) |
-| `tests/integration/ship_feature_completion_contract_test.go` | **new** — 30-row table-driven contract test over the three instruction-surface files above |
+| `.github/skills/shipment-reconcile/SKILL.md` | 4 clause sites (**CS11–CS14**) — the read-only pre-mutation classification boundary **and, under the operator-adopted `D-1`, the refusal contract at the destructive sink** (§3.4.3) |
+| `tests/integration/ship_feature_completion_contract_test.go` | **new** — 33-row table-driven contract test over the three instruction-surface files above |
 
 **0 new production files.** Stage-authored planning artifacts (this plan, the Probe-25
 evidence, `docs/memory/`, `docs/decisions/`, `.backlogit/` records) are committed separately
@@ -98,11 +104,35 @@ operator selected (A)** on 2026-09-13. (B) is rejected in this plan because it c
 preventable destructive execution into an expected one and makes the restore path — itself the
 riskiest machinery here — load-bearing for the common case.
 
-The expansion is **surgical and additive**: one new **read-only** mode, one new Behavioral
-Constraint, one new optional `safe-close` input, and one scoping edit to the existing Step 0
-dispatch. **The four pre-existing public modes (`pre`, `post`, `safe-close`,
-`detect-mixed-role`) keep their current inputs, outputs and behaviour when invoked exactly as
-they are today**, asserted negatively by test rows 23b and 24b.
+The expansion is **surgical**, and — with exactly one operator-adopted exception — **additive**:
+one new **read-only** mode, one new Behavioral Constraint, one new optional `safe-close` input,
+and one scoping edit to the existing Step 0 dispatch.
+
+**The one non-additive change, and the authority for it (`D-1`, ADOPTED).** On **2026-09-14**
+the operator **explicitly adopted `D-1`** (§3.4.3 J): `mode: safe-close` invoked **without** a
+valid `classification_binding` now **refuses and halts before any mutation** instead of falling
+through to its legacy default close path. **This narrows a pre-existing public mode, and the
+operator authorized that scope expansion in this plan.** Revision 12 declined to self-authorize
+it and recorded it as an open blocker; revision 13 applies it under the operator's grant.
+
+**Everything else about the four pre-existing public modes is unchanged.** `pre`, `post` and
+`detect-mixed-role` keep their current inputs, outputs and behaviour exactly (row 24b), and
+`safe-close` keeps its mode name, its existing inputs, its Cascade Close Sub-Procedure, its
+protected-set computation and its steps 1–10 **unchanged** — what changes is solely **which
+invocations are allowed to reach them**. The narrowing is bounded to the Step 0 dispatch and
+is stated as an exhaustive refusal contract in §3.4.3 (J), with its migration contract in
+§3.4.3 (K). **No mode is renamed or removed, and no other mode is narrowed.**
+
+**The narrowing grants Ship no new authority**, so it requires **no** change to P-010 beyond
+CS10's §3.2 feature-completion grant and **no** change to Ship's Role Boundary beyond ADD-1.
+It only **removes** a path Ship was already forbidden to take (CS6). Its coherence with
+P-015 is measured, not assumed: P-015 mandates the single-artifact safe-close procedure as
+the **default** close path and requires a disqualified manifest to "fall back to the default
+safe-close prohibition" (measured ×2 at §13.6 **T-15**). That fallback **must stay reachable**,
+which is why the refusal contract is **branch-binding** rather than cascade-only: a binding
+whose bound verdict is `SAFE_CLOSE` still enters steps 1–10. A cascade-only refusal would have
+made P-015's own default path unreachable — the narrowing would have contradicted the policy it
+exists to enforce.
 
 > **Label note (traceability):** clause sites are **CS1–CS10** here. The archived plan called
 > them `C1`–`C8`; `CSn` ≡ `Cn` for n ≤ 8. Renamed because the Probe-25 criterion tokens are
@@ -218,10 +248,19 @@ logic and **stops** at the dispatch, returning the verdict instead of acting on 
    close call has been made at all**, so there is nothing to unwind (§3.5, §10.1).
 5. Only on `CASCADE` does Ship invoke **`mode: safe-close`**, passing the
    `CLASSIFICATION_BINDING` back. **Ship never invokes `mode: safe-close` without that
-   binding** (CS6) — an unbound invocation by Ship is a contract violation and HALTs.
-   Safe-close **revalidates** the binding against a freshly computed snapshot before any
-   mutation (§3.4.3 (E)), so the verdict Ship acted on is the verdict the mutation executes
-   under.
+   binding** (CS6, CS16) — an unbound invocation by Ship is a contract violation, and since
+   the operator adopted `D-1` it is additionally **refused by the skill itself** before any
+   mutation (§3.4.3 J). Safe-close **revalidates** the binding against a freshly computed
+   snapshot before any mutation (§3.4.3 (E)), so the verdict Ship acted on is the verdict the
+   mutation executes under.
+6. **Ship handles refusal before mutation, at every call site.** A returned
+   `RECONCILE_FAIL_CASCADE_UNBOUND`, `RECONCILE_FAIL_CLASSIFICATION_INVALID`,
+   `RECONCILE_FAIL_CLASSIFICATION_DRIFT` or `RECONCILE_FAIL_CLASSIFICATION_REFUSED` is a
+   **HALT with no mutation performed**. Ship re-runs `mode: classify-close-path` **only** on
+   drift, and returns to Stage on every other refusal. There are exactly **two** Ship sites
+   that invoke `mode: safe-close` — the Step 6.1(b) pointer (**CS16**) and the cascade
+   in-place-of pointer (**CS5**) — and **both** carry the binding and handle refusal
+   (§13.6 **T-13**).
 
 **`_ship.agent.md` MAY contain an output-validation allowlist of the installed CLOSE VERDICT
 tokens — `CASCADE`, `SAFE_CLOSE` and `BLOCK` — and nothing more.** It **MUST NOT** contain any
@@ -255,7 +294,7 @@ Identity is instead established by three independent, reproducible facts, all ve
 §9.2 check 7 against the **merge commit** confirmed at §9 step 6:
 
 ```text
-1. contract identity  := the 30-row test at {merge_sha} passes, including rows 21-24
+1. contract identity  := the 33-row test at {merge_sha} passes, including rows 21-24 and 33
                          (CS11-CS14) over .github/skills/shipment-reconcile/SKILL.md
 2. surface identity   := `git diff --name-only {merge_base}..{merge_sha}` intersected with
                          the tracked tree equals exactly the four files of section 2
@@ -371,55 +410,105 @@ therefore runs under the same lock that guards the mutation, which is the strong
 available without an engine-level transaction. **That remaining window is an inherited P-015
 residual, disclosed here and charged to the follow-up recorded in §10.3, not to this plan.**
 
-**(E) Mutation revalidates or consumes the binding.** `mode: safe-close` gains one
-**optional** input, `classification_binding`. When supplied, safe-close recomputes the
-binding from its own freshly loaded Step 0(a)/(b)/(c) snapshot **before any mutation** and:
+**(E) Mutation revalidates the binding, and the bound verdict alone selects the branch.**
+`mode: safe-close` gains one input, `classification_binding`. **Under the operator-adopted
+`D-1` it is REQUIRED, not optional** (see (J)). When supplied, safe-close recomputes the
+binding from its own freshly loaded Step 0(a)/(b)/(c) snapshot **before any mutation** and
+applies this **total** mapping — every input falls into exactly one row, and no row is a
+silent default:
 
-* **binding matches and the bound verdict is `CASCADE`** ⇒ proceed to the Cascade Close
-  Sub-Procedure as today;
-* **binding matches and the bound verdict is not `CASCADE`** ⇒ **HALT before any close
-  mutation**, returning `RECONCILE_FAIL_CLASSIFICATION_REFUSED`. Safe-close does **not** fall
-  through into its mutating steps 1–10 under a bound non-`CASCADE` verdict;
-* **binding does not match** ⇒ **HALT before any close mutation**, returning
-  `RECONCILE_FAIL_CLASSIFICATION_DRIFT`. The tree moved between classification and mutation;
-  the caller must reclassify.
+| Binding state | Bound verdict | Outcome | Token |
+|---|---|---|---|
+| **missing** (no `classification_binding` supplied) | — | **HALT before any mutation** | `RECONCILE_FAIL_CASCADE_UNBOUND` |
+| **invalid** (not a well-formed `v1` binding — wrong format line, not 64 lowercase hex, unparseable) | — | **HALT before any mutation** | `RECONCILE_FAIL_CLASSIFICATION_INVALID` |
+| **mismatched / stale** (recomputed digest ≠ supplied digest: tree moved, wrong shipment, edited classifier, swapped engine) | — | **HALT before any mutation** | `RECONCILE_FAIL_CLASSIFICATION_DRIFT` |
+| matches | `CASCADE` | proceed to the **Cascade Close Sub-Procedure**, as today | — |
+| matches | `SAFE_CLOSE` | continue to **steps 1–10**, as today | — |
+| matches | `BLOCK`, or any token outside the allowlist | **HALT before any mutation** | `RECONCILE_FAIL_CLASSIFICATION_REFUSED` |
 
-**(F) Backward compatibility — total for every existing caller, with one disclosed residual.**
-When `classification_binding` is **absent**, `mode: safe-close` behaves **exactly as it does
-today**, including its existing default fall-through to steps 1–10. No pre-existing public mode
-is narrowed, renamed or removed; no existing input or output changes. Asserted negatively by
-rows 23b and 24b.
+**The bound verdict is the sole branch selector.** Safe-close never re-derives the path and
+never falls through to a default. Under a matching binding it executes **the branch the
+classification named and no other**; under any non-matching, invalid, stale or missing binding
+it executes **nothing at all**.
 
-**The residual, stated plainly:** because the unbound path is preserved unchanged, a caller
-that invokes `mode: safe-close` **without** a binding on a fully-covered-root manifest can
-still reach the destructive `CASCADE` branch, exactly as it can today. **This plan closes that
-sink for the only caller it authorizes** — **CS6** forbids Ship from ever invoking
-`mode: safe-close` unbound, and row 4b makes that falsifiable. For any *other* caller the
-reachability is **pre-existing and unworsened by this plan**, which is the load-bearing
-scope test recorded in
-`docs/compound/2026-09-08-adversarial-review-empirical-verification-and-scope-check.md`.
-It is therefore disclosed here and carried as decision **`D-1`** below — not silently fixed,
-and not silently ignored.
+**Why the mapping is branch-binding rather than cascade-only.** Revision 12 stated that a
+matching binding whose verdict "is not `CASCADE`" halts. Applied to an adopted `D-1` that
+would make the **bound `SAFE_CLOSE` path unreachable**, and P-015 mandates exactly that path
+as the default close procedure and as the fallback for a disqualified manifest (§13.6
+**T-15**, measured ×2). The refusal must therefore discriminate `SAFE_CLOSE` from `BLOCK`,
+not lump them. This is the authority-coherence half of `D-1`'s closure.
 
-**(J) `D-1` — OPERATOR DECISION REQUIRED (not resolved by this revision).**
+**(F) Compatibility — NOT total, and stated as such.** `D-1` is adopted, so this plan
+**does** narrow a pre-existing public mode, and the honest statement of that is (J) and the
+migration contract in (K) — not a compatibility claim the contract no longer supports.
 
-> **Question:** should `mode: safe-close` **refuse** the `CASCADE` branch when no
-> `classification_binding` was supplied (`RECONCILE_FAIL_CASCADE_UNBOUND`), making the
-> read-only boundary **mandatory** at the destructive sink for *every* caller?
+* **Unchanged:** `mode: pre`, `mode: post` and `mode: detect-mixed-role` — inputs, outputs and
+  behaviour, asserted by row 24b. `mode: safe-close` keeps its **name**, its existing inputs
+  (`shipment_id`, `merge_commit_sha`), its Cascade Close Sub-Procedure, its protected-set
+  computation, its linked-deliberation snapshot extension and its steps 1–10, all unchanged.
+* **Narrowed, deliberately:** which invocations reach those steps. An invocation that supplies
+  no binding was previously served on a default path; it is now **refused**.
+* **The sink is closed for every caller, not only Ship.** Revision 12 closed it for Ship alone
+  (CS6) and disclosed the residual for any other caller. Revision 13 closes it **at the sink**,
+  so the residual is **eliminated rather than disclosed**, and Security's `SEC-11-03` closes.
+
+**(J) `D-1` — ADOPTED by the operator on 2026-09-14 (NORMATIVE).**
+
+> **Decision:** `mode: safe-close` invoked **without a valid `classification_binding`
+> REFUSES and fails closed** rather than falling through to mutation. The read-only
+> classification boundary is now **mandatory at the destructive sink for every caller**, not
+> only for Ship.
 >
-> **Why it is not decided here.** Doing so **narrows the behaviour of a pre-existing public
-> mode**. §2 records the operator-approved Option-A scope as *"surgical and additive"*, and the
-> attempt-7 Scope Boundary Auditor passed the fourth file on exactly that basis. Adopting the
-> narrowing is a **scope change to an operator-selected option**, and Stage cannot
-> self-authorize it.
->
-> **Cost of `D-1 = yes`:** one additional clause at CS13, one additional test row, and a
-> disclosed behaviour change for any unbound caller of `safe-close` anywhere in the workspace.
-> **Cost of `D-1 = no` (the revision-12 position):** the sink stays reachable for non-Ship
-> callers, unchanged from today, and Security's `SEC-11-03` remains **open as a disclosed
-> residual** rather than closed.
->
-> **This is a named, tracked blocker on the attempt-8 candidate**, not an omission. See §13.1.
+> **Authority.** This narrows a pre-existing public mode and therefore expands the
+> operator-approved Option-A scope recorded in §2. **The operator explicitly authorized that
+> scope expansion in this plan** on 2026-09-14. Revision 12 declined to self-authorize it and
+> recorded it as open blocker `D-1`; revision 13 applies it under the operator's grant. Stage
+> invented no permission (P-010 preserved).
+
+**The refusal contract, exhaustively (`R1`–`R5`).** These are the normative clauses CS13
+pins; §4.2 CS13 carries their verbatim wording and §6.1 rows 23a–23d and 33 make each one
+falsifiable. **Every one of them executes BEFORE the Step 0 dispatch bullets and therefore
+before any archive, any status transition and any record mutation.**
+
+| # | Condition | Outcome (all: zero mutation) | Token |
+|---|---|---|---|
+| **R1** | **missing** — no `classification_binding` supplied | HALT; enters neither the Cascade Close Sub-Procedure nor steps 1–10; releases any lock acquired | `RECONCILE_FAIL_CASCADE_UNBOUND` |
+| **R2** | **invalid** — not a well-formed `v1` binding | HALT | `RECONCILE_FAIL_CLASSIFICATION_INVALID` |
+| **R3** | **stale / mismatched** — recomputed digest ≠ supplied digest | HALT; the caller must reclassify | `RECONCILE_FAIL_CLASSIFICATION_DRIFT` |
+| **R4** | **matching but non-`SAFE_CLOSE`, non-`CASCADE`** bound verdict (`BLOCK` or any out-of-allowlist token) | HALT | `RECONCILE_FAIL_CLASSIFICATION_REFUSED` |
+| **R5** | **branch binding** — the bound verdict alone selects the branch: `CASCADE` ⇒ cascade sub-procedure, `SAFE_CLOSE` ⇒ steps 1–10 | the named branch only; no other branch is reachable under any binding | — |
+
+**`R1` is the `D-1` adoption itself.** `R2`–`R4` were already implied by revision 12's
+(E); `R5` is the correction that keeps P-015's default safe-close path reachable (§2,
+§13.6 T-15). **There is no legacy unbound fall-through left anywhere in the mode**, which is
+what makes `M-5` closed rather than half-closed.
+
+**(K) Migration contract — explicit, with no success-shaped fallback.**
+
+**Caller inventory, measured (§13.6 T-13).** `classification_binding` resolves **×0** in all
+three instruction surfaces today, so **every** current invocation of `mode: safe-close` is
+unbound by construction. The invoking call sites in this workspace are exactly **two**, both
+in `_ship.agent.md`: the Step 6.1(b) pointer at the `CS16` anchor, and the cascade
+in-place-of pointer at the `CS5` anchor. `workflow-policies.md`'s eight `safe-close` mentions
+are **policy prose, not invocations** — P-015 names the procedure, it does not call it.
+
+**How existing invocations are migrated.** Each caller inserts one read-only
+`mode: classify-close-path` call before its close call and passes the returned
+`CLASSIFICATION_BINDING` into it. In this plan that migration **is** CS16 and CS5, applied in
+the same change that narrows the mode (§7 ordering: the producer CS11–CS14 lands in **S1a**,
+the consumers CS3–CS6 and CS16 in **S1b**), so the workspace is never in a state where a
+narrowed sink has an unmigrated caller.
+
+**How non-migrated invocations are treated: REJECTED.** An unbound invocation is **refused,
+never served on a legacy path**. There is **no deprecation window, no grace period and no
+success-shaped fallback** — no compatibility flag, no environment override, no "warn and
+proceed", and no silent downgrade to steps 1–10. A caller outside this workspace that has not
+migrated receives `RECONCILE_FAIL_CASCADE_UNBOUND` and performs **zero mutation**; that is a
+**loud, safe failure**, and it is the intended outcome rather than a regression.
+
+**Blast radius, stated.** Any unbound caller anywhere in the workspace stops working at merge.
+That is the whole point of the adoption: the only behaviour removed is **destructive mutation
+under an unverified classification**.
 
 **(G) Independent invocability.** `mode: classify-close-path` is invocable by any caller —
 Ship, an operator, or a future gate — **without entering the mutating path**, exactly as
@@ -430,17 +519,26 @@ constraint.
 enumerated case returns **`BLOCK`** with a reason token, **never** a silent `SAFE_CLOSE`.
 This is the one behavioural difference from the internal Step 0(c) default, and it exists
 because a *refusal* and a *chosen safe path* must not share a token when a caller is
-expected to halt on one of them. Inside `mode: safe-close` with no binding supplied, the
-legacy default is preserved unchanged (F).
+expected to halt on one of them. **Under the adopted `D-1` the two modes' default branches
+now agree**: `classify-close-path` refuses with `BLOCK`, and `mode: safe-close` has no default
+branch left at all — an unbound invocation is refused by `R1` and a bound `BLOCK` by `R4` (J).
 
 **(I) Test-first obligations (`H0` red before `H1`).** The contract above is falsifiable by
-rows **21–24** of §6.1 and by the three `AC-33`…`AC-38` criteria:
+rows **21–24** and **33** of §6.1 and by the `AC-33`…`AC-38`, `AC-42` and `AC-45`…`AC-47`
+criteria:
 
 * **no mutation on a non-`CASCADE`/`BLOCK` result** — rows 22b and 23a pin the
   no-mutation clause and the bound-refusal HALT; `AC-35`;
 * **fully-covered-root `CASCADE`** — row 21b pins the `CASCADE` emission path against the
   unchanged Step 0(c) predicate; `AC-34`;
-* **safe-close case** — row 23b pins the preserved legacy fall-through; `AC-36`.
+* **bound safe-close case** — row 23b pins that steps 1–10 are reachable **only** under a
+  bound `SAFE_CLOSE` verdict, and that the legacy unconditional default is **gone**; `AC-36`;
+* **unbound refusal (`R1`, the `D-1` adoption)** — row 23c pins
+  `RECONCILE_FAIL_CASCADE_UNBOUND` together with the **zero-mutation** clause; `AC-42`;
+* **invalid binding (`R2`)** — row 23d; `AC-45`;
+* **migration, no success-shaped fallback (`K`)** — row 33; `AC-46`;
+* **every Ship call site is bound and handles refusal** — rows 31 (CS16) and 32 (CS6);
+  `AC-47`.
 
 ### 3.5 Release-instance execution contract (this plan only)
 
@@ -471,7 +569,7 @@ A context reload MUST NOT widen the authority envelope of the session performing
 session that merges this change **may not use the authority it introduces**; it checkpoints
 and ends.
 
-## 4. Clause inventory — 15 sites (all mandatory) + 2 additive
+## 4. Clause inventory — 16 sites (all mandatory) + 2 additive
 
 ### 4.0 Contract-surface matrix (NORMATIVE — the closure gate for this plan)
 
@@ -500,18 +598,23 @@ stayed on the previous contract revision. See
 | α2 | **consumer** | CS3 (`_ship.agent.md` L794) | *"unless the P-015 **VERIFIED FULLY-COVERED-ROOT EXCEPTION** below applies"* | §4.2 **CS3** | row **25** | α1 |
 | α3 | **consumer** | CS4 (L802–819) | 4 re-derived predicate sentences | §4.2 **CS4** | rows 7, 9a–9d | α1 |
 | α4 | **consumer** | CS5 (L822) | *"in place of the safe-close sequence above for this shipment's closure"* | §4.2 **CS5** | row **26** | α1, α3 |
-| α5 | **consumer** | CS6 (new bullet after CS4) | absent | §4.2 **CS6** | row **27** | α1, α3 |
+| α5 | **consumer** | CS6 (new bullet after CS4) | absent | §4.2 **CS6** | rows **27**, **32** | α1, α3 |
 | α6 | **consumer** | CS2 (L789–791) | `backlogit move <shipment_id> --status shipped` | §4.2 **CS2** | row 10 | α1 |
 | α7 | **authority grant** | CS10 (`workflow-policies.md` L241) | *"Claim shipments, move tasks to active/done, close shipments, archive completed items"* | §4.2 **CS10** | rows 20a, **28** | α2–α5 |
 | α8 | **authority grant** | ADD-1 (`_ship.agent.md` L38) | same bullet, Role Boundary row | §4.2 **ADD-1** | rows 1, 2a–2d | α7 (must match) |
 | α9 | **refusal — bound non-`CASCADE`** | CS13 (`SKILL.md` L509) | `SAFE_CLOSE selected` is the unconditional default (T-3) | §4.2 **CS13** clause 1 | row 23a | α1 |
 | α10 | **refusal — binding drift** | CS13 | absent | §4.2 **CS13** clause 1 | row 24a | α1 |
-| α11 | **refusal — unbound at the destructive sink** | **CS6** (Ship consumer) | unbound `safe-close` can reach `CASCADE` (L505–507) | §4.2 **CS6** — Ship MUST NOT invoke `safe-close` unbound. Skill-side closure is **deferred to decision `D-1`** (§3.4.3 J) | rows **27**, 23b | α1, α5 |
-| α12 | **refusal — unbound legacy safe path (PRESERVED)** | CS13 | `SAFE_CLOSE selected (default…)` ×1 | preserved **verbatim** | row 23b (preservation) | α9 |
+| α11 | **refusal — unbound at the destructive sink** | **CS13 clause 2** (`SKILL.md`) **+ CS6, CS16** (Ship consumers) | unbound `safe-close` falls through to the destructive default (T-3, L509); `classification_binding` ×0 in all three surfaces (T-13) | §4.2 **CS13 clause 2** — unbound ⇒ `RECONCILE_FAIL_CASCADE_UNBOUND`, zero mutation (`R1`, §3.4.3 J, **operator-adopted `D-1`**); §4.2 **CS6**/**CS16** on the Ship side | rows **23c**, **23b**, **31**, **32** | α1, α5, α18 |
+| α12 | **refusal — unbound legacy default (REMOVED by `D-1`)** | CS13 | `SAFE_CLOSE selected (default…)` ×1 — the sink | **removed**, not preserved: the dispatch bullet is re-scoped to a **bound** `SAFE_CLOSE` verdict | row **23b** (ABSENT old literal / PRESENT bound-only literal) | α9, α11 |
+| α12b | **refusal — invalid binding** | CS13 clause 1 | absent | §4.2 **CS13** clause 1 (`R2`) | row **23d** | α1 |
 | α13 | **refusal — mixed/ambiguous/torn** | CS12 (H) | Step 0(c) defaults these to `SAFE_CLOSE` | §4.2 **CS12** `BLOCK` clause | row 22c | α1 |
 | α14 | **consumer — scoping** | CS9 (L792) | *"proves the protected set and halts fail-closed…"* — false on the cascade path | §4.2 **CS9** | row 19 | α3 |
-| α15 | **tests** | §6.1 | 8 PRESENT needles satisfied by no pinned wording | every needle a **verbatim substring** of §4.2 | §6.1 derivation check | α1–α14 |
-| α16 | **probes** | §13.6 | T-1…T-8 | **T-9…T-12** added | §13.6 commands | — |
+| α15 | **tests** | §6.1 | 8 PRESENT needles satisfied by no pinned wording | every needle a **verbatim substring** of §4.2 | §6.1 derivation check | α1–α14, α17–α20 |
+| α16 | **probes** | §13.6 | T-1…T-8 | **T-9…T-15** added | §13.6 commands | — |
+| **α17** | **compatibility / migration** | **CS13 clause 3** + §3.4.3 (K) | no migration contract exists; `classification_binding` ×0 (T-13); no deprecation/grace/flag mechanism exists in the skill (T-14) | §4.2 **CS13 clause 3** — unbound invocations are **rejected, not defaulted**; no deprecation window, no grace period, **no success-shaped fallback** | row **33** | α11 |
+| **α18** | **authority grant — the operator adoption of the narrowing** | §2 scope paragraph + §3.4.3 (J) + §13.1 + `AC-42` | §2 at revision 12 read `surgical and [a]dditive`, which **withheld** permission for the narrowing | §2 records the **2026-09-14 operator adoption**; (J) is NORMATIVE, not a question | §13.4 **adoption probe** — the adoption is present at all **four** sites and the withholding wording is **absent** | — |
+| **α19** | **consumer — the actual invocation site** | **CS16** (`_ship.agent.md` L782–783) | Step 6.1(b) invokes `mode: safe-close` with `shipment_id` + `merge_commit_sha` only — **unbound** (T-13) | §4.2 **CS16** — carry the binding; an unbound invocation is refused and MUST NOT be attempted | row **31** | α1, α11 |
+| **α20** | **consumer — refusal handling before mutation** | **CS6** (extended) | Ship has no handling for any refusal token | §4.2 **CS6** — all four refusal tokens are a HALT with no mutation performed | row **32** | α11, α19 |
 
 **Contract C-β — "Ship may complete one covering feature `active -> done`."**
 
@@ -539,16 +642,24 @@ the following hold. Each is a countable check, not a judgement:
 
 1. every **producer** row (α1, β1, γ1) has **≥1 consumer** row depending on it;
 2. every **consumer** row that acts on an outcome has an **authority** row permitting that
-   action (α2–α6 → α7/α8; β2 → β3);
+   action (α2–α6, α19, α20 → α7/α8/**α18**; β2 → β3);
 3. every value in the producer's value set — `CASCADE`, `SAFE_CLOSE`, `BLOCK`, *unbound*,
-   *drifted* — has a **refusal or consumer** row (α9–α13);
+   *invalid*, *drifted* — has a **refusal or consumer** row (α9–α13, α12b);
 4. every row has **≥1 test row** whose PRESENT needle resolves **inside that row's own block**
    and is a **verbatim substring** of that row's pinned §4.2 wording — **never borrowed** from
    a neighbouring site;
 5. every claim about installed tooling has a **probe row** in §13.6 with command **and**
-   verbatim output.
+   verbatim output;
+6. **every non-additive change has an authority row naming its operator grant.** A narrowing,
+   removal or rename of a pre-existing public surface that carries no such row is
+   **unauthorized by construction** — this is the check that revision 12's `D-1` blocker
+   existed to respect and that revision 13 satisfies at **α18**.
 
-**Status at revision 12: CLOSED.** All 16 + 6 + 5 rows carry all four columns, and checks 1–5 were executed (not read for) against the final §6.1 table: **40 transition-row PRESENT needles, 40 verbatim substrings of §4.2, 0 failures**; 6 anchor/guard needles correctly excluded by their Provenance cell.
+**Status at revision 13: CLOSED.** All **21 α-rows + 6 β-rows + 5 γ-rows** carry all four
+columns, and checks 1–6 were executed (not read for) against the final §6.1 table. **Measured
+2026-09-14: 21 α-rows, 45 dependency edges, 0 unresolved; 50 transition needles checked for
+provenance, 0 failures; 28 Scope-A zero-guards, all 0.** The measured counts are recorded in
+§13.4 and re-run before every gate.
 The per-site needle map in §6.1 is the machine-readable form of check 4.
 
 ### 4.1 Clause site inventory (apply by anchor text)
@@ -576,9 +687,10 @@ a prior sweep.
 | **ADD-2** | `_ship.agent.md` | ``a0. **TOPOLOGY_GATE: lifecycle`` | **Step 6.1(a1)** — the covering-feature completion gate (§5), inserted **after** `a0` and **before** `a` |
 | **CS11** | `shipment-reconcile/SKILL.md` | ``\| `mode` \| yes \| `pre` \| `post` \| `safe-close` \| `detect-mixed-role` \|`` | Add **`classify-close-path`** to the mode enum; add the optional `classification_binding` input row for `safe-close` (§3.4.3 A, E) |
 | **CS12** | `shipment-reconcile/SKILL.md` | ``### Safe-Close Mode`` *(insertion point — the new section is inserted **immediately before** this heading)* | **NEW section** `### Classify-Close-Path Mode` — the read-only pre-mutation boundary (§3.4.3 B–D, G, H) |
-| **CS13** | `shipment-reconcile/SKILL.md` | ``* **SAFE_CLOSE selected** (default, including any classifier error,`` | **Scope the dispatch.** Insert the binding revalidation ahead of it and make the fall-through conditional on **no bound verdict** (§3.4.3 E, F). The unbound behaviour is preserved verbatim |
+| **CS13** | `shipment-reconcile/SKILL.md` | ``* **SAFE_CLOSE selected** (default, including any classifier error,`` | **Scope the dispatch and close the sink.** Insert the binding revalidation, the **operator-adopted `D-1` unbound refusal**, and the migration clause ahead of the dispatch bullets, and **replace** the unconditional default bullet with a **bound-`SAFE_CLOSE`-only** one (§3.4.3 E, J, K). The unbound fall-through is **removed, not preserved** |
 | **CS14** | `shipment-reconcile/SKILL.md` | ``* **`mode: detect-mixed-role` is strictly READ-ONLY.**`` | **NEW** Behavioral Constraint bullet, parallel to this one: `mode: classify-close-path` is strictly read-only and never reaches a close path |
 | **CS15** | `_ship.agent.md` | ``6. **Intake reconciliation check**: Invoke `shipment-reconcile` with `mode: pre` and`` | **ORDERING.** Move the intake reconciliation check so it runs **before** the shipment claim, while the manifest is still uniformly `queued`. Revision 11 stated this ordering in plan prose only (§9 step 1) while the installed file kept the check at item **6**, after the claim at item **4** — so the plan prescribed a sequence the installed agent did not perform. **PRESERVE** the adjacent `Scope note (139-F/139.001-T)` and the orphan scan verbatim (§4.2 CS15) |
+| **CS16** | `_ship.agent.md` | ``skill with `mode: safe-close`, `shipment_id`, and the`` | **THE ACTUAL INVOCATION SITE (Step 6.1(b)).** Measured unbound at `H0` (§13.6 **T-13**): it passes `shipment_id` and `merge_commit_sha` only. **Carry the `classification_binding` from the preceding `classify-close-path` call**, and state that an unbound invocation is refused by the skill. Without CS16, `D-1`'s adoption would leave Ship's primary close call refused at runtime — the consumer surface of the closure invariant |
 
 **CS7/CS8 MUST NOT state any per-item classification predicate — locational or
 declared-status.** This plan asserts nothing about the installed pre-mode's internal taxonomy;
@@ -626,7 +738,7 @@ enforces the split rather than papering over it:
 * **CS3** → *"**Do NOT call `backlogit shipment ship` / `backlogit_ship_shipment`** unless **`mode: classify-close-path` has already returned `CLOSE_PATH_VERDICT: CASCADE`** for this shipment. **HALT on any result token the installed classification did not name**, and HALT on `SAFE_CLOSE`, on `BLOCK`, and on any absent, empty, unparseable or ambiguous result."*
 * **CS4** → *"Close-path selection is **delegated**: **the `shipment-reconcile` skill's read-only `mode: classify-close-path` boundary selects the close path**, and Ship performs **no classification of its own** — no root or `parent_id` test, no coverage test, no per-member rule and no fallback rule. Ship validates the returned token against the fixed allowlist `CASCADE` / `SAFE_CLOSE` / `BLOCK` and does nothing else with it."*
 * **CS5** → *"Invoke the close path the boundary named, **carrying the returned `CLASSIFICATION_BINDING` into that call**, in place of any locally selected sequence for this shipment's closure."*
-* **CS6** → *"Ship invokes **only** the close path the returned verdict names, and **never a path absent from that verdict**. **Ship MUST NOT invoke `mode: safe-close` without a `classification_binding`**; an unbound safe-close invocation by Ship is a contract violation and HALTs."*
+* **CS6** → *"Ship invokes **only** the close path the returned verdict names, and **never a path absent from that verdict**. **Ship MUST NOT invoke `mode: safe-close` without a `classification_binding`**; an unbound safe-close invocation by Ship is a contract violation and HALTs. **Ship treats `RECONCILE_FAIL_CASCADE_UNBOUND`, `RECONCILE_FAIL_CLASSIFICATION_INVALID`, `RECONCILE_FAIL_CLASSIFICATION_DRIFT` and `RECONCILE_FAIL_CLASSIFICATION_REFUSED` as a HALT with no mutation performed**; it reclassifies only on drift and returns to Stage on every other refusal."*
 * **CS7** → *"This delegates the per-item check to the `shipment-reconcile` skill's
   `mode: pre` contract at the `expected_status` above and **defers every per-item status
   decision to that skill's `mode: pre` classification**, continuing **only** on an
@@ -671,9 +783,9 @@ enforces the split rather than papering over it:
   > 11-ID allowlist still **never** enter P-010 (rows 20b, 20c).
 * **CS11** → the mode cell becomes *"``pre`` \| ``post`` \| ``safe-close`` \|
   ``classify-close-path`` \| ``detect-mixed-role``"*, plus a new input row *"`classification_binding`
-  | no | safe-close only | digest returned by `mode: classify-close-path`; when present,
+  | **yes for `safe-close`** | safe-close only | digest returned by `mode: classify-close-path`; when present,
   safe-close revalidates it **before any mutation** and halts on drift or on a bound
-  non-`CASCADE` verdict"*.
+  non-`CASCADE` verdict; **when absent, safe-close refuses**"*.
 * **CS12** → the new section opens *"### Classify-Close-Path Mode (READ-ONLY, pre-mutation
   boundary)"* and states *"This mode **performs no archive, no status transition and no record
   mutation**, acquires no single-writer lock, and **stops at the Step 0 dispatch** — it never
@@ -682,19 +794,41 @@ enforces the split rather than papering over it:
   ``CLOSE_PATH_VERDICT: BLOCK`` with ``VERDICT_REASON``, ``VERDICT_EVIDENCE`` and
   ``CLASSIFICATION_BINDING`` (§3.4.3 C/D), and *"every unsupported, mixed, ambiguous, torn,
   missing or incompletely enumerated case returns `CLOSE_PATH_VERDICT: BLOCK`"*.
-* **CS13** → immediately before the preserved dispatch bullets, insert **two** clauses.
-  **Clause 1 (bound path):** *"**Bound-classification revalidation (before any mutation).**
-  When `classification_binding` is supplied, recompute the binding from the Step 0(a)/(b)/(c)
-  snapshot just taken. On mismatch, halt with `RECONCILE_FAIL_CLASSIFICATION_DRIFT`. On match,
-  **HALT before any close mutation when the bound verdict is not `CASCADE`**, with
-  `RECONCILE_FAIL_CLASSIFICATION_REFUSED`."*
-  **Clause 2 — NOT PART OF THIS REVISION'S NORMATIVE CONTRACT.** Closing the unbound
-  destructive sink *inside the skill* would narrow a pre-existing public mode and is therefore
-  outside the "surgical and additive" Option-A scope the operator approved. It is recorded as
-  **decision `D-1`** in §3.4.3 (J) and is **not** applied here. At revision 12 the sink is
-  closed **for the only consumer this plan authorizes** — Ship — by **CS6**.
-  The existing ``* **SAFE_CLOSE selected** (default, …`` bullet is **retained verbatim** and
-  re-scoped by a leading clause *"When no `classification_binding` was supplied —"*.
+* **CS13** → immediately before the dispatch bullets, insert **three** clauses, and **replace**
+  the unconditional default dispatch bullet.
+  **Clause 1 (bound path — revalidation, `R2`/`R3`/`R4`/`R5`):** *"**Bound-classification
+  revalidation (before any mutation).** When `classification_binding` is supplied, recompute
+  the binding from the Step 0(a)/(b)/(c) snapshot just taken. A value that is not a
+  well-formed `v1` binding halts before any close mutation with
+  `RECONCILE_FAIL_CLASSIFICATION_INVALID`. A recomputed digest that differs from the supplied
+  one halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_DRIFT`. On match
+  **the bound verdict alone selects the branch**: `CASCADE` enters the Cascade Close
+  Sub-Procedure, `SAFE_CLOSE` continues to step 1 below, and **every other bound verdict halts
+  before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_REFUSED`**."*
+  **Clause 2 (unbound path — the operator-adopted `D-1` refusal, `R1`, NORMATIVE):**
+  *"**Unbound invocations are rejected, not defaulted.** When no `classification_binding` is
+  supplied, `mode: safe-close` **halts before any close mutation with
+  `RECONCILE_FAIL_CASCADE_UNBOUND`**: it **performs zero archive, zero status transition and
+  zero record mutation**, enters neither the Cascade Close Sub-Procedure nor steps 1–10, and
+  releases any lock it acquired."*
+  **Clause 3 (migration, §3.4.3 K):** *"**Migration.** Every caller of `mode: safe-close`
+  migrates by invoking `mode: classify-close-path` first and passing the returned
+  `CLASSIFICATION_BINDING` into the close call. An invocation that does not is **refused,
+  never served on a legacy path**: there is **no deprecation window, no grace period and no
+  success-shaped fallback**."*
+  **The dispatch bullet is REPLACED, not preserved.** The pre-existing
+  ``* **SAFE_CLOSE selected** (default, including any classifier error,`` bullet becomes
+  *"* **SAFE_CLOSE selected** (bound verdict `SAFE_CLOSE` only) → continue to step 1 below"*,
+  because the unconditional default-ness it encoded **is** the sink that `D-1` closes.
+  Classifier errors, ambiguity and unresolved preconditions no longer land here: they are
+  `BLOCK` at the boundary (§3.4.3 B1/H) and `RECONCILE_FAIL_CLASSIFICATION_REFUSED` at the
+  sink (`R4`).
+* **CS16** (Step 6.1(b) invocation site, `_ship.agent.md`) → *"Invoke the
+  `shipment-reconcile` skill with `mode: safe-close`, `shipment_id`, the `merge_commit_sha`,
+  and the binding — **carrying the `classification_binding` from the preceding
+  `classify-close-path` call**. **An unbound safe-close invocation is refused by the skill**,
+  so it MUST NOT be attempted."* The adjacent pointer-level summary bullets are otherwise
+  **carried unchanged**; CS16 edits the invocation line and nothing else.
 * **CS15** → the Step 0.5 intake item is **relocated to run before the shipment claim**, and
   its opening sentence becomes *"**Intake reconciliation check — run BEFORE the claim.** Invoke
   `shipment-reconcile` with `mode: pre` and `expected_status: queued`, while every manifest
@@ -720,7 +854,7 @@ enforces the split rather than papering over it:
 
 ### 4.3 Dated ordinal observation (NON-NORMATIVE)
 
-Measured 2026-09-13 against `.github/agents/_ship.agent.md` (1111 lines),
+Measured 2026-09-14 against `.github/agents/_ship.agent.md` (1111 lines),
 `.github/policies/workflow-policies.md` and `.github/skills/shipment-reconcile/SKILL.md`
 (1082 lines). **These ordinals are an observation, not an
 invariant, and MUST NOT be used to locate a site.** They exist so a reviewer can spot-check
@@ -743,6 +877,7 @@ that each anchor resolves.
 | CS12 | 354 (`SKILL.md`, insertion point) |
 | CS13 | 509 (`SKILL.md`) |
 | CS14 | 245 (`SKILL.md`) |
+| CS16 | 782–783 |
 
 ## 5. Step 6.1(a1) — ordered, total, non-overlapping selector
 
@@ -816,14 +951,14 @@ carries **no path or location column**, and `backlogit get --json` exposes no pa
 duplicate is **invisible** to it. `backlogit_get_item` alone is equally insufficient — it
 returns one record and cannot reveal a second copy. **Only `backlogit doctor` closes this.**
 
-## 6. Go contract test — 30 rows
+## 6. Go contract test — 33 rows
 
 One table-driven function, ≤4 helpers, **stdlib assertions only** (`testing`, `strings`), no
 `testify`, reusing the package-level `repoRoot(t)` from `tests/integration/build_script_test.go`.
 **Every row names its own file** — there is no implicit default file — because the suite now
 spans three instruction surfaces and a needle legitimately present in one must be assertable
-absent in another. Rows 1–19 and 25–27, 29 read `.github/agents/_ship.agent.md`; rows 20 and 28
-read `.github/policies/workflow-policies.md`; rows 21–24 and 30 read
+absent in another. Rows 1–19, 25–27, 29, 31 and 32 read `.github/agents/_ship.agent.md`; rows
+20 and 28 read `.github/policies/workflow-policies.md`; rows 21–24, 30 and 33 read
 `.github/skills/shipment-reconcile/SKILL.md`.
 
 **Needle provenance rule (NON-NEGOTIABLE).** Every PRESENT needle in §6.1 is a **verbatim
@@ -858,19 +993,22 @@ red→green transition.
 | 20 | policy | **(CS10)** P-010's `Ship MAY` list carries the grant (20a), no `018.` literal (20b), no `021-`/`022-` literal (20c) | compound +/− |
 | **21** | skill | **(CS11/CS12)** the mode enum carries `classify-close-path` **in the enum cell** (21a) **and** the section emits all three verdict tokens (21b) | compound ++ |
 | **22** | skill | **(CS12)** the read-only clause (22a), the no-mutation clause (22b) **and** the fail-closed `BLOCK` clause (22c) are **PRESENT** | compound ++ |
-| **23** | skill | **(CS13)** the bound-refusal HALT is **PRESENT** (23a) **and** the legacy unbound fall-through bullet **SURVIVES** (23b) | compound + / preservation |
-| **24** | skill | **(CS14)** the drift token and the read-only Behavioral Constraint are **PRESENT** (24a) **and** the four pre-existing public mode names **SURVIVE** (24b) | compound + / preservation |
+| **23** | skill | **(CS13)** the bound-refusal HALT is **PRESENT** (23a), the legacy unconditional default bullet is **GONE** and the bound-only dispatch is **PRESENT** (23b), the **unbound** `D-1` refusal + zero-mutation clause are **PRESENT** (23c), the invalid-binding refusal is **PRESENT** (23d) | compound ++ / compound +/− |
+| **24** | skill | **(CS14)** the drift token and the read-only Behavioral Constraint are **PRESENT** (24a) **and** the four pre-existing public mode **names** **SURVIVE** (24b) | compound + / preservation |
 | **25** | ship | **(CS3)** the unknown-result-token HALT is **PRESENT** inside the `Do NOT call` bullet | positive |
 | **26** | ship | **(CS5)** the binding is **carried into** the close call | positive |
 | **27** | ship | **(CS6)** Ship **never** invokes `safe-close` unbound | positive |
 | **28** | policy | **(CS10)** the five conditions **and** the scoping clause are present **in `workflow-policies.md` itself** — the grant is self-contained at its own site | compound ++ |
 | **29** | ship | **(CS15)** intake reconciliation is ordered **before** the shipment claim | ordering |
 | **30** | skill | **(CS12)** the fully-covered-root `CASCADE` emission is pinned against the **unchanged** Step 0(c) predicate | positive |
+| **31** | ship | **(CS16)** the **actual Step 6.1(b) invocation** carries the binding, and the old unbound invocation literal is **ABSENT** | compound +/− |
+| **32** | ship | **(CS6)** Ship **handles every refusal token** as a HALT with no mutation performed | compound ++ |
+| **33** | skill | **(CS13 clause 3)** the migration contract is **PRESENT** and states **no success-shaped fallback** | compound ++ |
 
-**Kinds**: `compound +/−` = {10, 14, 15, 19, 20} (**5**); `compound ++` = {16, 21, 22, 28};
-`negative` = {7, 8, 9}; `preservation` = {17, 18, 23b, 24b}; `ordering` = {3, 29}.
+**Kinds**: `compound +/−` = {10, 14, 15, 19, 20, 23b, 31} (**7**); `compound ++` = {16, 21, 22,
+23c, 28, 32, 33}; `negative` = {7, 8, 9}; `preservation` = {17, 18, 24b}; `ordering` = {3, 29}.
 
-### 6.1 Pinned literals — ALL 30 rows (normative; single-line, CRLF-safe)
+### 6.1 Pinned literals — ALL 33 rows (normative; single-line, CRLF-safe)
 
 **Every row is pinned, every needle names its file, every mandatory clause site has at
 least one needle that resolves inside its own block, and every PRESENT needle names the §4.2
@@ -914,16 +1052,21 @@ current tree (H0) over the file named in the row.
 | **22a** | skill | CS12 | — | ``### Classify-Close-Path Mode`` | CS12 | 0 → RED |
 | **22b** | skill | CS12 | — | ``performs no archive, no status transition and no record mutation`` | CS12 | 0 → RED |
 | **22c** | skill | CS12 | — | ``every unsupported, mixed, ambiguous, torn, missing or incompletely enumerated case returns `CLOSE_PATH_VERDICT: BLOCK``` | CS12 | 0 → RED |
-| **23a** | skill | CS13 | — | ``HALT before any close mutation when the bound verdict is not `CASCADE``` **and** ``RECONCILE_FAIL_CLASSIFICATION_REFUSED`` | CS13 | 0 / 0 → RED |
-| **23b** | skill | CS13 | — | ``* **SAFE_CLOSE selected** (default, including any classifier error,`` — already ×1; **must stay ×1** (the legacy unbound path is preserved verbatim) | CS13 **(preserve)** | GREEN |
+| **23a** | skill | CS13 | — | ``every other bound verdict halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_REFUSED``` **and** ``the bound verdict alone selects the branch`` | CS13 clause 1 | 0 / 0 → RED |
+| **23b** | skill | CS13 | ``* **SAFE_CLOSE selected** (default, including any classifier error,`` (×1) | ``(bound verdict `SAFE_CLOSE` only)`` | CS13 **(dispatch replacement)** | 1 / 0 → RED |
+| **23c** | skill | CS13 | — | ``halts before any close mutation with `RECONCILE_FAIL_CASCADE_UNBOUND``` **and** ``performs zero archive, zero status transition and zero record mutation`` | CS13 clause 2 (**`D-1`**) | 0 / 0 → RED |
+| **23d** | skill | CS13 | — | ``halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_INVALID``` | CS13 clause 1 (`R2`) | 0 → RED |
 | **24a** | skill | CS14 | — | ``RECONCILE_FAIL_CLASSIFICATION_DRIFT`` **and** ``**`mode: classify-close-path` is strictly READ-ONLY.**`` | CS14 | 0 / 0 → RED |
-| **24b** | skill | guard | — | ``mode: detect-mixed-role`` ×≥1, ``mode: safe-close`` ×≥1, ``mode: pre`` ×≥1, ``mode: post`` ×≥1 — **all four pre-existing public modes must survive** | **(preserve)** | GREEN |
+| **24b** | skill | guard | — | ``mode: detect-mixed-role`` ×≥1, ``mode: safe-close`` ×≥1, ``mode: pre`` ×≥1, ``mode: post`` ×≥1 — **all four pre-existing public mode NAMES must survive** (`D-1` narrows one mode's admissible invocations; it removes and renames nothing) | **(preserve)** | GREEN |
 | **25** | ship | **CS3** | — | ``HALT on any result token the installed classification did not name`` | **CS3** | 0 → RED |
 | **26** | ship | **CS5** | ``in place of the safe-close sequence above for this shipment's`` (×1) | ``carrying the returned `CLASSIFICATION_BINDING` into that call`` | **CS5** | 1 / 0 → RED |
 | **27** | ship | **CS6** | — | ``Ship MUST NOT invoke `mode: safe-close` without a `classification_binding``` | **CS6** | 0 → RED |
 | **28** | policy | **CS10** | — | ``the descendant graph union the feature is set-equal to the manifest`` **and** ``scoped to the manifest of the shipment this session has claimed and whose live status is exactly `active``` — both **in `workflow-policies.md`** | **CS10** | 0 / 0 → RED |
 | **29** | ship | **CS15** | — | ``Intake reconciliation check — run BEFORE the claim`` **and** index(``Intake reconciliation check — run BEFORE the claim``) **<** index(``Record `shipment_id` as the session scope``) | **CS15** + **(anchor)** for the claim literal | 0 → RED |
 | **30** | skill | CS12 | — | ``CLOSE_PATH_VERDICT: CASCADE`` appears within the ``### Classify-Close-Path Mode`` section block (index-bounded, not whole-file) | CS12 | 0 → RED |
+| **31** | ship | **CS16** | ``skill with `mode: safe-close`, `shipment_id`, and the`` (×1) | ``carrying the `classification_binding` from the preceding`` **and** ``An unbound safe-close invocation is refused by the skill`` | **CS16** | 1 / 0,0 → RED |
+| **32** | ship | **CS6** | — | ``RECONCILE_FAIL_CASCADE_UNBOUND`` in **`_ship.agent.md`** **and** ``as a HALT with no mutation performed`` | **CS6** | 0 / 0 → RED |
+| **33** | skill | **CS13** | — | ``Unbound invocations are rejected, not defaulted`` **and** ``refused, never served on a legacy path`` **and** ``no deprecation window, no grace period and no success-shaped fallback`` | **CS13 clause 3** | 0 / 0 / 0 → RED |
 | — | ship | guard | ``018.`` in `_ship.agent.md` — already ×0; **must stay ×0** | — | — | GREEN |
 
 **Independent falsifiability — every mandatory site owns at least one needle that no other
@@ -937,16 +1080,17 @@ borrowed**:
 | **CS3** | **row 25** | the `Do NOT call backlogit shipment ship` bullet | **no** — was row 9d (a CS4 row) at rev 11 |
 | CS4 | rows 4, 7, 9a–9d | the delegation block and its four survivor sentences | no |
 | **CS5** | **row 26** | the close-sequence pointer | **no** — was row 10 (a CS2 row) at rev 11 |
-| **CS6** | **row 27** | the new delegation bullet | no |
+| CS6 | rows 27, **32** | the new delegation bullet | no |
 | CS7 | rows 14, 18 | the intake clause | no |
 | CS8 | rows 15, 17 | the pre-archive clause | no |
 | CS9 | row 19 | the protected-set bullet | no |
 | CS10 | rows 20a, 28 | `workflow-policies.md` | no |
 | CS11 | rows 21a, 21c | the Inputs `classification_binding` row and the mode enum cell | no |
 | CS12 | rows 21b, 22a, 22b, 22c, 30 | the new section | no |
-| CS13 | rows 23a, 23b | the Step 0 dispatch | no |
+| CS13 | rows 23a, 23b, 23c, 23d, 33 | the Step 0 dispatch and its three inserted clauses | no |
 | CS14 | rows 24a, 24b | Behavioral Constraints | no |
 | **CS15** | **row 29** | Step 0.5 intake ordering | no |
+| **CS16** | **row 31** | the Step 6.1(b) invocation line | **no** |
 | ADD-1 | rows 1, 2a–2d | the Role Boundary row | no |
 | ADD-2 | rows 3, 12, 13, 16a, 16b | Step 6.1(a1) | no |
 
@@ -960,33 +1104,45 @@ legitimately **present** in `SKILL.md`, which is why every row names its file.
 
 | Class | Rows | H0 state |
 |---|---|---|
-| **Transition rows** — must change | 1, 2a–2d, 3–7, 9a–9d, 10–16b, 19, 20a, 21a, 21b, 21c, 22a–22c, 23a, 24a, 25–30 (**36 assertions**) | **RED.** None can be vacuously green |
-| **Guard rows** — must NOT change | 8, 17, 18, 20b, 20c, 23b, 24b, and the `_ship.agent.md` `018.` guard (**8**) | **GREEN today, by design.** They assert a property that already holds and must survive |
+| **Transition rows** — must change | 1, 2a–2d, 3–7, 9a–9d, 10–16b, 19, 20a, 21a, 21b, 21c, 22a–22c, 23a, 23b, 23c, 23d, 24a, 25–33 (**44 assertions**) | **RED.** None can be vacuously green |
+| **Guard rows** — must NOT change | 8, 17, 18, 20b, 20c, 24b, and the `_ship.agent.md` `018.` guard (**7 assertions**) | **GREEN today, by design.** They assert a property that already holds and must survive |
 
 **The guard rows are green at H0 and that is correct** — their purpose is to fail if the
 implementation *breaks* something, not to record a transition. Row 3's `a1` anchor is absent
-pre-implementation **by design**; that absence is the H0 readiness guard. Rows 23b and 24b are
-the **backward-compatibility guards for Option A**: they fail if the fourth-file edit narrows
-or removes any pre-existing public mode or the legacy unbound fall-through (§3.4.3 F).
+pre-implementation **by design**; that absence is the H0 readiness guard.
 
-**Rows 23b/24b are substring-survival guards, and that is their stated limit.** They prove the
-mode *names* and the legacy dispatch *bullet* survive; they do **not** prove the surrounding
-semantics are unchanged. Semantic backward compatibility is carried instead by §3.4.3 (F)'s
-normative statement and by §3.4.3 (B1)'s exhaustive mapping, which shows every divergent case
-is a **default-branch token change only**, never a predicate change and never a case moving
-*into* `CASCADE`. Claiming more from a substring guard than it can deliver is the defect class
-this plan exists to stop.
+**Row 23b changed class at revision 13, and that change is the `D-1` adoption made
+falsifiable.** At revision 12 it was a *preservation* guard asserting the legacy unbound
+fall-through bullet survived ×1. Under the adopted `D-1` that bullet **must not survive**, so
+23b is now a **transition** row: the unconditional default literal is pinned **ABSENT** and
+the bound-only dispatch literal **PRESENT**. **A plan that adopted `D-1` while leaving 23b a
+preservation guard would assert the sink is closed and simultaneously test that it is still
+open** — precisely the stale-surface defect §4.0 exists to prevent.
 
-**Only the transition rows constitute the red → green evidence** for AC-3/AC-8/AC-24/AC-33.
-Do not read the guard rows as proof the contract changed.
+**Row 24b survives unchanged, and its scope is now explicit.** It guards the four public mode
+**names**, and `D-1` removes no mode and renames none — it narrows which invocations of one
+mode are admissible. Backward compatibility is **no longer claimed as total** (§3.4.3 F); what
+is claimed is stated in §3.4.3 (F)/(J)/(K) and tested by rows 23b, 23c, 24b and 33 together.
 
-**Independently re-measured at revision 12** (commands in §13.4 and §13.6): every ABSENT
+**Rows 24b and 23b are substring assertions, and that is their stated limit.** They prove the
+mode *names* survive and that the default dispatch bullet is gone; they do **not** prove the
+surrounding semantics. Semantic behaviour is carried by §3.4.3 (E)'s total mapping, (J)'s
+`R1`–`R5` refusal contract and (B1)'s exhaustive condition→verdict mapping. Claiming more from
+a substring guard than it can deliver is the defect class this plan exists to stop.
+
+**Only the transition rows constitute the red → green evidence** for
+AC-3/AC-8/AC-24/AC-33/AC-42. Do not read the guard rows as proof the contract changed.
+
+**Independently re-measured at revision 13** (commands in §13.4 and §13.6): every ABSENT
 needle above resolves ×1 and every PRESENT needle ×0 in the live tree; `TASK_ONLY_FINALIZE`
 ×0; `018.` ×0 in both `_ship.agent.md` and `workflow-policies.md`; `021-` and `022-` ×0 in
 `workflow-policies.md`; `scans for orphan items` ×2; `Scope note (139-F/139.001-T)` ×1;
 `record-consistent` ×0 in `_ship.agent.md` (it is **added**, not preserved);
-`classify-close-path` ×0 and `CLOSE_PATH_VERDICT` ×0 in **all three** instruction surfaces;
-`* **SAFE_CLOSE selected** (default, including any classifier error,` ×1 in `SKILL.md`;
+`classify-close-path` ×0, `CLOSE_PATH_VERDICT` ×0 and **`classification_binding` ×0** in
+**all three** instruction surfaces (§13.6 **T-13**);
+`* **SAFE_CLOSE selected** (default, including any classifier error,` ×1 in `SKILL.md` — the
+literal row 23b now pins **ABSENT**; `skill with \`mode: safe-close\`, \`shipment_id\`, and the`
+×1 in `_ship.agent.md` — the literal row 31 now pins **ABSENT**;
 `Intake reconciliation check` ×1 in `_ship.agent.md`, currently at item 6, **after** the
 claim at item 4 (the CS15 defect, measured). `repoRoot(t)` exists at package scope in
 `tests/integration/build_script_test.go`; `testify` is absent from `go.mod`.
@@ -1000,12 +1156,17 @@ claim at item 4 (the CS15 defect, measured). `repoRoot(t)` exists at package sco
 
 ## 7. Ordering
 
-**Test-first, `main` stays green.** H0: write the 30-row test → **red**. H1: apply ADD-1,
-ADD-2 and **CS1–CS15** → **green**. All fifteen clause sites are required to reach H1.
+**Test-first, `main` stays green.** H0: write the 33-row test → **red**. H1: apply ADD-1,
+ADD-2 and **CS1–CS16** → **green**. All sixteen clause sites are required to reach H1.
 
-**Within H1, the fourth file lands first.** `CS11–CS14` (the classification boundary) are
-applied before `CS3–CS6` (the delegation that consumes it), so `_ship.agent.md` never names a
-mode the installed skill does not expose — the exact defect class `J-5`/`K-1` recorded twice.
+**Within H1, the fourth file lands first.** `CS11–CS14` (the classification boundary **and the
+`D-1` refusal contract**) are applied before `CS3–CS6` and **CS16** (the delegation and the
+invocation site that consume it), so `_ship.agent.md` never names a mode the installed skill
+does not expose — the exact defect class `J-5`/`K-1` recorded twice.
+**The reverse order is additionally forbidden by `D-1`:** narrowing the sink in S1a while
+CS16 still invokes it unbound in S1b would leave the workspace, between the two, with a
+refused primary close path. §9 sequences both inside the **same** implementation PR, so no
+merged state ever has a narrowed sink with an unmigrated caller (§3.4.3 K).
 This is also the **S1a/S1b session boundary** (§14), not merely a mid-task checkpoint.
 
 **Then the consumers, then the authority, then the ordering.** The §4.0 dependency column
@@ -1107,10 +1268,10 @@ else). Verified against §3.2.1's set-equality rule.
 | 0a | **Stage** | Probe 25 authored, executed, committed. **DISCHARGED.** `021-S` not claimable until PASSing |
 | 1 | **S1** | **Step 0.5 Shipment Intake.** Verify on `main`; **P-011** branch-before-mutation + **P-016** single-worktree check; pre-claim topology gate; **intake `mode: pre` with `expected_status: queued` — run BEFORE the claim, while the manifest is uniformly `queued` and therefore representable (§9.3)**; then **claim `021-S`**. **This ordering is enforced by the `CS15` clause edit (§4.1/§4.2), not by this row.** The installed `_ship.agent.md` runs intake at Step 0.5 item **6**, *after* the claim at item **4**; a plan row alone cannot change what Ship executes, so `CS15` physically relocates the intake bullet above the claim bullet and row 29 of §6.1 asserts the resulting index ordering |
 | **1a** | S1 | **POST-CLAIM CONDITION — `022-F` must be `active` (checked, not assumed).** Re-read `022-F` **by a single `backlogit_get_item` record read** and require its live status to be **exactly `active`**. **This is NOT a manifest-wide `mode: pre` invocation** — see §9.3. **Any other value ⇒ HALT** and return to Stage. **Ship is granted NO authority to transition a feature `queued -> active`** — §3.2 grants exactly one transition, `active -> done`. *(Live state at planning time is `queued`; the shipment claim is what is expected to activate it. If it does not, that is a planning-state error only Stage can reconcile.)* |
-| **1b** | S1 | **Step 2 Harness Generation (P-002 / P-004).** The **harness-architect** produces the 30-row harness: `go vet ./...` exits 0, `go test ./...` exits non-zero with expected failure markers ⇒ **H0 RED CONFIRMED** ⇒ `harness-ready` applied to `022.001-T`. **This precedes the TASK claim** — P-002 permits claiming a task only after red-phase confirmation |
+| **1b** | S1 | **Step 2 Harness Generation (P-002 / P-004).** The **harness-architect** produces the 33-row harness: `go vet ./...` exits 0, `go test ./...` exits non-zero with expected failure markers ⇒ **H0 RED CONFIRMED** ⇒ `harness-ready` applied to `022.001-T`. **This precedes the TASK claim** — P-002 permits claiming a task only after red-phase confirmation |
 | **1c** | S1 | **Step 3 Build Ready Queue** — filtered to tasks carrying `harness-ready` |
 | **1d** | S1 | **Step 4.1 Claim Task** — `022.001-T -> active` |
-| 2 | S1 | **Step 4.2 implement** → apply **CS11–CS14 first** (§7, end of **S1a**), then ADD-1, ADD-2, **CS1–CS10 and CS15** in the §4.0 dependency order → **H1 green** (**S1b**) |
+| 2 | S1 | **Step 4.2 implement** → apply **CS11–CS14 first** (§7, end of **S1a**), then ADD-1, ADD-2, **CS1–CS10, CS15 and CS16** in the §4.0 dependency order → **H1 green** (**S1b**) |
 | 3 | S1 | Quality gates; review gate |
 | 4 | S1 | Complete Task — commit the implementation, then **`022.001-T -> done`**, then **commit the resulting `.backlogit/` change** and verify a clean worktree. **Both commits must be in the PR that merges at step 5** — otherwise merged `main` still shows the task `queued` and a1 halts at step 13 |
 | 5 | S1 | PR lifecycle — gates, build, push, PR, **P-018 Copilot engagement**, operator approval, **merge** |
@@ -1127,7 +1288,7 @@ else). Verified against §3.2.1's set-equality rule.
 | **13a** | S2 | **PRE-CASCADE BASELINE COMMIT (mandatory).** Commit a1's `.backlogit/` mutation **on the existing closure branch** — no new branch, no new worktree. **`{pre_cascade_sha}` := this commit.** Then satisfy §10.3 step 1 **against this commit**: verify `git status --porcelain -- .backlogit/queue/ .backlogit/archive/` is **empty**, and capture `{pre_paths}` from that clean baseline per §10.3.1. **Without 13a the trees are dirty from step 13 and the cascade MUST NOT be invoked** |
 | 14 | S2 | **Pre-mode**, `expected_status: done`. **Every manifest member declares `done` at this point** (`022-F` by step 13, `022.001-T` by step 4), so the single `expected_status` is representable (§9.3). **Requires an authoritative `PROCEED`**; anything else HALTs |
 | **14a** | S2 | **CLASSIFICATION BOUNDARY (read-only, pre-mutation).** Invoke **`mode: classify-close-path`** with `shipment_id: 021-S`. **This call mutates nothing.** Read `CLOSE_PATH_VERDICT`. **Anything other than `CASCADE` ⇒ HALT HERE, with no close call made at all** (§3.5); record `VERDICT_REASON` + `VERDICT_EVIDENCE` and return to Stage. On `CASCADE`, carry `CLASSIFICATION_BINDING` forward to step 15 |
-| 15 | S2 | **Invoke `mode: safe-close`** (§3.4.1) **passing `classification_binding` from 14a**. Safe-close **revalidates the binding before any mutation** (§3.4.3 E) and halts on drift (`RECONCILE_FAIL_CLASSIFICATION_DRIFT`) or on a bound non-`CASCADE` verdict (`RECONCILE_FAIL_CLASSIFICATION_REFUSED`); otherwise the pre-existing Cascade Close Sub-Procedure runs. P-007 archive-integrity verify; post-mode. **Capture `{post_paths}` immediately on return, before any commit or cleanup** (§10.3.1). **The cascade output is committed ONLY after every postcheck passes** (§10.3) |
+| 15 | S2 | **Invoke `mode: safe-close`** (§3.4.1) **passing `classification_binding` from 14a** (the **CS16** invocation site). Safe-close **revalidates the binding before any mutation** (§3.4.3 E) and halts with **zero mutation** on an invalid binding (`RECONCILE_FAIL_CLASSIFICATION_INVALID`), on drift (`RECONCILE_FAIL_CLASSIFICATION_DRIFT`), on a bound out-of-allowlist verdict (`RECONCILE_FAIL_CLASSIFICATION_REFUSED`) or — since `D-1` is adopted — on an **unbound** invocation (`RECONCILE_FAIL_CASCADE_UNBOUND`). **Every one of those four is a HALT that returns to Stage with no mutation performed** (CS6); only drift permits a re-run of step 14a. Otherwise the pre-existing Cascade Close Sub-Procedure runs. P-007 archive-integrity verify; post-mode. **Capture `{post_paths}` immediately on return, before any commit or cleanup** (§10.3.1). **The cascade output is committed ONLY after every postcheck passes** (§10.3) |
 | 16 | S2 | Operational closure → `docs/closure/`; P-020 compact-context — on the closure branch, before the closure PR is pushed |
 | 17 | S2 | Sync — **MCP `backlogit_sync_index` first**, CLI `backlogit sync` as declared fallback — then push, closure PR, **P-018 Copilot engagement**, local review, operator approval, **merge**. **Verify the merge strategy here too** — `git rev-list --parents -n 1` must return three fields — for the same §10.4 reason as step 6 (`M-13`) |
 | 18 | S2 | Return to `main`; pull |
@@ -1225,7 +1386,7 @@ is **unchanged**; only the *position* of the write moves later.
    > — per §3.4, this plan depends only on the **outcome** `PROCEED`.
 
 7. **Classifier identity (§3.4.2)** — the three post-merge facts, all verified against the
-   merge commit confirmed at step 6: (a) the 30-row contract test passes at `{merge_sha}`,
+   merge commit confirmed at step 6: (a) the 33-row contract test passes at `{merge_sha}`,
    **including rows 21–24 over `.github/skills/shipment-reconcile/SKILL.md`**; (b)
    `git diff --name-only {merge_base}..{merge_sha}` intersected with the tracked tree equals
    exactly the four files of §2; (c)
@@ -1547,13 +1708,14 @@ syntactically but **not to an applicable action**, because step 13a is a `021-S`
 
 1. **AC-1** Role Boundary carries the §3.2 grant with all five conditions, fail-closed.
 2. **AC-2** Step 6.1(a1) exists, positioned after `a0` and immediately before `a`.
-3. **AC-3** All **fifteen** clause sites CS1–CS15 are applied; **every one of them has at
+3. **AC-3** All **sixteen** clause sites CS1–CS16 are applied; **every one of them has at
    least one pinned needle in §6.1 that resolves inside its own block, and no site is credited
    by a needle belonging to another site** (CS1 → rows 5/6/11; CS2 → row 10; **CS3 → row 25**;
-   CS4 → rows 4/7/9a–9d; **CS5 → row 26**; **CS6 → row 27**; CS7 → rows 14/18;
+   CS4 → rows 4/7/9a–9d; **CS5 → row 26**; **CS6 → rows 27/32**; CS7 → rows 14/18;
    CS8 → rows 15/17; CS9 → row 19; CS10 → rows 20a/**28**; CS11 → rows 21a/**21c**;
-   CS12 → rows 21b/22a/22b/**22c**/**30**; CS13 → rows 23a/23b; CS14 → rows 24a/24b;
-   **CS15 → row 29**); the **30-row** test passes; H0 was red. **Every PRESENT needle is a
+   CS12 → rows 21b/22a/22b/**22c**/**30**; CS13 → rows 23a/**23b**/**23c**/**23d**/**33**;
+   CS14 → rows 24a/24b; **CS15 → row 29**; **CS16 → row 31**); the **33-row** test passes;
+   H0 was red. **Every PRESENT needle is a
    verbatim substring of the §4.2 pinned wording for its own site** (the §6.1 Provenance
    column), so every transition row is satisfiable by applying §4.2 alone.
 4. **AC-4** `_ship.agent.md` states **no classification predicate** — all four re-derived
@@ -1673,10 +1835,13 @@ syntactically but **not to an applicable action**, because step 13a is a `021-S`
     matching binding whose verdict is not `CASCADE`, **HALTs before any close mutation** with
     `RECONCILE_FAIL_CLASSIFICATION_REFUSED` rather than falling through to steps 1–10
     (row 23a). Both are independently falsifiable.
-36. **AC-36** **(safe-close case + backward compatibility)** With **no** `classification_binding`
-    supplied, `mode: safe-close` behaves exactly as today, including its legacy default
-    fall-through, and all four pre-existing public modes survive unchanged. Rows 23b and 24b
-    pass. No existing caller is broken and no public mode is narrowed or removed.
+36. **AC-36** **(bound safe-close case + the bounded compatibility claim)** `mode: safe-close`
+    reaches its steps 1–10 **only** under a matching binding whose bound verdict is exactly
+    `SAFE_CLOSE` (row 23b PRESENT); the legacy unconditional default dispatch is **removed**
+    (row 23b ABSENT). All four pre-existing public mode **names** survive, and `pre`, `post`
+    and `detect-mixed-role` are behaviourally unchanged (row 24b). **Backward compatibility is
+    NOT claimed as total** — §3.4.3 (F) states exactly what is preserved and what is narrowed,
+    and (K) states how unbound callers are migrated or rejected.
 37. **AC-37** **(K-6)** `mode: pre` is invoked at exactly **two** sites (§9 steps 1 and 14),
     each over a **uniform** manifest with a representable single `expected_status`; **no
     manifest-wide pre-mode invocation occurs in the mixed window `[1a, 13)`**; step 1a is a
@@ -1707,13 +1872,16 @@ syntactically but **not to an applicable action**, because step 13a is a `021-S`
     inline** and is **self-contained**: it contains no unresolvable pointer such as "the five
     conditions below", and its scoping clause limits the grant to the manifest of the
     shipment the session has claimed and whose live status is exactly `active` (rows 2d, 28).
-42. **AC-42** **(M-5, D-1)** The **in-scope** half of the unbound-sink defect is closed: CS6
-    forbids Ship from invoking `mode: safe-close` without a `classification_binding`
-    (row 27). The **skill-side** narrowing — making an unbound `safe-close` refuse rather than
-    fall through — is recorded in §3.4.3 (J) as operator decision **`D-1`**, **explicitly
-    NOT adopted**, because it would narrow a pre-existing public mode and contradict §2's
-    operator-approved additive scope. **This plan does not claim the sink is closed at the
-    skill.**
+42. **AC-42** **(M-5 / `D-1`, ADOPTED — the sink is closed at the sink)** `mode: safe-close`
+    invoked **without a valid `classification_binding` refuses and fails closed**: it halts
+    with `RECONCILE_FAIL_CASCADE_UNBOUND` and **performs zero archive, zero status transition
+    and zero record mutation**, entering neither the Cascade Close Sub-Procedure nor steps
+    1–10 (row **23c**). The legacy unbound fall-through is **removed**, not preserved
+    (row 23b ABSENT). The refusal contract is exhaustive over missing, invalid, stale,
+    mismatched and non-allowlisted bound verdicts (`R1`–`R5`, §3.4.3 J; rows 23a, 23c, 23d).
+    **The operator adopted this narrowing on 2026-09-14** and §2 records that grant, so the
+    scope expansion is authorized rather than self-granted (§4.0 closure check 6, row α18).
+    `M-5` is **CLOSED**, not partially fixed, and Security's `SEC-11-03` closes with it.
 43. **AC-43** **(M-16, Scope T)** §5's S4 handles the **full `backlogit move` exit-code
     contract** measured at §13.6 T-10 — `0` proceed, `6` `A1_MOVE_BLOCKED`, `7`
     `A1_MOVE_CONFIG_ERROR`, `8` `A1_MOVE_BUSY`, any other value HALT — and **never** passes
@@ -1724,36 +1892,64 @@ syntactically but **not to an applicable action**, because step 13a is a `021-S`
     disturbance of `PA-021-CASCADE` condition 3. **No second task is created**, because a
     second task would become a depth-1 live descendant of `022-F` and break the recorded
     set-equality.
+45. **AC-45** **(`R2`, invalid binding)** A `classification_binding` that is not a well-formed
+    `v1` binding halts before any close mutation with
+    `RECONCILE_FAIL_CLASSIFICATION_INVALID` (row 23d). A malformed binding is never treated as
+    an absent one, and never as a matching one.
+46. **AC-46** **(compatibility / migration, §3.4.3 K)** The plan states explicitly how existing
+    invocations are migrated — one preceding `mode: classify-close-path` call whose
+    `CLASSIFICATION_BINDING` is carried into the close call — and that a non-migrated
+    invocation is **refused, never served on a legacy path**, with **no deprecation window, no
+    grace period and no success-shaped fallback** (row 33). The caller inventory is
+    **measured**, not assumed (§13.6 T-13): `classification_binding` ×0 in all three surfaces
+    and exactly two Ship invocation sites, both migrated by CS16 and CS5 in the same change.
+47. **AC-47** **(every consumer is bound and handles refusal)** **Both** Ship sites that invoke
+    `mode: safe-close` carry the binding: the Step 6.1(b) invocation (**CS16**, row 31) and the
+    cascade in-place-of pointer (**CS5**, row 26). Ship handles all four refusal tokens as a
+    **HALT with no mutation performed** before any mutation (**CS6**, row 32). **No Ship call
+    site reaches the destructive sink unbound**, and none proceeds past a refusal.
 
 ## 13. Gate state
 
 ```text
-plan-review-attempt: 7
+plan-review-attempt: 8
 dispatch_mode: multi-agent
 decision: FAIL
 P0: 0
-P1: 27
+P1: 26
 personas: 7/7
 anchor: architecture-strategist gpt-5.6-sol high
 authorization: SPENT
 
-next-attempt: 8
-next-attempt-state: CANDIDATE PREPARED — NOT RUN
+next-attempt: 9
+next-attempt-state: NOT AUTHORIZED — no candidate
 next-attempt-authorization: NOT GRANTED
 ```
 
-> **Read the two blocks above as one fact: the last gate that RAN is attempt 7 and it
-> FAILED.** Revision 12 is a **prepared candidate** for attempt 8. **No attempt-8 gate has
-> been invoked, no attempt-8 verdict exists, and no attempt-8 authorization has been
-> granted.** The counter is **not** reset and revision 12 does **not** carry a PASS, a
-> PENDING or any other marker implying a gate ran.
+> **Read the block above as one fact: the last gate that RAN is attempt 8 and it FAILED.**
+> Attempt 8 ran on 2026-09-14 over revision 13 under the operator's single-invocation
+> authorization, which is now **SPENT**. `P0 = 0`; `P1 = 26 raw / 14 deduplicated`. The full
+> verdict is `docs/reviews/2026-09-13-true-lineage-attempt-8-verdict.md`. **Attempt 9 is NOT
+> authorized and no revision 14 candidate exists**; the counter is not reset.
+>
+> **The `D-1` adoption is not why attempt 8 failed.** Every persona that addressed it found the
+> narrowing operator-authorized rather than self-granted, found that it *removes* destructive
+> reachability, and independently confirmed `CS16` is a necessary consequence rather than scope
+> creep. **Attempt 8 failed because the defect class relocated rather than closing**: revision 13
+> carried `D-1` through §3.4.3, §4.0 and §6.1 and left §4.2 `CS11`/`CS3`, `AC-35`, §13.4's bounded
+> table and `T-13`'s measurement scope on the prior contract. That is the reappearance the
+> compound learning's stop rule names, and it is why no attempt 9 was opened.
 >
 > **Revision 11 resolved `K-1`…`K-7`** under explicit operator selection of **Option A**, but
 > closed only the **producer** surface; attempt 7 then returned 27 raw / 15 deduplicated P1
 > findings, all on the consumer, authority, refusal, test and measurement surfaces that
-> revision 11 left stale. **Revision 12 is the root remediation of that defect class**, not a
-> further patch: see §4.0 and
-> `docs/compound/workflow-issues/cross-artifact-contract-closure-requires-every-surface-2026-09-13.md`.
+> revision 11 left stale. **Revision 12 was the root remediation of that defect class** and
+> closed 14 of 15 themes, leaving `M-5` half-closed behind operator decision `D-1`.
+> **Revision 13 adopts `D-1`** — see §3.4.3 (J)/(K), §4.0 rows α11, α12, α12b, α17–α20, rows
+> 23b/23c/23d/31/32/33, and
+> `docs/compound/workflow-issues/cross-artifact-contract-closure-requires-every-surface-2026-09-13.md`
+> — **and attempt 8 found the same class resident on the verification and measurement surfaces**
+> (`N-1`…`N-14` in the attempt-8 verdict).
 >
 > The attempt-6 verdict, its per-persona counts and the `K-1`…`K-7` blocker set remain
 > recorded in `docs/reviews/2026-09-13-true-lineage-attempt-6-verdict.md`; the attempt-7
@@ -1764,17 +1960,17 @@ next-attempt-authorization: NOT GRANTED
 | Field | Value |
 |---|---|
 | **Plan `status:`** | `planned` |
-| **Revision** | **12** — reauthored, not patched |
-| **True-lineage attempt (last RUN)** | **7** — the counter continues across every reauthoring and is **not** reset |
-| **Gate decision (last RUN)** | **FAIL** — P0 = 0, P1 = 27 raw / 15 deduplicated, 7/7 personas. See `docs/reviews/2026-09-13-true-lineage-attempt-7-verdict.md` |
-| **Attempt 8** | **CANDIDATE PREPARED, NOT RUN.** Revision 12 is review-ready in Stage's judgement; **the gate has not been invoked and is not authorized** |
-| **Harvest-ready** | **NO** — the rule requires P0 = 0 **and** P1 = 0 from a gate that actually ran. The last run had P1 = 27. No harvest and no shipment assembly were performed |
-| **`021-S`** | `queued` — **not claimable**. Unchanged by revision 12 |
+| **Revision** | **13** — reauthored, not patched |
+| **True-lineage attempt (last RUN)** | **8** — the counter continues across every reauthoring and is **not** reset |
+| **Gate decision (last RUN)** | **FAIL** — P0 = 0, P1 = **26 raw / 14 deduplicated**, 7/7 personas, anchor `gpt-5.6-sol` high. See `docs/reviews/2026-09-13-true-lineage-attempt-8-verdict.md` |
+| **Attempt 9** | **NOT AUTHORIZED, no candidate.** The 2026-09-14 authorization covered exactly one gate invocation and is **SPENT**. `N-1`…`N-14` in the attempt-8 verdict are open and **were deliberately not remediated in this session** |
+| **Harvest-ready** | **NO.** Requires a gate that actually ran returning P0 = 0 **and** P1 = 0; attempt 8 ran and returned P1 = 14 deduplicated |
+| **`021-S`** | `queued` — **not claimable.** Attempt 8 returned P1 = 14 deduplicated |
 | **`017-S`** | `queued`, dependency `[021-S]` — ineligible until `021-S` ships, **and** separately ineligible until an `017-S` closure plan exists (§11.1) |
-| **`PA-021-CASCADE`** | recorded, **unexercised**; **manifest unchanged at `[022-F, 022.001-T]`**, so the approval is **not** re-scoped by revision 12 and needs no re-authorization. §11 condition 7 is satisfied **by measurement** (§13.6 T-11), which is why `M-11` required no re-scope |
+| **`PA-021-CASCADE`** | recorded, **unexercised**; **manifest unchanged at `[022-F, 022.001-T]`**, so the approval is **not** re-scoped by revision 13 and needs no re-authorization. §11 condition 7 is satisfied **by measurement** (§13.6 T-11), which is why `M-11` required no re-scope |
 | **`PA-017-CASCADE`** | recorded, **unexercised**, **held in escrow** (§11.1) |
-| **Open blocker `D-1`** | **OPEN — operator decision required.** Whether `mode: safe-close` invoked **without** a `classification_binding` should refuse instead of falling through. Narrowing it would contradict §2's operator-approved additive Option-A scope, so this plan does **not** adopt it (§3.4.3 J, AC-42). Ship-side exposure is closed by CS6; the skill-side sink remains reachable by any **other** caller |
-| **Authorization (revision 12)** | Operator instruction of 2026-09-13/14 authorizing a **compound-learning and root-cause pass before attempt 8**, the durable learning under `docs/compound/workflow-issues/`, root remediation of this plan and the coupled backlog records, and any surgical planning-surface expansion needed to describe Option A coherently. **It explicitly does NOT authorize spending true-lineage attempt 8.** |
+| **`D-1`** | **CLOSED — ADOPTED by the operator 2026-09-14**, and **not a cause of the attempt-8 failure** (no persona found it self-authorized; `CS16` was independently confirmed necessary). `mode: safe-close` refuses an invocation without a valid `classification_binding` and performs zero mutation (§3.4.3 J, `R1`–`R5`; AC-42). The narrowing is authorized in §2; migration is contracted in §3.4.3 (K). **No open operator decision remains on this plan** |
+| **Authorization (revision 13)** | Operator instruction of 2026-09-14: **ADOPT `D-1`** (expanding Option A to narrow `mode: safe-close` at the skill) and **authorize TRUE-LINEAGE ATTEMPT 8**, exactly once. It does **not** authorize attempt 9, implementation of the skill/runtime change, a shipment claim, or a merge |
 
 **Lineage (compact — narrative deliberately not restated inline):**
 
@@ -1787,12 +1983,13 @@ next-attempt-authorization: NOT GRANTED
 | 5 | 9 | FAIL (`J-1`…`J-18`) |
 | 6 | 10 | FAIL (`K-1` P0 + `K-2`…`K-7` P1) |
 | 7 | 11 | FAIL — P0 = **0** (K-1 P0 closed; K-4, K-5 closed), P1 = 27 raw / 15 deduped (`M-1`…`M-15`). Option A applied to the skill side only; CS3–CS6, CS10, the unbound sink, the tests and the measurement probes were not brought along |
-| **8** | **12** | **NOT RUN.** Candidate prepared under the §4.0 closure invariant. Awaiting explicit operator authorization |
+| 12 | — | **No gate.** Root remediation of the closure-invariant defect class; 14/15 themes closed, `M-5` half-closed behind open decision `D-1` |
+| **8** | **13** | **FAIL** — P0 = **0**, P1 = 26 raw / **14** deduped (`N-1`…`N-14`). `D-1` ADOPTED and sound; the same closure-invariant defect class **relocated** to the verification and measurement surfaces (§4.2 `CS11`/`CS3`, `AC-35`, `AC-39`, §13.4, `T-13`). See `docs/reviews/2026-09-13-true-lineage-attempt-8-verdict.md` |
 
 > The counter reflects **plan-review lineage, which follows the plan, not the filename or the
-> revision number.** Revisions 1–3 and 8 carried no gate of their own. A counter reset was
-> corrected at attempt 5 and is **not** re-reset by this reauthoring. **Revision 12 adds no
-> attempt.**
+> revision number.** Revisions 1–3, 8 and 12 carried no gate of their own. A counter reset was
+> corrected at attempt 5 and is **not** re-reset by this reauthoring. **Revision 13 adds no
+> attempt beyond the single authorized attempt 8.**
 
 ### 13.2 Audit pointers (lineage lives in Git, not in this file)
 
@@ -1820,21 +2017,21 @@ resolves it.
 **A finding is closed by a landing site, never by the disappearance of the text that carried
 it.**
 
-### 13.3 Findings dispositions at revision 12
+### 13.3 Findings dispositions at revision 13
 
 **Attempt-7 findings (`M-1`…`M-15`, the 15 deduplicated themes) — dispositions.** The exact
 source is `docs/reviews/2026-09-13-true-lineage-attempt-7-verdict.md`. **Every row names a
 landing site or an explicit blocker; none is closed by assertion.**
 
-| Ref | Theme | Disposition at revision 12 |
+| Ref | Theme | Disposition at revision 13 |
 |---|---|---|
 | **M-1** | CS3–CS6 still delegate to the mutation-coupled `safe-close` Step 0(c) verdict, so the Option-A boundary has no consumer | **ROOT-FIXED.** §4.1 retargets all four sites to `mode: classify-close-path`; §4.2 pins replacement wording for each (previously **none** of CS1–CS6 was pinned); §6.1 rows 4, 25, 26, 27 give each its own needle; §4.0 C-α rows α2–α5 make the producer→consumer edge mechanical. AC-27. |
 | **M-2** | `CLASSIFICATION_BINDING` under-specified — two implementations could disagree; residual window undisclosed | **ROOT-FIXED.** §3.4.3 (D) now gives the full canonical serialisation — field order, `\x1f` intra-tuple delimiter, `shipment_id`, verdict, reason, skill digest, engine version — and **discloses** the recompute→mutate residual window instead of denying it. AC-38. |
-| **M-3** | Needle coverage incomplete; several sites creditable by an edit elsewhere | **ROOT-FIXED.** §6.1 is 30 rows; the independent-falsifiability table shows **no borrowed needles** (CS3 moved off row 9d, CS5 off row 10); every mandatory site owns ≥1 needle in its own block. AC-3. |
-| **M-4** | §6 assertion table and §6.1 literal table disagreed on row count and content | **ROOT-FIXED.** Both are now **30 rows** and generated against the same inventory; §4.0 closure check 4 requires every matrix row's verification to resolve to a numbered §6.1 row. |
-| **M-5** | Unbound `mode: safe-close` still falls through to the destructive path — the sink is open | **PARTIALLY FIXED + NAMED BLOCKER `D-1`.** The **in-scope** half is closed: CS6 forbids **Ship** from invoking `safe-close` without a binding (row 27). The **skill-side** narrowing is **not adopted** — it would narrow a pre-existing public mode and exceed §2's operator-approved additive scope. Recorded as operator decision `D-1` in §3.4.3 (J) and §13.1. AC-42. |
+| **M-3** | Needle coverage incomplete; several sites creditable by an edit elsewhere | **ROOT-FIXED.** §6.1 is 33 rows; the independent-falsifiability table shows **no borrowed needles** (CS3 moved off row 9d, CS5 off row 10); every mandatory site owns ≥1 needle in its own block. AC-3. |
+| **M-4** | §6 assertion table and §6.1 literal table disagreed on row count and content | **ROOT-FIXED.** Both are now **33 rows** and generated against the same inventory; §4.0 closure check 4 requires every matrix row's verification to resolve to a numbered §6.1 row. |
+| **M-5** | Unbound `mode: safe-close` still falls through to the destructive path — the sink is open | **CLOSED AT THE SINK (revision 13).** `D-1` was **ADOPTED** by the operator on 2026-09-14. §3.4.3 (J) makes the unbound refusal normative (`R1`, `RECONCILE_FAIL_CASCADE_UNBOUND`, zero mutation); §4.2 **CS13 clause 2** pins its wording; rows **23c** (refusal + zero-mutation) and **23b** (legacy default literal now **ABSENT**) make it falsifiable; **CS16** and **CS6** migrate and refusal-handle both Ship call sites (rows 31, 32); §3.4.3 (K) contracts the migration (row 33); §2 records the authority; §13.6 **T-13/T-14/T-15** measure the transition is executable. `AC-42`, `AC-45`–`AC-47` |
 | **M-6** | CS10's P-010 wording pointed at "the five conditions below", which do not exist in `workflow-policies.md` | **ROOT-FIXED.** §4.2 CS10 now renders **all five conditions inline** in `workflow-policies.md` and adds the shipment-active scoping clause; rows 2d and 28 assert both, **in that file**. AC-41. |
-| **M-7** | `022.001-T` exceeds the 2-hour rule at 15 clause sites + 30 test rows | **ROOT-FIXED WITHOUT A MANIFEST CHANGE.** §14 restructures the work into **S1a / S1b / S2**. A second *task* was rejected deliberately: it would become a depth-1 live descendant of `022-F`, break §3.2.1 set-equality and **void `PA-021-CASCADE` condition 3**. AC-44. |
+| **M-7** | `022.001-T` exceeds the 2-hour rule at 16 clause sites + 33 test rows | **ROOT-FIXED WITHOUT A MANIFEST CHANGE.** §14 restructures the work into **S1a / S1b / S2**. A second *task* was rejected deliberately: it would become a depth-1 live descendant of `022-F`, break §3.2.1 set-equality and **void `PA-021-CASCADE` condition 3**. AC-44. |
 | **M-8** | Scope T never probed `doctor`, feature `active -> done`, or classifier behaviour | **ROOT-FIXED BY MEASUREMENT.** §13.6 adds **T-9** (`doctor`), **T-10** (`move` exit codes), **T-11** (linked-deliberation set), **T-12** (mode/classifier surface), each with command and verbatim output. |
 | **M-9** | §13.5 attributes to a cited compound doc a "weaker reading" that document does not contain | **ROOT-FIXED.** The source was re-read; it teaches *reproduce installed-behaviour claims* and *scope-check against `main`*, and contains **no** count-scope reading at all. §13.5 bullet 1 is corrected to cite what it actually says. |
 | **M-10** | §3.4.3 (B) claimed the classifier reproduces Step 0(c) "verbatim" while also assigning `BLOCK` to cases Step 0(c) handles differently | **ROOT-FIXED.** §3.4.3 (B) is rewritten and **(B1)** adds an exhaustive condition→verdict mapping showing every divergence is a **default-branch token change only** — never a predicate change, never a case moving *into* `CASCADE`. AC-5, row 22c. |
@@ -1886,8 +2083,8 @@ landing site or an explicit blocker; none is closed by assertion.**
 |---|---|
 | **J-10** protected-set claim in the CS2→CS3 gap | **CS9** (new anchored site) + **§4**'s switch to anchor-addressed sites, which removes ordinal gaps as a class. Test row 19. |
 | **J-11** never-prune allowlist lost 1 of 3 elements | **§9.1** names all three explicitly. AC-26. |
-| **J-12** AC-3 claimed test coverage for sites without needles | **AC-3** now enumerates the needle for **every** CS1–CS15 site; §6.1 pins all **30** rows. |
-| **J-13** only 9 of 18 rows pinned | **§6.1** pins **all 30 rows**, both polarities, with H0 counts. |
+| **J-12** AC-3 claimed test coverage for sites without needles | **AC-3** now enumerates the needle for **every** CS1–CS16 site; §6.1 pins all **30** rows. |
+| **J-13** only 9 of 18 rows pinned | **§6.1** pins **all 33 rows**, both polarities, with H0 counts. |
 | **J-14** backlog records append-only | All four records **reauthored to clean current state** in the same commit as this revision. |
 | **J-15** classifier byte-identity unverified | **§3.4.2** + **§9.2 check 7**. The revision-10 blob pin is **withdrawn** (§8.1) because Option A puts the file inside the implementation surface; identity is now established by contract identity, surface identity and working identity against the reviewed merge commit. AC-29. |
 | **J-16** condition-2 manifest vs full-graph ambiguity | **§3.2.1** — full live descendant graph at every depth, plus set equality with the manifest. AC-30. |
@@ -1901,7 +2098,7 @@ only two scopes while asserting facts about a **third**. There are **three disti
 here and a count is meaningless without naming which one it is.
 
 * **Scope I — the implementation surface (instruction files)**: `_ship.agent.md` ∪
-  `workflow-policies.md` ∪ `shipment-reconcile/SKILL.md`. This is what the **30-row** test
+  `workflow-policies.md` ∪ `shipment-reconcile/SKILL.md`. This is what the **33-row** test
   asserts over. **All Scope-I counts live in §6.1**, pinned per row, and are not restated here.
 * **Scope A — the artifact set**: `{this plan}` ∪ `{021-S, 017-S, 022-F, 022.001-T}` — five
   files. This is what the reauthoring had to clean.
@@ -1961,16 +2158,36 @@ foreach ($rx in $patterns) {
 | `10 [A]NCHOR` | **0** | the revision-10 clause count survived a record (`K-1`) |
 | `14 [s]ites` | **0** | the **revision-11** clause count survived anywhere (`M-12` added CS15) |
 | `14 [c]lause` | **0** | same, long form |
+| `15 [s]ites` | **0** | the **revision-12** clause count survived anywhere (`T-13` added CS16) |
+| `15 [c]lause sites` | **0** | same, long form. The trailing `sites` is **required**: a bare `15 [c]lause` collides with `P-015 clause 1` (§3.3), and a guard that matches an unrelated policy citation is a false alarm, not a measurement |
 | `20 [r]ows` | **0** | the revision-10 row count survived anywhere (`K-1`) |
 | `24 [r]ows` | **0** | the **revision-11** row count survived anywhere (`M-3`, `M-4`) |
+| `30 [r]ows` | **0** | the **revision-12** row count survived anywhere (`D-1` added rows 23c/23d/31/32/33) |
+| `30-[r]ow` | **0** | same, hyphenated form |
 | `step [1]6` | **0** | the mis-anchored `PA-021-CASCADE` execution site survived (`K-4`) |
 | `attempt [6]` | **0** | a stale gate-lineage claim survived (`K-1`) |
 | `§4.[1] Pinned` | **0** | a pre-renumber pointer to the pinned-wording section survived (revision 12 moved it to §4.2) |
 | `MUST NOT enum[e]rate` | **0** | withdrawn `H-6` wording survived |
 | `without touching this [f]ile again` | **0** | withdrawn `H-5` wording survived |
+| `OPERATOR DECISION [R]EQUIRED` | **0** | the withdrawn revision-12 `D-1` framing survived after the operator adopted it |
+| `surgical and [a]dditive` | **0** | §2's pre-adoption scope wording survived and would contradict the authorized narrowing (**α18**) |
+| `[n]ot adopted` | **0** | the revision-12 non-adoption of `D-1` survived in plan **or** records |
+| `[O]pen blocker` | **0** | a blocker the operator has since closed survived as open |
 
-*Measured 2026-09-13 at revision 12 over the five Scope-A files; every row above returned
+*Re-measured 2026-09-14 at revision 13 over the five Scope-A files; every row above returned
 exactly the stated **0**.*
+
+**The last four rows are the `α18` authority probe.** They are the executable verification
+that §4.0's **closure check 6** (every non-additive change carries an authority row naming its
+operator grant) is satisfied **by removal of the withholding wording**, not merely by adding
+the grant. A revision that added "`D-1` is adopted" while leaving `surgical and [a]dditive`,
+`OPERATOR DECISION [R]EQUIRED`, `[n]ot adopted` or `[O]pen blocker` resident somewhere would
+authorize and withhold the same narrowing in one artifact — the exact
+contradiction-relocation pattern the compound learning names. **Every guard in this section is
+written with a bracketed character class for the same reason `TASK_ONLY_FINALIZE` is: so that
+this table, and the prose describing it, cannot satisfy its own guard.** **Positive presence**
+of the adoption is measured separately: `D-1` adoption wording must resolve **≥1** in each of
+§2, §3.4.3 (J), §13.1 and `AC-42`.
 
 **Bounded, not zero — and deliberately so:**
 
@@ -1978,9 +2195,11 @@ exactly the stated **0**.*
 |---|---|---|
 | `re[v]ision 9` | **2** | both are §13.2 audit-pointer rows. **No normative use.** |
 | `re[v]ision 10` | **bounded** | the §0 supersession banner and the explicit "what the superseded revision did and why it changed" contrast notes (§3.4.2, §9.2 check 7, §9.3, §10.3.2, §13.3). **Every one is a historical contrast; none is a governing pointer.** |
-| `re[v]ision 11` | **bounded** | the immediately superseded revision, named only in supersession banners, §13.1's lineage table and §13.3's disposition cells explaining what revision 11 left open. **Never a governing pointer.** |
-| `re[v]ision 12` | **≥ 6** | the current governing revision, named in the plan and in **all four** records. |
-| `attempt [7]` | **bounded** | the last gate that **ran**, in the plan and in all four records. |
+| `re[v]ision 11` | **bounded** | the revision that closed only the producer surface, named only in supersession banners, §13.1's lineage table and §13.3's disposition cells. **Never a governing pointer.** |
+| `re[v]ision 12` | **bounded** | the immediately superseded revision, named in supersession banners, the lineage table, and the "what revision 12 left open and why" contrast notes (§2, §3.4.3 E/F/J, §4.0, §6.1, §13.3, §13.6 T-13). **Every one is a historical contrast; none is a governing pointer.** |
+| `re[v]ision 13` | **≥ 6** | the current governing revision, named in the plan and in **all four** records. |
+| `attempt [7]` | **bounded** | the last gate that ran **before** attempt 8, in the plan and in all four records. |
+| `attempt [8]` | **bounded** | the single authorized gate of this revision, in the plan, the verdict artifact and all four records. |
 | `attempt [8]` | **≥ 6** | the **prepared, unauthorized** candidate. **Every occurrence must be qualified by `NOT RUN`, `candidate`, or `awaiting authorization`** — an unqualified occurrence would misrepresent gate state and is itself a defect. |
 | `30 [r]ows` | **≥ 6** | the current row count: plan sites (§5, §6, §6.1, §7, §13.3, §14) + `022-F` + `022.001-T`. |
 | `15 [s]ites` | **≥ 6** | the current clause-site count, in the plan and in the two work records. |
@@ -2027,7 +2246,7 @@ command, the verbatim output and, where the artifact is a file, its digest.** No
 elsewhere in this plan is admissible unless it resolves here.
 
 **Capture moment**: 2026-09-13, on branch `chore/stage-pipeline-policy-gap` at the tree that
-carries revision 12, **before any `H1` edit**. `T-1`–`T-8` were captured at the revision-11 tree and **re-verified unchanged** at revision 12 — no implementation edit has occurred, so the `H0` tool tree is byte-identical; `T-9`–`T-12` are **new at revision 12** and are the `M-8` remediation.
+carries revision 13, **before any `H1` edit**. `T-1`–`T-8` were captured at the revision-11 tree and **re-verified unchanged** at revisions 12 and 13 — no implementation edit has occurred, so the `H0` tool tree is byte-identical; `T-9`–`T-12` are new at revision 12 and are the `M-8` remediation; `T-13`–`T-15` are **new at revision 13** and are what made the `D-1` adoption executable rather than asserted. **Re-run 2026-09-14 at revision 13: `classification_binding` ×0 in all three instruction surfaces; all four `RECONCILE_FAIL_*` tokens ×0; `classify-close-path` and `CLOSE_PATH_VERDICT` ×0; the CS13 dispatch sink ×1; `### Safe-Close Mode` ×1; the CS16 unbound Ship invocation ×1. The `H0` tree still exposes no bound path, so every transition row is genuinely red.**
 
 ```powershell
 # T-1..T-4  installed skill: identity, mode inventory, dispatch behaviour
@@ -2060,6 +2279,20 @@ Select-String -Path .backlogit/queue/022-F.md,.backlogit/queue/022.001-T.md -Pat
 backlogit query "SELECT COUNT(*) FROM items WHERE artifact_type='deliberation';"
 # T-12  intake ordering actually installed in Step 0.5 (the CS15 defect)
 Select-String -Path .github/agents/_ship.agent.md -Pattern 'Intake reconciliation check','Record `shipment_id` as the session scope'
+# T-13  the D-1 migration inventory: every safe-close CALL SITE, and the binding's absence
+Select-String -Path .github/agents/_ship.agent.md -Pattern 'skill with `mode: safe-close`, `shipment_id`, and the'
+foreach ($f in '.github/agents/_ship.agent.md','.github/policies/workflow-policies.md',
+               '.github/skills/shipment-reconcile/SKILL.md') {
+  "{0} classification_binding x{1}" -f (Split-Path $f -Leaf), (Select-String -Path $f -Pattern 'classification_binding' -AllMatches).Count }
+# T-14  is the D-1 transition executable against the installed file?
+$f='.github/skills/shipment-reconcile/SKILL.md'
+(Select-String -Path $f -Pattern '\* \*\*SAFE_CLOSE selected\*\* \(default, including any classifier error,').Count
+(Select-String -Path $f -Pattern '^### Safe-Close Mode$').Count
+(Select-String -Path $f -Pattern 'deprecation window|grace period|compatibility flag|--force-unbound|ALLOW_UNBOUND' -AllMatches).Count
+(Select-String -Path $f -Pattern 'RECONCILE_FAIL_CASCADE_UNBOUND' -AllMatches).Count
+# T-15  P-015 requires the BOUND SAFE_CLOSE path to stay reachable (the R5 constraint)
+Select-String -Path .github/policies/workflow-policies.md -Pattern 'falls back to the default safe-close prohibition' -AllMatches
+Select-String -Path .github/policies/workflow-policies.md -Pattern 'in place of the single-artifact safe-close procedure' -AllMatches
 ```
 
 | ID | Tooling claim made by this plan | Where claimed | Measured value (verbatim) |
@@ -2076,17 +2309,24 @@ Select-String -Path .github/agents/_ship.agent.md -Pattern 'Intake reconciliatio
 | **T-10** | **`backlogit move` routes through a gate broker with a non-binary exit contract** that a1's S4 must handle | §5 S4, AC-43, `M-8`/`M-16` | `move --help` documents: exit **0** success, **6** `blocked by gates`, **7** `configuration/setup error`, **8** `retryable error`. `--force-gates` exists but **requires `--force-reason`** and is documented operator-only. `--json` emits a machine-readable gate outcome. **The help text scopes the broker to *"task/subtask completions"*; behaviour for `artifact_type: feature` is undocumented**, so §5 S4 fail-closes against the **superset** and handles all four codes for the `022-F` move |
 | **T-11** | **The validated linked-deliberation set for the `021-S` manifest is EMPTY**, so the cascade archives nothing outside the manifest | §11 cond. 7, `M-11` | Three independent measurements agree. (1) `backlogit link list` ⇒ **`[]`** for `022-F`, `022.001-T` **and** `018-F`. (2) The engine's own linked-deliberation pattern `\b(?:DL\d+\|[0-9]+(?:\.[0-9]+)*-DL)\b` ⇒ **0 matches** across all three records. (3) No record carries `source_deliberation_id`, and `SELECT COUNT(*) … artifact_type='deliberation'` ⇒ **null / zero rows — the workspace contains no deliberation artifacts at all**. **This closes `M-11` by measurement and required no re-scope of `PA-021-CASCADE`** |
 | **T-12** | **The installed Step 0.5 runs the intake check AFTER the claim**, contradicting §9 step 1's prose — the `CS15` defect | §9, §9.3, AC-40, `M-12` | In `_ship.agent.md` Step 0.5: `Record \`shipment_id\` as the session scope` (the claim) is item **4**; `Intake reconciliation check` is item **6**. `index(intake) > index(claim)` — **the ordering the plan asserted was never established by any clause edit.** `CS15` relocates it; §6.1 row 29 asserts the corrected index relation |
+| **T-13** | **`D-1` migration inventory: every installed `mode: safe-close` invocation is UNBOUND, and there are exactly two Ship call sites** | §3.4.3 (K), §2, `CS16`, AC-46, AC-47 | `classification_binding` ⇒ **×0** in `_ship.agent.md`, **×0** in `workflow-policies.md`, **×0** in `SKILL.md` — the binding does not exist anywhere yet, so **every** current invocation is unbound by construction. The invoking sites are exactly **two**, both in `_ship.agent.md`: **L783** reads verbatim ``  `shipment-reconcile` skill with `mode: safe-close`, `shipment_id`, and the`` (Step 6.1(b) — the `CS16` site, passing `shipment_id` + `merge_commit_sha` only, ⇒ **×1**), and the cascade in-place-of pointer at the `CS5` anchor (L822). `workflow-policies.md`'s 8 `safe-close` mentions are **policy prose naming the procedure, not invocations** (L420, 436, 439, 442, 443, 444, 588, 769). **Revision 12 named `CS6` as the whole Ship-side closure and never measured L783** — that is the consumer surface this probe recovered |
+| **T-14** | **The `D-1` transition is executable against the installed file, and needs no compatibility machinery** | §3.4.3 (J)/(K), `CS13`, AC-42 | `* **SAFE_CLOSE selected** (default, including any classifier error,` ⇒ **×1** — the single dispatch bullet `CS13` replaces, so the ABSENT needle of row 23b is satisfiable by one edit. `^### Safe-Close Mode$` ⇒ **×1** — the `CS12` insertion point resolves uniquely. `deprecation window\|grace period\|compatibility flag\|--force-unbound\|ALLOW_UNBOUND` ⇒ **×0** — the installed skill has **no** compatibility, flag or override mechanism, so the refusal cannot be silently bypassed and §3.4.3 (K)'s *"no success-shaped fallback"* is a statement about a surface that genuinely has none. `RECONCILE_FAIL_CASCADE_UNBOUND` ⇒ **×0**, so row 23c is genuinely red at `H0` and cannot be vacuously green |
+| **T-15** | **P-015 requires the bound `SAFE_CLOSE` path to stay reachable — the constraint that forces `R5` to be branch-binding rather than cascade-only** | §2, §3.4.3 (E)/(J) `R5`, AC-36 | `falls back to the default safe-close prohibition` ⇒ **×2** (L439, L442) and `in place of the single-artifact safe-close procedure` ⇒ **×1** (L443) in `workflow-policies.md`. P-015 mandates the single-artifact safe-close procedure as the **default** close path and as the **fallback** for any manifest that fails the fully-covered-root preconditions. **A cascade-only refusal would therefore have made P-015's own mandated default unreachable** — revision 12's (E) said "halt when the bound verdict is not `CASCADE`", which under an adopted `D-1` is exactly that defect. `R5` discriminates `SAFE_CLOSE` from `BLOCK` for this measured reason |
 
 **Every `T-n` above is reproducible by the commands in the block above, on the stated tree.**
 A future claim about installed tooling that does not appear in this table is **not evidence**,
 regardless of how confidently it is stated — that is the `K-1` lesson in one sentence.
 
-> **`T-9`…`T-12` are the `M-8` remediation and they changed the plan.** They were not
-> confirmations of what revision 11 already believed. `T-10` produced a four-way exit contract
-> §5 did not handle; `T-12` produced a fifteenth clause site; `T-11` retired `M-11` without a
-> re-scope that would have voided an operator approval. **A measurement scope that is declared
-> but never exercised is indistinguishable from one that does not exist** — revision 11
-> declared Scope T and ran no probe in it.
+> **`T-9`…`T-15` are the `M-8`/`M-5` remediation and they changed the plan.** They were not
+> confirmations of what a prior revision already believed. `T-10` produced a four-way exit
+> contract §5 did not handle; `T-12` produced a fifteenth clause site; `T-11` retired `M-11`
+> without a re-scope that would have voided an operator approval; **`T-13` produced a
+> SIXTEENTH clause site (`CS16`) by measuring the invocation line revision 12 never read —
+> without it, adopting `D-1` would have left Ship's primary close call refused at runtime**;
+> and **`T-15` corrected the refusal contract itself from cascade-only to branch-binding**,
+> because P-015 mandates the bound `SAFE_CLOSE` path as its default. **A measurement scope
+> that is declared but never exercised is indistinguishable from one that does not exist** —
+> revision 11 declared Scope T and ran no probe in it.
 
 ## 14. Sizing
 
@@ -2099,41 +2339,47 @@ regardless of how confidently it is stated — that is the `K-1` lesson in one s
 |---|---|---|
 | **CS11** mode enum + `classification_binding` input | **S1a** | 2 |
 | **CS12** `### Classify-Close-Path Mode` section | **S1a** | 9 |
-| **CS13** Step 0 binding revalidation + dispatch scoping | **S1a** | 4 |
+| **CS13** Step 0 binding revalidation + `D-1` refusal + migration clause + dispatch replacement | **S1a** | 8 |
 | **CS14** Behavioral Constraint bullet | **S1a** | 2 |
-| **30-row Go test** (3 file fixtures, generated from §6.1) | **S1a** | 40 |
+| **33-row Go test** (3 file fixtures, generated from §6.1) | **S1a** | 46 |
 | H0 red confirmation + `harness-ready` + task claim | **S1a** | 6 |
-| **S1a stretch** | | **63** (margin **57**) |
+| **S1a stretch** | | **73** (margin **47**) |
 | ADD-1 Role Boundary grant | **S1b** | 8 |
 | ADD-2 Step 6.1(a1) incl. S0–S5 + move exit-code handling | **S1b** | 18 |
 | CS1 reload + carve-out | **S1b** | 4 |
 | CS2 close-sequence pointer | **S1b** | 4 |
-| **CS3–CS6** delegation block (retargeted to the classifier) | **S1b** | 10 |
+| **CS3–CS6** delegation block (retargeted to the classifier; CS6 carries refusal handling) | **S1b** | 12 |
 | CS7 intake pointer | **S1b** | 4 |
 | CS8 pre-archive pointer | **S1b** | 4 |
 | CS9 protected-set scoping | **S1b** | 3 |
 | CS10 P-010 grant bullet (five conditions rendered inline) | **S1b** | 5 |
 | **CS15** Step 0.5 intake-before-claim relocation | **S1b** | 3 |
+| **CS16** Step 6.1(b) invocation site — carry the binding | **S1b** | 3 |
 | H1 green + §4.0 closure re-check + quality gates | **S1b** | 12 |
-| **S1b stretch** | | **75** (margin **45**) |
+| **S1b stretch** | | **80** (margin **40**) |
 | Checkpoint recovery, merge verification, §9.2 seven checks | **S2** | 14 |
 | a1 (§5 S0–S5), 13a baseline commit, 14/14a/15, postchecks | **S2** | 22 |
 | Closure artifacts, sync, closure PR | **S2** | 14 |
 | **S2 stretch** | | **50** (margin **70**) |
-| **Total across three sessions** | | **188** |
+| **Total across three sessions** | | **203** |
 
 **Why this satisfies the 2-hour rule (`M-7`).** The rule bounds a **single uninterrupted agent
 stretch**, not a backlog record. Revision 11 sized the work as one 106-minute S1 stretch and
-then grew to 15 clause sites and 30 test rows without resizing — the estimate and the scope had
-drifted apart, which is `M-7`. **Revision 12 restructures execution into three stretches of
-63 / 75 / 50 minutes, each with ≥45 minutes of margin.**
+then kept growing the clause inventory and the test table without resizing — the estimate and
+the scope had drifted apart, which is `M-7`. **Revision 13 restructures execution into three
+stretches of 73 / 80 / 50 minutes, each with ≥40 minutes of margin**, and resizes with the
+`D-1` adoption rather than absorbing sixteen sites and a thirty-three-row table into the prior
+estimate.
 
 **The S1a/S1b boundary is the §7 ordering boundary, promoted to a session boundary.** §7
-already requires `CS11–CS14` (the producer) to land before `CS3–CS6` (the consumers). That
-point — fourth file applied, `H0` still red on every `_ship.agent.md` and
-`workflow-policies.md` row — is now the **end of S1a**, a checkpointed session boundary rather
-than a mid-task note. It is **verifiable**: `go test` output distinguishes it, because rows
-21a–24b and 30 are green while rows 1–20c, 25–29 are still red. S1b resumes from that state.
+already requires `CS11–CS14` (the producer, including the `D-1` refusal contract) to land
+before `CS3–CS6` and `CS16` (the consumers). That point — fourth file applied, `H0` still red
+on every `_ship.agent.md` and `workflow-policies.md` row — is now the **end of S1a**, a
+checkpointed session boundary rather than a mid-task note. It is **verifiable**: `go test`
+output distinguishes it, because rows 21a–24b and 30 and 33 are green while rows 1–20c, 25–29,
+31 and 32 are still red. S1b resumes from that state. **Both stretches land in the same
+implementation PR** (§9 steps 2–5), so no merged state ever exposes a narrowed sink to an
+unmigrated caller (§3.4.3 K).
 
 **No backlog record changes.** S1a / S1b / S2 are **execution stretches inside `022.001-T`**,
 not new work items. `022.001-T` keeps `size: M`, `complexity: high` and its single parent.
@@ -2163,13 +2409,13 @@ unchanged at revision 12** (§13.1).
 | **IV. CLI Containment (NON-NEGOTIABLE)** | Every probe call `--cwd $ws`; engine resolved via the registered command, never an absolute path |
 | **V. Structured Observability** | a1 emits `A1_NOT_APPLICABLE`, `A1_ALREADY_DONE`, `A1_MULTIPLE_FEATURE_MEMBERS`; Probe 25 emits one `KEY=VALUE` per criterion |
 | **VI. Single Responsibility** | **Dependency discipline**: zero module dependencies added; stdlib-only assertions; `testify` absent from `go.mod`; reuses `repoRoot(t)`. The change **removes** a dependency direction — Ship stops depending on a local copy of the classification. **Deviation D2** |
-| **VII. Destructive Approval (NON-NEGOTIABLE)** | The cascade is destructive and **live**. Gated by P-015, pre-mode `PROCEED`, the **read-only §9 step 14a classification boundary** whose non-`CASCADE` result halts **before any close call**, the safe-close binding revalidation, **and** the two §11 approved-action records with operator authorization. **The recovery path contains no destructive primitive** (§10.3.2 step 2 is quarantine-then-`git revert`), so no unapproved destructive operation exists anywhere in this plan |
+| **VII. Destructive Approval (NON-NEGOTIABLE)** | The cascade is destructive and **live**. Gated by P-015, pre-mode `PROCEED`, the **read-only §9 step 14a classification boundary** whose non-`CASCADE` result halts **before any close call**, the safe-close binding revalidation, **the operator-adopted `D-1` refusal that makes an unbound invocation of the destructive sink impossible for ANY caller** (§3.4.3 J, `R1`), **and** the two §11 approved-action records with operator authorization. **The recovery path contains no destructive primitive** (§10.3.2 step 2 is quarantine-then-`git revert`), so no unapproved destructive operation exists anywhere in this plan |
 | **VIII. Explicit Safety Modes** | **Deviation D3** |
 | **IX. Git-Friendly Persistence** | Line-oriented Markdown/Go; the backlog mutation is committed on the closure branch, never on `main` |
 | **X. Agent Context Efficiency** | Net **removal** of re-derived classification prose from Ship's hot path; this plan itself is reauthored rather than appended, removing ~180 lines of inline review history |
 | **XI. Merge History (NON-NEGOTIABLE)** | Rollback is `git revert`; no rewrite, no force-push, no amend. **The reauthoring adds commits; it never amends or rewrites `3e0cf8f`, `3423581` or `e9019d4`.** **Merge-strategy verification is required at BOTH merges** — §9 step 5 (the implementation PR) and §9 step 17 (the closure PR) — not only the first. Each merge must be confirmed a **true merge commit** (`git rev-list --parents -n 1 {merge_sha}` returns three fields) before the session proceeds, because the revert form that §10.4 prescribes is parent-relative: a squash or rebase merge makes `git revert -m 1` fail and silently removes the rollback path this plan depends on. **`M-13`** |
 
-**D1 — 30 rows vs "fewer than 4".** These are **rows in one table-driven function** over
+**D1 — 33 rows vs "fewer than 4".** These are **rows in one table-driven function** over
 **three** files, sharing one fixture helper and ≤4 helpers; each is a substring or index
 assertion, not an independent scenario. Collapsing them reduces falsifiability — and §4.0
 closure check 4 requires **every** matrix row to resolve to a numbered §6.1 row, so the row
@@ -2209,11 +2455,16 @@ tool conflict; the P-015 detect-after-mutate **ordering** inside the **cascade s
 which is an inherited residual recorded as a follow-up against P-015 and the skill; and the
 **`017-S` closure plan** (§11.1), which is future Stage work triggered by §9 step 19.
 
-**`shipment-reconcile/SKILL.md` is IN scope**, narrowly: exactly the four
-**additive** sites CS11–CS14 (§4). Explicitly still out of scope within that file: any change
-to `mode: pre`, `mode: post`, `mode: detect-mixed-role`, the Cascade Close Sub-Procedure, the
-protected-set computation, the linked-deliberation snapshot extension, or the **unbound**
-safe-close fall-through behaviour — all asserted preserved by rows 23b and 24b.
+**`shipment-reconcile/SKILL.md` is IN scope**, narrowly: exactly the four sites CS11–CS14
+(§4). **CS11–CS12 and CS14 are additive; CS13 is additive plus ONE operator-adopted
+narrowing** — the `D-1` refusal at the unbound destructive sink (§3.4.3 J), authorized by the
+operator on 2026-09-14 and recorded at §2. Explicitly still out of scope within that file: any
+change to `mode: pre`, `mode: post`, `mode: detect-mixed-role`, the Cascade Close
+Sub-Procedure, the protected-set computation, the linked-deliberation snapshot extension, and
+**the internals of safe-close steps 1–10 and of the cascade sub-procedure** — all asserted
+preserved by row 24b and by §3.4.3 (F). **What `D-1` changes is solely which invocations may
+reach those unchanged internals**; the legacy **unbound fall-through** is deliberately
+**removed** and is therefore no longer claimed preserved (row 23b).
 
 **Explicitly out of scope for the P-010 expansion**: any P-010 clause other than the single
 `Ship MAY` bullet named by CS10; any change to P-010's `Ship MUST NOT`, `Stage MAY` or
