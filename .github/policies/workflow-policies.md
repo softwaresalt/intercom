@@ -238,7 +238,7 @@ P-005 violation event.
 - Commit or push directly to `main`
 
 **Ship MAY** (within its legitimate scope):
-- Claim shipments, move tasks to active/done, close shipments, archive completed items
+- Claim shipments, move tasks to active/done, **complete one covering feature `active -> done` when every live descendant at every depth is done and all five conditions below are conjunctive and fail-closed**, close shipments, archive completed items. The covering-feature completion grant is **scoped to the manifest of the shipment this session has claimed and whose live status is exactly `active`**: (1) every manifest descendant is complete; (2) **no live descendant remains at every depth**; (3) topology is intact and **the descendant graph union the feature is set-equal to the manifest**; (4) containment holds; (5) the feature's live status is exactly `active`.
 - Delegate source code reads and writes to build/fix skills
 - Create and checkout feature/chore branches, commit, push
 - Run build systems, test suites, linters, format checks

@@ -53,10 +53,11 @@ precondition holds, delegates to the Cascade Close Sub-Procedure instead.
 
 | Parameter | Required | Values | Notes |
 |---|---|---|---|
-| `mode` | yes | `pre` \| `post` \| `safe-close` \| `detect-mixed-role` | Controls which check/close/detect phase runs |
-| `shipment_id` | yes for `pre`/`post`/`safe-close`; optional for `detect-mixed-role` | e.g. `004-S` | The shipment to reconcile; for `detect-mixed-role`, omit to scan ALL shipments via `backlogit_list_shipments` |
+| `mode` | yes | `pre` \| `post` \| `safe-close` \| `classify-close-path` \| `detect-mixed-role` | Controls which check/close/detect phase runs |
+| `shipment_id` | yes for `pre`/`post`/`safe-close`/`classify-close-path`; optional for `detect-mixed-role` | e.g. `004-S` | The shipment to reconcile; for `detect-mixed-role`, omit to scan ALL shipments via `backlogit_list_shipments` |
 | `expected_status` | pre-mode only | `queued` \| `active` \| `done` | `queued` for fresh intake; `active` when shipment already claimed in a prior session; `done` for pre-ship check |
 | `merge_commit_sha` | post-mode and safe-close | git SHA | The merge commit that closed the PR; recorded on archived items for traceability |
+| `classification_binding` | yes for `safe-close` | safe-close only | digest returned by `mode: classify-close-path`; when present, safe-close revalidates it **before any mutation** and halts on drift or on a bound non-`CASCADE` verdict; **when absent, safe-close refuses** |
 
 ## Output
 
@@ -251,6 +252,14 @@ mutated or repaired by this mode.
   diagnostic report, audit-log entry, and telemetry event are additive-only
   writes to non-backlog-state locations). DEGRADED (backlogit unreachable)
   is REPORTED and the mode HALTS — it never guesses or acts blind.
+* **`mode: classify-close-path` is strictly READ-ONLY.** It NEVER archives, NEVER
+  transitions any status, NEVER calls `backlogit_ship_shipment`, and requires NO `file-lock`
+  acquisition because no backlog/shipment artifact is ever mutated — its classification report
+  is an additive-only write to a non-backlog-state location. DEGRADED (backlogit unreachable)
+  is REPORTED as `CLOSE_PATH_VERDICT: BLOCK` and the mode HALTS. A recomputed binding that
+  drifts from a previously supplied one is reported as `RECONCILE_FAIL_CLASSIFICATION_DRIFT`
+  by the calling `mode: safe-close` invocation (§CS13), never by this mode itself — this mode
+  only ever emits `CLOSE_PATH_VERDICT` values.
 
 ## Required Protocol
 
@@ -350,6 +359,87 @@ mutated or repaired by this mode.
 6. **Release lock** (acquired in step 1 of pre-mode):
    Invoke `file-lock` release for `.backlogit/queue/{shipment_id}.md`.
    If release fails, log a warning — stale locks are operator-recoverable.
+
+### Classify-Close-Path Mode (READ-ONLY, pre-mutation boundary)
+
+Required input: `shipment_id`. Accepts **no** `merge_commit_sha` and **no** `expected_status`.
+
+This mode performs no archive, no status transition and no record mutation, acquires no
+single-writer lock, and stops at the Step 0 dispatch — it never enters the cascade path and
+never continues into safe-close steps 1–10. It runs the same Step 0(a) manifest load,
+Step 0(b) snapshot and Step 0(c) classification that `mode: safe-close` performs internally,
+with the single, exhaustively specified divergence recorded below: the default-case token
+differs. The selecting predicates are unchanged; only the token emitted on the default branch
+differs.
+
+It emits `CLOSE_PATH_VERDICT: CASCADE`, `CLOSE_PATH_VERDICT: SAFE_CLOSE` or
+`CLOSE_PATH_VERDICT: BLOCK` with `VERDICT_REASON`, `VERDICT_EVIDENCE` and
+`CLASSIFICATION_BINDING`, returned as machine-consumable output.
+
+**Condition → verdict mapping (exhaustive, normative):**
+
+| Step 0(c) condition | `classify-close-path` token |
+|---|---|
+| Every feature member is a root, fully covered at every depth, set-equal to the manifest | `CASCADE` / `FULLY_COVERED_ROOT` |
+| A qualifying-but-partial feature member (genuine partial-feature shipment) | `SAFE_CLOSE` / `PARTIAL_FEATURE` |
+| Manifest member is not a descendant of any qualifying feature | `BLOCK` / `MANIFEST_MEMBER_NOT_DESCENDANT` |
+| Snapshot ambiguous / torn (present in both queue **and** archive) | `BLOCK` / `SNAPSHOT_AMBIGUOUS` |
+| Snapshot missing (present in neither location) | `BLOCK` / `SNAPSHOT_MISSING` |
+| Descendant enumeration errored or was incomplete | `BLOCK` / `ENUMERATION_INCOMPLETE` |
+| Mixed qualification across feature members | `BLOCK` / `MIXED_QUALIFICATION` |
+| Classifier error of any other kind | `BLOCK` / `CLASSIFIER_ERROR` |
+
+**Fail closed:** every unsupported, mixed, ambiguous, torn, missing or incompletely enumerated case returns `CLOSE_PATH_VERDICT: BLOCK` with a reason token, never a silent `SAFE_CLOSE`.
+DEGRADED (backlogit unreachable) is REPORTED as `CLOSE_PATH_VERDICT: BLOCK` and the mode HALTS.
+
+**Machine-consumable result fields:**
+
+| Field | Values | Meaning |
+|---|---|---|
+| `CLOSE_PATH_VERDICT` | `CASCADE` \| `SAFE_CLOSE` \| `BLOCK` | The selected close path, or a refusal |
+| `VERDICT_REASON` | one stable token | e.g. `FULLY_COVERED_ROOT`, `PARTIAL_FEATURE`, `MANIFEST_MEMBER_NOT_DESCENDANT`, `SNAPSHOT_AMBIGUOUS`, `SNAPSHOT_MISSING`, `ENUMERATION_INCOMPLETE`, `MIXED_QUALIFICATION`, `CLASSIFIER_ERROR` |
+| `VERDICT_EVIDENCE` | per-member evidence set | For every manifest member: its ID, `artifact_type`, declared `status`, `parent_id`, resolved location, and which precondition it satisfied or failed |
+| `CLASSIFICATION_BINDING` | a digest | See "Canonical binding" below |
+| `CLASSIFIED_AT` | timestamp | Capture moment of the snapshot |
+
+**Canonical binding.** `CLASSIFICATION_BINDING` is a SHA-256 digest over a canonical
+serialisation of exactly the state the classification consumed plus the identity of the
+classification itself:
+
+```text
+line 1      : "v1"                                  # binding format version
+line 2      : "shipment=" + shipment_id             # WHICH shipment was classified
+line 3      : "verdict="  + CLOSE_PATH_VERDICT      # WHICH verdict is bound
+line 4      : "reason="   + VERDICT_REASON
+line 5      : "skill="    + sha256(SKILL.md bytes)  # WHICH classifier produced it
+line 6      : "engine="   + backlogit --version     # WHICH engine resolved the records
+line 7      : "manifest=" + join(",", sort(manifest item IDs))
+line 8      : "deps="     + join(",", sort(shipment.dependencies))
+line 9      : "status="   + shipment declared status
+line 10..n  : one line per member of the combined pre-close snapshot Step 0(b)/(c) already
+              builds, rendered as
+                 id + "\x1f" + artifact_type + "\x1f" + declared_status + "\x1f" +
+                 (parent_id or "-") + "\x1f" + resolved_location
+              with the lines sorted bytewise by id
+final       : the lines joined with "\n", NO trailing newline; SHA-256 of the UTF-8 bytes
+```
+
+`\x1f` (ASCII Unit Separator) is the intra-tuple delimiter and is not a legal character in any
+of the five fields, so no field value can forge a tuple boundary.
+
+**Persistence — optional, post-verdict only, and omitted here.** The mode MAY additionally
+record the result fields at
+`.backlogit/reconcile/{shipment_id}-classify-close-path-{timestamp}.md`, but persistence is
+**strictly post-verdict**: it happens only after the verdict is already computed and about to
+be returned, is **disabled for read-only invocation**, and is **non-blocking on failure** — a
+persistence failure never changes the returned verdict or fails the call. **The simplest
+conforming implementation omits optional persistence entirely**, which this skill does: no
+report file is written by this mode under any invocation.
+
+**Independent invocability.** `mode: classify-close-path` is invocable by any caller — Ship,
+an operator, or a future gate — without entering the mutating path, exactly as
+`mode: detect-mixed-role` is today. It has no prerequisite mode, no lock and no ordering
+constraint.
 
 ### Safe-Close Mode
 
@@ -502,14 +592,17 @@ completion.
       re-derivation, and independent of whether the engine transitions,
       skips (already truly archived), or otherwise handles any given one of
       them.
+   * **Bound-classification revalidation (before any mutation).** When `classification_binding` is supplied, recompute the binding from the Step 0(a)/(b)/(c) snapshot just taken. A value that is not a well-formed `v1` binding halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_INVALID`. A recomputed digest that differs from the supplied one halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_DRIFT`. On match **the bound verdict alone selects the branch**: `CASCADE` enters the Cascade Close Sub-Procedure, `SAFE_CLOSE` continues to step 1 below, and **every other bound verdict halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_REFUSED`**.
+   * **Unbound invocations are rejected, not defaulted.** When no `classification_binding` is supplied, `mode: safe-close` **halts before any close mutation with `RECONCILE_FAIL_CASCADE_UNBOUND`**: it **performs zero archive, zero status transition and zero record mutation**, enters neither the Cascade Close Sub-Procedure nor steps 1–10, and releases any lock it acquired.
+   * **Migration.** Every caller of `mode: safe-close` migrates by invoking `mode: classify-close-path` first and passing the returned `CLASSIFICATION_BINDING` into the close call. An invocation that does not is **refused, never served on a legacy path**: there is **no deprecation window, no grace period and no success-shaped fallback**.
    * **CASCADE selected** → skip directly to the **Cascade Close
      Sub-Procedure** below (reusing the manifest and snapshot from (a)/(b)/(c)
      above — do not reload) in place of steps 1–10, then proceed to
      post-mode.
-   * **SAFE_CLOSE selected** (default, including any classifier error,
-     ambiguity, or unresolved precondition) → continue to step 1 below
-     (step 1's own manifest load is idempotent with (a) above — reuse the
-     already-loaded manifest rather than issuing a second call).
+   * **SAFE_CLOSE selected** (bound verdict `SAFE_CLOSE` only) → continue
+     to step 1 below (step 1's own manifest load is idempotent with (a)
+     above — reuse the already-loaded manifest rather than issuing a
+     second call).
 
 1. **Load manifest** via `backlogit_get_shipment(shipment_id)`. Extract the
    `items` list. These IDs are the **only** artifacts safe-close may move or
