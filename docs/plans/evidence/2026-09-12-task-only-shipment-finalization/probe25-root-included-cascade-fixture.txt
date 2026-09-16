@@ -1,0 +1,203 @@
+ENGINE_RESOLVED_VIA=Get-Command backlogit (registered command; not a hardcoded path)
+ENGINE_PATH_OBSERVED=C:\Tools\backlogit.exe
+ENGINE_SHA256=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+ENGINE_SHA256_EXPECTED=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+DIGEST_GATE=PASS
+ENGINE_VERSION=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty (update check skipped)
+AUTHORIZATION_SURFACE=CLI-only (MCP not probed, not authorized)
+REPO_ROOT=C:\Source\GitHub\intercom-go
+PROBE_HEAD=4fd21c5
+PROBE_RUN_BY=Stage (pre-claim planning evidence; Ship re-verifies read-only)
+SEEDED_FROM_LIVE_CONFIG=True
+FIXTURE_BACKLOG_ROOT=C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p25
+LIVE_QUEUE_ROOT=c:\source\github\intercom-go\.backlogit\queue
+FIXTURE_QUEUE_ROOT=c:\source\github\intercom-go\.backlogit\runtime\stage-probe-scratch\p25\.backlogit\queue
+FIXTURE_ISOLATED_FROM_LIVE=True
+LIVE_BACKLOGIT_DIRTY_PATHS_BEFORE=0
+
+### STEP 1: build the EXACT 017-S topology - root feature + 3 legacy tasks + 8 subtasks (3/3/2) + 1 live task
+ROOT_FEATURE=001-F
+LEGACY_TASKS=001.001-T,001.002-T,001.003-T
+LEGACY_SUBTASKS=001.001.001-ST,001.001.002-ST,001.001.003-ST,001.002.001-ST,001.002.002-ST,001.002.003-ST,001.003.001-ST,001.003.002-ST
+LIVE_TASK=001.004-T
+CONTROL_OUT_OF_MANIFEST=002-F,002.001-T
+
+### STEP 2: archive the 11 legacy descendants DIRECTLY FROM queued (subtasks first, then their tasks)
+  (this is what yields archived_status: queued - the harder case; NOT archived_status: done)
+  001.001-T            loc=archive  status=archived   archived_status=queued   parent=001-F
+  001.001.001-ST       loc=archive  status=archived   archived_status=queued   parent=001.001-T
+  001.001.002-ST       loc=archive  status=archived   archived_status=queued   parent=001.001-T
+  001.001.003-ST       loc=archive  status=archived   archived_status=queued   parent=001.001-T
+  001.002-T            loc=archive  status=archived   archived_status=queued   parent=001-F
+  001.002.001-ST       loc=archive  status=archived   archived_status=queued   parent=001.002-T
+  001.002.002-ST       loc=archive  status=archived   archived_status=queued   parent=001.002-T
+  001.002.003-ST       loc=archive  status=archived   archived_status=queued   parent=001.002-T
+  001.003-T            loc=archive  status=archived   archived_status=queued   parent=001-F
+  001.003.001-ST       loc=archive  status=archived   archived_status=queued   parent=001.003-T
+  001.003.002-ST       loc=archive  status=archived   archived_status=queued   parent=001.003-T
+PRE_ARCHIVED_COUNT=11
+PRE_ARCHIVED_ALL_ARCHIVED_STATUS_QUEUED=True
+
+### STEP 3: manifest = 13 members, ROOT FEATURE INCLUDED
+MANIFEST_COUNT=13
+MANIFEST=001-F,001.001-T,001.001.001-ST,001.001.002-ST,001.001.003-ST,001.002-T,001.002.001-ST,001.002.002-ST,001.002.003-ST,001.003-T,001.003.001-ST,001.003.002-ST,001.004-T
+SHIPMENT_CREATE_OUT=  "artifact_type": "shipment",
+SHIPMENT_ID=001-S
+
+### STEP 4: claim, complete the live task, then the a1 covering-feature completion
+FEATURE_STATUS_AFTER_CLAIM=active
+FEATURE_STATUS_AFTER_A1=done
+LIVE_TASK_STATUS=done
+
+### STEP 5: PASS CRITERION 2 - pre-mode classification with expected_status: done
+  001-F                matched          status=done       loc=archive
+  001.001-T            pre-archived     status=archived   loc=archive
+  001.001.001-ST       pre-archived     status=archived   loc=archive
+  001.001.002-ST       pre-archived     status=archived   loc=archive
+  001.001.003-ST       pre-archived     status=archived   loc=archive
+  001.002-T            pre-archived     status=archived   loc=archive
+  001.002.001-ST       pre-archived     status=archived   loc=archive
+  001.002.002-ST       pre-archived     status=archived   loc=archive
+  001.002.003-ST       pre-archived     status=archived   loc=archive
+  001.003-T            pre-archived     status=archived   loc=archive
+  001.003.001-ST       pre-archived     status=archived   loc=archive
+  001.003.002-ST       pre-archived     status=archived   loc=archive
+  001.004-T            matched          status=done       loc=archive
+MEMBERS_QUEUE_LOCATED=0
+MEMBERS_ARCHIVE_LOCATED=13
+C7_C8_QUEUE_ONLY_SUMMARY_FALSIFIED=True
+PREMODE_MATCHED=2
+PREMODE_PRE_ARCHIVED=11
+PREMODE_MISSING=0
+PREMODE_STATUS_MISMATCH=0
+PREMODE_DUPLICATE_TORN=0
+PREMODE_RESULT=PROCEED
+CRITERION_2_PREMODE_PROCEED=PASS
+
+### STEP 6: PASS CRITERION 3 - P-015 fully-covered-root classification
+FEATURE_MEMBERS=001-F  n=1
+ROOT_HAS_NO_PARENT_ID=True
+DESCENDANTS_AT_EVERY_DEPTH_COUNT=12
+DESCENDANTS_NOT_IN_MANIFEST=(none)
+MANIFEST_MEMBERS_NOT_DESCENDANTS=(none)
+CLASSIFICATION_VERDICT=CASCADE
+CRITERION_3_CASCADE=PASS
+
+### STEP 7: PRE-CALL snapshot - declared status + parent_id + location + sha for every watched record
+  PRE  001-F                loc=archive  status=done       parent=(unset)     
+  PRE  001.001-T            loc=archive  status=archived   parent=001-F       
+  PRE  001.001.001-ST       loc=archive  status=archived   parent=001.001-T   
+  PRE  001.001.002-ST       loc=archive  status=archived   parent=001.001-T   
+  PRE  001.001.003-ST       loc=archive  status=archived   parent=001.001-T   
+  PRE  001.002-T            loc=archive  status=archived   parent=001-F       
+  PRE  001.002.001-ST       loc=archive  status=archived   parent=001.002-T   
+  PRE  001.002.002-ST       loc=archive  status=archived   parent=001.002-T   
+  PRE  001.002.003-ST       loc=archive  status=archived   parent=001.002-T   
+  PRE  001.003-T            loc=archive  status=archived   parent=001-F       
+  PRE  001.003.001-ST       loc=archive  status=archived   parent=001.003-T   
+  PRE  001.003.002-ST       loc=archive  status=archived   parent=001.003-T   
+  PRE  001.004-T            loc=archive  status=done       parent=001-F       
+  PRE  002-F                loc=queue    status=queued     parent=(unset)     
+  PRE  002.001-T            loc=queue    status=queued     parent=002-F       
+REQUIRED_IDS=001-F,001.004-T
+ALLOWED_IDS_COUNT=13
+
+### STEP 8: AUTHORIZED CALL - cascade ShipShipment over the root-included manifest
+  SHIP_OUT: {
+  SHIP_OUT:   "shipment_id": "001-S",
+  SHIP_OUT:   "shipment_status": "shipped",
+  SHIP_OUT:   "archived_ids": [
+  SHIP_OUT:     "001.004-T",
+  SHIP_OUT:     "001-F",
+  SHIP_OUT:     "001-S"
+  SHIP_OUT:   ],
+  SHIP_OUT:   "returned_ids": [],
+  SHIP_OUT:   "commit_sha": "2525252525252525252525252525252525252525"
+  SHIP_OUT: }
+SHIP_EXIT=0
+
+### STEP 9: POST-CALL measurement
+  POST 001-F                loc=archive  status=archived   parent=(unset)     
+  POST 001.001-T            loc=archive  status=archived   parent=001-F       
+  POST 001.001.001-ST       loc=archive  status=archived   parent=001.001-T   
+  POST 001.001.002-ST       loc=archive  status=archived   parent=001.001-T   
+  POST 001.001.003-ST       loc=archive  status=archived   parent=001.001-T   
+  POST 001.002-T            loc=archive  status=archived   parent=001-F       
+  POST 001.002.001-ST       loc=archive  status=archived   parent=001.002-T   
+  POST 001.002.002-ST       loc=archive  status=archived   parent=001.002-T   
+  POST 001.002.003-ST       loc=archive  status=archived   parent=001.002-T   
+  POST 001.003-T            loc=archive  status=archived   parent=001-F       
+  POST 001.003.001-ST       loc=archive  status=archived   parent=001.003-T   
+  POST 001.003.002-ST       loc=archive  status=archived   parent=001.003-T   
+  POST 001.004-T            loc=archive  status=archived   parent=001-F       
+  POST 002-F                loc=queue    status=queued     parent=(unset)     
+  POST 002.001-T            loc=queue    status=queued     parent=002-F       
+RETURNED_IDS=[]
+CRITERION_4_RETURNED_IDS_EMPTY=PASS
+ARCHIVED_IDS_TRANSITION_LOG_OBSERVED=001-F,001.004-T
+ARCHIVED_IDS_TRANSITION_LOG_ENGINE=001-F,001-S,001.004-T
+ARCHIVED_IDS_UNION=001-F,001-S,001.004-T
+ALLOWED_IDS_INCL_SHIPMENT_COUNT=14
+SET_EQ_A__archived_minus_allowed=EMPTY
+SET_EQ_B__required_minus_archived=EMPTY
+CRITERION_5A_NO_UNEXPECTED_ARCHIVE=PASS
+CRITERION_5B_NO_REQUIRED_LEFT_UNARCHIVED=PASS
+PARENT_ID_CHANGED=(none)
+CRITERION_6_PARENT_ID_PRESERVED=PASS
+SHIPMENT_LOC=archive
+SHIPMENT_STATUS=archived
+SHIPMENT_ARCHIVED_STATUS=shipped
+CRITERION_7_SHIPMENT_ARCHIVED_SHIPPED=PASS
+CONTROL_OUT_OF_MANIFEST_TOUCHED=(none)
+ARTIFACTS_VANISHED=(none)
+CRITERION_8_NOTHING_OUTSIDE_MANIFEST_TOUCHED=PASS
+
+### STEP 10: live-backlog isolation re-proof (fixture must not have mutated the real backlog)
+LIVE_BACKLOGIT_DIRTY_PATHS_AFTER=0
+LIVE_BACKLOG_UNMUTATED=True
+
+### STEP 11: AGGREGATE VERDICT
+  C1_DIGEST_GATE                         PASS
+  C2_PREMODE_PROCEED_11_PRE_ARCHIVED     PASS
+  C3_CLASSIFICATION_CASCADE              PASS
+  C4_RETURNED_IDS_EMPTY                  PASS
+  C5A_ARCHIVED_MINUS_ALLOWED_EMPTY       PASS
+  C5B_REQUIRED_MINUS_ARCHIVED_EMPTY      PASS
+  C6_PARENT_ID_PRESERVED                 PASS
+  C7_SHIPMENT_ARCHIVED_SHIPPED           PASS
+  C8_NOTHING_OUTSIDE_MANIFEST_TOUCHED    PASS
+
+TOPOLOGY_MEMBERS=13  ROOT_INCLUDED=True  PRE_ARCHIVED=11  ARCHIVED_STATUS_FLAVOUR=queued
+FAILED_CRITERIA=0
+PROBE25_RESULT=PASS
+
+### STEP 12: archived shipment provenance record
+---
+archived_from: .backlogit/queue/001-S.md
+archived_status: shipped
+artifact_type: shipment
+commit: "2525252525252525252525252525252525252525"
+created_at: 2026-09-13T16:18:23.8289511Z
+custom_fields:
+    items:
+        - 001-F
+        - 001.004-T
+        - 001.001.001-ST
+        - 001.001.002-ST
+        - 001.001.003-ST
+        - 001.002.001-ST
+        - 001.002.002-ST
+        - 001.002.003-ST
+        - 001.003.001-ST
+        - 001.003.002-ST
+        - 001.001-T
+        - 001.002-T
+        - 001.003-T
+id: 001-S
+status: archived
+title: Root-included fully-covered-root fixture
+updated_at: 2026-09-13T16:18:39.6156266Z
+---
+
+
+SCRATCH_REMOVED=True

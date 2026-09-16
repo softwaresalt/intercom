@@ -1,0 +1,174 @@
+Initialized backlogit workspace at C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p15\.backlog
+### STEP 1: root feature + 3 legacy tasks + 8 subtasks (3/3/2) + 1 live task
+### STEP 2: archive the 11 legacy descendants (subtasks first, then their tasks)
+### STEP 3: manifest = 12 members (1 live task + 11 pre-archived)
+{
+  "id": "001-S",
+  "title": "Exact 017-S-shaped shipment",
+  "status": "queued",
+  "artifact_type": "shipment",
+  "custom_fields": {
+    "items": [
+      "001.004-T",
+      "001.001.001-ST",
+      "001.001.002-ST",
+      "001.001.003-ST",
+      "001.002.001-ST",
+      "001.002.002-ST",
+      "001.002.003-ST",
+      "001.003.001-ST",
+      "001.003.002-ST",
+      "001.001-T",
+      "001.002-T",
+      "001.003-T"
+    ]
+  },
+  "created_at": "2026-09-13T02:40:40.8429248Z",
+  "updated_at": "2026-09-13T02:40:40.8429248Z",
+  "level": 1
+}
+{
+  "artifact_type": "shipment",
+  "created_at": "2026-09-13T02:40:40.8429248Z",
+  "custom_fields": {
+    "items": [
+      "001.004-T",
+      "001.001.001-ST",
+      "001.001.002-ST",
+      "001.001.003-ST",
+      "001.002.001-ST",
+      "001.002.002-ST",
+      "001.002.003-ST",
+      "001.003.001-ST",
+      "001.003.002-ST",
+      "001.001-T",
+      "001.002-T",
+      "001.003-T"
+    ]
+  },
+  "id": "001-S",
+  "level": 1,
+  "size_composition": {
+    "histogram": {},
+    "unsized": 4,
+    "members": [
+      {
+        "id": "001.004-T",
+        "artifact_type": "task"
+      },
+      {
+        "id": "001.001-T",
+        "artifact_type": "task"
+      },
+      {
+        "id": "001.002-T",
+        "artifact_type": "task"
+      },
+      {
+        "id": "001.003-T",
+        "artifact_type": "task"
+      }
+    ],
+    "skipped": [],
+    "ruleset_version": null
+  },
+  "status": "queued",
+  "title": "Exact 017-S-shaped shipment",
+  "updated_at": "2026-09-13T02:40:40.8429248Z"
+}
+### STEP 4: claim (queued -> active), then complete the sole live task
+### parent feature state (must be live in queue, excluded from manifest, root):
+---
+artifact_type: feature
+created_at: 2026-09-13T02:40:20.035638Z
+custom_fields:
+    harness_status: pending
+id: 001-F
+status: active
+title: Covering root feature
+updated_at: 2026-09-13T02:40:41.2661128Z
+---
+
+
+### STEP 5: PRE-CALL capture - path + SHA256 + parent_id for all 11 archived members + parent
+PRE  001-F              loc=queue    parent=(none)       sha=464D36111C042135F5F87EC3A9C9599633CB27FEA507414C02D98D05CC01BDCA
+PRE  001.001-T          loc=archive  parent=001-F        sha=32259293DC6E2F3527AB24E6315150E0693A3DB8471A861F7AB43E9FC95FE280
+PRE  001.001.001-ST     loc=archive  parent=001.001-T    sha=393E51DFCA4B1CCD290A5A1DF1F214BB5EC9C8DDD2D77A40352D214EA8DE2FDC
+PRE  001.001.002-ST     loc=archive  parent=001.001-T    sha=EE6CFE9F517977768255568D487929A05FEBA8835A4A6C867CC5D9CCE71554FD
+PRE  001.001.003-ST     loc=archive  parent=001.001-T    sha=2B154815314C7C9939E3043CC9F0E10F469D094CF7F6732287D2BDD9D7FC1D69
+PRE  001.002-T          loc=archive  parent=001-F        sha=D1A0867455003D3BA61859BEDA6E5FCF1B20AFD8BE298C828E624444DCF982C9
+PRE  001.002.001-ST     loc=archive  parent=001.002-T    sha=CF5A72F74D7223A88EDB63CA97AF99E601B534AA5859CD6385DCFDDF33611FDB
+PRE  001.002.002-ST     loc=archive  parent=001.002-T    sha=FF77C0423DB2CFAE88CA6DE787CA7CB5BD3C786AD7D8ABF93A7D962EEA24CD68
+PRE  001.002.003-ST     loc=archive  parent=001.002-T    sha=6161BB43C7DF35AB48362E787FB915EAC120E0DD68B4CF8129D222893C6A3CF1
+PRE  001.003-T          loc=archive  parent=001-F        sha=436EAB6CDB2524B2B71F1B7E616D243E5965CE0440245EF1D40C6A901CF7CDDE
+PRE  001.003.001-ST     loc=archive  parent=001.003-T    sha=ECA4D8355242363AC97BC3194A1C294A51384802E2346479183C0F81A589D9C4
+PRE  001.003.002-ST     loc=archive  parent=001.003-T    sha=BDD9334D50029A476017D47F76F0D8FA3140A6A3A886274574EB74394979B9F3
+### STEP 6: AUTHORIZED CALL - ShipShipment
+{
+  "shipment_id": "001-S",
+  "shipment_status": "shipped",
+  "archived_ids": [
+    "001.004-T",
+    "001-S"
+  ],
+  "returned_ids": [],
+  "commit_sha": "1111111111111111111111111111111111111111"
+}
+SHIP_EXIT=0
+### STEP 7: POST-CALL capture + invariance comparison
+PASS 001-F              byte=SAME path=SAME parent=SAME ((none))
+PASS 001.001-T          byte=SAME path=SAME parent=SAME (001-F)
+PASS 001.001.001-ST     byte=SAME path=SAME parent=SAME (001.001-T)
+PASS 001.001.002-ST     byte=SAME path=SAME parent=SAME (001.001-T)
+PASS 001.001.003-ST     byte=SAME path=SAME parent=SAME (001.001-T)
+PASS 001.002-T          byte=SAME path=SAME parent=SAME (001-F)
+PASS 001.002.001-ST     byte=SAME path=SAME parent=SAME (001.002-T)
+PASS 001.002.002-ST     byte=SAME path=SAME parent=SAME (001.002-T)
+PASS 001.002.003-ST     byte=SAME path=SAME parent=SAME (001.002-T)
+PASS 001.003-T          byte=SAME path=SAME parent=SAME (001-F)
+PASS 001.003.001-ST     byte=SAME path=SAME parent=SAME (001.003-T)
+PASS 001.003.002-ST     byte=SAME path=SAME parent=SAME (001.003-T)
+INVARIANCE_FAILURES=0
+### STEP 8: archived shipment provenance + live task lineage
+---
+archived_from: .backlog/queue/001-S.md
+archived_status: shipped
+artifact_type: shipment
+commit: "1111111111111111111111111111111111111111"
+created_at: 2026-09-13T02:40:40.8429248Z
+custom_fields:
+    items:
+        - 001.004-T
+        - 001.001.001-ST
+        - 001.001.002-ST
+        - 001.001.003-ST
+        - 001.002.001-ST
+        - 001.002.002-ST
+        - 001.002.003-ST
+        - 001.003.001-ST
+        - 001.003.002-ST
+        - 001.001-T
+        - 001.002-T
+        - 001.003-T
+id: 001-S
+status: archived
+title: Exact 017-S-shaped shipment
+updated_at: 2026-09-13T02:40:46.9190921Z
+---
+
+
+---
+archived_from: .backlog/queue/001.004-T.md
+archived_status: done
+artifact_type: task
+commit: "1111111111111111111111111111111111111111"
+created_at: 2026-09-13T02:40:21.5962515Z
+id: 001.004-T
+parent_id: 001-F
+priority: medium
+status: archived
+title: Sole live task
+updated_at: 2026-09-13T02:40:47.0434952Z
+---
+
+

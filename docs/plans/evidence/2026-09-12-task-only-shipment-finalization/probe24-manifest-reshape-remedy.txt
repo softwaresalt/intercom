@@ -1,0 +1,111 @@
+ENGINE_PATH=C:\Tools\backlogit.exe
+ENGINE_SHA256=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+ENGINE_SHA256_EXPECTED=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+DIGEST_GATE=PASS
+ENGINE_VERSION=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty (update check skipped)
+GATE_ENGINE=C:\Python\Python314\Scripts\autoharness.exe
+AUTHORIZATION_SURFACE=CLI-only (MCP not probed, not authorized)
+REPO_ROOT=C:\Source\GitHub\intercom-go
+PROBE_HEAD=7bc0318
+
+### ARM Q - C re-shaped to FULLY-COVERED-ROOT [001-F, 001.001-T] (the 023-S remedy)
+SEEDED_FROM_LIVE_CONFIG=True  WS=C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p24-q
+MANIFEST_C_REMEDY:
+  "id": "001-F",
+  "items": [
+  "001-F",
+  "001.001-T"
+  "id": "001.001-T",
+  pre-claim: 001-F=queued 001.001-T=queued
+  after claim: 001-F=active 001.001-T=active
+  R1 after C claim                       GATE_EXIT=0 ready_set=[] next_eligible=001-S
+
+### ARM Q - Ship 4.1/4.5 task lifecycle, then Step 6.1(a1) feature completion (A's grant)
+  after task done: 001-F=active 001.001-T=done
+  A1_FEATURE_COMPLETION_EXIT=0
+    Moved 001-F → done
+  after a1: 001-F=done
+
+### ARM Q - Q1: the CASCADE close over a fully-covered-root manifest
+  SHIP_EXIT=0
+    {
+      "shipment_id": "001-S",
+      "shipment_status": "shipped",
+      "archived_ids": [
+        "001.001-T",
+        "001-F",
+        "001-S"
+      ],
+      "returned_ids": [],
+      "commit_sha": "7bc03180000000000000000000000000000000000"
+    }
+  after cascade: 001-F=archived 001.001-T=archived 001-S=archived
+  Q1_FEATURE_ARCHIVED_BY_CASCADE=True
+
+### ARM Q - Q2: live top-level release units remaining (P-001 surface)
+    live feature 002-F = queued
+  Q2_OTHER_ACTIVE_TOPLEVEL_UNITS=0
+
+### ARM Q - Q3: successor eligibility with NO further Stage action
+  R2 after C cascade close               GATE_EXIT=0 ready_set=[002-S] next_eligible=002-S
+  Q3_SUCCESSOR_ELIGIBLE_WITHOUT_DISPOSITION=True
+
+### ARM T - CONTROL: identical topology, C left TASK-ONLY [001.001-T]
+  CONTROL after task-only close: 001-F=active
+  CONTROL_FEATURE_ARCHIVED=False
+
+### ARM QR - EXACT live 023-S construction: task-only manifest, THEN 'shipment add' the feature
+  Rationale: ARM Q builds the manifest feature-first via 'shipment create --items 001-F,001.001-T'.
+  The LIVE 023-S was built the other way - it already existed as task-only and the feature was
+  APPENDED, giving items [024.001-T, 024-F] (TASK-FIRST). That is the one order never probed,
+  and it is the order the re-shape actually produced. Measured here rather than assumed.
+  -- manifest BEFORE append:
+     "items": [
+     "001.001-T"
+     "id": "001.001-T",
+  SHIPMENT_ADD_EXIT=0
+     {
+       "item_id": "001-F",
+       "shipment_id": "001-S",
+       "status": "added"
+     }
+  -- manifest AFTER append (expect TASK-FIRST, matching live 023-S):
+     "covering_feature": {
+     "id": "001-F",
+     "items": [
+     "001.001-T",
+     "001-F"
+     "id": "001.001-T",
+  MANIFEST_ORDER_QR=001.001-T,001-F
+  MANIFEST_IS_TASK_FIRST=True
+  after claim: 001-F=active 001.001-T=active
+  after a1: 001-F=done
+  SHIP_EXIT=0
+     {
+       "shipment_id": "001-S",
+       "shipment_status": "shipped",
+       "archived_ids": [
+         "001.001-T",
+         "001-F",
+         "001-S"
+       ],
+       "returned_ids": [],
+       "commit_sha": "7bc03180000000000000000000000000000000000"
+     }
+  after cascade: 001-F=archived
+  QR_FEATURE_ARCHIVED_BY_CASCADE=True
+  QR_READY_SET=002-S
+  QR_SUCCESSOR_ELIGIBLE=True
+
+### VERDICT
+REMEDY_FULLY_COVERED_ROOT_FEATURE_STATUS=archived
+CONTROL_TASK_ONLY_FEATURE_STATUS=active
+Q1_CASCADE_ARCHIVES_FEATURE=True
+Q2_ZERO_OTHER_ACTIVE_TOPLEVEL_UNITS=True
+Q3_SUCCESSOR_ELIGIBLE_NO_BARRIER_NEEDED=True
+DIFFERENCE_ATTRIBUTABLE_TO_MANIFEST_SHAPE_ALONE=True
+QR_LIVE_ORDER_FEATURE_STATUS=archived
+QR_LIVE_ORDER_FEATURE_ARCHIVED=True
+QR_LIVE_ORDER_SUCCESSOR_ELIGIBLE=True
+ORDER_INDEPENDENCE_MEASURED=True
+

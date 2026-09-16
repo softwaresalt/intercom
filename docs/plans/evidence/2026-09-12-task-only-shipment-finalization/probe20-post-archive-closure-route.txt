@@ -1,0 +1,118 @@
+ENGINE_PATH=C:\Tools\backlogit.exe
+ENGINE_SHA256=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+ENGINE_SHA256_EXPECTED=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+DIGEST_GATE=PASS
+ENGINE_VERSION=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty (update check skipped)
+GATE_ENGINE=C:\Python\Python314\Scripts\autoharness.exe
+AUTHORIZATION_SURFACE=CLI-only (MCP not probed, not authorized)
+REPO_ROOT=C:\Source\GitHub\intercom-go
+SEEDED_FROM_LIVE_CONFIG=True
+
+### STEP 1: build the prerequisite topology and take it to the POST-ARCHIVE state
+
+### STEP 2: CONTROL - gate result while the shipment is ACTIVE (plan section 8 step a0 position)
+CONTROL_ACTIVE_EXIT=1
+  CONTROL: "exit_code": 1,
+  CONTROL: "blocked": true,
+  CONTROL: "message": "BRANCH_MISMATCH: current branch chore/stage-pipeline-policy-gap does not match target 001-S",
+  CONTROL: "status": "blocked",
+  CONTROL: "token": "BRANCH_MISMATCH",
+  CONTROL: "message": "BRANCH_MISMATCH: current branch chore/stage-pipeline-policy-gap does not match target 001-S",
+  CONTROL: "token": "BRANCH_MISMATCH",
+
+### STEP 3: the DESTRUCTIVE call - archive the shipment
+SHIP_EXIT=0
+SHIP_OUT: {
+SHIP_OUT:   "shipment_id": "001-S",
+SHIP_OUT:   "shipment_status": "shipped",
+SHIP_OUT:   "archived_ids": [
+SHIP_OUT:     "001.001-T",
+SHIP_OUT:     "001-S"
+SHIP_OUT:   ],
+SHIP_OUT:   "returned_ids": [],
+SHIP_OUT:   "commit_sha": "1f55e6aa2a4507bcc1a9c7000d742a8710db4ca1"
+SHIP_OUT: }
+SHIPMENT_STATE_AFTER:
+[
+  {
+    "artifact_type": "shipment",
+    "created_at": "2026-09-13T04:17:56.3796241Z",
+    "custom_fields": {
+      "items": []
+    },
+    "dependencies": [
+      {
+        "id": "001-S",
+        "type": "blocks"
+      }
+    ],
+    "hierarchy_path": "002",
+    "id": "002-S",
+    "level": 1,
+    "size_composition": {
+      "histogram": {},
+      "unsized": 0,
+      "members": [],
+      "skipped": [],
+      "ruleset_version": null
+    },
+    "status": "queued",
+    "title": "Successor blocked shipment",
+    "updated_at": "2026-09-13T04:17:56.3796241Z"
+  }
+]
+
+### STEP 4: Q1 - POST-ARCHIVE gate routes (zero active shipments)
+
+ROUTE: autoharness gate pipeline-topology --mode agent --shipment 001-S --phase lifecycle
+  EXIT=1
+  "blocked": true,
+  "invalid": false,
+  "message": "LIFECYCLE_NO_ACTIVE_SHIPMENT: expected exactly one active shipment",
+  "status": "blocked",
+  "token": "LIFECYCLE_NO_ACTIVE_SHIPMENT",
+  "message": "LIFECYCLE_NO_ACTIVE_SHIPMENT: expected exactly one active shipment",
+  "active_shipment_ids": [],
+  "token": "LIFECYCLE_NO_ACTIVE_SHIPMENT",
+
+ROUTE: autoharness gate pipeline-topology --mode agent --phase ambient
+  EXIT=2
+  "blocked": false,
+  "invalid": true,
+  "message": "agent mode requires --shipment <shipment_id>",
+  "token": null,
+
+ROUTE: autoharness gate pipeline-topology --mode manual --shipment 001-S --phase lifecycle
+  EXIT=1
+  "blocked": true,
+  "invalid": false,
+  "message": "LIFECYCLE_NO_ACTIVE_SHIPMENT: expected exactly one active shipment",
+  "status": "blocked",
+  "token": "LIFECYCLE_NO_ACTIVE_SHIPMENT",
+  "message": "LIFECYCLE_NO_ACTIVE_SHIPMENT: expected exactly one active shipment",
+  "active_shipment_ids": [],
+  "token": "LIFECYCLE_NO_ACTIVE_SHIPMENT",
+
+ROUTE: autoharness gate pipeline-topology --mode ci --phase lifecycle
+  EXIT=2
+  "blocked": false,
+  "invalid": true,
+  "message": "--phase lifecycle requires --shipment <shipment_id> in any mode",
+  "token": null,
+
+POST_ARCHIVE_ROUTES_TESTED=4
+POST_ARCHIVE_ROUTES_NONZERO_EXIT=4
+
+### STEP 5: Q2 - what the INSTALLED Ship contract actually mandates (source citation, not inference)
+SOURCE=.github/agents/_ship.agent.md
+  L559   1a. **TOPOLOGY_GATE: lifecycle (before build)** — if the `pipeline-topology` gate is installed for this workspace,
+  L571   5a. **TOPOLOGY_GATE: lifecycle (before PR creation)** — if the `pipeline-topology` gate is installed for this workspace,
+  L767   a0. **TOPOLOGY_GATE: lifecycle (before closure/safe-close)** — if the `pipeline-topology` gate is installed for this
+  L743   Then invoke the **pr-lifecycle** skill for the closure PR. The closure PR title
+  L741   4. **After all closure work is committed**, push the branch and create a PR:
+  L723   4. Obtain explicit operator approval — the prior main PR approval does not transfer.
+
+### VERDICT
+Q1_POST_ARCHIVE_LIFECYCLE_GATE_BLOCKS=True
+Q1_NOTE=A lifecycle-phase topology gate run AFTER the archive fails closed; there is no active shipment left to satisfy it and re-claiming an archived shipment is not a supported transition.
+Q2_NOTE=See STEP 5 citations. The installed Ship Step 6.0 closure-PR step invokes pr-lifecycle directly; the lifecycle topology gate is mandated at Step 5 (implementation PR) and at Step 6 a0 (BEFORE closure/safe-close, while the shipment is still active), not before the closure PR.

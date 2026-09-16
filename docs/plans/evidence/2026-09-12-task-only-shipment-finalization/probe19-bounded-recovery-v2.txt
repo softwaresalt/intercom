@@ -1,0 +1,112 @@
+ENGINE_PATH=C:\Tools\backlogit.exe
+ENGINE_SHA256=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+ENGINE_SHA256_EXPECTED=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+DIGEST_GATE=PASS
+ENGINE_VERSION=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty (update check skipped)
+AUTHORIZATION_SURFACE=CLI-only (MCP not probed, not authorized)
+REPO_ROOT=C:\Source\GitHub\intercom-go
+
+### SCENARIO [withheld] approval_granted=False
+SEEDED_FROM_LIVE_CONFIG=True
+RECOVERY_PATH=.autoharness/backups/stage-recovery/p19-withheld
+RECOVERY_PATH_GITIGNORED=True
+RECOVERY_PATH_OUTSIDE_COMPARED_INVENTORY=True
+ENUMERATED_MUTABLE_SET_COUNT=4
+  ENUMERATED .backlogit\queue\001-F.md
+  ENUMERATED .backlogit\archive\001.001-T.md
+  ENUMERATED .backlogit\queue\001-S.md
+  ENUMERATED .backlogit\queue\002-S.md
+  INVENTORY .backlogit\queue\001-F.md        96DBB9926E48BE04E78D100729947F2BC1DBE3DA25F021812031DE4D67486490
+  INVENTORY .backlogit\archive\001.001-T.md  BBFCD51D83659116A200807064B26324A47C88CF4FD1608F4B00CE1B93444183
+  INVENTORY .backlogit\queue\001-S.md        2B496DC8704EE7D6E080CC106B8D6F7FB03410D6B2D3F9722162B41A61AB7DF2
+  INVENTORY .backlogit\queue\002-S.md        3CF7FC35D1638477C66C4EC895F265256B9343A12E46FFD73221CF909C6261A2
+DEP_EDGE_BEFORE=002-S → 001-S (blocks)
+APPEND_ONLY_STREAM_COUNT=5
+  APPEND_ONLY_BASELINE .backlogit\logs\001-F.jsonl                    len=189
+  APPEND_ONLY_BASELINE .backlogit\logs\001-S.jsonl                    len=341
+  APPEND_ONLY_BASELINE .backlogit\logs\001.001-T.jsonl                len=615
+  APPEND_ONLY_BASELINE .backlogit\logs\002-S.jsonl                    len=171
+  APPEND_ONLY_BASELINE .backlogit\hooks_queue.jsonl                   len=1773
+SHIP_EXIT=1
+SHIP_OUT: Error: ship shipment: ship shipment 001-S: archive release scope: archive item 001-S: archive "001-S": destination ".backlogit/archive/001-S.md" is occupied by an unparseable file (read C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p19-withheld\.backlogit\archive\001-S.md: Incorrect function.): backlogit: archive destination already occupied by a different item
+TORN_STATE_SHIPMENT_LIVE=True TORN_STATE_STATUS='status: shipped'
+RECOVERY_STEP_1_ENUMERATE=non-destructive
+UNEXPECTED_INSIDE_BOUNDED_SET=1
+  UNEXPECTED_IN_BOUNDS  .backlogit\archive\001-S.md
+UNEXPECTED_OUTSIDE_BOUNDED_SET=1
+  UNEXPECTED_OUT_OF_BOUNDS (REPORTED, NOT MOVED) .backlogit\queue\.001.001-T.md.lock
+RECOVERY_STEP_2_APPROVAL_GATE_EVALUATED=True
+APPROVAL_GRANTED=False
+APPROVAL_WITHHELD -> HALT with NO quarantine and NO restore
+WITHHELD_QUARANTINE_FILE_COUNT=0
+WITHHELD_TORN_STATE_PRESERVED=True
+WITHHELD_STILL_MISSING_COUNT=0
+WITHHELD_NO_RESTORE_PERFORMED=True
+TERMINAL_DISPOSITION=HALT (approval withheld)
+APPEND_ONLY_PREFIX_CHECK (full prior bytes must remain an exact prefix):
+  PREFIX_INTACT .backlogit\logs\001-F.jsonl                    189->189
+  PREFIX_INTACT .backlogit\logs\001-S.jsonl                    341->1299
+  PREFIX_INTACT .backlogit\logs\001.001-T.jsonl                615->1033
+  PREFIX_INTACT .backlogit\logs\002-S.jsonl                    171->171
+  PREFIX_INTACT .backlogit\hooks_queue.jsonl                   1773->1773
+APPEND_ONLY_PREFIX_VIOLATIONS=0
+APPEND_ONLY_DELETIONS=0
+QUARANTINE_PRESERVED_ENTRIES=0
+NO_DB_WAL_COMMITTED=True (scratch + recovery roots are gitignored)
+
+### SCENARIO [granted] approval_granted=True
+SEEDED_FROM_LIVE_CONFIG=True
+RECOVERY_PATH=.autoharness/backups/stage-recovery/p19-granted
+RECOVERY_PATH_GITIGNORED=True
+RECOVERY_PATH_OUTSIDE_COMPARED_INVENTORY=True
+ENUMERATED_MUTABLE_SET_COUNT=4
+  ENUMERATED .backlogit\queue\001-F.md
+  ENUMERATED .backlogit\archive\001.001-T.md
+  ENUMERATED .backlogit\queue\001-S.md
+  ENUMERATED .backlogit\queue\002-S.md
+  INVENTORY .backlogit\queue\001-F.md        58810590108A9CCDF0CF46A7CB36DCFA5CB7B9BD3B0D392F962B17D01923615B
+  INVENTORY .backlogit\archive\001.001-T.md  4358E7E9D67F40E569712283D3BC84895E04057D70AD9D44CD9BF30F628FDAEF
+  INVENTORY .backlogit\queue\001-S.md        0EF406DEADDC8C9B9F906A4FCABCA5DFAB465CAF9D2B7BB592A95346728A4F86
+  INVENTORY .backlogit\queue\002-S.md        57E86106E823B9024FDBF2D2FAEC1916768F71909DB6F9BABA46C8139FA52668
+DEP_EDGE_BEFORE=002-S → 001-S (blocks)
+APPEND_ONLY_STREAM_COUNT=5
+  APPEND_ONLY_BASELINE .backlogit\logs\001-F.jsonl                    len=189
+  APPEND_ONLY_BASELINE .backlogit\logs\001-S.jsonl                    len=339
+  APPEND_ONLY_BASELINE .backlogit\logs\001.001-T.jsonl                len=614
+  APPEND_ONLY_BASELINE .backlogit\logs\002-S.jsonl                    len=171
+  APPEND_ONLY_BASELINE .backlogit\hooks_queue.jsonl                   len=1773
+SHIP_EXIT=1
+SHIP_OUT: Error: ship shipment: ship shipment 001-S: archive release scope: archive item 001-S: archive "001-S": destination ".backlogit/archive/001-S.md" is occupied by an unparseable file (read C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p19-granted\.backlogit\archive\001-S.md: Incorrect function.): backlogit: archive destination already occupied by a different item
+TORN_STATE_SHIPMENT_LIVE=True TORN_STATE_STATUS='status: shipped'
+RECOVERY_STEP_1_ENUMERATE=non-destructive
+UNEXPECTED_INSIDE_BOUNDED_SET=1
+  UNEXPECTED_IN_BOUNDS  .backlogit\archive\001-S.md
+UNEXPECTED_OUTSIDE_BOUNDED_SET=1
+  UNEXPECTED_OUT_OF_BOUNDS (REPORTED, NOT MOVED) .backlogit\queue\.001.001-T.md.lock
+RECOVERY_STEP_2_APPROVAL_GATE_EVALUATED=True
+APPROVAL_GRANTED=True
+  QUARANTINED (moved, not deleted) .backlogit\archive\001-S.md
+RECOVERY_STEP_3_QUARANTINED_COUNT=1
+RECOVERY_STEP_3_OUT_OF_BOUNDS_MOVED=0 (reported only; separate approval required)
+RECOVERY_STEP_4_RESTORED_COUNT=4 (enumerated inventory only; no directory sweep)
+RECOVERY_STEP_5_CACHE_REHYDRATED_VIA=official 'backlogit sync'
+RECOVERY_STEP_5_DB_BYTE_RESTORED=False
+MUTABLE_BYTE_EQUIVALENCE_FAILURES=0
+MUTABLE_PATH_EQUIVALENCE_FAILURES=0
+DEP_EDGE_AFTER=002-S → 001-S (blocks)
+DEPENDENCY_EQUIVALENCE_OK=True
+RESIDUAL_UNEXPECTED_PATHS_IN_BOUNDED_SET=0
+RECOVERY_STEP_7_EVENT_APPENDED=True
+TERMINAL_DISPOSITION=HALT (recovery complete, quarantine preserved)
+APPEND_ONLY_PREFIX_CHECK (full prior bytes must remain an exact prefix):
+  PREFIX_INTACT .backlogit\logs\001-F.jsonl                    189->189
+  PREFIX_INTACT .backlogit\logs\001-S.jsonl                    339->1299
+  PREFIX_INTACT .backlogit\logs\001.001-T.jsonl                614->1033
+  PREFIX_INTACT .backlogit\logs\002-S.jsonl                    171->171
+  PREFIX_INTACT .backlogit\hooks_queue.jsonl                   1773->1773
+APPEND_ONLY_PREFIX_VIOLATIONS=0
+APPEND_ONLY_DELETIONS=0
+QUARANTINE_PRESERVED_ENTRIES=3
+NO_DB_WAL_COMMITTED=True (scratch + recovery roots are gitignored)
+
+### PROBE 19 COMPLETE - both approval branches executed

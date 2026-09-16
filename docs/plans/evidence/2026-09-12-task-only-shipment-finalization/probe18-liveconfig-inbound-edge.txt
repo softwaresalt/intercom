@@ -1,0 +1,127 @@
+ENGINE_PATH=C:\Tools\backlogit.exe
+ENGINE_SHA256=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+ENGINE_SHA256_EXPECTED=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+DIGEST_GATE=PASS
+ENGINE_VERSION=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty (update check skipped)
+AUTHORIZATION_SURFACE=CLI-only (MCP not probed, not authorized)
+REPO_ROOT=C:\Source\GitHub\intercom-go
+### SEEDED FROM LIVE CONFIG (not acklogit init defaults)
+SEED config.yaml sha256=534334EAA83EFBB033FAA1DD00F9460B1209BD5E801829101E8D0B7210762883
+SEED header-def.yaml sha256=285F48934176899A9325BCFB3312EAEC60678BB74533A050EDC57E08A02641EA
+SEED hooks.yaml sha256=FB5D37AC0D9FCF1BCCDE55CD988C4685F87951D12119ABB9D368E594172112E4
+SEED registry.yaml sha256=C6D82CA6161D6C76F8C0A79F312C2D620391728B0174A9B8167F161A9A4EE894
+SEED migration.yaml sha256=860AAA0CC53EAC6C0E7AD91C6E71A3B2FD893516BBF170EF8A7BE4C51A38D6DE
+SEED_STATUS_ENUM_HAS_SHIPPED=False
+SEED_HOOKS_VALIDATE_TRANSITION=True
+SEED_HOOKS_PRE_TASK_GATE=True
+### STEP 1: build the exact prerequisite topology under live config
+TOPOLOGY:
+ID         TITLE                            STATUS  TYPE      PRIORITY  SIZE  COMPLEXITY  COMPOSITION
+001-F      Covering root feature            queued  feature                               unsized:1
+001.001-T  Sole live task                   queued  task      medium                      
+001-S      Prerequisite task-only shipment  queued  shipment                              unsized:1
+002-S      Successor blocked shipment       queued  shipment                              
+### STEP 2: ROOT CAUSE re-confirmation under LIVE config - generic move to shipped
+MOVE_SHIPPED_EXIT=9
+MOVE_SHIPPED_OUT: move shipment 001-S to shipped via generic path: backlogit: shipment must be shipped via ShipShipment, not a direct status update
+### STEP 3: task to done under live hooks (pre_task_completion_gate observable here)
+MOVE_TASK_DONE_EXIT=0
+MOVE_TASK_DONE_OUT: Moved 001.001-T → done
+### STEP 4: BASELINE hash of the relation closure (includes the INBOUND edge holder 002-S)
+BASELINE queue\001-F.md           84FB46E00399D1A7CB910F3CBD367DFF6C8739001442B40DAEF5C1E987D702A3
+BASELINE queue\001.001-T.md       ABSENT
+BASELINE queue\001-S.md           1FDEC80B3C444BA70C6DC6C1D6059CE7F73AC52C437720DA6240964CA1C52ECB
+BASELINE queue\002-S.md           E64897DA7C19398AE486265EB86C10A05819C026EF06610407B877EED820FF15
+INBOUND_EDGE_RECORD_BEFORE:
+  | ---
+  | artifact_type: shipment
+  | created_at: 2026-09-13T04:18:38.300036Z
+  | custom_fields:
+  |     items: []
+  | dependencies:
+  |     - 001-S
+  | id: 002-S
+  | status: queued
+  | title: Successor blocked shipment
+  | updated_at: 2026-09-13T04:18:38.300036Z
+  | ---
+  | 
+  | 
+### STEP 5: AUTHORIZED CALL - ShipShipment on the prerequisite
+SHIP_EXIT=0
+SHIP_OUT: {
+SHIP_OUT:   "shipment_id": "001-S",
+SHIP_OUT:   "shipment_status": "shipped",
+SHIP_OUT:   "archived_ids": [
+SHIP_OUT:     "001.001-T",
+SHIP_OUT:     "001-S"
+SHIP_OUT:   ],
+SHIP_OUT:   "returned_ids": [],
+SHIP_OUT:   "commit_sha": "1f55e6aa2a4507bcc1a9c7000d742a8710db4ca1"
+SHIP_OUT: }
+### STEP 6: INBOUND-EDGE BYTE-INVARIANCE (the load-bearing assertion)
+INBOUND_RECORD_PATH_CHANGED=False
+INBOUND_EDGE_SHA_BEFORE=E64897DA7C19398AE486265EB86C10A05819C026EF06610407B877EED820FF15
+INBOUND_EDGE_SHA_AFTER =E64897DA7C19398AE486265EB86C10A05819C026EF06610407B877EED820FF15
+INBOUND_EDGE_BYTE_IDENTICAL=True
+INBOUND_EDGE_RECORD_AFTER:
+  | ---
+  | artifact_type: shipment
+  | created_at: 2026-09-13T04:18:38.300036Z
+  | custom_fields:
+  |     items: []
+  | dependencies:
+  |     - 001-S
+  | id: 002-S
+  | status: queued
+  | title: Successor blocked shipment
+  | updated_at: 2026-09-13T04:18:38.300036Z
+  | ---
+  | 
+  | 
+### STEP 7: parent feature preservation + archived shipment provenance
+PARENT_FEATURE_STILL_LIVE_IN_QUEUE=True
+PARENT_FEATURE_BYTE_IDENTICAL=True
+ARCHIVED_SHIPMENT_RECORD:
+  | archived_status: shipped
+  | commit: 1f55e6aa2a4507bcc1a9c7000d742a8710db4ca1
+  | id: 001-S
+  | status: archived
+### STEP 8: dependency edge persistence after official sync
+DEP_LIST_002S:
+002-S → 001-S (blocks)
+SHIPMENT_LIST:
+[
+  {
+    "artifact_type": "shipment",
+    "created_at": "2026-09-13T04:18:38.300036Z",
+    "custom_fields": {
+      "items": []
+    },
+    "dependencies": [
+      {
+        "id": "001-S",
+        "type": "blocks"
+      }
+    ],
+    "hierarchy_path": "002",
+    "id": "002-S",
+    "level": 1,
+    "size_composition": {
+      "histogram": {},
+      "unsized": 0,
+      "members": [],
+      "skipped": [],
+      "ruleset_version": null
+    },
+    "status": "queued",
+    "title": "Successor blocked shipment",
+    "updated_at": "2026-09-13T04:18:38.300036Z"
+  }
+]
+### STEP 9: residual - no DB/WAL artifacts leave the scratch workspace
+SCRATCH_PATH=\.backlogit\runtime\stage-probe-scratch\p18
+SCRATCH_GITIGNORED=True
+### VERDICT
+INBOUND_EDGE_BYTE_IDENTICAL=True
+PARENT_FEATURE_PRESERVED=True

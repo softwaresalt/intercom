@@ -1,0 +1,1688 @@
+---
+title: "Deliberation — Stage Artifact Branch/PR Policy Gap Correction"
+date: 2026-09-11
+status: accepted
+agent: Stage
+governs: stash 638A410B
+---
+
+# Deliberation — Stage Artifact Branch/PR Policy Gap Correction
+
+- **Date**: 2026-09-11
+- **Agent**: Stage (operator-authorized, interactive)
+- **Stash entry**: `638A410B` (high, feature-shaped)
+- **Planning branch**: `chore/stage-pipeline-policy-gap` — Stage artifacts only. **Stage commits on
+  this branch and does nothing else with it**; push, PR **#54**, and merge are performed by the
+  Orchestrator or the operator, which is the exact route this deliberation exists to install.
+  (Rev 8 corrects the header's original "no push, no PR" claim, which was true when written and
+  became false once PR #54 was opened — a session record that describes a state the repository has
+  left is read as current by the next agent.)
+- **Addenda**: §8 (rev 2), §9 (rev 3), §10 (rev 6), §11 (rev 7), §12 (rev 8), §13 (rev 9),
+  §14 (rev 10), §15 (rev 11), §16 (rev 12), §17 (rev 13), §18 (rev 14),
+  **§19 (rev 15) — latest**. This list is
+  the **live index** and is advanced with every addendum; rev 14 corrected it after it was found
+  stale at **§16**, two addenda behind the document it indexes, and rev 15 advanced it in the same
+  pass that wrote §19 rather than leaving it to be caught by a later review.
+- **Evidence commit**: `fdff9e4` — a Stage no-shipment decision artifact pushed directly to
+  `main`. Treated as **historical evidence only**; not reverted, not rewritten.
+
+---
+
+## 1. Framing — what problem are we actually solving?
+
+A Stage planning artifact reached the default branch without a pull request. That was not an
+agent misbehaviour: **the contract authorized it.** Two coupled surfaces made the direct push
+the compliant reading.
+
+### 1.1 Surface A — the policy root cause
+
+`.github/policies/workflow-policies.md`, **P-010 Agent Role Boundary**, the **Stage MAY** block:
+
+> **Stage MAY** (within its legitimate scope):
+> - Commit backlog and planning artifacts *(on the default branch or a dedicated chore/admin branch)*
+
+The same policy's **Ship MUST NOT** block already reads:
+
+> **Ship MUST NOT**: … Commit or push directly to `main`
+
+So P-010 is **asymmetric**: Ship is forbidden from touching `main` directly, Stage is expressly
+permitted. This clause is the authorization that makes the Orchestrator instruction below
+internally consistent. Fixing the Orchestrator alone would leave the contradiction alive in the
+authoritative policy registry.
+
+**Anchoring note (rev 8).** Both bullets above were originally cited by line ordinal (`L230`,
+`L258`). They are now anchored by **block lead-in plus quoted text**, which is what §8.5 said it
+was switching to and did not. The line numbers were not merely brittle — B2 appends an Amendment
+Log row to this very file, so every ordinal below the insertion point shifts as a direct result of
+the change this deliberation governs.
+
+### 1.2 Surface B — the Orchestrator instruction
+
+`.github/agents/_orchestrator.agent.md`, **Step 1.5 Staging Artifact Merge Gate**, sub-steps
+3a–3d already mandate the correct behaviour unconditionally:
+
+```text
+a. Commit any uncommitted backlog files to a staging branch: `chore/stage-{shipment_id}`
+b. Push the staging branch and create a PR to `main`
+c. Wait for the staging PR to merge (operator approval required)
+d. After merge, pull `main` and proceed to step 4
+```
+
+Sub-step **3e (L287)** then reverses it — instructing that a direct push to `main` be attempted
+first, with the staging PR used only as a rejection fallback, justified as "deterministic
+regardless of when branch protection was enabled or changed."
+
+Three independent defects in 3e:
+
+1. **It contradicts 3a–3d.** Those steps are unconditional; 3e re-enters them conditionally.
+2. **Its determinism claim is inverted.** 3a–3d are *strictly more* deterministic: they never
+   depend on a server-side rejection whose presence is unverified (see §1.4). 3e's behaviour is
+   a function of remote branch-protection configuration; 3a–3d's is not.
+3. **Its fallback body is a verbatim restatement of 3a–3c.** Deleting 3e therefore loses *no*
+   behaviour — the fallback path it describes is the path 3a–3d already require.
+
+### 1.3 The in-file counter-precedent
+
+`_orchestrator.agent.md`'s own *Elective Agent Behavioral Notes* already state that both agents
+"never commit directly to the default branch." 3e violated a norm asserted elsewhere in the very
+same file. This is a self-inconsistent generated artifact, not a considered design.
+
+### 1.4 Verified blast radius
+
+A scan of the tracked harness contract surface
+(`.github/agents/`, `.github/policies/`, `.github/skills/`, `.github/instructions/`) for
+direct-push-to-default-branch language returns **exactly one hit**:
+`_orchestrator.agent.md:287`. `_stage.agent.md`, the subagents, the skills, and the instructions
+are clean. The correction is therefore genuinely small, and a
+post-fix zero-findings acceptance is achievable (see D5).
+
+**Recorded unknown**: no decision record, closure record, or docs file establishes whether GitHub
+branch protection is actually enabled on `main` for this repository. 3e was written precisely to
+paper over that uncertainty. We do **not** assume protection exists; we remove the dependence on
+it. This is stated rather than assumed.
+
+---
+
+## 2. Constraints carried from the operator
+
+| # | Constraint | Consequence for this deliberation |
+|---|---|---|
+| C1 | Smallest complete contract change | No generalized branch framework, no new policy ID, no waiver mechanism |
+| C2 | Mechanical enforcement, not prose-only | A deterministic CI gate is mandatory, not optional |
+| C3 | Source templates and installed artifacts stay coupled | Must be resolved against the untracked-template finding (D2) |
+| C4 | Preserve role isolation | Orchestrator owns staging branch/PR orchestration; Stage owns planning artifacts; Ship owns implementation delivery |
+| C5 | Do not revert `fdff9e4` | Historical evidence preserved |
+| C6 | Preserve branch and PR merge-commit rules | P-009 merge-commit-only, P-011, P-016 untouched |
+
+---
+
+## 3. Options considered
+
+### Option 1 — Prose-only correction
+
+Delete 3e, reword the P-010 bullet. Nothing else.
+
+- **Pro**: minimal diff; satisfies C1 maximally.
+- **Con**: violates **C2 outright**. Both files carry
+  `Generated by autoharness | Template: …` provenance; a future `install`/`tune` re-render
+  restores 3e silently and no signal fires. The gap reopens undetected. The evidence commit
+  `fdff9e4` proves prose alone did not hold the line even *before* regeneration.
+- **Verdict**: **Rejected** — fails the reliability requirement that motivated the request.
+
+### Option 2 — Prose correction + deterministic regression gate (CHOSEN)
+
+Delete 3e; make the P-010 Stage bullet symmetric with the existing Ship prohibition; add
+`scripts/check-direct-push-language.sh` asserting the invariant over the **installed** contract
+surface, wired into the existing `lint` job in `.github/workflows/ci.yml`; record the divergence
+in the ci.yml LOCAL DIVERGENCE ledger.
+
+- **Pro**: satisfies C2 with a mechanism the repository already uses five times over
+  (`check-retired-architecture.sh`, `check-write-path-precondition.sh`,
+  `check-gitignore-append-only.sh`, `check-unignore-regression.sh`, `check-depguard-fixtures.sh`).
+  Regeneration that restores 3e turns CI red — which is the *only* enforceable coupling available
+  given D2. Reuses house conventions rather than inventing a shape, satisfying C1.
+- **Con**: adds one script + fixtures + **one blocking CI step**. Accepted as the irreducible cost
+  of C2.
+- **Verdict**: **Chosen.**
+
+### Option 3 — Option 2 + a new dedicated policy ID (e.g. P-022 "Stage Branch-Before-Persist")
+
+- **Pro**: maximally explicit; a named policy is greppable.
+- **Con**: **violates C1.** P-010 already *is* the role-boundary policy and already contains the
+  exact parallel prohibition for Ship. The correct change is to make one existing asymmetric
+  bullet symmetric — not to add a second policy that partially duplicates P-010 and creates a new
+  precedence question against it. Rejected as invented framework.
+- **Verdict**: **Rejected.**
+
+### Option 4 — Enforce via GitHub branch protection / ruleset configuration instead
+
+- **Pro**: a true server-side control; unbypassable by a local agent.
+- **Con**: out of repository scope (not a tracked artifact), unverifiable from the repo, and
+  **orthogonal** — it would stop the push but leave the contract still *instructing* the push,
+  so the agent would keep attempting a forbidden action and the contradiction would persist.
+  Also cannot be asserted by CI. Does not address the root cause.
+- **Verdict**: **Rejected as the primary mechanism.** Noted as a complementary operator-side
+  hardening, explicitly out of scope here.
+
+---
+
+## 4. Key decisions
+
+### D1 — Correct both surfaces, not just the Orchestrator
+
+The P-010 bullet is the *authorization*; Step 1.5 3e is the *instruction*. Removing only the
+instruction leaves the authorization standing, and the next regeneration or the next agent
+reading P-010 reopens the gap. Both move together, in one shipment.
+
+The P-010 Stage bullet becomes symmetric with the existing Ship prohibition:
+
+> - Commit backlog and planning artifacts **on a dedicated Stage/admin branch merged via PR —
+>   never directly to the default branch**
+
+and the clause is extended so it binds **even when no shipment is formed** — the exact case that
+produced `fdff9e4`, which was a no-shipment decision artifact and therefore fell outside any
+shipment-keyed staging flow.
+
+An **Amendment Log** row is appended per the registry's own additive convention (new minor
+version; "Corrects, and does not delete or edit, the N.N.N row above"), matching the worked
+precedent of the P-015 1.21.0 supersession note.
+
+### D2 — Template coupling: assert the invariant over installed artifacts
+
+**Investigation finding that changes the shape of scope item 1.** The `.tmpl` sources
+(`.copilot/installed-plugins/autoharness/autoharness/templates/agents/_orchestrator.agent.md.tmpl`
+L287, and the `.autoharness/staging/` mirror) **are not tracked by git**: `.gitignore:60` excludes
+`.copilot/` and `.autoharness/.gitignore:3` excludes `staging/`. Confirmed via
+`git check-ignore -v` and `git ls-files --error-unmatch`.
+
+Consequences, recorded rather than assumed:
+
+- An edit to those templates **cannot be committed, diffed, or reviewed**, and is **overwritten
+  by the next `autoharness install`**, because they are vendored upstream plugin content.
+- Therefore **no CI check can enforce template↔artifact equality** in this repository.
+
+Decision: **do not edit the untracked templates.** Instead, satisfy C3 with the only coupling
+that is actually enforceable here —
+
+1. the gate asserts the **invariant** (absence of the direct-push instruction shape) over the
+   **installed** `.github/**` artifacts, so a regeneration that restores 3e from the upstream
+   template turns CI red; and
+2. the ci.yml **LOCAL DIVERGENCE ledger** is extended to name this change, per the established
+   in-repo convention for generated-file divergence.
+
+This is a deliberate, disclosed narrowing of scope item 1, and it is *stronger* than editing an
+untracked file would be: an untracked edit is invisible to review and erased on reinstall, whereas
+the gate detects the reintroduction regardless of which path reintroduces it. The upstream
+template defect is recorded for an upstream report; fixing upstream is out of scope.
+
+### D3 — Detector shape: structural, prohibition-aware, self-exclusion by pathspec
+
+The single highest-risk element. Prior art —
+`docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md` — records a
+CI assertion that **permanently self-failed** because a bare-substring match caught the step name,
+comments, and error text that had to mention the forbidden string to be comprehensible. This gate
+is squarely in that class: it must reject direct-push instruction language while its own header,
+fixtures, error strings, CI step name, **and the new P-010 sentence forbidding the practice** all
+necessarily discuss it.
+
+Mitigations, all mandatory and all asserted in `--self-test`:
+
+1. **Match a violation *shape*, not a mention** — an *imperative instruction* to push/attempt a
+   push to the default branch. A descriptive or prohibitive sentence is not a violation.
+2. **Prohibition-aware**: a candidate line carrying a negation/prohibition marker
+   (`never`, `must not`, `MUST NOT`, `do not`, `forbidden`, `prohibited`) is **not** a finding.
+   This is what lets P-010's new prohibition sentence live inside the scanned corpus.
+3. **Corpus scoped to the contract surface** via `git ls-files` pathspec:
+   `.github/agents/**`, `.github/policies/**`, `.github/skills/**`, `.github/instructions/**`.
+   `docs/**` is deliberately **outside** the corpus, so decision/plan/closure/memory records
+   (including this file, which quotes 3e) never trip the gate. This pathspec is the
+   **authoritative and only** self-exclusion mechanism: because `scripts/**` is not a member of
+   it, the checker itself and `scripts/testdata/**` are excluded **by construction**. Rev 2's
+   separate path-self-exclusion assertion is therefore **withdrawn as vacuous** — asserting that
+   a never-selected path is absent from the selection can never fail, which is precisely the
+   rev-1 vacuity failure mode (§10.1). Non-vacuity of the *selection* is covered by item 4.
+4. **Non-vacuity**: `--self-test` fails if the fixture corpus or the selected file set is empty,
+   and reports the resolved corpus file count.
+
+### D4 — Task ordering keeps `main` green while remaining test-first
+
+Constitution Principle II requires test-first. Prior art
+(`docs/decisions/2026-09-08-…-retired-arch-gate-detection-quality-deliberation.md`, D2′) records
+that shipping a deliberately-red gate previously **net-downgraded a live merge-blocking control**.
+
+Resolution — ordering alone, with **no advisory-window toggle needed**:
+
+| Order | Task | State of `main` |
+|---|---|---|
+| 1 | Gate script + fixtures + `--self-test`, **not yet wired to CI**. Real-tree scan **fails** (3e still present) — the intentional red. | green (gate not in CI) |
+| 2 | Delete 3e; make P-010 symmetric + Amendment Log. Gate now passes. | green |
+| 3 | Wire the single blocking CI step + LOCAL DIVERGENCE ledger; verify installed-surface coupling. | green |
+
+Because the gate enters CI only *after* the violation is removed, `main` is never wedged and no
+fail-open toggle is introduced. This is strictly safer than the bounded-advisory-window pattern
+and simpler (C1). No toggle variable is added — the gate is **blocking from the moment it is
+wired**, consistent with the post-`015.013-T` fail-closed posture.
+
+### D5 — Zero-findings acceptance at HEAD
+
+Carried from the retired-arch D5 constraint: every detector must be proven against the real tree,
+not merely against fixtures. After task 2, a full corpus scan at HEAD **must report zero
+findings**, and this is a hard acceptance criterion on task 3. If a legitimate line trips the
+detector, the **pattern is narrowed or a path is documented-and-excluded** — coverage is never
+reduced by weakening the corpus (retired-arch D4).
+
+### D6 — Threat-model honesty
+
+The gate is an **anti-accident control, not an anti-adversary control**, and its header must say
+so verbatim in the house style: GitHub's `pull_request` trigger runs the workflow and this script
+from the PR's own head, so a PR that violates the invariant can also edit the gate. It is
+effective against regeneration, drift, and careless reintroduction. The companion residual —
+"the CI workflow is also autoharness-generated and may overwrite the wiring step on a future
+render" — is disclosed in the same header. CODEOWNERS review of the script + workflow is the
+named mitigation; `pull_request_target` re-architecture is explicitly out of scope.
+
+### D7 — Role isolation preserved (C4)
+
+No role boundary moves. Step 1.5 remains the **Orchestrator's** gate — it keeps owning staging
+branch creation, PR, and merge-wait; only its self-contradicting escape hatch is removed. P-010
+continues to describe **Stage's** artifact authorship. Ship's implementation-delivery boundary,
+P-009 merge-commit-only, P-011, and P-016 are untouched. This shipment changes *where Stage
+artifacts may land*, never *who does what*.
+
+---
+
+## 5. Scope boundary
+
+**In scope** (four authorization surfaces across three installed files, plus the gate):
+`_orchestrator.agent.md` Step 1.5 **sub-step 3e** *and* the Step 1.5 **preamble** (§9.1);
+`_stage.agent.md` Role Boundary **Git row** — the operative surface role-enforcement actually
+reads (§8.1); `workflow-policies.md` P-010 Stage bullet + Amendment Log;
+`scripts/check-direct-push-language.sh` + `scripts/testdata/directpush/`;
+`.github/workflows/ci.yml` **one blocking `lint` step** + ledger.
+
+**Explicitly out of scope**: reverting/rewriting `fdff9e4` (C5); editing untracked `.copilot/` or
+`.autoharness/staging/` templates (D2); GitHub branch-protection configuration (Option 4); a new
+policy ID (Option 3); any unrelated cleanup; the three dangling doc references cited by
+`ci-topology-check.sh`; the missing compound entry on generated-artifact divergence (candidate
+follow-up, not required here).
+
+**P-021 note**: the corpus scan found no second instance of the offending language, so no
+same-contract-surface completion work is pending. Should task 2 surface one, it is **in scope**
+as a same-contract-surface completion; anything else requires a captured deferred-scope-expansion
+stash entry.
+
+---
+
+## 6. Open questions
+
+None blocking. The one recorded unknown — whether branch protection is enabled on `main` — is
+deliberately rendered **irrelevant** by this design: 3a–3d never consult it.
+
+---
+
+## 7. Outcome
+
+Option 2 accepted. Proceed to implementation planning under a single covering chore, ordered
+test-first per D4. **Superseded in scope by §8 below** — the chosen direction stands; the surface
+count and detector design are corrected.
+
+---
+
+## 8. Revision 2 addendum (2026-09-11, post plan-review)
+
+The seven-persona plan review **falsified three claims made above**. They are corrected here
+rather than silently rewritten, per the registry's additive convention.
+
+### 8.1 §1.4 "exactly one hit" is WITHDRAWN
+
+The scan behind §1.4 used a **push-shaped** predicate. It therefore missed a **commit-shaped**
+authorization on a third surface:
+
+`.github/agents/_stage.agent.md` **L42**, Role Boundary (NON-NEGOTIABLE) table, Git row, Allowed
+column:
+
+> Commit backlog/planning artifacts **on default or admin branch**; create/use an explicit,
+> time-boxed spike/research worktree only for staging investigation
+
+`.github/instructions/role-enforcement.instructions.md` makes **that table**, not P-010, the
+authoritative permission set consulted at mutation time. So this — not P-010 — is the surface the
+Stage agent actually read before producing `fdff9e4`. Correcting only P-010 and Step 1.5 would
+have left the operative authorization intact and produced a **false green**: a gate reporting zero
+findings while the gap stayed open.
+
+Under **P-021 C1** this is a *same-contract-surface completion* and is therefore **in scope for
+this shipment**, not a deferrable expansion.
+
+**Consequence for D3**: the detector must match **commit-to-default-branch** authorization
+constructs as well as imperative push constructs, and must scan **table cells**, not just prose.
+
+### 8.2 The D1 P-010 rewrite as drafted was self-deadlocking — CORRECTED
+
+P-010's **Stage MUST NOT** list already forbids Stage to "Create, push, or merge pull requests"
+(mirrored at `_stage.agent.md` L44). A bullet requiring Stage artifacts to be "merged via PR"
+without naming an actor therefore prescribed a path the same policy forbids the actor to walk —
+an unsatisfiable instruction whose Violation Action is *halt*, worst in exactly the no-shipment
+case that produced `fdff9e4`.
+
+**Correction**: the rule must **separate authorship from delivery**. Stage *commits to* the
+dedicated branch; **push, PR creation, and merge are performed by the Orchestrator under
+Step 1.5, or by the operator in a direct Stage invocation — never by Stage.** Stage's PR
+prohibition stays intact and unweakened.
+
+### 8.3 "Deleting 3e loses no behaviour" is WITHDRAWN
+
+3e sub-bullet L288 reads "Create branch `chore/stage-{shipment_id}` **from the current commit**".
+Sub-step 3a (L283) says "Commit any uncommitted backlog files to a staging branch" and specifies
+**no branch point**. Step 1.5 step 2 (L277–281) routes the *already-committed-but-unpushed* case
+into step 3, and 3e's clause was the **only** text telling the agent how to move that work off
+local `main`. Deleting 3e outright would leave that path uninstructed, dead-ending at step 4's
+`STAGING_GATE_FAIL` — fail-closed, but stuck.
+
+**Correction**: fold the branch-point into 3a as part of the deletion.
+
+### 8.4 Corpus scope widened
+
+`AGENTS.md`, `.github/copilot-instructions.md`, and `.github/prompts/**` are tracked,
+autoharness-generated contract surfaces of equal authority and were outside the §D3 corpus. A
+regeneration emitting the instruction into any of them would have passed silently — fail-open on
+the exact threat the gate exists for. The corpus is widened accordingly (never narrowed, per the
+retired-arch D4 rule).
+
+### 8.5 Corrected citation
+
+§1.1 originally cited the Ship prohibition at "L258". The correct line was **L238**; L258 falls
+inside the P-011 header table. Anchors are switched to quoted text, per the ci.yml ledger's own
+"by description, not line number" rule. **Rev 8 note**: the switch was *recorded* here at rev 2 but
+not *applied* to §1.1, which continued to carry `L230`/`L258` as current evidence for six
+revisions. It is applied now, in §1.1 and in every plan and task surface that cited the Ship
+bullet by ordinal (plan §2, §5.3, §7.2/AC-C2.3; `018.011-T`). A correction that is announced but
+never performed is indistinguishable from one that was not made.
+
+### 8.6 Net effect
+
+The chosen direction (Option 2) is **unchanged and still correct**. What changed is its *scope*:
+**three** authorization surfaces, not two; a **structure-aware** detector covering commit-shaped
+and table-cell constructs; and an explicit **actor attribution** so the new rule is satisfiable.
+
+
+---
+
+## 9. Revision 3 addendum — the fourth authorization surface
+
+Round 2 of the plan-review gate found one further blocking defect in the framing. This addendum is
+**additive**: §1-§7 and §8 stand as written, corrected here rather than rewritten.
+
+### 9.1 Withdrawn: "three authorization surfaces"
+
+§8.1 widened the count from one to three. **Three was still wrong.** A fourth surface exists: the
+**preamble** of Orchestrator Step 1.5, which instructs:
+
+> verify that all staging artifacts (backlog items, shipment manifests) are committed to the
+> default branch and present on the remote.
+
+This is **commit-shaped and marker-free**, so it survives both the original push-shaped grep and
+the commit-shaped sweep that found `_stage.agent.md` L42 — it reads as a verification instruction,
+not an authorization, yet it states the gate's **postcondition** as artifacts being committed *to*
+the default branch. Leaving it intact would keep a compliant reading of direct commit-to-default
+alive in the very step that is supposed to enforce the opposite, and it sits **inside the corpus**
+the new gate scans, so it would also block zero-findings at C2.
+
+**Correction**: D1's scope becomes four surfaces. The preamble is reworded to a
+verification/postcondition form ("**have reached** the default branch **via a merged staging PR**")
+under plan task B1. This form is explicitly outside the detector's construct 2, so no detector
+narrowing is required to accommodate it.
+
+### 9.2 Reinforced: D4's "enforce mechanically, not by prose"
+
+That a fourth surface survived two rounds of deliberate manual search — by an agent that had
+already been corrected once for undercounting — is direct evidence for D4. Manual enumeration of
+contract surfaces is not reliable at this scale. The plan now records the **first full-corpus scan
+output** (AC-A3.4) before any correction begins, so the detector, not a reader, establishes the
+surface count. Risk R9 tracks the possibility of a fifth.
+
+### 9.3 Grounding for the P-016 disposition
+
+§5's claim that a Stage artifact branch does not consume the single-active implementation slot is
+now grounded in P-016's own Statement text, which scopes to "exactly one agent-owned
+**implementation** branch/worktree". A Stage artifact branch carries no source, test, or config
+change. The plan additionally makes this contract-visible by adding the clarification to P-010's
+text (task B2), rather than leaving it as a plan-only assertion.
+
+### 9.4 Net effect
+
+The chosen path (Option 2) is unchanged. D1 covers four surfaces instead of three; D4 is
+strengthened with a mechanical surface-enumeration step; D5's P-016 disposition is grounded in
+quoted policy text and promoted into the contract. No decision is reversed.
+
+---
+
+## 10. Revision 6 addendum — authorization without discovery is not a route
+
+**Source**: PR #54 current-HEAD review, cycle 5, thread `PRRT_kwDOTPuhps6hqWDe`
+(comment 3993998429). Operator-authorized, scope limited to this thread. Numbered to match the
+plan revision it grounds (§8 → plan rev 2, §9 → plan rev 3, §10 → plan rev 6).
+
+### 10.1 Withdrawn: "correcting the authorization surfaces completes the route"
+
+D1 framed the problem as a set of **authorization** surfaces — text that permits a Stage artifact
+to reach the default branch without a PR — and §8.2/§9.1 grew that set from two to four. Every
+revision through plan rev 5 worked inside that frame. The frame was **incomplete**.
+
+Correcting authorization *relocates* Stage's commit onto `chore/stage-{shipment_id}` /
+`chore/stage-{chore-slug}`. It does not teach the gate that has to verify that commit where to
+look. Orchestrator Step 1.5 discovers work through exactly two inputs — a `.backlogit/`-only
+dirtiness pathspec and a **default-branch-only** commit range — and after the relocation both are
+blind:
+
+- a no-shipment Stage run writes only `docs/plans/`, `docs/decisions/`, `docs/memory/`, so the
+  dirtiness pathspec reports **clean** — precisely the `fdff9e4` shape this deliberation exists to
+  close;
+- Stage's commit is not on the default branch, so a default-branch-against-its-own-remote range is
+  **empty by construction**.
+
+Both read "synchronized", the gate skips its commit/push/PR step, and its `origin/main`
+verification then fails — or, for a shipment-less run, has no manifest to name at all. The route
+§8.2 made *permissible* was never made *executable*.
+
+### 10.2 The rev-2 self-deadlock lesson generalizes
+
+§8.2 established that a rule is only sound when the **actor** who must satisfy it is authorized to
+act. This finding is the same defect one layer down: a rule is only sound when the actor who must
+**verify** it can **observe** the thing it verifies. §8.2's route table (carried into plan §6.2)
+names the Orchestrator as the actor for push, PR, merge, and post-merge verification of the
+no-shipment branch — while plan rev 2 simultaneously declared Step 1.5, the only Orchestrator gate
+that performs any of those, out of scope for shipment-less runs. That position is **withdrawn**.
+
+### 10.3 Decision — explicit handback, branch-specific discovery, two verification arms
+
+D1 is extended, not reversed. The correction stays inside the existing four surfaces and adds no
+new policy, task, or enforcement mechanism:
+
+1. **Explicit handback.** Stage returns `stage_branch`, `stage_head_commit`, `stage_outcome`, and
+   `stage_artifact_paths`; the Orchestrator requires and records them. Inference is a degraded,
+   loudly-recorded fallback (`STAGING_HANDBACK_DEGRADED`) covering **every** field, so it never
+   halts: branch and commit resolve from `HEAD`, outcome derives from whether a shipment was
+   formed, and paths default to the artifact path set. When the `HEAD` resolution yields the
+   default branch the branch is left **unresolved** and the run routes to the branch-creation
+   sub-step — the pre-change behaviour — rather than substituting the default branch.
+   Defaults-with-a-recorded-degradation rather than hard halt, because a hard halt would
+   reintroduce a deadlock against any Stage invocation predating the fix.
+2. **Branch-specific discovery.** The unpushed-commit range is taken against the resolved staging
+   branch, with a `HEAD`-equals-branch assertion that doubles as the P-016 single-worktree gate.
+   That resolution and its guards sit **above** the dirty/clean split, so they also cover the
+   dirty path — the one on which the gate actually mutates the repository.
+3. **Two verification arms.** The shipment arm keeps the authoritative `origin/main` manifest gate
+   unrelaxed; a second arm keyed on `no-shipment` verifies commit **ancestry** in `origin/main`
+   plus per-path readability there, over a **non-empty** path set — a concrete target requiring no
+   shipment ID. The non-empty guard matters: an empty path loop combined with a trivially-true
+   ancestry check would report success having verified nothing.
+
+D7 (role isolation) is **unchanged and reinforced**: Stage creates, checks out, and commits its
+artifact branch and reports it; the Orchestrator pushes, opens, merges, and verifies. Neither
+gains an action the other's Role Boundary forbids.
+
+### 10.4 D3 is NOT extended to cover this defect
+
+Main-only discovery is neither of D3's two violation shapes — it is not a push to the default
+branch and not a permission to commit on one. Folding it into the detector would mean opening the
+closed construct set and re-deriving the fixture corpus through the whole A→C chain, which is
+materially larger than the finding warrants. The regression is rejected instead by the
+**already-existing** per-surface harness assertions. One consequence is recorded because it is
+easy to get wrong: the corrected instruction must state its prohibition **descriptively** and must
+not quote the forbidden range, or it self-matches the absence assertion and silently vacates it.
+
+### 10.5 Net effect
+
+Option 2 is unchanged. D1 is extended from "authorization surfaces" to "authorization **and
+discovery**"; plan rev 2's no-no-shipment-clause position is withdrawn; D3, D5, and D7 are
+unchanged. No decision is reversed and no new option is opened.
+
+## 11. Revision 7 addendum — a verification that cannot fail is not a verification
+
+Source: PR #54 current-HEAD review, cycle 6 — thread `PRRT_kwDOTPuhps6hrC0c` (comment
+3994280334) on plan L626, and thread `PRRT_kwDOTPuhps6hrC0o` (comment 3994280351) on the session
+memory record.
+
+### 11.1 Withdrawn: "ancestry plus a per-path read proves the artifacts are on origin/main"
+
+§10.3 decided the no-shipment arm as *commit ancestry* + *per-path `git show origin/main:{path}`*
+over a path set defaulting to `.backlogit/ docs/plans/ docs/decisions/ docs/memory/`. That
+conjunction was asserted to be a concrete verification target. It is **not**, and the claim is
+withdrawn:
+
+* `git show` on a **tree** exits **0** and prints a directory listing. Verified against this
+  repository: `git show origin/main:docs/plans/` prints `tree origin/main:docs/plans/`, status 0.
+* All four defaulted entries are **directories that already exist on `origin/main`** in any
+  repository this gate runs in. The loop therefore succeeded over targets that are unconditionally
+  present, reading **no file the Stage run wrote**.
+* The paired ancestry check is *also* routinely satisfied in the degraded case, because
+  `stage_head_commit` defaults to `git rev-parse HEAD` and a post-merge checkout's `HEAD` is
+  commonly already an ancestor of `origin/main`.
+
+Both conjuncts could hold with nothing from the Stage session present, so the arm could report a
+**false pass** — the precise failure §10.3 set out to remove.
+
+### 11.2 The generalized lesson, third instance
+
+Rev 6 caught *"the loop can run zero times"* and added a non-empty guard. The surviving defect is
+the sibling: *"the loop runs only over things that are always there."* Both are instances of one
+shape already twice recorded in this deliberation — a check whose **pass** is not evidence of the
+property it names. §8.2's self-deadlock, §10.1's empty-by-construction commit range, and now the
+always-present path set are the same error in three costumes: **the artifact under test was never
+bound to the run under test.**
+
+The corrective principle, stated once so it generalizes: *a verification must name targets derived
+from the specific run it verifies, and its target set must be capable of being empty or wrong.* A
+target list that is identical for every possible run carries no information about any of them.
+
+### 11.3 Decision — bind the verified set to the commit, structurally
+
+`stage_artifact_paths` becomes a **non-empty set of concrete repository-relative file paths tied to
+`stage_head_commit`**. When the handback supplies it, it is validated (file-ness, root containment,
+set-equality with the commit's changed files); when it does not, it is **derived** from the commit
+itself. The binding is structural rather than procedural, which is the whole point:
+`git diff-tree -r` cannot emit a directory, and `git cat-file -t` must print exactly `blob` — so
+the defect cannot recur through an author forgetting to check.
+
+Three design choices carry the decision and each rejects a plausible alternative:
+
+* **`cat-file -t` over `show`.** Both exit 0 on a tree; only `cat-file -t` reports the object
+  **type**, which is the actual discriminator. Keeping `show` and "just checking the output isn't a
+  listing" is a parse of human-readable text — fragile in exactly the way the gate is not allowed
+  to be.
+* **Set equality over subset.** A subset check rejects an invented path but accepts a handback
+  that silently drops files down to one always-present entry — which reintroduces §11.1's defect
+  through the reported-path branch.
+* **The commit's own changed-file set over a branch range.** A range (`origin/main..
+  {stage_head_commit}`) is **empty by construction** after the merge — the state the gate actually
+  runs in — so it would collapse to the vacuous loop being removed. A commit's changed-file list is
+  a property of the commit object and reads identically before and after the merge. The narrowing
+  to the tip commit is sound because ancestry already covers earlier commits on the branch; the
+  per-file check closes a different gap (files readable on the default branch), not the same one.
+  **[Withdrawn at rev 8 — see §12.1. The last sentence is a category error: ancestry proves the
+  *commit* landed, which is precisely the property §11.1 judged insufficient when it introduced the
+  per-file check. The range-form rejection stands; the tip-only narrowing does not.]**
+
+### 11.4 D3 is again NOT extended
+
+An always-passing verification loop is neither D3 violation shape — it is not a push to the default
+branch and not a permission to commit on one. The closed construct set and the fixture corpus stay
+as they are (the §10.4 position, unchanged). Rejection is carried by the existing per-surface
+harness assertion, which additionally asserts the **absence** of the `git show origin/main:{path}`
+loop and of any directory-prefix default in the no-shipment arm.
+
+### 11.5 Net effect
+
+Option 2 is unchanged. D1's scope is unchanged from rev 6 (authorization **and** discovery); the
+rev-6 *shape* of the discovery verification is corrected, not its existence. D3, D5, and D7 are
+unchanged. No decision is reversed, no new option is opened, and no task, fixture, harness
+function, or dependency edge is added.
+
+---
+
+## 12. Revision 8 addendum — a verification nobody can trigger, and a set that stops at the tip
+
+**Source**: PR #54 **adversarial review** — anchor **GPT-5.6 Sol** with **GPT-5.4-mini**,
+**Claude Sonnet 5**, and **Claude Opus 5**; **no route degradation**. Convened per the operator's
+standing instruction (recorded at session memory §14.8) that a non-converging cycle escalates to an
+adversarial round rather than a seventh self-directed one. All findings were classified
+**same-contract completion** under P-021.
+
+### 12.1 Withdrawn: "scoping the verified set to the tip commit loses nothing"
+
+§11.3 argued that deriving the per-file check from `stage_head_commit`'s own diff was sufficient,
+because commit **ancestry** already covered earlier commits on the branch. That argument is a
+**category error**, and §11.1 had already refuted it two sections earlier:
+
+| Property | What it proves | What it does not |
+|---|---|---|
+| `merge-base --is-ancestor {head} origin/main` | the **commit** reached the default branch | that any **file** is readable there |
+| `cat-file -t origin/main:{path}` = `blob` | the **file** is readable there, as a file | anything about commits that did not change it |
+
+§11.1 introduced the per-file check **precisely because ancestry is insufficient**. Applying that
+check to the tip alone then left every artifact written in an earlier commit of the same session
+resting on the insufficient property — the exact gap the check exists to close, relocated rather
+than removed. A Stage session that writes its deliberation in commit 1 and its plan in commit 2 —
+the ordinary shape; this very branch has many commits — had the deliberation verified by nothing
+stronger than ancestry.
+
+**The generalized lesson, fourth instance.** Rev 6 fixed *"the loop can run zero times"*. Rev 7
+fixed *"the loop can run only over things that are always there"*. Rev 8 fixes *"the loop runs over
+the right kind of thing, but not over all of them."* Each revision corrected the **shape** of a
+verification while leaving its **extent** unexamined. The recurring failure is not carelessness
+about any one predicate; it is checking that a verification *can fail* without checking that it
+*covers everything it claims to cover*.
+
+### 12.2 Withdrawn: "the no-shipment route is now executable end to end"
+
+Rev 6 declared the no-shipment route executable once the Orchestrator could discover and verify the
+branch. It is not, and rev 6 through rev 7 never tested the claim against the **producer**. The
+installed `_stage.agent.md` makes `stage_outcome: no-shipment` **unreachable**:
+
+* **Step 5.5** declares shipment assembly "MANDATORY — not optional" whenever the registry
+  advertises `features.shipments: true`, and calls ending a session without a `shipment_id` a
+  **P-005 violation**.
+* **Step 6**'s pre-summary verification gate says that if no `shipment_id` exists, **HALT** and
+  return to Step 5.5 — so the summary, which is where the handback line lives, is never reached.
+
+A Stage run with nothing to ship therefore cannot terminate compliantly, cannot emit a handback,
+and cannot set the outcome the Orchestrator's second arm is keyed on. Everything rev 6, rev 7 and
+rev 8 built on the consumer side was gated on an outcome **no producer could emit**.
+
+This is the **rev-2 self-deadlock lesson (§10.2) in its third instance**: rev 1 obliged Stage to
+merge a PR it was forbidden to create; rev 6 obliged the Orchestrator to find a branch nothing told
+it about; rev 8 finds a verification arm keyed on an outcome nothing can produce. In each case a
+*consumer* obligation was specified without checking that a *producer* existed. The general
+discipline this deliberation should have carried from §10.2 onward: **for every value a contract
+consumes, name the surface that emits it, and confirm that surface is permitted to.**
+
+### 12.3 Decision — bind the set to a commit *pair*, and make the terminal outcome reachable
+
+Two decisions, both narrow, neither reopening Option 2 or D1–D7.
+
+**(a) `stage_base_commit`.** The Orchestrator captures `git rev-parse HEAD` **immediately before it
+invokes Stage** and **retains** it; the retained value is authoritative over any Stage-reported one,
+which exists only so a *direct* Stage invocation still yields a usable base. The verified set
+becomes the **two-tree** diff `{stage_base_commit} {stage_head_commit}`, bounded by the
+`STAGE_ARTIFACT_ROOTS` pathspec. This keeps §11.3's post-merge-stability property — a two-tree diff
+reads identically before and after the merge, so the range-form rejection **stands** — while
+covering every commit the session made. Base→head ancestry is asserted, so the pair is a range
+rather than two unrelated commits. Step 3a **preserves** the base across its commit; re-recording it
+would collapse the range, and re-recording it to the pre-commit `HEAD` would discard the
+already-committed unpushed commits that path exists to handle.
+
+**(b) A reachable `no-shipment` terminal.** B3 scopes Step 5.5's mandatory rule to a harvest that
+**produced items**, requires `shipment_id` in Step 6's gate **only** for
+`stage_outcome: shipment`, and lets a reviewed, valid **empty** harvest emit the complete handback
+and stop without routing to Ship.
+
+**The constraint that makes (b) safe.** Step 5.5's existing guardrail — *do not assemble a shipment
+if the harvest produced no items or produced items with unresolved P-003 violations; halt and
+report* — is preserved **verbatim** and is exactly the discriminator between the two cases. P-003
+lineage violations, harvest failures, and a missing required shipment after a **non-empty** harvest
+continue to **halt** and are **never** recorded as `no-shipment`. Without that, this decision would
+trade an unreachable verification for a **silent failure channel** — strictly worse than the defect
+it fixes, and the reason the change is scoped to two clauses rather than to Step 5.5 as a whole.
+
+### 12.4 D3 is again NOT extended
+
+Neither an under-scoped verified set nor an unreachable outcome is a D3 violation shape: neither is
+a push to the default branch, and neither is a permission to commit on one. The closed construct
+set and the fixture corpus stay as they are (the §10.4 / §11.4 position, unchanged). Rejection is
+carried by the existing per-surface harness assertions, which additionally assert the **absence** of
+a single-commit derivation in the Orchestrator's no-shipment arm and the **presence** of the
+reachable terminal in the Stage surface.
+
+### 12.5 Net effect
+
+Option 2 is unchanged. D1's scope is unchanged (authorization **and** discovery); rev 8 corrects
+the **extent** of the discovery verification and supplies the **producer** the route always assumed.
+D2, D3, D4, D5, D6 and D7 are unchanged. No decision is reversed, no new option is opened, and no
+task, file, fixture, harness function, or dependency edge is added. Shipment `017-S` remains one
+shipment of nine items. The only scope growth is two additional edit sites inside
+`_stage.agent.md`, a file `018.009-T` already owns, which re-sizes that task S→M on volume alone.
+
+---
+
+## 13. Revision 9 addendum — a permission is not an instruction
+
+**Source**: PR #54 current-HEAD review, cycle 7 — one **visible** Copilot finding (thread
+`PRRT_kwDOTPuhps6hrbAk`, comment `3994429008`, on `018.009-T:22`), classified **same-contract
+completion** under P-021.
+
+### 13.1 Withdrawn: "correcting the Role Boundary and emitting the handback completes the Stage side"
+
+Revisions 1–8 treated the Stage side of the route as finished once three things were true: P-010
+**permitted** the branch (rev 3), the Role Boundary cell **granted** it at mutation time (rev 2–3),
+and Step 6 **reported** what happened (rev 6–8). None of the three is an instruction to act. The
+installed `_stage.agent.md` runs triage → grouping → learnings → deliberation → planning → review →
+harvest → shipment assembly → stash archival → summary, and contains **no branch operation and no
+commit operation at any step**; its Step Sequence Contract checklist — the file's own statement of
+what a session MUST execute — names none either.
+
+| What rev 1–8 established | What it does not establish |
+|---|---|
+| Stage **may** create, check out, and commit on the artifact branch | that any step does |
+| Stage **must report** `stage_branch`, `stage_base_commit`, `stage_head_commit`, `stage_artifact_paths` | where those values come from |
+
+So an agent satisfying AC-B3.1–AC-B3.6 exactly can finish a session **on the default branch**, with
+every artifact written there — the `fdff9e4` shape this deliberation exists to eliminate — and then
+emit a handback naming a branch that was never created and commits that were never made. The
+Orchestrator's step-4 arm rejects that handback, which is the gate working; but the artifacts are
+already on the default branch by then. **Detection after the fact is not prevention**, and §1's
+objective is prevention.
+
+### 13.2 The producer/consumer lesson, fourth instance — and its missing clause
+
+§12.2 recorded the discipline this deliberation should carry: *for every value a contract consumes,
+name the surface that emits it, and confirm that surface is **permitted** to.* Rev 9 shows the
+clause is incomplete. `stage_branch` had a named emitting surface (`_stage.agent.md` Step 6) that
+was unambiguously **permitted** to emit it — and the value still had no origin, because permission
+and emission are both satisfied by a surface that never **acts**.
+
+| Instance | Consumer obligation | What was missing |
+|---|---|---|
+| rev 1 | Stage merges the staging PR | Stage was **forbidden** to create one |
+| rev 6 | Orchestrator finds the Stage branch | nothing **announced** it |
+| rev 8 | Orchestrator verifies `no-shipment` | nothing could **emit** it |
+| **rev 9** | Orchestrator consumes `stage_head_commit` | nothing **produced** it |
+
+The extended discipline: **for every value a contract consumes, name the surface that emits it,
+confirm that surface is permitted to, confirm it is *instructed* to, and confirm the instruction is
+*ordered* relative to the state the value describes.** The last clause is not decoration — a branch
+gate placed after harvest and a commit step placed after the summary both satisfy "instructed" and
+both still produce values describing a state that does not exist.
+
+### 13.3 Decision — two operative steps, ordered, in the file B3 already owns
+
+Narrow, and reopening neither Option 2 nor D1–D7.
+
+**(a) A pre-mutation branch gate.** A new Stage step between learnings retrieval and deliberation —
+a **fixed** position, which is also the first point at which a stable scope slug is derivable for
+both intake shapes. Every Stage mutation that would otherwise occur earlier (the Step 1
+deferred-expansion duplicate archival, the session's first memory checkpoint) is **deferred until
+after** it, so nothing writes before the gate. The alternative considered and **rejected** was to
+let the gate fire early against a provisional slug: that contradicts the Step Sequence Contract's
+own execute-in-order semantics, leaves the real position unassertable, and re-admits the
+default-branch write it exists to prevent. The step derives the slug, records `stage_base_commit`
+(echoed from
+the Orchestrator in a pipeline invocation, captured from `HEAD` **before** branch creation in a
+direct invocation), **verifies and uses** an Orchestrator-supplied branch or **creates and checks
+out** its own, refuses to write anything while `HEAD` is the default branch, and switches the single
+existing worktree rather than adding one (P-016 unchanged).
+
+**(b) A post-mutation artifact commit.** A new Stage step between consumed-stash archival and the
+summary. It asserts `HEAD`, stages only the four `STAGE_ARTIFACT_ROOTS`, commits conventionally,
+sets `stage_head_commit` from the **resulting** `HEAD`, derives the aggregate path set over the
+preserved base, and **stops** — Stage neither pushes nor touches a pull request, so D7's role
+isolation and P-010's standing PR prohibition are untouched. Steps 3–4 of §6.2's route table remain
+the Orchestrator's or the operator's, exactly as before.
+
+**(c) The naming dependency this exposed.** `chore/stage-{shipment_id}` is **underivable** once the
+branch must exist before the first artifact write: the shipment is created by Stage's *last*
+mutation. Following the rev-8 wording literally therefore pushed an executor toward deferring the
+branch past the very writes it protects — a second route back to `fdff9e4`. The form becomes
+`chore/stage-{scope-slug}`; a shipment ID stays a **permitted** slug rather than being deleted, so
+an Orchestrator already holding one may still use it.
+
+**What makes (a) and (b) safe rather than authority-expanding.** Neither step grants Stage anything
+P-010 and the Role Boundary did not already grant at rev 3. They convert a standing permission into
+a sequenced obligation. No push, no PR, no merge, no source/test/config write, no second worktree,
+no new policy ID.
+
+### 13.4 D3 is again NOT extended
+
+A missing operative step is neither D3 violation shape — it is not a push to the default branch and
+not a permission to commit on one — so the closed construct set and the fixture corpus stay as they
+are (the §10.4 / §11.4 / §12.4 position, unchanged). Rejection is carried by the existing
+per-surface harness assertion over `_stage.agent.md`, extended to compare **checklist indices and
+heading positions** rather than to search for text. That structural form is required, not stylistic:
+the file names its own steps in its Step 6 gate, so a name search would pass with the step sections
+deleted — the self-matching failure already recorded in
+`docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md`.
+
+### 13.5 Net effect
+
+Option 2 is unchanged. D1's scope is unchanged (authorization **and** discovery); rev 9 supplies the
+**execution** the authorization always presupposed. D2, D3, D4, D5, D6 and D7 are unchanged — D7 in
+particular is *reinforced*, since the commit step ends precisely where Stage's role ends. No
+decision is reversed, no new option is opened, and no task, file, fixture, harness function,
+shipment, or dependency edge is added. Shipment `017-S` remains one shipment of nine items. The only
+scope growth is four further edit sites inside `_stage.agent.md`, a file `018.009-T` already owns,
+which re-sizes that task M→L on volume alone.
+
+---
+
+## 14. Revision 10 addendum — an obligation is not a mechanism
+
+**Source**: PR #54 **second adversarial review** (anchor **GPT-5.6 Sol** with **GPT-5.4-mini**,
+**Claude Sonnet 5**, and **Claude Opus 5**; **no route degradation**) — four visible Copilot threads
+(`PRRT_kwDOTPuhps6hsPRZ` / `3994747640`, `PRRT_kwDOTPuhps6hsPRq` / `3994747663`,
+`PRRT_kwDOTPuhps6hsPR5` / `3994747682`, `PRRT_kwDOTPuhps6hsPSJ` / `3994747702`) plus one
+adversarial-only finding on the harness lifecycle. All classified **same-contract completion**
+under P-021.
+
+### 14.1 Withdrawn: "every MUST in the contract is now backed by a producing surface"
+
+Rev 9 closed the *permission without instruction* gap and recorded the extended discipline:
+name the emitting surface, confirm it is permitted, confirm it is instructed, confirm the
+instruction is ordered. Rev 10 finds that three of the rev-9/rev-8 clauses satisfy all four
+conditions and are **still** inert, because the operation each names **cannot observe what the
+clause is about**:
+
+| Clause | Instructed? | Ordered? | Why it could not fire |
+|---|---|---|---|
+| "halt on a change outside `STAGE_ARTIFACT_ROOTS`" (Step 5.7) | yes | yes | the only prescribed operation was a **root-scoped `git add`**, which *ignores* out-of-root paths rather than reporting them. There was nothing to halt *on* |
+| "defer the mutations that would otherwise precede the gate" (Step 1.9) | yes | yes | stated as an **enumeration of two**, while the contract schedules **five or more** tracked writes earlier. The rule bound the two it named and left the rest legal |
+| "`go test ./...` is red after H0 and each task goes green in turn" (§5.0) | yes | yes | red was specified as **simultaneous across all eight**, which Ship's Step 4.3 full-suite gate re-reads after *every* task — so the second task could never pass its own gate |
+
+This is a **different failure class** from the producer/consumer one, and conflating them would
+lose it. The producer/consumer class is about a **value** with no origin. This class is about an
+**obligation** with no instrument: the actor is named, the order is right, and the operation named
+is simply incapable of producing the observation the obligation depends on.
+
+**The discipline, stated so it can be applied:** *for every MUST, name the operation that
+discharges it, and confirm that operation can observe the thing the MUST is about.* A halt needs a
+detector that sees the condition. A deferral needs a rule that ranges over the whole set, not a
+list of examples. A red phase needs to be compatible with every gate that will read it.
+
+### 14.2 The producer/consumer class also recurs — in its most dangerous form
+
+Finding 1 is the old class, fifth instance, and worse than its predecessors. Rev 1, 6, 8 and 9
+were all **absences**: a value nobody could create, emit, or produce. Rev 10 is a **substitution**
+— the consumer had a correct reported value and **overwrote it** with a derived default whose
+fallback (`no-shipment`) is a **success terminal**. An absence is loud at the point of use; a
+substitution is silent by construction, and this one converted the pipeline's loudest failure —
+a shipment formed but never handed off — into a clean pass.
+
+The sixth clause of the discipline: *a default must never be able to overwrite a reported value,
+and a derivation whose fallback is a success terminal must be validated before it is acted on.*
+
+### 14.3 Decision — four narrow corrections and one mechanism, reopening nothing
+
+**(a) Preserve, then validate.** `stage_outcome` is preserved when reported and derived only when
+absent; the outcome/`shipment_id` pair is validated fail-closed **before** arm selection. The two
+halves sit at deliberately different points — preservation in **defaulting** (a strictly weaker
+rule, so the never-halts invariant is untouched), validation in **verification** (where every
+other `STAGING_GATE_FAIL` already lives). The producer emits the pair explicitly, because an
+agreement check needs two parties. Rejected: a third verification arm for the inconsistent case —
+an inconsistent pair is not an outcome, it is evidence the handback is untrustworthy, and every
+downstream check reads that same handback.
+
+**(b) A categorical deferral rule.** Step 1.9 precedes **every** tracked Stage artifact mutation;
+the classes are enumerated as illustration, not as the closed set. Read-only classification and
+grouping still run first — they are what make the slug derivable, so deferring them would make the
+gate's own position underivable. Gitignored disposables are **expressly excluded** rather than
+silently claimed: overclaiming them would overstate the gate's reach and would wrongly forbid the
+index sync every later query depends on. Honesty about what a control does *not* cover is part of
+the control.
+
+**(c) A detector for the out-of-root halt.** An explicit NUL-safe full-tree inspection before
+staging, with both rename endpoints checked, and **fail-closed halting that leaves pre-existing
+unrelated dirt exactly as found**. Rejected: cleaning or stashing the offending change — it may be
+a human operator's in-flight work, and discarding it is a destructive act without approval (D7's
+role isolation and Constitution VII both point the same way). Stage halts and hands the decision
+back; it does not tidy up after an actor whose intent it cannot know.
+
+**(d) Per-task harness activation.** One selector flag and one table, with four executed
+mutation-proof checks. Rejected: amending Ship's Step 4.3 — that is a generated file with a
+gitignored template (D2), and narrowing a full-suite quality gate to fix one shipment's harness
+would weaken test-first for every future shipment, which is the same trade rev 4 refused.
+
+**What makes (a)–(d) safe rather than scope-expanding.** None grants Stage or the Orchestrator any
+authority they did not already hold. (a) narrows a defaulting rule and adds a halt; (b) widens a
+deferral that was already mandatory; (c) supplies the instrument an existing halt lacked; (d)
+changes when assertions run, not what they assert. No push, no PR, no merge, no source write, no
+second worktree, no new policy ID.
+
+### 14.4 D3 is again NOT extended
+
+None of the four is a D3 violation shape — none is a push to the default branch and none is a
+permission to commit on one — so the closed construct set and the 14-fixture corpus stay exactly as
+they are (the §10.4 / §11.4 / §12.4 / §13.4 position, unchanged for the fifth time). Rejection is
+carried by the existing per-surface harness assertions, extended to compare an **intra-section**
+clause ordering in addition to the checklist and heading ordinals rev 9 introduced. The prescribed
+replacement text was again checked against the detector rather than assumed safe: the new verbs
+(`status`, `restore`, `stash`) are not push verbs, and the only default-branch tokens introduced
+sit in marker-preceded prohibitive clauses.
+
+### 14.5 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged; D7 is *reinforced* a second time, since (c) stops Stage
+at a halt rather than letting it act on another actor's working tree. No decision is reversed, no
+new option is opened, and no task, file, fixture, harness function, shipment, or dependency edge is
+added. Shipment `017-S` remains one shipment of nine items, and no task is re-sized — rev 10
+reworks clauses inside step sections rev 9 already specified. The deliberation now carries two
+distinct disciplines rather than one: *name the surface that produces each consumed value* (§12.2,
+§13.2, extended in §14.2) and *name the operation that discharges each MUST, and confirm it can
+observe what the MUST is about* (§14.1).
+## 15. Revision 11 addendum — a guard whose trigger is its own subject
+
+Operator-directed **third** adversarial round on PR #54 (anchor **GPT-5.6 Sol**, with
+**GPT-5.4-mini**, **Claude Sonnet 5**, and **Claude Opus 5**; **4/4 usable**, **no route
+degradation**). The panel **unanimously** confirmed two **P0 direct-completion blockers** from
+Copilot review `5185014458`, plus one stale cross-reference. All three are **same-contract
+completion** under P-021: each corrects a mechanism this deliberation already chose, and none
+reopens an option.
+
+### 15.1 Withdrawn: "the rev-10 activation mechanism makes the skip state safe"
+
+§14 accepted a mechanism whose default-mode activation was a **surface predicate** — a function
+activated iff its own deliverable was observably present — and bounded it with four mutation-proof
+checks. Two properties of that design were not examined, and both are fatal.
+
+**(a) For C1 and C2 the predicate *was* the assertion.** C1's predicate was "`jobs.lint.steps[]`
+contains a step invoking `check-direct-push-language.sh`". That is, verbatim, the proposition
+`TestDirectPushGate_CIWiringIsBlocking` exists to verify. C2's predicate was **literally C1's
+predicate**, on the reasoning that C2 produces no file of its own. So a regeneration that dropped
+the job-`lint` step removed the step **and both detectors of its removal** in one act: C1 skipped
+instead of failing, C2 skipped instead of running the detector, MP2 lives inside C2 and therefore
+never executed, and `go test ./...` reported **green**. R5 — the residual this whole enforcement
+path exists to close — was mitigated only on paper from rev 10 onward.
+
+The general shape is worth naming because it survived three review rounds: **a guard whose
+activation condition is the proposition it guards**. It passes "does the assertion exist?", "is it
+structural rather than a text search?", and "is it non-vacuous when the surface is present?" —
+AC-C1.6 asked all three, and all three held. It fails only the question that matters for a
+regression guard: *does it still run when the thing it guards is gone?* This is the mirror of the
+producer/consumer class §12.2–§14.2 kept producing. There, a consumer trusted a value the producer
+might never send. Here, a detector trusted a condition that the defect itself removes.
+
+**(b) The red phase no longer matched the installed contract.** P-004, as installed, requires
+`go test ./...` **red with all generated tests failing their expected not-implemented markers**
+before any task becomes `harness-ready`. Rev 10 produced **one** failing function and **seven
+skips** — and recorded the divergence honestly, which is precisely how it passed review: the caveat
+("it does **not** claim that all eight assertions were simultaneously red") made a contract
+violation read as a documented decision. Honesty about a deviation is not a substitute for not
+deviating.
+
+That is a second class, and it is rev 10's own remedy overshooting: **faced with a genuine
+deadlock, it weakened the thing the contract specifies (the red phase) instead of the thing nothing
+specifies (the activation lifecycle).** The discipline: *when a constraint and a gate appear to
+conflict, first check whether the conflict is between them, or between the gate and an
+implementation choice you are free to change.*
+
+### 15.2 The deadlock was never real — it was an artifact of statelessness
+
+Rev 9 required all eight functions red until their task landed; Ship Step 4.3 runs the full
+`go test ./...` after **every** task; so the shipment wedged on its second gate. Rev 10 read this as
+"8/8 red and Step 4.3 are incompatible" and traded away the red. They are incompatible **only while
+activation is a static predicate set** — a single, timeless answer to "should this run?". Once
+activation is a **phase**, the two requirements simply occur at different times:
+
+* **red** — all eight active, all eight failing with their own marker. The literal P-004
+  postcondition. No task has started, so Step 4.3 has not yet run.
+* **build** — the completed set active and green, not-yet-started tasks skipped. Step 4.3 green
+  after every task.
+* **terminal** — all eight active and green. No skip remains anywhere.
+
+Nothing is traded. The cost is one tracked state file.
+
+### 15.3 Decision — one artifact, and the predicate→activation edge removed
+
+**Chosen (Option 2 unchanged; this refines its harness mechanism only).** A tracked, non-generated,
+fail-closed **harness-state manifest** at
+`tests/integration/testdata/directpush-gate/harness-state.json`, initialized by H0 to
+`{"phase":"red","completed":[],"terminal":false}`. Activation derives **only** from that manifest
+and the `-gatetask` selector. **There is no surface predicate in the activation path at all** — that
+edge is deleted, not exempted, which is what closes the class rather than the two instances the
+reviewers happened to find.
+
+Four properties make it a decision rather than a detail:
+
+1. **Release-specific and render-proof.** It is namespaced to this gate and lives under `tests/**`,
+   which no autoharness template covers — so unlike the job-`lint` step, no regeneration can reach
+   it. This is the property the whole correction rests on.
+2. **Harness state, never backlog status.** It is not derived from, compared against, or
+   synchronized with `.backlogit/` item statuses. §14 already rejected backlog-derived activation;
+   this keeps that rejection intact rather than smuggling it back in through a file.
+3. **Fail-closed everywhere, skip nowhere.** Missing, malformed, unknown-phase, duplicate,
+   unknown-ID, non-subsequence, dependency-open, or inconsistent-triple states **fail**, and the
+   validator runs inside `gate()` on every call, so a corrupt file fails all eight functions rather
+   than disabling them. Skips exist only in `build` phase, only for not-yet-started tasks.
+4. **The manifest is itself proven.** AC-C2.2 executes seven manifest-mutation cases — deletion,
+   malformed JSON, unknown phase, rollback, reordering, skipped prerequisite, duplicate/unknown ID
+   — against a `t.TempDir()` scratch copy, asserting each **fails** rather than skips. An unguarded
+   state file would be a silent off-switch for the whole harness, so it is guarded like one.
+   **[Rev-12 extension]** the count is now **ten**: §16.2 adds the three witness cases
+   (witness-only, terminal-manifest-only, malformed/mismatched witness), because the terminal claim
+   is carried by **two** files from rev 12 onward.
+
+**Ordering correction found while specifying this.** The first draft validated `completed` as a
+strict **prefix** of the declared order. Reading the recorded dependency edges back from
+`.backlogit/` showed
+B1, B2, and B3 each depend **only** on A3 and have **no edge among themselves**, so Ship may
+legitimately finish B2 first. A prefix rule would have deadlocked that legal order — B2's surface
+present while its ID was not yet in `completed`. **[Rev-12 correction]** the rev-11 sentence
+continued "…which MP5 would then correctly flag as a rollback", and that clause was **wrong** and is
+**withdrawn**: an incomplete task's surface being present is a **legal** mid-shipment state, not a
+rollback, and MP5's treating it as one is exactly the defect §16.1 retires MP5 for. Direction note
+(rev 12): backlogit stores these edges as `item → depends-on` under the type label `blocks`, so the
+recorded edge reads **dependent → prerequisite**; `gateDeps[X]` is therefore **X's prerequisites**.
+The rule is therefore an **order-preserving subsequence that is closed under the dependency graph**:
+it admits exactly the orders the graph admits, still rejects reordering, and still rejects a skipped
+prerequisite. Recorded rather than silently repaired, per the rev-6/9/10 precedent — the defect
+class, *a validation rule stricter than the dependency graph it claims to encode*, generalizes.
+
+**Rejected.** (i) *Exempting only C1/C2 from surface predicates* — treats the instance, not the
+class; any future self-referential predicate reintroduces it, and the exemption would itself be an
+untested invariant. (ii) *Deriving the phase from which surfaces exist* — the rev-10 design renamed.
+(iii) *Amending P-002/P-004 or `harness-architect` so "one failure plus seven skips" counts as red*
+— a workspace-wide weakening of test-first for every future shipment, to accommodate one release
+unit. (iv) *Amending Ship Step 4.3* — already rejected at §14 and still rejected. (v) *Eight
+per-task state files* — a set cannot be checked for ordering or dependency closure once it is
+scattered, so "skipped prerequisite" and "reordering" would have no detector. (vi) *Placing the
+manifest under `.backlogit/` or `.autoharness/`* — inside tooling/render boundaries, and an
+invitation to the backlog coupling already rejected.
+
+### 15.4 The stale `3e` reference
+
+`018-F`'s Definition of Done named `_orchestrator.agent.md` Step 1.5 **sub-step 3e** as one of four
+live authorization surfaces that must agree — but D2/D3 **delete** 3e, so the DoD asserted agreement
+across a surface that will not exist. It now names the live pair (the reworded **preamble** and
+**3a**, which absorbs 3e's branch-point instruction) and adds an explicit **3e-absence** clause,
+consistent with AC-B1.1. The plan's *narrative* quotations of the 3e construct (§2, §3, §6.1.1) are
+deliberately retained: they are the historical record of the defect and sit outside the scanned
+corpus (§8.4 self-match discipline), which is exactly why they may quote it freely.
+
+### 15.5 D3 is again NOT extended
+
+None of the three findings is a D3 violation shape — none is a push to the default branch and none
+is a permission to commit on one — so the closed construct set and the 14-fixture corpus stay as
+they are (the §10.4 / §11.4 / §12.4 / §13.4 / §14.4 position, unchanged for the sixth time).
+Rejection is carried by the existing per-surface harness assertions plus the manifest validator.
+
+### 15.6 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged and none is reversed. **No** foundational contract is
+amended: `harness-architect`'s skill file, P-002, P-004, and `_ship.agent.md` Step 2 and Step 4.3 all
+stay exactly as installed, and the argument that the release-specific manifest satisfies each of
+them literally is recorded in the plan (§5.0.1) rather than asserted here. No task, sub-epic,
+fixture, harness **function**, shipment, or dependency edge is added; the only new file is an H0
+deliverable, not a task deliverable. Shipment `017-S` remains one shipment of nine items and no task
+is re-sized — each gains a one-line insertion into a shared state file in a domain it already
+touches. The deliberation now carries three disciplines: *name the surface that produces each
+consumed value* (§12.2, §13.2, §14.2); *name the operation that discharges each MUST, and confirm it
+can observe what the MUST is about* (§14.1); and, new here, *name what activates each guard, and
+confirm the activator is disjoint from the subject* (§15.1).
+
+---
+
+## 16. Revision 12 addendum — a guard that fires on a legal state, and a claim stronger than its evidence
+
+Operator-directed **post-remediation re-review** of the rev-11 remediation on PR #54 (anchor
+**GPT-5.6 Sol**, with **GPT-5.4-mini**, **Claude Sonnet 5**, and **Claude Opus 5**; **4/4 usable**,
+**no route degradation**). Three **P1 residuals** plus a set of direct consistency defects. All are
+**same-contract completion** under P-021: each corrects a mechanism this deliberation already chose,
+and none reopens an option. **Option 2 is unchanged; D1–D7 are unchanged and none is reversed.**
+
+### 16.1 Withdrawn: "inverting the surface probes into a failure-only role makes them safe"
+
+§15.3 removed the predicate→activation edge and, in MP5, **kept the probes** on the reasoning that a
+probe used only to **fail** cannot disarm anything. That reasoning was half right and wholly
+insufficient. A probe used only to fail cannot produce a **false green** — but it can produce a
+**false red**, and a false red on a legal state is not a lesser defect here: it is the **deadlock
+this entire mechanism exists to prevent**.
+
+Concretely: MP5 asserted that any task **outside** `completed` must have its surface **absent**.
+C2's surface probe was C1's old predicate — **the job-`lint` step** — and **C1 creates that step**.
+So in the window after C1 completes and before C2 starts, a window every execution of this shipment
+must pass through, C2's probe read `true`, MP5 failed inside A1, and `go test ./...` went red. Ship's
+Step 4.3 runs the full suite after every task, so the shipment wedges at C1 — the same deadlock
+rev 10 introduced §5.0.1 to remove and rev 11 claimed to have kept removed.
+
+The class generalizes past this instance, which is why it is recorded rather than patched. Rev 11
+named the discipline *"name what activates each guard, and confirm the activator is disjoint from the
+subject"* and then applied it to **activation only**. The prohibited coupling was never about
+activation specifically; it was about **any** dependence of a guard's verdict on the surface it
+guards. Pointed at activation, it disarms the guard; pointed at failure, it misfires the guard. The
+corrected discipline is symmetric: **no part of a guard's verdict — whether it runs, or whether it
+fails — may be derived from the subject it guards.**
+
+**Nothing is lost by retiring MP5**, which is the reason retirement beats repair. Its job was
+rollback detection, and rollback detection was already covered from two directions: a **completed**
+task's surface regression is caught by that task's **own substantive assertion**, which default mode
+runs from its completion onward (MP2's "a post-landing regression in *any* surface is a failure"
+depends on exactly this); and manifest corruption or rewind is caught by MP1. What MP5 added on top
+was a rule about **incomplete** tasks — and that rule was simply **wrong**, because an incomplete
+task legitimately may have prerequisites, and even fragments of its surface, already present. It was
+asserting a property the design never had.
+
+### 16.2 A check inside the thing it checks cannot witness its own absence
+
+MP2 — terminal completeness — lives **inside C2**, and C2's default-mode activation is read from the
+**same manifest MP2 validates**. §15.3 treated the manifest as bounded because MP1 fails closed on
+every *inconsistent* state. The gap is the **consistent** one: rewind `phase`, `completed`, and
+`terminal` **together** and the result is a valid `build` manifest. MP1 passes it, C2 **skips** as a
+not-yet-started task, and MP2 — the check that would have objected — **never runs**. The terminal
+claim is withdrawn and nothing fires.
+
+This is the §15.1 shape one level up, and worth naming as such: there, a guard's *activation*
+depended on its subject; here, a guard's *execution* depends on the same state it exists to
+validate. A check that can be skipped by the very edit it detects is not a check.
+
+**Decision — one independent witness, checked before activation.** A second tracked, non-generated
+file, `tests/integration/testdata/directpush-gate/terminal-witness.json`, **independent of the main
+manifest**, carrying a fixed schema and version, the contract identifier, the exact terminal task
+set, and a digest over that set — and **no timestamps or environment-specific data**, so it is
+byte-reproducible from the contract alone and cannot drift between a local run and CI. **H0 requires
+it absent; every legitimate pre-C2 build state requires it absent.** C2's completion writes **the
+witness first**, then **atomically replaces** the manifest with the exact terminal state; the tests
+are green only when the two **agree**.
+
+The cross-check (**MP6**) runs in `gate()` **before any activation decision**, which is the property
+that closes §16.2's gap: a present witness **forces C2 active** and requires a terminal manifest, and
+a terminal manifest requires a valid witness. Rolling back **only** the manifest fails; rolling back
+**only** the witness fails. Both are loud.
+
+**The residual is stated, not disguised.** Rolling back or deleting **both** files in one change
+produces a state that is, to a stateless validator, **identical to legitimate pre-C2 build** —
+because that is exactly what it is. No runtime check here detects it, and claiming otherwise would
+be false: a validator that reads only the current tree has no history to compare against. It is
+caught by **diff and review** of two tracked, non-generated files, not by runtime history — the
+R12/R21 visible-edit boundary, recorded as **R22**. Building a runtime history mechanism (signed
+log, append-only ledger, CI-side cache) was **rejected**: it is a materially larger control than
+this release unit's branch-policy contract warrants, and it would move state outside the render-proof
+`tests/**` boundary the whole design rests on.
+
+**Rejected.** (i) *Putting the witness inside `harness-state.json` as another field* — a single-file
+rewrite would then move both halves of the terminal claim at once, which is the defect. (ii) *Making
+the witness carry a timestamp or commit SHA* — environment-specific data creates diff churn, makes
+the file non-reproducible, and invites "it differs locally" to be normalized into "ignore the
+mismatch". (iii) *Having C2 write the manifest first* — the crash window would then leave a terminal
+manifest with no witness; witness-first is the ordering whose partial state is the loud one, and it
+guarantees the file `gate()` reads on every call is never terminal without its witness.
+
+### 16.3 Withdrawn: "the race command is the generated baseline"
+
+From §12 onward the deliberation and plan asserted that the harness survives regeneration because it
+runs from the **generated-baseline** step `go test -race -mod=readonly ./...`. The installed
+`.github/workflows/ci.yml` **does** run that command in job `expensive` / step `Test (race)` — that
+part was verified and remains true. What was never verified is the **provenance** claim: the
+generation template emits `{{TEST_COMMAND}}`, and this workspace's recorded render input
+(`.autoharness/harness-manifest.yaml`, corroborated by `.autoharness/workspace-profile.yaml`) is
+`go test ./...`. The `-race` and `-mod=readonly` flags are therefore **local to the installed
+artifact**, not something a render reproduces.
+
+The defect is not that the mitigation fails — it does not. It is that the mitigation was **claimed at
+a strength its evidence never supported**, which is the §15.1(b) class again in a third form: an
+**observed** value promoted to a **guaranteed** one. The correction restates the guarantee at the
+strength it actually has — R5 needs **a full-suite invocation including `./...` that runs the
+integration harness**, and the recorded baseline does provide that — and **adds the check the
+overstatement made look unnecessary**: **post-render verification of the rendered full-suite
+command** (plan AC-C1.7), written into the LOCAL DIVERGENCE ledger. If a future render narrows the
+package pattern, the harness stops running and R5 reverts to open; that residual is **R23**.
+
+The discipline, which is a specialization of §12.2's producer/consumer rule to *provenance*: **when
+a control rests on an observed value, name where that value comes from, and claim only what the
+producer of it guarantees.** An observed command is evidence about the present; a template
+substitution is a claim about the future, and the two are not interchangeable.
+
+### 16.4 D3 is again NOT extended
+
+None of the three findings is a D3 violation shape — none is a push to the default branch and none
+is a permission to commit on one — so the closed construct set and the 14-fixture corpus stay as they
+are (the §10.4 / §11.4 / §12.4 / §13.4 / §14.4 / §15.5 position, unchanged for the seventh time).
+Rejection is carried by the existing per-surface harness assertions plus the manifest and witness
+validators.
+
+### 16.5 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged and none is reversed. **No** foundational contract is
+amended: `harness-architect`'s skill file, P-002, P-004, and `_ship.agent.md` Step 2 and Step 4.3 all
+stay exactly as installed. No task, sub-epic, fixture, harness **function**, shipment, or dependency
+edge is added; the only new file is written by C2's existing completion transaction, not by a new
+task. Shipment `017-S` remains one shipment of nine items and no task is re-sized. One
+mutation-proof check is **retired** (MP5) and one **added** (MP6); the numbering is deliberately
+**not** compacted, because renumbering across six artifacts is churn and would rewrite the
+identifiers under which the retired check was reviewed.
+
+The deliberation now carries four disciplines: *name the surface that produces each consumed value*
+(§12.2, §13.2, §14.2); *name the operation that discharges each MUST, and confirm it can observe what
+the MUST is about* (§14.1); *name what activates each guard, and confirm the activator is disjoint
+from the subject* (§15.1) — **generalized here** to *no part of a guard's verdict, activation or
+failure, may derive from its own subject* (§16.1), with the corollary that *a check that the
+defect can skip is not a check* (§16.2); and, new here, *when a control rests on an observed value,
+name its producer and claim only what that producer guarantees* (§16.3).
+
+## 17. Revision 13 addendum — a precedence read off a table, and four residuals the cap left open
+
+**Authorization.** The rev-12 session ended **BLOCKED**: the adversarial cycle cap was reached at
+`cycles_run: 2` with six residuals outstanding and none silently deferrable. The operator chose
+option 1 of memory §20.5 and **explicitly authorized ONE additional Stage remediation plus
+adversarial re-review cycle**. This addendum records that single authorized pass. The authorization
+is **consumed** here; the re-review it enables has **not** been run by Stage, and nothing below
+claims its outcome.
+
+### 17.1 Withdrawn: "stating the witness rule and the selector rule in one table is sufficient"
+
+Rev 12 added MP6 and wrote its consequences into the same flat activation table that already
+carried the `-gatetask` rows. The witness row — "`C2` is **forced active**; all eight activate" —
+was placed **before** the selector rows and carried **no mode qualifier**. Every individual
+statement in that table was true of the mode its author had in mind. The table as a whole was not,
+because a normative table is read **sequentially**: the first matching row wins, and in terminal
+state the witness row matched **every** invocation, targeted ones included.
+
+The consequence was a direct contradiction with four criteria the same revision had just written.
+MP3 says selector skips of the seven non-selected functions "are expected in targeted mode in
+**every** phase". AC-C2.7's rev-12 qualification, AC-C2.9's targeted clause, and AC-C2.11's
+evidence rules all require exactly the selected test to run. Under the table as written,
+`-gatetask=C1` in terminal state activated all eight bodies.
+
+This is a failure mode worth naming because it is **not** a wrong claim — it is a **missing
+precedence**. Both rules were correct; nothing said which governed when they overlapped. Prose that
+enumerates rules without ordering them is under-specified in exactly the way an implementer cannot
+detect, because each sentence reads true in isolation.
+
+**Decision — two explicitly ordered stages, and precedence stated as a rule rather than implied by
+row order.** `gate()` is specified as:
+
+1. **Stage 1 — integrity. Mode-independent.** MP1 manifest validity and MP6 witness/manifest
+   cross-agreement. Fails closed on **every** invocation, targeted or default, before any activation
+   decision is taken. Nothing in this stage activates anything.
+2. **Stage 2 — activation. Mode-dependent.** A valid `-gatetask` selector has **activation
+   precedence** over every default-mode rule, **including MP6's forcing clause**. Default mode is
+   unchanged: `red` and `terminal` activate all eight, `build` activates the completed set, and a
+   valid witness forces `C2` active.
+
+**Why this subtracts no detection, which is the whole question.** MP6 was added at rev 12 to close
+one specific hole: a self-consistent manifest rewind letting C2 skip past MP2. That hole is closed
+by MP6's **integrity** half — *witness present ⇒ manifest terminal; manifest terminal ⇒ valid
+witness* — which now lives in Stage 1 and is **mode-independent**. A targeted run against a rewound
+or mismatched state still fails, loudly, before Stage 2 is reached. The **forcing** half was always
+belt-and-braces over the `terminal` activation row, never the detection mechanism. Scoping it to
+default mode therefore removes a contradiction and removes nothing else.
+
+The discipline, and it is a new one: **when two rules can match the same invocation, state which
+governs. Row order in a table is not a specification of precedence — it is an accident of
+drafting.**
+
+### 17.2 The independence invariant had swallowed its own instruments
+
+§16.1 generalized the rule to *no part of a guard's verdict, activation or failure, may derive from
+its own subject*. Read strictly — and a NON-NEGOTIABLE invariant must be read strictly — that
+forbids MP1 from reading the manifest and MP6 from reading the witness, because both are inputs the
+checks derive verdicts from. The invariant, stated at full generality, prohibited the mechanism it
+was written to protect.
+
+**Decision — narrow the invariant to substantive surfaces, and bound the exemption with a test
+rather than a list.** The rule now reads: no activation and no gate-level failure may derive from a
+**SUBSTANTIVE SURFACE** that the same test asserts on — agent, policy, workflow, or script
+behaviour. The **dedicated harness control-state inputs** — the validated manifest and the terminal
+witness — are **allowed and required** inputs to MP1 and MP6.
+
+The exemption is deliberately **not** a carve-out list, because §15.3 already rejected exempting
+C1/C2 by name rather than closing the class. It is a three-part test: a file qualifies only if it is
+(a) authored by the harness for the harness, (b) never the subject of any substantive assertion, and
+(c) covered by its own integrity proof. The discriminating property is the **failure direction**: a
+missing or malformed control-state input **fails all eight** functions, whereas a missing job-`lint`
+step under the rev-10 design **silently skipped** the very function that existed to notice it. A
+control-state input can never self-disable its own check; a substantive surface can. That asymmetry
+is what makes the exemption safe, and it is why nothing else may be added to the exempt column.
+
+### 17.3 Evidence that could not have failed
+
+§5.0.2 point 7 asked for proof that C1 and C2 stay active from manifest state when the job-`lint`
+step is removed — the R5 pair, the single most load-bearing observation in the plan. The recorded
+command was `-gatetask=C1`.
+
+Targeted mode activates the selected function **by construction**. The observation therefore could
+not fail for the reason it was supposed to test: it would have passed identically under the
+**rev-10 self-disarming design** that R5 exists to exclude. It also never invoked C2, so "both
+halves live" rested on nothing at all. This is the §14.1 shape — *name the operation that discharges
+each MUST, and confirm it can observe what the MUST is about* — applied to evidence rather than to a
+contract clause, and it is the second time in this deliberation that a check was written in a mode
+where its own failure was unreachable.
+
+**Decision — the observation moves to default mode, against a copied fixture.** Point 7 is now an
+**unselected** run against a **copied terminal-state repository fixture** under `t.TempDir()`, with
+the real tree never mutated and `git status --porcelain` empty either side, asserting **by
+test-event name** that `TestDirectPushGate_CIWiringIsBlocking` **fails for the missing lint step**
+and that `TestDirectPushGate_FullCorpusClean` **executes** rather than skipping. The fixture's
+manifest and witness must stay **valid and in agreement**, or Stage 1's integrity gate fails the run
+and the observation reverts to vacuous for a second, different reason — a constraint worth writing
+down because it is the obvious way to get the fixture wrong.
+
+The targeted command is **retained**, as point **7a**, labelled selector evidence only. Nothing is
+lost; what changes is that it is no longer offered as proof of a proposition it cannot reach.
+
+### 17.4 The remaining three, briefly
+
+**H0 eligibility (LOW P1).** Whether `harness-architect` may batch seven tasks with unmet
+dependencies is answered by the **installed contract**, not by this plan: `_ship.agent.md` Step 2
+lists **`queued`** tasks, partitions **only** on the `harness-ready` label, runs "once, up front —
+not in a loop", and **halts unless every queued task carries the label**; Step 3 is where dependency
+ordering first appears; `harness-architect` Step 1 excludes **`blocked`** as a *status value*, and
+all eight `017-S` tasks are `queued`. Dependencies gate **claim and execution**, never harness
+generation. Harnessing only A1 would **halt** the shipment at Step 2 — so 8/8 is required, not
+merely permitted. **No contract is amended and no permission is invented**: the plan states that a
+future contract reading the other way must be **reported as a contradiction**, not worked around.
+
+**AC-C1 parity (LOW P1).** §7.1 and `018.010-T` had drifted to ID parity with materially different
+text — precisely the drift AC-C1.5's own history records at rev 4, recurring one revision band
+later. A single canonical block is now written **byte-identically** into both, matching the
+§7.2 ↔ `018.011-T` convention, and parity is verified by **content** rather than by ID.
+
+**Residual provenance (LOW P2).** §6.3.2's "Regeneration exposure" still called the installed
+`Test (race)` command the generated baseline — a survivor of the sweep §16.3 performed. It now
+carries the same four-part distinction used everywhere else: observed installed command, template
+token, recorded render input, and the invariant that is actually guaranteed.
+
+### 17.5 D3 is again NOT extended
+
+None of the six findings is a D3 violation shape — none is a push to the default branch and none is
+a permission to commit on one — so the closed construct set and the 14-fixture corpus stay as they
+are (the §10.4 / §11.4 / §12.4 / §13.4 / §14.4 / §15.5 / §16.4 position, unchanged for the eighth
+time).
+
+### 17.6 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged and none is reversed. **No** foundational contract is
+amended: `harness-architect`'s skill file, P-002, P-004, and `_ship.agent.md` Step 2 and Step 4.3
+all stay exactly as installed — and finding 2 is resolved **by citing** them rather than by touching
+them. No task, sub-epic, fixture, harness **function**, file, shipment, or dependency edge is added;
+**no acceptance criterion is added** — six are clarified in place. Shipment `017-S` remains one
+shipment of nine items and **no task is re-sized**, because every change concerns the **mode** in
+which an assertion runs or the **form** of its evidence, not the work any task performs.
+
+Invariants re-verified rather than assumed: valid manifest states stay **exhaustive at three**;
+**MP5 stays RETIRED** and un-renumbered; **witness-first then atomic manifest transition** holds;
+the **coordinated two-file rollback residual (R22)** remains stated honestly and unclaimed;
+fail-closed behaviour on malformed state is unchanged; the **literal 8/8 H0 red phase** holds;
+**default full-suite green task boundaries** hold; **dependency-closed B-task ordering** holds; and
+the **live 3a / 3e-absence** references stand.
+
+The deliberation now carries six disciplines: *name the surface that produces each consumed value*
+(§12.2, §13.2, §14.2); *name the operation that discharges each MUST, and confirm it can observe
+what the MUST is about* (§14.1); *name what activates each guard, and confirm the activator is
+disjoint from the subject* (§15.1), generalized to *no part of a guard's verdict may derive from its
+own subject* (§16.1) and **narrowed here** to *its own **substantive** subject, since a guard's
+dedicated control-state instruments are not its subject* (§17.2); *a check that the defect can skip
+is not a check* (§16.2); *when a control rests on an observed value, name its producer and claim
+only what that producer guarantees* (§16.3); and, new here, *when two rules can match the same
+invocation, state which governs — row order is not precedence* (§17.1), with the corollary that
+*evidence taken in a mode where it cannot fail is not evidence* (§17.3).
+
+---
+
+## 18. Revision 14 addendum — a specified observation nobody can run, and a citation stronger than its source
+
+**Authorization.** The rev-13 session ended **NOT READY**: the single authorized adversarial
+re-review ran (four models, no route degradation) and returned **0 P0**, **one LOW-confidence P1**,
+and **four LOW-confidence P2** `post_remediation_residual` findings. The operator **explicitly
+authorized ONE more Stage remediation plus adversarial re-review cycle** for PR #54. This addendum
+records that single authorized remediation pass. The authorization is **consumed** here; the
+re-review it enables has **not** been run by Stage, and nothing below claims its outcome.
+
+### 18.1 Withdrawn: "specifying the observation and its mode is sufficient"
+
+Rev 13 found that the terminal lint-removal evidence had been taken in a mode where it could not
+fail (§17.3), and replaced it with a **default-mode** observation against a **copied** terminal-state
+repository fixture. That diagnosis was right and the replacement is kept. What rev 13 then wrote was
+a **description of a result**, not a **mechanism that produces it**: "run `go test` unselected
+against a copied terminal repo under `t.TempDir()`".
+
+Two facts, both checkable in the repository rather than matters of opinion, make that unexecutable
+as written:
+
+1. **`repoRoot(t)` resolves the real checkout.** The helper this harness reuses by §5.0's H0
+   contract — `tests/integration/build_script_test.go`'s `repoRoot` — starts at `os.Getwd()` and
+   walks **up** to the nearest `go.mod`. A test running **in process** is rooted in the real
+   checkout's `tests/integration`, so it finds the **real** `go.mod` and reads the **real** tree.
+   Copying files into `t.TempDir()` changes nothing about where the assertions then look. The
+   observation would have been taken against the very tree it was designed to avoid.
+2. **The observation lives inside its own subject.** Point 7 is recorded by C2
+   (`TestDirectPushGate_FullCorpusClean`), and point 7 requires *that function* to be observed
+   executing. Re-running the suite from inside itself without a guard **recurses**, without bound.
+
+So the rev-13 point 7 could neither see the fixture nor run safely. It is worth being precise about
+the failure class, because it is **not** §17.3 repeating: rev 13's evidence was **vacuous** (it
+could not fail); rev 14's was **inert** (it could not run). Both are ways of holding a piece of
+paper instead of a control, and the rev-13 remediation of the first produced the second.
+
+### 18.2 The producer/consumer discipline, now applied to the harness's own evidence
+
+§12.2, §13.2 and §14.2 established *name the surface that produces each consumed value*, and §14.1
+added *name the operation that discharges each MUST, and confirm it can observe what the MUST is
+about*. Rev 13 applied those disciplines diligently to the **contract surfaces** — Step 1.5's
+discovery, the handback fields, the Stage agent's operative steps — and then **exempted its own
+evidence step** from them. An observation is a consumer too: it consumes a repository root, a
+process, and a stream of results, and each of those has a producer that must be named.
+
+The correction is therefore not a new principle but the **existing** one applied one level in:
+
+* the fixture's producer is named — `copyTrackedRepoFixture(t)`, a `git ls-files -z` **tracked-file**
+  copy, chosen over a hand-listed file set because it is deterministic, complete by construction for
+  everything C1 and C2 read, and needs no maintenance as the corpus grows;
+* the **root resolution** is named — the observation runs in a **child `go test` process** whose
+  `exec.Cmd.Dir` is the **copied module root**, which is precisely what makes the existing
+  `repoRoot(t)` walk terminate inside the fixture. No new root helper is introduced and
+  `repoRoot(t)` is not modified; the *process* is moved instead;
+* the **re-entry guard** is named — a single sentinel environment variable
+  `DIRECTPUSH_GATE_FIXTURE_CHILD=1`, set by the parent through `exec.Cmd.Env`, that disables the
+  **parent-only spawn block** and nothing else, bounding recursion at exactly one level;
+* the **evidence parser** is named — `go test -json` events decoded with `encoding/json`, asserted
+  by exact test name, rather than pattern-scraping arbitrary text.
+
+Three prohibitions keep the guard from becoming the next defect, and they are stated normatively
+because each would reproduce a failure this deliberation has already recorded. The sentinel
+**MUST NOT** skip C2 — that would make "C2 executed" unobtainable by construction, which is §17.3's
+vacuity in a new costume. It **MUST NOT** bypass MP1/MP6 — integrity is mode-independent and is now
+environment-independent too. And it **MUST NOT** be read as a substantive-surface predicate — it
+describes *which process this is*, not a proposition any assertion makes about the repository, so
+§17.2's narrowly-bounded control-state exemption is **not** widened: its membership stays exactly
+the manifest and the witness.
+
+**D3 is again NOT extended**, for the ninth time: none of this is a push to the default branch and
+none is a permission to commit on one, so the closed construct set and the 14-fixture corpus are
+untouched.
+
+### 18.3 Withdrawn: "no step of Step 2 consults the dependency graph"
+
+Rev 13 resolved the H0 eligibility question by **citing** the installed contract rather than
+amending it — the right method, and it is kept. But one sentence of that citation was **stronger
+than its source**. `_ship.agent.md` Step 2 closes with: "When dependency operations are supported,
+verify the dependency graph before proceeding rather than assuming the backlog ordering is already
+valid." Rev 13 wrote "**No step of this sequence consults the dependency graph**". That is false,
+and it is withdrawn.
+
+The correction matters more for **method** than for outcome. The outcome is unchanged — all eight
+tasks are still harnessed up front — but it now rests on the distinction the contract actually
+draws:
+
+* Step 2 may verify the graph's **VALIDITY**. A validity check over a set is not a membership
+  filter on it.
+* Dependency **READINESS** is what gates behaviour later: Step 3 sorts the queue by dependency
+  order, Step 4.1 claims.
+* `harness-architect` Step 1 excludes `blocked` as a **lifecycle status value**, not as a derived
+  dependency state, and all eight `017-S` tasks are `queued`.
+
+One genuine gap surfaced while checking this: `${input:tasks}` is declared **Optional**, and when
+omitted the skill falls back to "all ready tasks under the feature" — a selection this plan must not
+delegate, since "ready" is exactly the word under dispute. The plan now **requires Ship to pass the
+exact eight task IDs explicitly**, with set equality against the shipment manifest checked **before**
+invocation and Step 2 item 4's all-queued halt catching omission **after** it. Belt and braces, on
+both sides of one call, and **no behaviour is invented that the installed skill does not have**.
+
+### 18.4 The remaining three, briefly
+
+**Targeted C2 red was under-specified.** §5.0.2 point 4 accepted *any* non-zero exit from
+`-gatetask=C2`. A compile error, a malformed-manifest integrity failure, a missing `bash`, an
+invalid selector, and an unrelated failure all exit non-zero while proving nothing about MP2. The
+point is now anchored to `--- FAIL: TestDirectPushGate_FullCorpusClean` **by exact name** with the
+**MP2 non-terminal-state** reason, and those five impostors are explicitly rejected. This is §17.3's
+lesson generalized: *an exit code is not evidence of the reason for the exit*.
+
+**"Green by assertion, never bookkeeping" needed qualification, not repetition.** Read absolutely,
+it contradicted C2's own contract, because C2's completion legitimately finalizes the terminal
+manifest and witness — and that finalization *is* part of what C2 verifies. The rule is therefore
+qualified precisely: for A1–C1 completion state is bookkeeping only and can never on its own turn an
+assertion green; **C2 is a deliberate exception of SUBJECT, not of rigour**, and still cannot pass
+from bookkeeping alone — its corpus, self-test, mutation-proof, marker-free-construct and
+regeneration assertions must all execute and pass, with MP2 evaluated before any surface-dependent
+assertion. Stating the exception is safer than leaving a rule that the implementation must quietly
+violate.
+
+**Two indexes had gone stale** — the memory record's current-artifact table and this document's own
+`Addenda` line. Rev 7 added the currency note precisely to prevent this, rev 12 found the note's own
+table stale, and rev 14 finds it stale again. The recurrence is itself the finding: an index is a
+**separate artifact from the thing it indexes**, so it must be advanced as a **deliberate step**,
+not as a by-product of editing the indexed document. Both are corrected without erasing history.
+
+### 18.5 D3 is again NOT extended
+
+None of the five findings is a D3 violation shape — none is a push to the default branch and none is
+a permission to commit on one — so the closed construct set and the 14-fixture corpus stay as they
+are (the §10.4 / §11.4 / §12.4 / §13.4 / §14.4 / §15.5 / §16.4 / §17.5 position, unchanged for the
+ninth time).
+
+### 18.6 Net effect
+
+Option 2 is unchanged. D1–D7 are unchanged and none is reversed. **No** foundational contract is
+amended: `harness-architect`'s skill file, P-002, P-004, and `_ship.agent.md` Step 2 and Step 4.3
+all stay exactly as installed — and finding 2 is resolved by **citing them more accurately**, which
+is the opposite of touching them. No task, sub-epic, fixture, harness **function**, test, file,
+shipment, or dependency edge is added; **no acceptance criterion is added** — AC-C1.6 and AC-C2.11
+are clarified in place. The point-7 mechanism is implemented as **unexported helpers inside the
+existing `tests/integration/directpush_gate_test.go`**, authored at **H0**, which is why it adds no
+harness function and re-sizes no task. Shipment `017-S` remains one shipment of nine items.
+
+Invariants re-verified rather than assumed: **selector activation precedence** holds; **MP5 stays
+RETIRED**; **MP6 integrity stays mode-independent**; valid manifest states stay **exhaustive at
+three**; the **literal 8/8 H0 red phase** holds and gains a stronger set-equality check; **default
+full-suite green task boundaries** hold; **witness-first then atomic manifest transition** holds;
+the **coordinated two-file rollback residual (R22)** remains stated honestly and unclaimed; the
+**aggregate base→head** verification, the **no-shipment fail-closed pair**, the
+**branch-before-mutation / commit-before-handback** ordering and the **exact CI provenance
+distinction** all stand.
+
+The deliberation now carries eight disciplines. The seventh, added here, is *a specified observation
+is not a control until its producer, its root, its re-entry guard and its parser are named* (§18.1,
+§18.2). The eighth is *cite a contract no more strongly than it states itself, and when the citation
+must be weakened, check whether the conclusion still follows — here it did, on a different and more
+accurate premise* (§18.3).
+
+---
+
+## 19. Revision 15 addendum — a cleanliness precondition that could never hold, and a fixture that was not a repository
+
+**Context.** The operator authorized **one narrow remediation plus adversarial re-review cycle** for
+PR #54 and, separately, **required a decomposition audit before any editing**. This addendum records
+the reasoning; plan §12.15 records the dispositions.
+
+### 19.1 The decomposition audit, and why it did not change anything
+
+The audit was run **first**, precisely so its verdict could not be rationalized by edits already
+made. **Verdict: `SUFFICIENTLY_DECOMPOSED`.**
+
+The question worth recording is not the verdict but the **criterion**. The tempting reading is that
+C2 `018.011-T` is over-wide because it carries **11 acceptance criteria**, a fixture mechanism, a
+child process, and an evidence ledger. That reading conflates **how many propositions a milestone
+asserts** with **how much work it takes**, and the two come apart here completely.
+
+The decisive fact was already in §5.0 before this session began, in the H0 deliverable list:
+`copyTrackedRepoFixture`, `runFixtureChildGoTest`, and the parent-only spawn block are authored **at
+H0 by `harness-architect`**, and — verbatim — **"no task authors them, and no task is re-sized by
+them."** The fixture mechanism is **harness infrastructure produced before any task is claimed**, on
+the Ship Step 2 boundary. What C2 performs is: run, capture, and write **two** control-state files.
+One skill domain; two files.
+
+So the helper operations this revision **adds** — index-mode enumeration, witness validation,
+`git init`, a `--show-toplevel` assertion, two status snapshots — do not widen C2 either. They land
+inside the H0 deliverable. This is a case where the honest audit answer is *"the thing you are
+worried about is real, and it lives somewhere other than where you are looking."*
+
+**The structural argument is stronger than the sizing argument, and it runs the other way.** C2's
+completion is an **atomic two-file terminal transition**: witness first, then the manifest replaced
+atomically, with MP6 failing closed on any disagreement between them. A task boundary drawn **through**
+that transition would necessarily produce an intermediate state in which one file has flipped and the
+other has not — **exactly the state MP6 exists to reject**. Splitting C2 would therefore manufacture
+the defect class the mechanism was built to detect. Add that every task needs its own harness function
+while §5.0 fixes the count at **eight**, and a split is not merely unnecessary — it is **incoherent**.
+
+**Recorded as a deliberate non-decision**: no task was added to make the numbers look better. The
+operator explicitly asked that decomposition not be inflated to satisfy a numeric preference, and it
+was not.
+
+### 19.2 A precondition that is unsatisfiable exactly when it is needed
+
+The rev-14 mechanism asserted `git status --porcelain` over the real checkout was **empty before and
+after** the fixture run. This is the most instructive finding of the pass, because the assertion is
+not *wrong about the goal* — it is **wrong about the predicate**, and in a way that is invisible until
+you ask *when* it is evaluated.
+
+The spawn block is entered **only** when the real tree's manifest phase is `terminal` (§5.0.2 item 4).
+But `terminal` is established by **C2's own completion**, which writes the witness and rewrites the
+manifest. So at the one moment point 7 is meaningful, the real tree **necessarily** carries that dirt.
+The precondition is therefore **unsatisfiable precisely when the evidence is required** — a deadlock,
+not a guard.
+
+A second, independent reason emerged from inspecting the repository rather than reasoning about it:
+`references/herdr` is a **nested independent clone** excluded **only** by `.git/info/exclude`, which
+is **local and does not survive a clone**. On CI, or any fresh checkout, `--untracked-files=all`
+reports that tree and the "empty" assertion fails for a reason that has nothing to do with this
+harness at all.
+
+The replacement — **byte-identical before/after snapshots** — is not a relaxation. The claim that
+matters was always *"the fixture mechanism changed nothing"*, and equality asserts that **directly**.
+The empty form only ever established it by **inference** from a stronger premise that happens to be
+false here. Equality is also **strictly more sensitive**: it catches modification of an already-dirty
+file, a deletion, and a new artifact written beside existing dirt — none of which an empty-tree check
+can distinguish, since all three can leave the tree "non-empty either way". Choosing the weaker
+predicate had been costing detection power, not buying it.
+
+### 19.3 A fixture that was a directory, not a repository
+
+Rev 14 copied **tracked files** into `t.TempDir()` and — correctly — never copied `.git/`. The
+consequence was not noticed: the copy was then a module root with **no repository**, so any Git
+command run inside it **walks upward**, resolving some unrelated ancestor or nothing at all. The
+harness and the copied scripts use tracked-corpus enumeration and `HEAD`, so this is load-bearing.
+
+The fix is to **build** a repository rather than import one: `git init`, a **local** non-secret
+identity, `git add`, and a deterministic local commit — no network, no submodule recursion, no global
+state. A commit rather than a bare index, because consumers of `HEAD` should work too. The binding
+check is `git -C {copy} rev-parse --show-toplevel` **equal to the canonical copy root**, asserted
+**before** the child launches. That single assertion is what converts "no nested or sibling repo can
+be selected" from a claim into a **check**.
+
+### 19.4 The untracked witness — an ordering problem wearing a copying problem's clothes
+
+`git ls-files` enumerates the **index**. `terminal-witness.json` is written by **C2's own completion**
+and may not be indexed when the helper runs. An index-only copy therefore yields a fixture that is
+**witness-absent with a terminal manifest** — which MP6 fails as an **integrity** error.
+
+The failure mode is what makes this worth recording: the child would have failed, the observation
+would have been marked "not obtained", and the **reason** would have been an artifact of the fixture
+builder rather than the removed lint step. Point 7 would have become vacuous for the **second** time,
+by a different route than rev 13's.
+
+The fix is therefore not merely "copy one more file" but an **ordering rule**: copy the witness from
+the working tree, **require** it to exist, parse it, validate it against the copied manifest, and only
+**then** remove the lint step. Soundness is proven before the defect is injected, so the child's
+failure stays **attributable**.
+
+### 19.5 Two premises checked against the repository instead of accepted
+
+The operator's instruction described skipping a **`160000 references` gitlink**. Checking rather than
+implementing showed `git ls-files -s` reports **all 629 index entries as `100644`** — zero `100755`,
+zero `120000`, zero `160000`, no `.gitmodules` — and that **`references/` is not in the index at all**.
+Writing the described skip-list would have encoded a carve-out for an entry this repository does not
+have. What the premise was **right** about is the underlying hazard, so the **closed mode table** is
+adopted, with every unsupported mode failing closed as a **forward guard**, and the non-existent
+carve-out is not written. The recorded fact makes the guard auditable instead of speculative.
+
+The second premise was the plan's own: a "recursion marker" defined as the child observing the
+sentinel **already set when the parent block is reached**. Given the guard that a sentinel-set process
+**never reaches** that block, the condition is **unsatisfiable** — a detector that can never fire,
+recorded as though it were evidence. It is withdrawn. Recursion is **prevented** structurally
+(depth bounded at one by construction) and **bounded** by the child timeout, and only the timeout is
+an observation.
+
+### 19.6 The H0 ambiguity — handled, not resolved
+
+`harness-architect` Step 1 says "**ready descendants**" (item 1), "restrict scope to that explicit task
+set" (item 2), and exclude "**blocked, done, or otherwise non-ready**" work (item 3). Rev 14 cited only
+item 3 and asserted the exclusion turns on lifecycle status values.
+
+That reading is **reasonable but not certain**, and rev 15 says so rather than defending it. An unmet
+dependency is genuinely **not** `status: blocked` — the seven downstream tasks carry `queued` plus
+`dependencies` edges. But "otherwise non-ready" **can** be read to cover dependency-unready work, and
+if it is, item 1 and item 2 pull in opposite directions.
+
+The plan therefore stops arguing and becomes **fail-closed**: Ship passes the exact eight IDs, verifies
+all eight are `queued`, and if the returned set is not equal to the eight, **halts before any mutation
+and routes to the operator**. Silent partial batches are prohibited; so is relaxing the 8/8 red to
+accommodate one. **No override is invented and the installed skill is not amended.** This is the
+honest shape for an ambiguity in someone else's contract: make the failure **loud and early** rather
+than choose an interpretation and hope.
+
+**Whether the ambiguity implied restructuring was evaluated explicitly and answered no.** It lives in
+the skill's wording, not the feature's shape, and every restructuring that could dissolve it is worse:
+deleting dependency edges would falsify a real ordering constraint to satisfy a parser; harnessing only
+A1 halts at Step 2 item 4 anyway; splitting or merging changes nothing, because any decomposition into
+ordered work has dependency state.
+
+### 19.7 What this addendum does not claim
+
+The authorized adversarial re-review has **not** been performed, and no outcome for it is claimed. No
+push, no GitHub operation, no thread reply or resolution, no shipment claim or closure.
