@@ -72,11 +72,11 @@ func assertPresentAtLeast(t *testing.T, content, needle string, n int, row strin
 	}
 }
 
-func assertPresentExactly(t *testing.T, content, needle string, n int, row string) {
+func assertPresentExactly(t *testing.T, content, needle string, row string) {
 	t.Helper()
 	got := countOccurrences(content, needle)
-	if got != n {
-		t.Fatalf("row %s: expected needle present exactly %d times, got %d: %q", row, n, got, needle)
+	if got != 1 {
+		t.Fatalf("row %s: expected needle present exactly once, got %d: %q", row, got, needle)
 	}
 }
 
@@ -167,7 +167,7 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_10_CS2_direct_status_gone_pointer_present", func(t *testing.T) {
-		assertPresentExactly(t, ship, "<shipment_id> --status shipped", 1, "10")
+		assertPresentExactly(t, ship, "<shipment_id> --status shipped", "10")
 		assertPresent(t, ship, "the authoritative close sequence defined by the `shipment-reconcile` skill", "10")
 	})
 
@@ -185,11 +185,11 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_14_CS7_compound", func(t *testing.T) {
-		assertPresentExactly(t, ship, "every manifest item is present in `.backlogit/queue/` with the", 1, "14")
+		assertPresentExactly(t, ship, "every manifest item is present in `.backlogit/queue/` with the", "14")
 		assertPresent(t, ship, "defers every per-item status decision to that skill's `mode: pre` classification", "14")
 	})
 	t.Run("row_15_CS8_compound", func(t *testing.T) {
-		assertPresentExactly(t, ship, "queue with `status: done`, and scans for orphan items.", 1, "15")
+		assertPresentExactly(t, ship, "queue with `status: done`, and scans for orphan items.", "15")
 		assertPresent(t, ship, "defers every per-item status decision to the `mode: pre` classification at `expected_status: done`", "15")
 	})
 
@@ -205,7 +205,7 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 		assertPresentAtLeast(t, ship, "scans for orphan items", 2, "17")
 	})
 	t.Run("row_18_CS7_CS15_preserve_scope_note", func(t *testing.T) {
-		assertPresentExactly(t, ship, "Scope note (139-F/139.001-T)", 1, "18")
+		assertPresentExactly(t, ship, "Scope note (139-F/139.001-T)", "18")
 	})
 
 	t.Run("row_19_CS9_scoped_to_safe_close", func(t *testing.T) {

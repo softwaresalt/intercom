@@ -231,18 +231,6 @@ func parseCreatedID(t *testing.T, out string) string {
 	return strings.TrimSpace(out[idx+1:])
 }
 
-// move transitions an artifact's status via the real engine.
-func (f *closePathFixture) move(id, status string) (string, error) {
-	f.t.Helper()
-	return f.runAllowFail("move", id, "--status", status)
-}
-
-// archive archives a single artifact via the real engine.
-func (f *closePathFixture) archive(id string) (string, error) {
-	f.t.Helper()
-	return f.runAllowFail("archive", id)
-}
-
 // claimShipment claims a queued shipment.
 func (f *closePathFixture) claimShipment(id string) {
 	f.t.Helper()
@@ -388,8 +376,8 @@ const (
 )
 
 func (f *closePathFixture) locate(id string) recordLocation {
-	_, inQueue := statExists(filepath.Join(f.queueDir(), id+".md"))
-	_, inArchive := statExists(filepath.Join(f.archiveDir(), id+".md"))
+	inQueue := statExists(filepath.Join(f.queueDir(), id+".md"))
+	inArchive := statExists(filepath.Join(f.archiveDir(), id+".md"))
 	switch {
 	case inQueue && inArchive:
 		return locBoth
@@ -402,12 +390,9 @@ func (f *closePathFixture) locate(id string) recordLocation {
 	}
 }
 
-func statExists(path string) (os.FileInfo, bool) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, false
-	}
-	return info, true
+func statExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func locationLabel(loc recordLocation) string {
@@ -675,7 +660,7 @@ func (f *closePathFixture) classifyClosePath(shipmentID string) (result classify
 // are omitted: none of this harness's fixtures link deliberations, so the
 // combined snapshot below is manifest members only (plus qualifying feature
 // members, already included in `evidence`).
-func (f *closePathFixture) computeBinding(shipmentID string, verdict closeVerdict, reason string, manifest []string, shipStatus string, evidence []evidenceEntry, qualifying []string, _ time.Time) string {
+func (f *closePathFixture) computeBinding(shipmentID string, verdict closeVerdict, reason string, manifest []string, shipStatus string, evidence []evidenceEntry, _ []string, _ time.Time) string {
 	engineVersion := f.engineVersion()
 	skillDigest := shipmentReconcileSkillDigest(f.t)
 
@@ -743,7 +728,9 @@ func isWellFormedBinding(binding string) bool {
 		return false
 	}
 	for _, r := range binding {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+		isDigit := r >= '0' && r <= '9'
+		isLowerHex := r >= 'a' && r <= 'f'
+		if !isDigit && !isLowerHex {
 			return false
 		}
 	}
@@ -795,7 +782,7 @@ func (f *closePathFixture) safeClose(shipmentID, mergeSHA, binding string) safeC
 // invocation IV-3 requires be guarded, which safeClose achieves by never
 // reaching this function without a freshly-revalidated bound CASCADE
 // verdict.
-func (f *closePathFixture) cascadeCloseSubProcedure(shipmentID, mergeSHA string, classified classifyResult) safeCloseResult {
+func (f *closePathFixture) cascadeCloseSubProcedure(shipmentID, mergeSHA string, _ classifyResult) safeCloseResult {
 	f.t.Helper()
 	res, err := f.shipShipment(shipmentID, mergeSHA)
 	if err != nil {
@@ -830,7 +817,7 @@ func (f *closePathFixture) cascadeCloseSubProcedure(shipmentID, mergeSHA string,
 // content of every file OTHER than the manifest items' own archival
 // targets, reversing any collateral drift the engine introduced outside
 // the manifest scope.
-func (f *closePathFixture) safeCloseSteps1Through10(shipmentID, mergeSHA string, classified classifyResult) safeCloseResult {
+func (f *closePathFixture) safeCloseSteps1Through10(shipmentID, mergeSHA string, _ classifyResult) safeCloseResult {
 	f.t.Helper()
 	manifestItems, _ := f.getShipmentManifest(shipmentID)
 	inScope := make(map[string]bool, len(manifestItems)+1)
