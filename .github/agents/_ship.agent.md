@@ -35,7 +35,7 @@ Ship is an execution and delivery agent. Acting outside this boundary is a **P-0
 
 | Category | Allowed | Forbidden |
 |---|---|---|
-| Backlog | Claim shipments, move tasks to active/done, close shipments, archive completed items; create a capture-only stash entry (P-021 C5) for a C2 deferred-scope-expansion capture or an existing pre-merge Step 9 / post-merge Step 6 follow-up-stash step; retire the source stash entry that fed the shipped scope via `backlogit_stash_archive` on `custom_fields.source_stash_id` at post-merge Step 7 (a manifest-derived closure operation, distinct from discretionary removal) | Create backlog items, create shipments, update item planning fields (scope, acceptance criteria); triage, prioritize/re-prioritize, re-classify, edit, harvest, or deliberate on stash entries; discretionary removal or archival of stash entries |
+| Backlog | Claim shipments, move tasks to active/done, **complete one covering feature `active -> done` when every live descendant at every depth is done and all five conditions below are conjunctive and fail-closed**, close shipments, archive completed items; create a capture-only stash entry (P-021 C5) for a C2 deferred-scope-expansion capture or an existing pre-merge Step 9 / post-merge Step 6 follow-up-stash step; retire the source stash entry that fed the shipped scope via `backlogit_stash_archive` on `custom_fields.source_stash_id` at post-merge Step 7 (a manifest-derived closure operation, distinct from discretionary removal). The covering-feature completion grant is **scoped to the manifest of the shipment this session has claimed and whose live status is exactly `active`**: (1) every manifest descendant is complete; (2) **no live descendant remains at every depth**; (3) topology is intact and **the descendant graph union the feature is set-equal to the manifest**; (4) containment holds; (5) the feature's live status is exactly `active`. | Create backlog items, create shipments, update item planning fields (scope, acceptance criteria); triage, prioritize/re-prioritize, re-classify, edit, harvest, or deliberate on stash entries; discretionary removal or archival of stash entries |
 | Source code | Delegate reads and writes to build/fix skills | — |
 | Git | Create and checkout feature/chore branches, commit, push | Commit or push directly to `main` |
 | Build | Run build systems, test suites, linters, format checks | — |
@@ -199,6 +199,24 @@ build work begins:
       step 4, re-run `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase pre_claim --json`
       to narrow the TOCTOU window between branch/worktree setup and the claim. Same exit-code handling as above: exit 0
       proceeds to the claim; exit 1/2 halts immediately.
+3b. **Intake reconciliation check — run BEFORE the claim.** Invoke `shipment-reconcile` with
+    `mode: pre` and `expected_status: queued`, while every manifest member still shares the
+    uniform pre-claim status.
+    This delegates the per-item check to the `shipment-reconcile` skill's `mode: pre` contract at the `expected_status` above and **defers every per-item status decision to that skill's `mode: pre` classification**, continuing **only** on an authoritative `PROCEED`; it also requires a `record-consistent` shipment record.
+    This verifies every manifest item is present in `.backlogit/queue/` with the
+    expected status, and scans for orphan items. A `RECONCILE_FAIL` here means Stage swept
+    non-harvest items into the manifest; reconcile before proceeding to Step 1. (Lock is not
+    held at intake — this is a lightweight early-warning check only.)
+    **Scope note (139-F/139.001-T)**: this single-`expected_status` check applies to true
+    session-start intake, where every manifest task still shares one uniform status (all
+    `queued` pre-claim, or all `active` immediately after this session's
+    own claim in item 4 below). `shipment-reconcile`'s `mode: pre` accepts only one
+    `expected_status` value and classifies any other status as `status-mismatch`, so it cannot
+    represent a legitimately mixed manifest. Do not invoke this check on a resumed session where
+    manifest tasks have already diverged in status from prior partial execution (some
+    `done`, some `active`, some still `queued`) — rely instead
+    on the Step 3 item 1 executable-task-set derivation's own per-task status handling (C1–C6),
+    which is built for exactly that mixed state.
 4. If the shipment is still in `queued` status, claim it using `backlogit_claim_shipment` before
    build work begins. Broadcast `[SHIP] Shipment claimed: {shipment_id}`.
 4a. **TOPOLOGY_GATE: post_claim (immediately after claim, GLOBAL verification) — Post-claim shipment-status verification (Unit A — P-005 fail-closed)**:
@@ -250,22 +268,6 @@ build work begins:
     claim-verify result when intercom is available.
 5. Record `shipment_id` as the session scope. All build execution and PR scope is bounded
    by this shipment.
-6. **Intake reconciliation check**: Invoke `shipment-reconcile` with `mode: pre` and
-   `expected_status: queued` (or `active` if already claimed).
-   This verifies every manifest item is present in `.backlogit/queue/` with the
-   expected status, and scans for orphan items. A `RECONCILE_FAIL` here means Stage swept
-   non-harvest items into the manifest; reconcile before proceeding to Step 1. (Lock is not
-   held at intake — this is a lightweight early-warning check only.)
-   **Scope note (139-F/139.001-T)**: this single-`expected_status` check applies to true
-   session-start intake, where every manifest task still shares one uniform status (all
-   `queued` pre-claim, or all `active` immediately after this session's
-   own claim in item 4 above). `shipment-reconcile`'s `mode: pre` accepts only one
-   `expected_status` value and classifies any other status as `status-mismatch`, so it cannot
-   represent a legitimately mixed manifest. Do not invoke this check on a resumed session where
-   manifest tasks have already diverged in status from prior partial execution (some
-   `done`, some `active`, some still `queued`) — rely instead
-   on the Step 3 item 1 executable-task-set derivation's own per-task status handling (C1–C6),
-   which is built for exactly that mixed state.
 
 **Fallback path — direct invocation without a Stage-prepared shipment**:
 
@@ -292,8 +294,9 @@ When `shipment_id` is not provided (Ship invoked directly by the operator):
 When the `agent-intercom` capability pack is also installed, broadcast each sub-step with
 its outcome.
 
-After claiming the shipment via either path, the intake reconciliation check from
-primary-path step 6 applies — run it if it was not already executed above.
+The intake reconciliation check now runs **pre-claim** (primary-path step 3b, before item 4's
+claim). For the fallback path, run the equivalent `shipment-reconcile mode: pre` check before
+the claim in fallback item 4 if it was not already executed above.
 
 ### Validation Boundary
 
@@ -755,9 +758,10 @@ branch-per-release-unit principle.
 
 **Mandatory pre-self-close context reload**: after this shipment's PR merges to `main`
 and **before** Ship closes that same shipment, re-read the freshly merged `main` Ship
-agent instructions and the `shipment-reconcile` skill. Close under the just-merged
-contract, not a stale in-context copy — especially when the merged shipment itself
-updated the safe-close algorithm. Backlogit 1.8.0 supports only
+agent instructions and the `shipment-reconcile` skill — re-read the Role Boundary, and
+**also re-read `P-015` and verify the merge commit** before trusting any merged token.
+Close under the just-merged contract, not a stale in-context copy — especially when the
+merged shipment itself updated the safe-close algorithm. This reload is **scoped to Role Boundary changes only** and **A context reload MUST NOT widen the authority envelope** of the session performing it. Backlogit 1.8.0 supports only
 `queued -> active`, `active -> shipped`, and
 `active -> abandoned` for shipments; there is no shipment `blocked`
 lifecycle to transition out of. See
@@ -770,60 +774,99 @@ lifecycle to transition out of. See
        proceeds; exit 1/2 halts immediately with the reported token/message (never inferred, never fail-open). Ambient
        git hooks independently cover the intervening commit/push activity in closure work; this lifecycle invocation is
        the shipment-scoped check immediately preceding the safe-close mutation itself.
+   a1. **Covering-feature completion gate**: positioned **after** `a0` and **immediately
+       before** `a`. Runs BEFORE pre-mode and is self-sufficient — it reads declared status,
+       containment, topology and the §3.3 allowlist directly. It must not require pre-mode to
+       have run, and must not invoke it. It answers exactly one question: is this feature's
+       obligation discharged? It computes no close path and emits no verdict.
+
+       Read-only during evaluation; one authorized mutation. All gathering and all guard
+       evaluation (S0–S3, S5) are reads. The only write a1 may perform is S4's single
+       `active -> done` transition on one covering feature, and only when all five §3.2
+       conditions hold. a1 performs no other write of any kind.
+
+       Execute S0 → S5 in order; stop at the first that applies. No input satisfies two steps.
+
+       * **S0**: S0 is an anomaly gate **evaluated before `n` is computed**; any anomaly
+         **halts with no feature mutation**. Anomalies: a member with missing/unresolvable
+         `artifact_type`; present in both queue and archive; present in neither; declaring
+         `status: archived` with malformed provenance; declaring `status: archived` and not on
+         the §3.3 allowlist; or a descendant-graph enumeration that errored or was incomplete.
+       * **S1**: when `n == 0`, record `A1_NOT_APPLICABLE` and proceed — this is a success,
+         not a skip.
+       * **S2**: when `n > 1`, record `A1_MULTIPLE_FEATURE_MEMBERS` and **halt with no feature mutation**.
+       * **S3**: when the single feature member already declares `done`, re-evaluate
+         conditions 1–4 and record `A1_ALREADY_DONE` without re-issuing the transition. Any
+         unmet condition halts.
+       * **S4**: when all five conditions hold, transition `active -> done` via
+         `backlogit_move_item` (CLI fallback `backlogit move {id} --status done`); on any
+         unmet condition **HALT, naming the unmet condition**. **A non-zero move exit code is
+         a HALT**, never a retry: exit 6 blocked, exit 7 configuration, exit 8
+         retryable-but-not-retried-here. A zero exit with a re-read that is not exactly `done`
+         is also a HALT. `--force-gates` and `--force-reason` are forbidden on this route —
+         they are operator-only overrides.
+       * **S5**: when `n == 1` and the live status is any other value, **HALT**, record the
+         observed status, and return to Stage.
+
+       `n` = count of manifest members whose `artifact_type` is `feature`, never by ID suffix.
    a. **Pre-archive reconciliation gate (mandatory)**: Invoke the `shipment-reconcile`
       skill with `mode: pre`, `shipment_id`, and `expected_status: done`.
       This acquires the single-writer lock on `.backlogit/queue/{shipment_id}.md`
-      (via the `file-lock` skill) and verifies that every manifest item is present in
+      (via the `file-lock` skill) and **defers every per-item status decision to the `mode: pre` classification at `expected_status: done`**, continuing **only** on an authoritative `PROCEED`, requires that the shipment-record-status classification is
+      `record-consistent`, and verifies that every manifest item is present in
       queue with `status: done`, and scans for orphan items.
       * If the skill returns `RECONCILE_FAIL`: halt and surface the reconciliation report
         to the operator. Do NOT proceed to step 1.b.
       * If the skill returns `PROCEED`: continue. The lock remains held until post-mode
         completes in step 1.d.
-   b. **Safe-close (thin pointer; `shipment-reconcile` is authoritative)**: Invoke the
-      `shipment-reconcile` skill with `mode: safe-close`, `shipment_id`, and the
-      `merge_commit_sha`. Keep this agent file at pointer level only — the full,
-      step-by-step safe-close algorithm lives in the `shipment-reconcile` skill and
-      must not be re-derived here.
+   b. **Close-path selection (delegated; `shipment-reconcile` is authoritative)**: Close-path selection is **delegated**: **the `shipment-reconcile` skill's read-only `mode: classify-close-path` boundary selects the close path**, and Ship performs **no classification of its own** — no root or `parent_id` test, no coverage test, no
+      per-member rule and no fallback rule. Ship validates the returned token against the
+      fixed allowlist `CASCADE` / `SAFE_CLOSE` / `BLOCK` and does nothing else with it.
+
+      First invoke the `shipment-reconcile` skill with `mode: classify-close-path` and
+      `shipment_id`. Read the returned `CLOSE_PATH_VERDICT`, `VERDICT_REASON` and
+      `CLASSIFICATION_BINDING`.
+
+      * **Do NOT call `backlogit shipment ship` / `backlogit_ship_shipment`** unless **`mode: classify-close-path` has already returned `CLOSE_PATH_VERDICT: CASCADE`** for this shipment. **HALT on any result token the installed classification did not name**, and HALT on `SAFE_CLOSE`, on `BLOCK`, and on any absent, empty, unparseable
+        or ambiguous result.
+      * Invoke the close path the boundary named, **carrying the returned `CLASSIFICATION_BINDING` into that call**, in place of any locally selected sequence
+        for this shipment's closure.
+      * Ship invokes **only** the close path the returned verdict names, and **never a path
+        absent from that verdict**. **Ship MUST NOT invoke `mode: safe-close` without a `classification_binding`**; an unbound safe-close invocation by Ship is a contract
+        violation and HALTs. **Ship treats `RECONCILE_FAIL_CASCADE_UNBOUND`,
+        `RECONCILE_FAIL_CLASSIFICATION_INVALID`, `RECONCILE_FAIL_CLASSIFICATION_DRIFT` and
+        `RECONCILE_FAIL_CLASSIFICATION_REFUSED` as a HALT with no mutation performed**; it
+        reclassifies only on drift and returns to Stage on every other refusal.
+
+      **When `CLOSE_PATH_VERDICT: SAFE_CLOSE`** — Invoke the `shipment-reconcile` skill with
+      `mode: safe-close`, the `shipment_id`, and the `merge_commit_sha` —
+      **carrying the `classification_binding` from the preceding `classify-close-path`
+      call**. **An unbound safe-close invocation is refused by the skill**, so it MUST NOT
+      be attempted. Keep this agent file at pointer level only — the full, step-by-step
+      safe-close algorithm lives in the `shipment-reconcile` skill and must not be
+      re-derived here.
       At the summary level, the skill:
       * archives only the shipment manifest's explicit item IDs;
-      * closes only the shipment record via the non-cascading sequence `backlogit move
-        <shipment_id> --status shipped` -> verify live `status: shipped` ->
-        `backlogit archive <shipment_id>` -> verify `archived_status: shipped`;
-      * proves the protected set and halts fail-closed on any cascade or provenance
-        ambiguity.
-      * **Do NOT call `backlogit shipment ship` / `backlogit_ship_shipment`** unless
-        the P-015 **VERIFIED FULLY-COVERED-ROOT EXCEPTION** below applies. Outside that
-        narrow exception, this cascade operation requeues + detaches unshipped
-        descendant tasks back to the backlog with `parent_id` cleared, archives
-        release-scope members outside the manifest-scoped ordering, and
-        preserves/restores a non-member covering feature via snapshot. It is
-        P-015-forbidden for partial-feature shipments because it can requeue/detach
-        downstream siblings and close outside the safe-close ordering.
-      * **P-015 verified fully-covered-root exception (select the close path from the
-        verified check, never from prose alone)**: safe-close remains the default.
-        Before closing, run the machine-checkable classification described in P-015
-        over the shipment manifest's items (workspaces with a Python implementation
-        installed can reuse a `classify_shipment_close_path(manifest_items,
-        workspace_backlog_dir)`-shaped function; the classification is defined in
-        prose here since this is a generic template). The cascade close path is
-        permitted **only** when, for **every** feature member of the manifest: it is a
-        root (no `parent_id`); it is fully covered (every one of its children,
-        enumerated live from `.backlogit/queue/` +
-        `.backlogit/archive/`, is also a manifest member); and, if it
-        enumerates to zero children, that childlessness is **positively verified**
-        against the live workspace (never inferred from an incomplete or failed
-        enumeration) and the feature is additionally terminal (no manifest member
-        declares it as parent). The manifest must contain nothing beyond the
-        qualifying root feature(s) and their children. If **any** feature member fails
-        **any** precondition, the **whole manifest** falls back to safe-close —
-        qualification is never per-member, and no feature ID is ever special-cased.
-        When (and only when) the classification confirms every precondition holds,
-        invoke the cascade `backlogit shipment ship` / `backlogit_ship_shipment`
-        operation in place of the safe-close sequence above for this shipment's
-        closure.
+      * closes only the shipment record through **the authoritative close sequence defined by the `shipment-reconcile` skill**, never by a direct shipment status
+        prescription (internally, that sequence resolves to move
+        `<shipment_id> --status shipped` -> verify live `status: shipped` ->
+        `backlogit archive <shipment_id>` -> verify `archived_status: shipped`, entirely
+        inside the skill boundary);
+      * **proves the protected set on the safe-close path**, where a protected set exists; a manifest qualifying for the cascade close path has **no protected set by construction**, and the skill halts fail-closed on any cascade or provenance
+        ambiguity on either path.
       * If the skill returns `HALT — cascade detected, revert required`, restore
         `.backlogit/queue/` + `.backlogit/archive/`, surface the
         protected-set violation, and halt. Do NOT commit a corrupt backlog.
+
+      **When `CLOSE_PATH_VERDICT: CASCADE`** — invoke the cascade
+      `backlogit shipment ship` / `backlogit_ship_shipment` operation as this shipment's
+      closure instead of the safe-close sequence, carrying the returned
+      `CLASSIFICATION_BINDING` into that call. This cascade operation requeues + detaches
+      unshipped descendant tasks back to the backlog with `parent_id` cleared, archives
+      release-scope members outside the manifest-scoped ordering, and
+      preserves/restores a non-member covering feature via snapshot — a hazard that is
+      acceptable only because the classification boundary has already verified this
+      manifest is a fully-covered root set.
    c. **Verify archive integrity (P-007)**: Run `git status -- ".backlogit/archive/"`.
       If any archive files appear as working-tree deletions, restore them immediately:
       `git restore .backlogit/archive/`. See P-007 in workflow-policies for the
