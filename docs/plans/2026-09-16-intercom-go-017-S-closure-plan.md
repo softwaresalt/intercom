@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — 017-S closure (Stage artifact branch/PR policy gap correction)"
 date: 2026-09-16
-revision: 9
+revision: 10
 status: draft
 agent: Stage
 shipment: 017-S
@@ -745,6 +745,13 @@ not manifest mutation.
   blockers. Item **4 alone** is pulled in, as **PF-7**. Item **5** is referenced at S-2 as a
   **disclosure only**, with no derived halt condition.
 * **Re-opening prerequisite attempt 9.** Revision 13 stays **FROZEN**; attempt 8 **FAIL STANDS**.
+* **Moving the claim later than Ship Step 0.5 item 4 ("claim-last")** — measured **NOT FEASIBLE**:
+  installed `_ship.agent.md` Step 0.5 item 4 claims "before build work begins" and item 4a gates on
+  the claim "before the Step 4.1 Claim Task step", while harness generation is Step 2 and execution
+  Step 4 — the claim precedes all build work by four steps. Inverting it requires editing
+  `_ship.agent.md`, outside `018.008-T`'s recorded 3-file scope. Captured as stash **`3F546E63`**
+  (D-M9). The claim in this plan therefore already sits at its **latest policy-valid point**, so the
+  pre/post-claim halt regimes of §8 are inherent to the route rather than removable plan bulk.
 
 ## 11. Risk register
 
@@ -974,54 +981,11 @@ Verdict ledger. One row per attempt; detail lives in Git history, PR #57 and the
 | 6 | 7 | multi-agent | correctness, constitution, scope-boundary | FAIL | 2f72187 |
 | 7 | 8 | multi-agent | correctness, constitution, scope-boundary | FAIL | 394a45f |
 
-**Current status:** revision 8 FAILED attempt 7. Correctness FAIL (2 P0), constitution FAIL (4 P0),
-scope-boundary **ADVISORY (0 P0)** — the second consecutive clean scope verdict, again confirming the
-13-member manifest holds on every traced path. Revision 9 remediates the confirmed findings.
-
-**One reported P0 was REFUTED by direct measurement.** Correctness F-1 asserted that `git show --stat`
-on a two-parent merge emits a combined (`--cc`) diff listing no files, making the S-11 check
-unsatisfiable. Measured against `f2d4cf9`: `git show --stat` enumerates all **17** files, identical to
-`git diff --stat f2d4cf9^1 f2d4cf9`. The finding and its dependent M-21 evidence challenge are both
-withdrawn. Reviewer assertions about tool semantics are verified, not adopted.
-
-**Genuine findings remediated in revision 9:**
-
-* **F-2 (P0)** — S-8 bound `{impl_paths}` with no command named, while the parallel `{harness_paths}`
-  binding carried a `:(exclude).backlogit/` filter whose stated rationale applies identically. An
-  unfiltered binding ingests the S-3 claim writes and the S-2 reconcile report, so the S-8 membership
-  test was unsatisfiable by construction — a guaranteed post-claim halt. Both bindings now share one
-  rule (D-H6), and `.backlogit/**` is stated to lie outside D2's domain.
-* **C-01 (P0)** — S-7 (×2), S-10 and the §11 S-4 risk row routed **post-claim** halts to Stage, the
-  one agent P-010 forbids from disposing of shipments. All now route to the operator under Regime B
-  (**D-J11**); Stage re-measurement is advisory input, never the halt target.
-* **C-02 (P0)** — the harness-architect producer, on which the entire §4.1 P-002 mitigation rests,
-  was first validated at S-7 — **after** the one-way door, with refusal predicted by the plan's own
-  text. New **PF-12** validates producer admission pre-claim, where failure costs nothing.
-* **C-03 (P0)** — the general telemetry clause and AC-22 carried **one** of P-005's three required
-  actions while §13 asserted all three, certifying a shortfall as acceptance-passing. Both now
-  enumerate the full triple (**D-J9**), with action 2 recorded `N/A` when no PR exists at that gate.
-* **C-05** — installed P-020 states verbatim that a **failed** compaction is NON-BLOCKING. The plan's
-  fail-closed default would have inverted it after the merge landed. **D-J12** excludes S-21.5 from
-  the fail-closed default and from every R-trigger; only *skipping* the invocation is the violation.
-* **F-6** — S-21.5's insertion made the closure branch carry **three** commits, not two; R-5's
-  justification clause is corrected. The revert target itself was already right.
-* **F-8** — D-C11 claimed a report is persisted "for every mode", contradicted by the installed skill
-  and by D-C16. Restated to the three modes that actually persist.
-
-**C-04 — P-013 circuit state, disclosed rather than disputed.** The constitution persona is correct
-that the circuit is open and was unrecorded: seven consecutive FAILs, far past P-013.3's threshold.
-It is **not** correct that each attempt was an unauthorized re-execution — the P-013.6 escalation was
-dispatched once to a genuinely distinct route, and every attempt from 4 onward ran on an exact,
-explicitly recorded operator authorization. P-013.6 bars the *agent* from self-authorizing a
-re-attempt; it does not bar the operator from directing one. The state is now recorded in §13 and
-**D-J13** instead of being left implicit.
-
-**Mechanism-reference closure continues to earn its place.** Applied to the revision-9 mechanisms it
-again caught a residue the targeted edits missed — §7's binding-discipline paragraph still carried
-the old unqualified `{impl_paths}` wording, an exact F-2 relapse — plus a PF-table ordering error.
-Both would have been attempt-8 findings. But note its limit, honestly: the sweep only covers tokens
-chosen in advance, and attempt 7's F-2 and C-01 were *themselves* this defect class in mechanisms
-nobody had enumerated. The countermeasure narrows the failure mode; it does not close it.
+**Current status:** revision 8 FAILED attempt 7 (correctness FAIL, constitution FAIL, scope-boundary
+ADVISORY / 0 P0). Revision 9 remediates every confirmed finding; one reported P0 was refuted by direct
+measurement. Per-finding detail, refutation evidence and remediation rationale live in
+`docs/plans/evidence/2026-09-16-017-S-closure/attempt-7-review-findings.md`, Git history and PR #57 —
+not in this executable procedure.
 
 `017-S` is **NOT claimable** until an attempt records `decision: PASS` here and this plan is
 present on `origin/main` (PF-2).

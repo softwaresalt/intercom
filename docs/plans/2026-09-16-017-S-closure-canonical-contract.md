@@ -273,6 +273,7 @@ unforeseen artifact is no longer automatically fatal.
 | **D-M6** | Decision §7 follow-ups 1, 2, 3 and 5 — recorded, off-route, explicitly not current blockers. Item 4 alone is pulled in, as PF-7. Item 5 is referenced at S-2 as a **disclosure only**, with no derived halt condition. |
 | **D-M7** | Re-opening prerequisite attempt 9. Revision 13 stays FROZEN. |
 | **D-M8** | **Resolving the general P-002 / shipment-claim ordering conflict** — captured as stash **`DB12DA37`** (D-D6). It affects every shipment-claim route in this workspace and would require amending P-002 or changing claim semantics; either exceeds this shipment's frozen scope. `017-S` proceeds under the disclosed deviation. |
+| **D-M9** | **Moving the claim later than Ship Step 0.5 item 4 ("claim-last").** Measured NOT FEASIBLE: installed `_ship.agent.md` Step 0.5 item 4 claims "before build work begins" and item 4a gates on the claim "before the Step 4.1 Claim Task step"; harness generation is Step 2, execution Step 4, PR lifecycle Step 5, closure Step 6, so the claim precedes all build work by four steps. Inverting it requires editing `_ship.agent.md`, outside `018.008-T`'s recorded 3-file scope. Captured as stash **`3F546E63`**. The claim therefore sits at its **latest policy-valid point**; the pre/post-claim halt regimes (§J) are inherent to the route, not removable plan bulk. |
 
 ## N. Protected invariants
 
