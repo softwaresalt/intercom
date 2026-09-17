@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — 017-S closure (Stage artifact branch/PR policy gap correction)"
 date: 2026-09-16
-revision: 8
+revision: 9
 status: draft
 agent: Stage
 shipment: 017-S
@@ -188,6 +188,7 @@ mutation.**
 | **PF-9** | Ground 1 | `021-S` ⇒ `status: archived` **and** its own frontmatter `archived_status` is exactly `shipped`, with `commit` provenance. `archived` alone is insufficient — it is also the terminal state of an *abandoned* shipment. Cross-check `74330d3` / `f2d4cf9` / PR #56 | **HALT to Stage** |
 | **PF-10** | Ground 2 | the **installed** `_ship.agent.md` contains Step 6.1(a1) with the S0–S5 selector, and `.github/policies/workflow-policies.md` carries the §3.2 grant. Verified against the installed files, not against this plan's description of them | **HALT to Stage** |
 | **PF-11** | Close-path authority | §5.2 | §5.2 |
+| **PF-12** | Producer admission (**P-012**, read-only, **pre-claim**) | `.github/skills/harness-architect/SKILL.md` resolves **and** its Step 1 intake admits a work item whose status is `active` — or a declared P-012 fallback exists. The §4.1 P-002 mitigation rests entirely on this producer; validating it at S-7 would place the check **after** the S-3 one-way door, so a refusal there would strand `017-S`. Log `TOOL_OK` / `TOOL_DEGRADED`. | **HALT to Stage** |
 
 ### 5.1 PF-7 — probe re-verification (READ-ONLY)
 
@@ -282,7 +283,7 @@ guarded at runtime by S-17, S-18, S-20 and §8 — not by probe evidence.
     a Ship-applied label would be a false compliance signal on the exact label P-002 consumes.
   * **Probe the producer before relying on it (P-012).** `018.008-T` is already `active` at this
     point, and the skill's Step 1 excludes non-ready work items. Confirm the skill accepts an
-    `active` task; if it refuses, log `TOOL_DEGRADED` and **HALT to Stage** — the §4.1 deviation's
+    `active` task; if it refuses, log `TOOL_DEGRADED` and **HALT to the operator (Regime B)** — S-7 is post-claim, so Regime A is unavailable (§6.1 D-J11). PF-12 pre-validates this admission before the one-way door precisely so this halt is rare. The §4.1 deviation's
     entire mitigation is unexecutable without the producer, and that must surface before S-8, not
     be discovered as a silent omission.
   * **Observe and record the red phase before writing any implementation line** (**AC-6**).
@@ -292,7 +293,7 @@ guarded at runtime by S-17, S-18, S-20 and §8 — not by probe evidence.
     `not implemented: stage branch gate contract` attributed to
     `TestStageBranchGate_ContractCorrected`; the H0 red count is **literally 1 of 1**; and the
     harness manifest records `Compilation: PASS` and `Red Phase: CONFIRMED`. Record all five in the
-    run log. Any shortfall ⇒ **the label is NOT applied** and **HALT to Stage**: a harness that
+    run log. Any shortfall ⇒ **the label is NOT applied** and **HALT to the operator (Regime B)** — S-7 is post-claim (§6.1 D-J11): a harness that
     passes on first run, or fails for an unrelated reason (compile error, missing fixture,
     unrelated breakage), does not establish red.
   * **Bind `{harness_paths}`** — the exact set of harness/test/config paths created or modified,
@@ -301,10 +302,15 @@ guarded at runtime by S-17, S-18, S-20 and §8 — not by probe evidence.
     `.backlogit/` records that no step has committed yet, and ingesting them would make the S-10
     check unsatisfiable by construction.
 * **S-8** — **Implement `018.008-T` to green.** Scope is **exactly** `018.008-T`'s recorded
-  scope; no scope expansion. **Bind `{impl_paths}`** — the exact changed-path set — **and then
-  assert MEMBERSHIP: `{impl_paths}` ⊆ the §6.1 D2 authorized surface.** Any path outside it ⇒
-  **HALT**. The membership test is the check; binding alone proves nothing, because a set compared
-  against itself can never detect an unauthorized surface.
+  scope; no scope expansion. **Bind `{impl_paths}`** from **`git status --porcelain=v1 -- . ':(exclude).backlogit/'`**
+  at S-8 exit (§6.1 D4/D6), normalized to repo-relative paths — **the same exclusion `{harness_paths}`
+  uses, and required for the same reason**: the S-3 claim wrote `.backlogit/` records and S-2 wrote a
+  `.backlogit/reconcile/` report, none of which any step has committed yet, so an unfiltered binding
+  would make this membership test unsatisfiable by construction. **Then assert MEMBERSHIP:
+  `{impl_paths}` ⊆ the §6.1 D2 authorized surface.** Any path outside it ⇒ **HALT (Regime B — S-8 is
+  post-claim)**. The membership test is the check; binding alone proves nothing, because a set compared
+  against itself can never detect an unauthorized surface. `.backlogit/**` is **outside D2's domain
+  entirely** and is tested only by P3 — a `.backlogit/` path is never a D2 membership failure.
 * **S-9** — **`018.008-T → done`** (Step 4.5). This discharges §3.2 conditions 1 and 2: every
   descendant is complete-or-exempt and no live descendant remains.
   * **EXPECTED RENAME (M-17).** `done` is archive-routed, so this step **relocates** the record:
@@ -328,7 +334,7 @@ guarded at runtime by S-17, S-18, S-20 and §8 — not by probe evidence.
     * An **unexpected-but-not-denied** path is **recorded in the run log and does NOT halt**.
   * **P-021 disposition for review findings:** C1 in-scope ⇒ fix now; C2 out-of-scope ⇒ capture a
     deferred stash entry carrying PR number, review-thread ID and the task/feature/shipment IDs,
-    and do **not** widen this shipment; C3 defect in this plan ⇒ **HALT to Stage**.
+    and do **not** widen this shipment; C3 defect in this plan ⇒ **HALT to the operator (Regime B)** — S-10 is post-claim (D-J11); Stage re-measurement of the defective clause is advisory input to the operator, never the halt target.
 * **S-11** — **Merge confirmation gate.** After the S-10 merge lands, bind and verify:
   * **`{merge_sha}`** := the **PR-reported merge commit**, via
     `gh pr view <n> --json mergeCommit -q .mergeCommit.oid`. **Never `git rev-parse origin/main`**
@@ -429,10 +435,16 @@ guarded at runtime by S-17, S-18, S-20 and §8 — not by probe evidence.
 * **S-21.5** — **Closure knowledge artifacts and P-020 discharge.**
   * Author `docs/closure/017-S-018-F-post-merge-closure.md`.
   * **Invoke the compact-context skill with `target: all`.** **P-020** makes this MANDATORY at
-    every post-merge closure; skipping it is a **P-005** violation that leaves the closure
-    incomplete and **holds the next shipment under P-001**. The mechanism is the skill, never an
-    environment-specific in-conversation compaction command.
-  * Record `compaction: {status}` in the closure artifact.
+    every post-merge closure; **SKIPPING** it is the violation — recorded through the full P-005
+    triple with `violation_policy: P-020`, `gate: Ship Step 6 closure`, `action: closure-incomplete`
+    — which leaves the closure incomplete and **holds the next shipment under P-001**. The mechanism
+    is the skill, never an environment-specific in-conversation compaction command.
+  * **A compact-context run that FAILS is NON-BLOCKING** (installed P-020 Violation Action,
+    verbatim): record `compaction: degraded` in the closure artifact, log a warning, and
+    **continue to S-22**. S-21.5 is therefore **explicitly excluded from §8's fail-closed default
+    and from every §8.2 R-trigger** — the merge has already landed and the Tier-1 skill is
+    non-destructive (it archives, never deletes). Halting here would invert the installed policy.
+  * Record `compaction: {status}` in the closure artifact — `ok` or `degraded`, never unset.
   * These are the `docs/closure/`, `docs/memory/` and `docs/compound/` paths **M-21** measured in
     the `021-S` precedent and that **§6.1 D5a** expects in the S-22 PR. Without this step P4 would
     require artifacts no step authors.
@@ -556,7 +568,7 @@ the gate unsatisfiable by construction. `.backlogit/` paths are governed solely 
 | Variable | Bound at | First consumed at |
 |---|---|---|
 | `{harness_paths}` | S-7 | S-10 |
-| `{impl_paths}` | S-8 | S-10 |
+| `{impl_paths}` | S-8 | **S-8** (membership assertion), then S-10 |
 | `{merge_sha}`, `{msg}`, `{author}` | S-11 | S-18 |
 | `{pre_cascade_sha}` | S-15 | R-8 |
 | `{pre_paths}` | S-15 | S-20 |
@@ -568,11 +580,14 @@ the gate unsatisfiable by construction. `.backlogit/` paths are governed solely 
 
 No variable is consumed before the step that binds it.
 
-**Binding discipline.** `{harness_paths}` is bound from
-`git status --porcelain=v1 -- . ':(exclude).backlogit/'` (§6.1 D4), so the claim's uncommitted
-backlog writes are never ingested. `{impl_paths}` is bound as S-8's exact changed-path set **and
-then tested for membership** in the §6.1 D2 authorized surface — the binding alone is not the
-check.
+**Binding discipline.** **Both** `{harness_paths}` (S-7) and `{impl_paths}` (S-8) are bound from
+`git status --porcelain=v1 -- . ':(exclude).backlogit/'` (§6.1 D4/D6), so the claim's uncommitted
+backlog writes and the S-2 reconcile report are never ingested into either binding. The exclusion
+is **not** a `{harness_paths}`-only convenience — it is required identically for `{impl_paths}`,
+because the same uncommitted `.backlogit/` writes are present in the working tree at S-8 and an
+unfiltered binding would make the S-8 membership test unsatisfiable by construction. `{impl_paths}`
+is **then tested for membership** in the §6.1 D2 authorized surface — the binding alone is not the
+check. `.backlogit/**` lies outside D2's domain entirely and is tested only by P3.
 
 ## 8. Failure semantics and rollback
 
@@ -608,14 +623,19 @@ out of `active` are `shipped` and `abandoned`.
 until an operator acts. This is stated rather than engineered around, because every available
 workaround is either manifest-breaking or an unapproved destructive act.
 
-**Violation telemetry (P-005):** every halt corresponding to a named policy emits a P-005 event
-recording the policy ID, the failure token, the step ID and the affected artifact IDs. The closure
-record carries it.
+**Violation telemetry (P-005) — all THREE required actions, not one.** Every halt corresponding to
+a named policy performs the **full installed P-005 triple** (§6.1 D-J9): (1) **broadcast** the
+violation with policy ID and one-line summary; (2) **include the violation details in the PR
+description as a compliance annotation** — recorded `N/A (no PR exists at this gate)` when the halt
+precedes PR creation, per P-021 C3's per-field availability precedent; (3) **record it in the
+memory checkpoint** for the affected artifacts. Each event records the policy ID, the failure
+token, the step ID and the affected artifact IDs, and the closure record carries it. Performing
+action (1) or (3) alone is a P-005 shortfall and **must not be certified as acceptance-passing**.
 
 | Halt at | State | Regime + row-specific addition |
 |---|---|---|
 | **S-0** (no explicit recorded operator authorization for the P-002 deviation, or the authorization is ambiguous) | no claim performed; nothing mutated | **Regime A.** P-002's Violation Action is *Halt*; S-0 is fail-closed and never proceeds on notification alone (§4.1) |
-| **PF-1 … PF-11, S-1** | no claim performed | **Regime A.** Nothing to unwind — the only cheap-exit window, which is why §5's gates are exhaustive |
+| **PF-1 … PF-12, S-1** | no claim performed | **Regime A.** Nothing to unwind — the only cheap-exit window, which is why §5's gates are exhaustive |
 | **S-2** (reconcile fail, pre-claim) | no claim performed | **Regime A.** S-2 runs strictly before S-3 |
 | **S-3** (the claim itself fails) | claim may be **partial** | **Re-read `017-S` live status — the regime-deciding question.** Still `queued` ⇒ **Regime A**. `active` ⇒ **Regime B**, and additionally run S-5's non-drift check to characterize what the partial claim touched |
 | **S-4** (`018-F` not `active`) | claim active; no code, no record write | **Regime B.** Contradicts Probe 26 `C1` ⇒ **Stage re-measurement trigger** |
@@ -664,7 +684,7 @@ its additive-only discipline governs only the post-cascade unwind it defines.
 | **R-2 CLASSIFY** | **Evaluated in this order; first match wins.** **(d)** committed with any S-20 postcheck **failed or unrun** ⇒ **out of contract: HALT to the operator after R-1, no automatic revert** — an automatic unwind over state whose provenance is unknown is itself unsafe. **(a)** uncommitted, including an S-19 capture failure or an S-21 commit failure ⇒ **R-3**. **(b)** committed with **every S-20 postcheck passed** and the closure branch unmerged ⇒ **R-4**. **(c)** committed, all postchecks passed, and the S-22 closure merge landed ⇒ **R-5**. Evaluating (d) first resolves the former overlap in which committed-unmerged-postchecks-failed matched both (b) and (d) with contradictory dispositions |
 | **R-3 UNCOMMITTED** | Use the prerequisite §10.3.2 operator-approved mechanism, **on the closure branch**: (1) `git add -A -- .backlogit/queue/ .backlogit/archive/`; (2) commit as **`{quarantine_sha}`** on that same branch; (3) `git revert --no-edit {quarantine_sha}` on that same branch. A `quarantine/017-S-<utc>` name may be a **ref pointing at `{quarantine_sha}`** for evidence retention — never a separate commit target, which would leave the closure branch with no commit to revert and a dirty tree `git revert` refuses to run against. Proceed to R-6 |
 | **R-4 COMMITTED, CLOSURE BRANCH UNMERGED** | Target = **`{cascade_commit_sha}`**, an ordinary single-parent commit. Revert with plain **`git revert --no-edit {cascade_commit_sha}`**. **A single parent is EXPECTED here and is NOT a P-009 signal — P-009 governs PR merges, not intra-branch commits.** Proceed to R-6 |
-| **R-5 COMMITTED, CLOSURE MERGE LANDED** | **Revert target = `{cascade_commit_sha}`, NEVER `{closure_merge_sha}`.** The closure branch carries **two** commits: the S-15 baseline `{pre_cascade_sha}` (containing S-14's `018-F → done`) and the S-21 cascade `{cascade_commit_sha}`. `{closure_merge_sha}` contains **both**, so `git revert -m 1 {closure_merge_sha}` would unwind the baseline as well — returning `018-F` to `active`/queue-located and making **R-6/R-7 unsatisfiable by construction**, since `{pre_paths}` was captured *after* the baseline commit. **(1) P-011/P-016 prechecks FIRST, before any branch creation:** `git status --short` clean and `git worktree list --porcelain` classified fail-closed; this limb runs in a post-failure state where tree cleanliness is not guaranteed. **(2)** Verify `{closure_merge_sha}` empirically as **evidence only**: exactly two parents, parent 1 = mainline, parent 2 = the reviewed closure-PR head by **SHA equality** (`gh pr view <n> --json baseRefOid,headRefOid`); any other shape ⇒ **P-009 violation, HALT to the operator, no automatic revert**. **(3) Execution site — NEVER on `main` (M-26/P-010):** `git checkout main && git pull && git checkout -b chore/017-s-cascade-revert-<utc>`. **(4)** `git revert --no-edit {cascade_commit_sha}` **on that branch** — `{cascade_commit_sha}` is single-parent (**M-25**), so **plain revert, never `-m 1`**. **(5)** Land it through its **own revert PR** under the full gate set — P-014, P-018, explicit operator approval, **P-009 merge commit** — binding **`{revert_merge_sha}`**. **(6)** R-6/R-7 equivalence is evaluated **against `origin/main` at `{revert_merge_sha}`**, never against an unmerged branch. **(7)** Any failure at (5) ⇒ **HALT to the operator**; Ship never lands the revert by any other path. **This limb lands a merge on `main` under a new explicit operator approval — a moderate-to-high risk action, not a low additive one (§14.2).** Proceed to R-6 |
+| **R-5 COMMITTED, CLOSURE MERGE LANDED** | **Revert target = `{cascade_commit_sha}`, NEVER `{closure_merge_sha}`.** The closure branch carries **three** commits: the S-15 baseline `{pre_cascade_sha}` (containing S-14's `018-F → done`), the S-21 cascade `{cascade_commit_sha}`, and the S-21.5 closure-documentation commit. **Only `{cascade_commit_sha}` is ever reverted; the other two must survive.** `{closure_merge_sha}` contains **both**, so `git revert -m 1 {closure_merge_sha}` would unwind the baseline as well — returning `018-F` to `active`/queue-located and making **R-6/R-7 unsatisfiable by construction**, since `{pre_paths}` was captured *after* the baseline commit. **(1) P-011/P-016 prechecks FIRST, before any branch creation:** `git status --short` clean and `git worktree list --porcelain` classified fail-closed; this limb runs in a post-failure state where tree cleanliness is not guaranteed. **(2)** Verify `{closure_merge_sha}` empirically as **evidence only**: exactly two parents, parent 1 = mainline, parent 2 = the reviewed closure-PR head by **SHA equality** (`gh pr view <n> --json baseRefOid,headRefOid`); any other shape ⇒ **P-009 violation, HALT to the operator, no automatic revert**. **(3) Execution site — NEVER on `main` (M-26/P-010):** `git checkout main && git pull && git checkout -b chore/017-s-cascade-revert-<utc>`. **(4)** `git revert --no-edit {cascade_commit_sha}` **on that branch** — `{cascade_commit_sha}` is single-parent (**M-25**), so **plain revert, never `-m 1`**. **(5)** Land it through its **own revert PR** under the full gate set — P-014, P-018, explicit operator approval, **P-009 merge commit** — binding **`{revert_merge_sha}`**. **(6)** R-6/R-7 equivalence is evaluated **against `origin/main` at `{revert_merge_sha}`**, never against an unmerged branch. **(7)** Any failure at (5) ⇒ **HALT to the operator**; Ship never lands the revert by any other path. **This limb lands a merge on `main` under a new explicit operator approval — a moderate-to-high risk action, not a low additive one (§14.2).** Proceed to R-6 |
 | **R-6 TREE EQUIVALENCE** | Recompute the inventory over `.backlogit/queue/` + `.backlogit/archive/` and require it **set-equal, path-for-path and blob-hash-for-blob-hash**, to `{pre_paths}` captured at S-15. **`{pre_paths}` is the post-baseline state (`018-F` already `done`), so every revert target across R-3/R-4/R-5 must unwind the cascade ONLY and leave `{pre_cascade_sha}` intact.** Evaluation site: the working tree for R-3/R-4; `origin/main` at `{revert_merge_sha}` for R-5 |
 | **R-7 RECORD EQUIVALENCE** | Tree equality is **not sufficient**. For all 13 members plus `017-S` plus `019.007-T`, re-read **raw frontmatter from the artifact files** — never a list, index or query view — and require `status`, `archived_status`, `archived_from`, `parent_id`, `artifact_type` and `commit` to match their **S-15** baseline values exactly. Then `backlogit sync` and require `backlogit doctor` ⇒ `No issues found.`, exit 0 |
 | **R-8 VERIFY-OR-ESCALATE** | **A restore is complete only when R-6 AND R-7 both pass.** If either fails, **HALT to the operator** with the quarantine ref, `{pre_cascade_sha}`, and both inventories. **Do not attempt a second automated unwind** |
@@ -730,7 +750,7 @@ not manifest mutation.
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Claim does not set `018-F` to `active` | **HIGH** — blocks condition 5 with no in-band repair | **S-4** fail-closed verification; halt to Stage. Deliberately not repaired by a direct write, which would violate the §3.2 grant shape |
+| Claim does not set `018-F` to `active` | **HIGH** — blocks condition 5 with no in-band repair | **S-4** fail-closed verification; **halt to the operator (Regime B)** — S-4 is post-claim (D-J11). Deliberately not repaired by a direct write, which would violate the §3.2 grant shape |
 | Claim mutates pre-archived members | **HIGH** — silently breaks §3.2 condition 2 and the §3.3 exemption | **S-5** non-drift check at the cheapest unwind point |
 | Baseline commit silently stages nothing | **HIGH** — destroys the rollback anchor | **S-15 step 2** mandatory non-empty staged-diff verification |
 | Wrong artifact reverted during unwind | **HIGH** — would undo `018.008-T`'s implementation, or destroy the S-15 rollback anchor | **R-4/R-5 both target `{cascade_commit_sha}`**; `{merge_sha}` and `{closure_merge_sha}` are never revert targets (**I-12**) |
@@ -745,7 +765,7 @@ not manifest mutation.
 
 ## 12. Acceptance criteria
 
-1. **AC-1** — **PF-1 … PF-11** all pass before the claim; any failure halts with **no mutation**.
+1. **AC-1** — **PF-1 … PF-12** all pass before the claim; any failure halts with **no mutation**.
 2. **AC-2** — **PF-7 is read-only**: it re-verifies two already-committed probe artifacts plus the
    Probe 26 script and their engine agreement. This plan authors no probe, no test and no backlog
    item, and PF-7 adds no manifest member.
@@ -809,8 +829,11 @@ not manifest mutation.
 21. **AC-21 (BRANCH DISCIPLINE)** — S-1 and S-12 each verify P-011 branch naming, a clean
     worktree, and P-016 worktree classification, failing closed on any prohibited or ambiguous
     extra worktree. No S2 mutation occurs on `main`.
-22. **AC-22 (TELEMETRY)** — Every halt corresponding to a named policy emits a P-005 event with
-    the policy ID, failure token, step ID and affected artifact IDs.
+22. **AC-22 (TELEMETRY)** — Every halt corresponding to a named policy performs **all three**
+    installed P-005 required actions: broadcast, PR-description compliance annotation (recorded
+    `N/A` when no PR exists at that gate), and memory-checkpoint record — each carrying the policy
+    ID, failure token, step ID and affected artifact IDs. A one-of-three or two-of-three record
+    **fails** this criterion.
 23. **AC-23 (P-021)** — Findings raised during S-8 or the S-10 review cycle are dispositioned C1
     (fix now), C2 (capture a deferred stash entry; do not widen this shipment), or C3 (halt to
     Stage). Scope is never widened in place. **A C2 capture carries the full six-field payload**:
@@ -880,6 +903,7 @@ not manifest mutation.
 | **P-010** role boundary | Stage authors and gates only; every mutating step is Ship's. **S-8 amends P-010 within `018.008-T`'s recorded scope — authorized work, bounded by §6.1 D2 and P6.** **R-5 never executes on `main`** (**M-26**). §10; **AC-27**, **AC-30** |
 | **P-011** branch discipline | **S-1**, **S-12**, and **R-5 step (1)** before its branch creation; **AC-21**, **AC-27** |
 | **P-012** tool availability | Broadcast surface probed at **S-0**; `harness-architect` producer probed at **S-7**; `TOOL_OK`/`TOOL_DEGRADED` logged with declared fallbacks. **AC-26**, **AC-29** |
+| **P-013** consecutive-failure circuit breaker | **DISCLOSED — OPEN CIRCUIT, operator-authorized re-attempts.** This plan's review lineage has failed **7 consecutive** multi-persona attempts, far past P-013.3's 3-attempt threshold. The P-013.6 escalation was compiled and dispatched once (route `gpt-5.6-sol`/`openai`/`high` — distinct from Stage's own Tier-3 route, so **not** `ESCALATION_DEGRADED`), its findings were consumed, and the circuit is **open**. Every attempt from 4 onward proceeded **only** on an exact, explicitly recorded operator authorization token; Stage never self-authorized a re-attempt, which preserves P-013.6's authority-preservation invariant ("the handoff is for asynchronous or **operator** review"). The P-013 event is recorded through the full P-005 triple (D-J13). **Ship inherits no obligation from this row** — it governs Stage's planning loop, not the closure execution. |
 | **P-014 / P-018** review and merge approval | **S-10**, **S-22**, and **R-5's revert PR** — operator-approved merges only |
 | **P-015** single-artifact shipment closure (no cascade ship) | **This route's authorizing exception.** The cascade close is permitted only under P-015's verified fully-covered-root exception, classified at **S-17** (`CLOSE_PATH_VERDICT`) and revalidated at **S-18**; **PF-4**/**PF-5** establish the covered-root facts. **P6** keeps the P-015 section itself byte-identical — this plan never amends it |
 | **P-016** worktree classification | **S-1**, **S-12**, and **R-5 step (1)**, fail-closed; **AC-21**, **AC-27**. Not a changed-path predicate (§6.1 D1 rationale) |
@@ -948,29 +972,56 @@ Verdict ledger. One row per attempt; detail lives in Git history, PR #57 and the
 | 4 | 5.1 | multi-agent | correctness, constitution, scope-boundary | FAIL | 79103d9 |
 | 5 | 6 | multi-agent | correctness, constitution, scope-boundary | FAIL | 5004c84 |
 | 6 | 7 | multi-agent | correctness, constitution, scope-boundary | FAIL | 2f72187 |
+| 7 | 8 | multi-agent | correctness, constitution, scope-boundary | FAIL | 394a45f |
 
-**Current status:** revision 7 FAILED attempt 6 with **4 distinct P0 findings**, all independently
-verified by Stage against the workspace as genuine. Scope-boundary returned **ADVISORY (no P0)** —
-the first non-FAIL persona verdict in the lineage — confirming the 13-member manifest holds on
-every traced path including all failure and rollback limbs.
+**Current status:** revision 8 FAILED attempt 7. Correctness FAIL (2 P0), constitution FAIL (4 P0),
+scope-boundary **ADVISORY (0 P0)** — the second consecutive clean scope verdict, again confirming the
+13-member manifest holds on every traced path. Revision 9 remediates the confirmed findings.
 
-The measurement pass worked where it was aimed. The two P0s it targeted are gone: the
-`status: done → archive/` routing collision and the tool-emitted-artifact collision are both
-correctly handled, and no measured `M-` row was refuted by any reviewer.
+**One reported P0 was REFUTED by direct measurement.** Correctness F-1 asserted that `git show --stat`
+on a two-parent merge emits a combined (`--cc`) diff listing no files, making the S-11 check
+unsatisfiable. Measured against `f2d4cf9`: `git show --stat` enumerates all **17** files, identical to
+`git diff --stat f2d4cf9^1 f2d4cf9`. The finding and its dependent M-21 evidence challenge are both
+withdrawn. Reviewer assertions about tool semantics are verified, not adopted.
 
-**Three of the four P0s were introduced by revision 7's own remediations** — the recurrence, for a
-third consecutive revision, of this lineage's dominant defect class: *a fix validated against the
-finding it answers and never propagated to the clauses that reference the mechanism it changed.*
-§6.1 withdrew the changed-path allowlist but AC-18, the §11 risk row, the §8.1 S-10 halt row and
-contract §E still mandated it; the R-5 rewrite re-targeted the revert at `{closure_merge_sha}`
-without re-checking R-6/R-7's anchor; the newly added S-0 gate specified disclosure where its
-governing policy mandates a halt.
+**Genuine findings remediated in revision 9:**
 
-**Countermeasure adopted for revision 8 — mechanism-reference closure.** Textual re-reading has now
-failed three times to catch this class. Every mechanism changed in revision 8 is treated as a
-*named token*, every occurrence of that token across **both** artifacts is enumerated by literal
-search, each occurrence is dispositioned, and a post-edit re-search proves zero residue. This is
-mechanically checkable; "re-read the document" is not.
+* **F-2 (P0)** — S-8 bound `{impl_paths}` with no command named, while the parallel `{harness_paths}`
+  binding carried a `:(exclude).backlogit/` filter whose stated rationale applies identically. An
+  unfiltered binding ingests the S-3 claim writes and the S-2 reconcile report, so the S-8 membership
+  test was unsatisfiable by construction — a guaranteed post-claim halt. Both bindings now share one
+  rule (D-H6), and `.backlogit/**` is stated to lie outside D2's domain.
+* **C-01 (P0)** — S-7 (×2), S-10 and the §11 S-4 risk row routed **post-claim** halts to Stage, the
+  one agent P-010 forbids from disposing of shipments. All now route to the operator under Regime B
+  (**D-J11**); Stage re-measurement is advisory input, never the halt target.
+* **C-02 (P0)** — the harness-architect producer, on which the entire §4.1 P-002 mitigation rests,
+  was first validated at S-7 — **after** the one-way door, with refusal predicted by the plan's own
+  text. New **PF-12** validates producer admission pre-claim, where failure costs nothing.
+* **C-03 (P0)** — the general telemetry clause and AC-22 carried **one** of P-005's three required
+  actions while §13 asserted all three, certifying a shortfall as acceptance-passing. Both now
+  enumerate the full triple (**D-J9**), with action 2 recorded `N/A` when no PR exists at that gate.
+* **C-05** — installed P-020 states verbatim that a **failed** compaction is NON-BLOCKING. The plan's
+  fail-closed default would have inverted it after the merge landed. **D-J12** excludes S-21.5 from
+  the fail-closed default and from every R-trigger; only *skipping* the invocation is the violation.
+* **F-6** — S-21.5's insertion made the closure branch carry **three** commits, not two; R-5's
+  justification clause is corrected. The revert target itself was already right.
+* **F-8** — D-C11 claimed a report is persisted "for every mode", contradicted by the installed skill
+  and by D-C16. Restated to the three modes that actually persist.
+
+**C-04 — P-013 circuit state, disclosed rather than disputed.** The constitution persona is correct
+that the circuit is open and was unrecorded: seven consecutive FAILs, far past P-013.3's threshold.
+It is **not** correct that each attempt was an unauthorized re-execution — the P-013.6 escalation was
+dispatched once to a genuinely distinct route, and every attempt from 4 onward ran on an exact,
+explicitly recorded operator authorization. P-013.6 bars the *agent* from self-authorizing a
+re-attempt; it does not bar the operator from directing one. The state is now recorded in §13 and
+**D-J13** instead of being left implicit.
+
+**Mechanism-reference closure continues to earn its place.** Applied to the revision-9 mechanisms it
+again caught a residue the targeted edits missed — §7's binding-discipline paragraph still carried
+the old unqualified `{impl_paths}` wording, an exact F-2 relapse — plus a PF-table ordering error.
+Both would have been attempt-8 findings. But note its limit, honestly: the sweep only covers tokens
+chosen in advance, and attempt 7's F-2 and C-01 were *themselves* this defect class in mechanisms
+nobody had enumerated. The countermeasure narrows the failure mode; it does not close it.
 
 `017-S` is **NOT claimable** until an attempt records `decision: PASS` here and this plan is
 present on `origin/main` (PF-2).
