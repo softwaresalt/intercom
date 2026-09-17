@@ -141,3 +141,39 @@ revision 1 for exactly it.
 - PR #57 MERGEABLE/UNSTABLE, CI pending, no review approval. **Not merged** - merging an un-PASSed plan would defeat PF-1.
 - Engram still unreachable; checkpoint left **ACTIVE** (fail closed). All 3 Stage checkpoints intact.
 - **Ground 3 OPEN. 017-S NOT claimable. Attempt 5 not self-authorized.**
+
+## Canonical-contract remaster (revision 6) — commit 4a31537
+
+Operator superseded the patch-by-patch approach after four consecutive review FAILs.
+Root cause of the lineage: each remediation was validated against the finding it
+answered but never re-validated against the rest of the document. Three of attempt 3's
+four P0s and three of attempt 4's were introduced by the *previous revision's own fixes*.
+
+**Action taken:** compiled a canonical decision contract, then rewrote the plan from it
+rather than editing the accumulated body.
+
+- NEW `docs/plans/2026-09-16-017-S-closure-canonical-contract.md` — authoritative
+  decision register (sections A-N; D-A1..D-M7; invariants I-1..I-8). Governs the plan:
+  where the two disagree, the plan is defective.
+- REWRITTEN `docs/plans/2026-09-16-intercom-go-017-S-closure-plan.md` — 1095 -> 624
+  lines. No revision-correction log; history lives in Git/PR #57.
+- Renumbered to unique monotonic IDs (PF-1..PF-11, S-1..S-22, R-1..R-8, AC-1..AC-23,
+  M-1..M-16); removed the suffixed identifiers (S-3a/S-3b/S-7a/S-14a/R-4a/R-4b/PF-0)
+  that carried the duplicate and superseded mechanisms.
+- Closed previously-unaddressed P1s: S-22 closure-PR allowlist, P-005 telemetry,
+  P-011/P-016 prechecks, P-021 disposition at S-10, Constitution Check section,
+  AC coverage for every gate and step, PF-11.4 de-inverted.
+
+**Mechanical verification (all clean):** ID uniqueness and monotonicity; define-before-use
+for all 10 variables; zero dangling references; zero stale identifiers; every referenced
+path exists; every gate has a reachable success and an explicit failure disposition;
+contract/plan parity at 22 steps and 11 gates.
+
+**Validations:** `backlogit doctor` -> "No issues found." (exit 0). `backlogit sync` ->
+243 artifacts. Frontmatter parses on both artifacts.
+
+**Status:** revision 6 is UNREVIEWED. The remaster was authorized; attempt 5 was not.
+Ground 3 remains OPEN, so `017-S` is still NOT claimable. Next owner: operator.
+
+**Checkpoint:** engram still unreachable (daemon not Ready; `ENGRAM_DIRECT=1` also fails).
+Per fail-closed protocol `checkpoint-20260916-193114.json` remains ACTIVE and unresolved.
