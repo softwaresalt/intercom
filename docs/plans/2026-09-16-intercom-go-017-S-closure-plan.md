@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — 017-S closure (Stage artifact branch/PR policy gap correction)"
 date: 2026-09-16
-revision: 4
+revision: 5
 status: draft
 agent: Stage
 shipment: 017-S
@@ -307,9 +307,21 @@ No PF gate references the closure branch; no S2 mutation occurs on the pre-claim
     assertion, which would have produced a false-positive unwind. **Both now use S-11.**
 * **S-7** — PR lifecycle: open, review, operator-approved merge. P-018 engagement precedes the
   merge. **The merge MUST be a true merge commit (P-009): squash-merge and rebase-merge are
-  FORBIDDEN.** Additionally assert the **exact changed-path allowlist**: the PR's changed-path
-  set MUST equal `{impl_paths}` captured at S-5 — **no extra paths, no missing paths**. Any
-  divergence is scope drift (PA-017 condition 9) ⇒ **HALT** per §7.1's S-7 row.
+  FORBIDDEN.** Additionally assert the **two-part changed-path allowlist**:
+  1. **Source/test/config paths** changed by the PR MUST equal `{impl_paths}` ∪
+     `{harness_paths}` (captured at S-5 and S-4 respectively) — no extras, no omissions.
+  2. **Backlog record paths** changed by the PR MUST be confined to exactly
+     `.backlogit/queue/017-S.md`, `.backlogit/queue/018-F.md`, `.backlogit/queue/018.008-T.md`.
+
+  Anything outside both sets is scope drift (PA-017 condition 9) ⇒ **HALT** per §7.1's S-7 row.
+
+> **Revision-5 correction (P0).** Revision 4 asserted the PR's changed-path set must **equal
+> `{impl_paths}`** alone. That is **unsatisfiable by construction**: the pre-claim branch also
+> carries the S-2 claim and the S-6 `018.008-T -> done` transition, both of which mutate
+> `.backlogit/queue/` records, plus the S-4 harness files — none of which are in a set captured
+> at S-5. The assertion would therefore have **HALTed the route deterministically, AFTER the
+> one-way-door claim**, stranding `017-S` `active` in the P-001 slot with no in-band exit. A
+> gate that cannot pass is worse than no gate.
 * **S-7a** — **Merge confirmation gate (revision 2 — revision 1 consumed `{merge_sha}` at S-14
   but never defined it).** After the S-7 merge completes, **bind the three values** that
   `mode: safe-close` and `backlogit shipment ship` later require, and verify the merge really
@@ -430,9 +442,27 @@ No PF gate references the closure branch; no S2 mutation occurs on the pre-claim
   * The generic shipment-status-move route is **not** the close path here and is not used
     (P-15: it refuses shipment status writes with **exit 9**).
   * Cascade step 2 HALTs on non-empty `returned_ids`; step 3's two-set gate HALTs on mismatch.
+* **S-14a** — **UNCONDITIONAL `{post_paths}` CAPTURE (escrow-required; prerequisite §10.3.1).**
+  **Immediately on return from the S-14 cascade call** — **before** P-007 archive-integrity
+  verification, **before** `mode: post`, **before any commit, cleanup, or postcheck-driven
+  restore, and before any further mutation** — capture `{post_paths}`: the full sorted
+  path+blob-hash inventory of `.backlogit/queue/` + `.backlogit/archive/`, plus the raw
+  frontmatter of `019.007-T`. **Capture is UNCONDITIONAL: it is taken on EVERY return from the
+  cascade, success or failure.**
+  > **Revision-5 correction (P0).** Revision 4 captured `{post_paths}` as S-15 **postcheck 2 —
+  > after `mode: post`**. But installed Step 6.1(c)'s P-007 `git restore .backlogit/archive/`
+  > remedy and 6.1(d)'s `HALT — restore archives` both sit **between the close and post-mode**
+  > and **mutate exactly the two trees being inventoried**. The S-15.3 cascade-scope assertion —
+  > the **only** guard against out-of-manifest deletion — would therefore have been computed
+  > over an **already-restored tree**, so `{post_paths} △ {pre_paths}` would no longer be the
+  > deterministic set the cascade created. Capture was also implicitly **conditional** on
+  > reaching postcheck 2. Prerequisite §10.3.1 is normative on both points, and supplying its
+  > `017-S` equivalent is an **escrow-release requirement** (§6 condition 1) — so revision 4
+  > asserted that equivalent rather than supplying it. A later post-remedy inventory may also be
+  > taken, but **S-15.3 and R-5 consume the S-14a capture.**
 * **S-15** — **Postchecks**, all of which must pass **before** anything is committed:
   1. `mode: post` reconciliation ⇒ every manifest item present in archive.
-  2. Capture **`{post_paths}`** (same inventory shape as `{pre_paths}`).
+  2. `{post_paths}` was already captured **unconditionally at S-14a** — do **not** re-capture it here as the assertion input. (An optional post-remedy inventory may be taken for diagnostics, but S-15.3 and R-5 consume the **S-14a** capture.)
   3. **Cascade-scope assertion:** `{post_paths} △ {pre_paths}` is confined to the 13 manifest
      members and the `017-S` record. **`019.007-T` MUST be byte-identical to its `{pre_paths}`
      S-11 baseline capture** — *not* to its PF-5 preflight snapshot, which predates the S-6
@@ -440,7 +470,7 @@ No PF gate references the closure branch; no S2 mutation occurs on the pre-claim
      `HALT — cascade detected, revert required` ⇒ §7.
   4. Closure triple: `backlogit doctor` ⇒ `No issues found.` exit 0; `017-S` ⇒ `status:
      archived`; raw archive frontmatter ⇒ `archived_status: shipped` + `commit: {merge_sha}`.
-* **S-16** — **Commit only after every postcheck passes.**
+* **S-16** — **Commit only after every postcheck passes.** Record the resulting commit as **`{cascade_commit_sha}`** — this is R-4a's revert target. (The S-17 closure merge, when it lands, is **`{closure_merge_sha}`** — R-4b's target. Neither is ever `{merge_sha}`.)
   * **Revision-2 reconciliation (revision 1 self-contradicted here).** Revision 1 declared the
     committed-cascade state *"unreachable"* while §7 R-2/R-4 simultaneously defined an
     **automatic** revert for exactly that state. Both cannot be true: an unreachable state
@@ -590,6 +620,7 @@ workaround is either manifest-breaking or an unapproved destructive act.
 | **S-11** (baseline commit or its staged-diff verification fails) | `018-F` moved to `done` by a1; **baseline anchor NOT established** | **The rollback anchor does not exist** — R-1…R-7 are unavailable from here. Do **not** proceed to S-12. **Regime B**, escalated: this is the HIGH-rated anchor-destroying case in §10 |
 | **S-12** (`mode: pre` fail at `expected_status: done`) | claim active; `018-F` `done`; baseline committed | Baseline exists but **no cascade has run**, so R-1…R-7 do not apply. **Regime B** |
 | **S-13** (verdict `SAFE_CLOSE`, `BLOCK`, absent, or unparseable) | claim active; `018-F` `done`; baseline committed; **zero mutation** (D-3) | `classify-close-path` is read-only, so **nothing has been mutated by it**. This is a realistic fail-closed outcome, **not** an error. **Regime B**. `PA-017-CASCADE` is **not** invoked |
+| **S-14 PRE-MUTATION REFUSAL** (`RECONCILE_FAIL_CASCADE_UNBOUND`, `_CLASSIFICATION_INVALID`, `_CLASSIFICATION_DRIFT`, `_CLASSIFICATION_REFUSED`) | claim active; `018-F` `done`; baseline committed; **zero archive, zero status transition, zero record mutation** | The skill refuses **before any mutation**, so **there is nothing to unwind**. **R-1…R-7 are NOT invoked** (they presuppose cascade effects). **Regime B**. `PA-017-CASCADE` is **not** exercised — the refusal is the escrow's fail-closed guard working as designed. *(Added revision 5: this state matched neither §7.1's old S-0…S-13 range nor the R-trigger, so R-3 would have prescribed reverting a branch with nothing to revert.)* |
 
 **Invariant across the entire table:** `PA-017-CASCADE` has **not** been invoked at any point
 above, **no destructive action is unwound**, and the escrow remains **unexercised and intact**.
@@ -597,10 +628,21 @@ above, **no destructive action is unwound**, and the escrow remains **unexercise
 
 | Step | Action |
 |---|---|
-| **R-1 QUARANTINE** | **Stop. Mutate nothing further.** Do not commit the cascade result. Record the observed failure token verbatim |
-| **R-2 CLASSIFY** | Route on the S-16 distinction: **(a) uncommitted** ⇒ R-3. **(b) committed with S-15 postchecks passed** (defect found later, e.g. at S-17) ⇒ R-4 — the reachable, automatic path. **(c) committed with postchecks failed or unrun** ⇒ **out of contract: HALT to the operator after R-1 quarantine, no automatic revert** |
+| **R-1 QUARANTINE** | **Stop. Mutate nothing further.** Do not commit the cascade result. Record the observed failure token verbatim. **`{post_paths}` is already captured (S-14a, unconditional)** — it is the evidentiary anchor for R-5 |
+| **R-2 CLASSIFY** | Route on the S-16 distinction: **(a) uncommitted** ⇒ R-3. **(b) committed, closure branch unmerged** (defect found at S-17 review) ⇒ **R-4a**. **(c) committed and the S-17 closure merge landed** ⇒ **R-4b**. **(d) committed with postchecks failed or unrun** ⇒ **out of contract: HALT to the operator after R-1 quarantine, no automatic revert** |
 | **R-3 UNCOMMITTED PATH** | The tree still carries only uncommitted cascade effects. Capture them to a **quarantine branch** (`quarantine/017-S-<utc>`) via an **additive commit** so the evidence survives, then return the closure branch to `{pre_cascade_sha}` **by adding a revert commit**, never by overwriting or deleting. Proceed to R-5 |
-| **R-4 COMMITTED PATH** | **P-009 merge-commit-only (revision 4).** The revert target is a merge commit **by construction** — S-7a already HALTed the route if `{merge_sha}` was not a two-parent merge with parent 1 = mainline. Re-verify that shape (`git cat-file -p <sha>` ⇒ exactly two parents, parent 1 = mainline) and revert with **`git revert -m 1 <sha>`**. **Any other shape at this point is a P-009 violation and an out-of-contract state ⇒ HALT to the operator, no automatic revert.** *(Revision 3 carried a plain-revert branch for single-parent commits; that branch is **REMOVED** — under P-009 a squashed or rebased merge cannot legitimately exist on this route, so silently accommodating one would have masked a policy violation instead of surfacing it.)* |
+| **R-3 UNCOMMITTED PATH** | The tree still carries only uncommitted cascade effects. **Use the §10.3.2 operator-approved mechanism verbatim in shape, ON THE CLOSURE BRANCH — not a separate branch:** (1) `git add -A -- .backlogit/queue/ .backlogit/archive/`; (2) commit as **`{quarantine_sha}`** on the **existing closure branch**; (3) `git revert --no-edit {quarantine_sha}` on that same branch. Optionally point a `quarantine/017-S-<utc>` **ref at `{quarantine_sha}`** for evidence retention — a ref, never a separate commit target. *(Revision-5 correction: revision 4 captured the effects to a **different branch**, which left the closure branch with **no commit to revert** and a dirty tree that `git revert` refuses to run against — the `M-13` "rollback path that does not execute" class, over a DESTRUCTIVE action. The approved mechanism is in-approval precisely because it uses only the sanctioned `git revert` primitive.)* Proceed to R-5 |
+| **R-4a COMMITTED, CLOSURE BRANCH UNMERGED** | The reachable primary case: the S-16 cascade result is committed as **`{cascade_commit_sha}`** and a defect is found at the S-17 review. Target = **`{cascade_commit_sha}`**, an **ordinary single-parent commit**. Revert with plain **`git revert --no-edit {cascade_commit_sha}`**. **A single parent here is EXPECTED and is NOT a P-009 signal — P-009 governs PR merges, not intra-branch commits.** Proceed to R-5 |
+| **R-4b COMMITTED, CLOSURE MERGE LANDED** | A defect is found after the S-17 closure merge. Target = the **closure merge commit** `{closure_merge_sha}` — **never `{merge_sha}`**. Verify exactly two parents with parent 1 = mainline, then `git revert -m 1 {closure_merge_sha}`. Any other shape at this point is a **P-009 violation ⇒ HALT to the operator, no automatic revert**. Proceed to R-5 |
+
+> **Revision-5 correction to R-4 (raised as P0 by BOTH reviewers independently).** Revision 4
+> claimed *"the revert target is a merge commit by construction"* and justified it with
+> **`{merge_sha}`** — which is the **S-7 implementation merge**. Reverting it would have unwound
+> **`018.008-T`'s implementation, not the cascade**. Worse, revision 4 **removed** the
+> plain-revert branch, so the *only reachable* case (an ordinary single-parent S-16 cascade
+> commit) was misclassified as a P-009 violation and left with **no automatic unwind at all** —
+> the P-009 hardening broke the very path it was meant to protect. **`{merge_sha}` is NEVER an
+> R-4 target.**
 | **R-5 TREE EQUIVALENCE** | Recompute the `{pre_paths}` inventory over `.backlogit/queue/` + `.backlogit/archive/` and require it **set-equal, path-for-path and blob-hash-for-blob-hash**, to `{pre_paths}` captured at S-11 |
 | **R-6 RECORD EQUIVALENCE** | Tree equality is **not sufficient**. For all 13 members plus `017-S` plus `019.007-T`, re-read **raw frontmatter from the artifact files** — never a list view, never an index/query view — and require `status`, `archived_status`, `archived_from`, `parent_id`, `artifact_type` and `commit` to match their **S-11** baseline values exactly. **`019.007-T` is anchored to S-11, matching S-15** — both now use the same baseline (revision 1 used S-11 here and PF-5 at S-15, guaranteeing a false-positive unwind whenever S-6 legitimately unblocked it). Then `backlogit sync` and require `backlogit doctor` ⇒ `No issues found.`, exit 0 |
 | **R-7 VERIFY-OR-ESCALATE** | **A restore is not complete until R-5 AND R-6 both pass.** If either fails, **HALT to the operator** with the quarantine branch name, `{pre_cascade_sha}`, and both inventories. Do not attempt a second automated unwind |
@@ -665,8 +707,14 @@ re-exercised in the same session.
     `CASCADE` binding remains the **only executable realization** of installed Ship's
     binding-carrying mandate. If a binding parameter appears on either surface, the S-14
     reconciliation is **VOID** and the route HALTs to Stage.
-16. **AC-16 (SCOPE ALLOWLIST).** The S-7 PR's changed-path set **equals** `{impl_paths}`
-    captured at S-5 — no extra paths, no missing paths.
+16. **AC-16 (SCOPE ALLOWLIST).** The S-7 PR's changed paths satisfy **both** parts of S-7's
+    two-part allowlist: source/test/config paths equal `{impl_paths}` ∪ `{harness_paths}`, and
+    backlog paths are confined to `017-S.md`, `018-F.md`, `018.008-T.md`. **Not** a bare
+    equality against `{impl_paths}`, which is unsatisfiable by construction.
+17. **AC-17 (UNCONDITIONAL POST-CAPTURE).** `{post_paths}` is captured at **S-14a**,
+    immediately on return from the cascade call, **before** P-007 verification, post-mode, any
+    commit, any cleanup, and any postcheck-driven restore — **unconditionally, on success and
+    on every failure return**. The S-15.3 scope assertion and R-5 consume **that** capture.
 
 ## 10. Risk register
 
@@ -959,3 +1007,37 @@ All blocking escalation findings are closed on revision 4. Attempt 3 is now just
 **NOT claimable**; ground 3 stays open until attempt 3 returns `decision: PASS` and this plan
 is on `origin/main`.
 
+
+### Attempt 3 — revision 4
+
+dispatch_mode: multi-agent
+reviewers: correctness-reviewer, constitution-reviewer
+decision: FAIL
+
+* **correctness-reviewer: FAIL** — 2 P0, 6 P1, 7 P2, 5 P3
+* **constitution-reviewer: FAIL** — 3 P0, and a P1/P2 set
+
+**Four distinct P0s. Both reviewers independently converged on the R-4 defect.**
+
+| P0 | Raised by | Defect | Disposition in revision 5 |
+|---|---|---|---|
+| R-4 wrong revert target | **both** | R-4 cited `{merge_sha}` (the S-7 **implementation** merge); reverting it would unwind `018.008-T`'s implementation, not the cascade. Revision 4 also **removed** the plain-revert branch, misclassifying the only reachable case (single-parent S-16 commit) as a P-009 violation with no automatic unwind | **FIXED** — split into R-4a (`{cascade_commit_sha}`, plain revert, single parent expected and **not** a P-009 signal) and R-4b (`{closure_merge_sha}`, `-m 1`). `{merge_sha}` is never an R-4 target |
+| S-7 path equality unsatisfiable | correctness | Equality against `{impl_paths}` alone cannot hold — the branch also carries S-2 claim, S-6 `done`, and S-4 harness mutations ⇒ **deterministic HALT after the one-way-door claim** | **FIXED** — two-part allowlist (source/test = `{impl_paths}` ∪ `{harness_paths}`; backlog confined to a 3-file allowlist) |
+| `{post_paths}` capture regressed | constitution | Captured at S-15 postcheck 2, **after** `mode: post` — but P-007 restore and the 6.1(d) restore sit between the close and post-mode and mutate the inventoried trees. The scope assertion would run over an **already-restored tree**; capture was also implicitly conditional. Prerequisite §10.3.1 equivalent **asserted, not supplied** ⇒ §6 condition 1 unmet | **FIXED** — new **S-14a** unconditional capture immediately on return, before P-007/post-mode/commit/cleanup; S-15.3 and R-5 consume it |
+| R-3 unwind cannot execute | constitution | Quarantine committed to a **separate branch** left the closure branch with **no commit to revert** and a dirty tree `git revert` refuses to run against — the `M-13` "rollback path that does not execute" class, over a **destructive** action | **FIXED** — §10.3.2 mechanism restored in shape: quarantine commit **on the closure branch**, optional ref for evidence, then `git revert --no-edit {quarantine_sha}` |
+
+**Also fixed:** S-14 pre-mutation refusal state (covered by neither §7.1 nor R-1…R-7) now has
+its own §7.1 row, and the R-trigger is scoped to **post-invocation** S-14 failures.
+
+**Meta-observation (recorded deliberately).** All four P0s were **introduced by revision 4
+itself** — three of them by revision 4's own fixes to the attempt-2 and escalation findings.
+The P-009 hardening broke the rollback path it was meant to protect; the "exact changed-path
+allowlist" demanded by the escalation was written as an unsatisfiable equality. This is the
+same defect class that has now failed this lineage repeatedly: **each remediation is validated
+against the finding it answers, but not re-validated against the rest of the plan.**
+
+**Cycle status: the plan-review budget is EXHAUSTED.** Three consecutive FAILs (attempts 1, 2,
+3) exceed the 2-re-entry-cycle rule, and the P-013.6 escalation has already been consumed.
+**Attempt 4 is NOT self-authorized.** Revision 5 closes all four P0s, but it is **unreviewed**,
+and on this lineage's demonstrated record an unreviewed revision is not evidence of
+correctness. **Ground 3 remains OPEN. `017-S` is NOT claimable. Returned to the operator.**
