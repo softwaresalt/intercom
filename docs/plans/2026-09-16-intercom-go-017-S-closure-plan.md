@@ -332,7 +332,7 @@ No PF gate references the closure branch; no S2 mutation occurs on the pre-claim
     nothing else lands in between, and its pass criterion could never detect the error because
     **any later tip also contains the S-7 changes as an ancestor**. A wrong `{merge_sha}`
     propagates **irreversibly** into the destructive `shipment ship --sha`, into the archived
-    `commit:` provenance checked at S-15.4, and into R-4's revert target.
+    `commit:` provenance checked at S-15.4. *(Revision 5: `{merge_sha}` is **not** an R-4 revert target — see R-4a/R-4b.)*
   * **Verify, all three required:** (i) `git merge-base --is-ancestor {merge_sha} origin/main`
     succeeds; (ii) the S-7 branch head is an ancestor of `{merge_sha}`; (iii) every path in
     `{impl_paths}` (captured at S-5) appears in `git show --stat {merge_sha}`. This matches the
@@ -348,7 +348,7 @@ No PF gate references the closure branch; no S2 mutation occurs on the pre-claim
     > **Revision-4 correction.** Revision 3 said a *"single-parent result is legitimate under a
     > squash/rebase strategy"*. **That is a direct P-009 violation** — P-009 is literally
     > *"Merge-Commit-Only (No Squash or Rebase Merge)"*. Tolerating a squashed merge here would
-    > also have destroyed R-4's `-m 1` revert target. P-12 is repository *convention* and
+    > also have destroyed **R-4b**'s `-m 1` revert target. P-12 is repository *convention* and
     > remains corroborative only; **P-009 is the binding rule**, and S-7a enforces it.
   * **Pass criterion:** all of (i)–(iii) hold, the parent shape is exactly as specified, and all
     three values are recorded. Otherwise ⇒ **HALT** per §7.1's S-7a row.
@@ -701,7 +701,9 @@ re-exercised in the same session.
 14. **AC-14 (P-009 MERGE-COMMIT-ONLY).** Both the S-7 and S-17 merges are **true merge
     commits** — squash-merge and rebase-merge are forbidden. `{merge_sha}` has **exactly two
     parents**, parent 1 = mainline and parent 2 = the reviewed PR head, verified at S-7a; any
-    other shape HALTs as a P-009 violation, and R-4 carries **no** plain-revert branch.
+    other shape HALTs as a P-009 violation. **P-009 governs these PR merges only** — the
+    single-parent S-16 cascade commit reverted at **R-4a** is an intra-branch commit and is
+    **not** a P-009 signal.
 15. **AC-15 (CLOSE-PATH AUTHORITY).** PF-10 confirms the cascade operation exposes **no**
     binding parameter on **either** the CLI or MCP surface, so `mode: safe-close` carrying a
     `CASCADE` binding remains the **only executable realization** of installed Ship's
@@ -723,7 +725,9 @@ re-exercised in the same session.
 | Claim does not set `018-F` to `active` | **HIGH** — blocks condition 5 with no in-band repair | **S-3** fail-closed verification; HALT to Stage. Deliberately not "repaired" by a direct write, which would violate §3.2's grant shape |
 | Root-included cascade shape never engine-verified | **MEDIUM** | **PF-6** converts the prediction into evidence before routing; route is fail-closed at two gates |
 | Baseline commit silently stages nothing | **HIGH** — destroys the rollback anchor | **S-11 step 2** mandatory non-empty staged-diff verification |
-| `git revert -m 1` applied to a non-merge commit | **MEDIUM** | **R-4** counts parents empirically first; `-m` forbidden on a 1-parent commit |
+| `git revert -m 1` applied to a non-merge commit | **MEDIUM** | **R-4a/R-4b** are selected by *state*, not by guess: R-4a targets the single-parent S-16 commit with a **plain** revert; R-4b targets the S-17 closure merge and counts parents empirically before `-m 1`. `{merge_sha}` is never a target |
+| Wrong artifact reverted during unwind | **HIGH** — would silently undo `018.008-T`'s implementation instead of the cascade | **R-4a/R-4b** bind `{cascade_commit_sha}` / `{closure_merge_sha}` explicitly at S-16/S-17; the revision-4 `{merge_sha}` target is removed and named a defect |
+| Quarantine commit written to a branch with nothing to revert | **HIGH** — destructive action with a non-executing rollback | **R-3** commits the quarantine **on the closure branch** per §10.3.2, then reverts it there; any `quarantine/*` name is a **ref for evidence only** |
 | Tree restored but records semantically drifted | **MEDIUM** | **R-6** record equivalence read from raw frontmatter, not list/index views |
 | Stale `--id` flag form in inherited probes | **LOW** | §2.2 records the drift; PF-5 pins the positional form |
 | Off-allowlist archived descendant appears later | **MEDIUM** | **PF-4** + **S-10 S0** both HALT on any off-list archived descendant |
@@ -761,7 +765,7 @@ with no in-band repair.
 |---|---|---|---|
 | Cascade close of `017-S` (archives the 13-member subtree) via the P-11 command at **S-14** | **destructive** | **approved** — `PA-017-CASCADE`, operator-authorized 2026-09-13T11:35:43-07:00 | Pre-approved in escrow; **released by this plan**. All nine §6 conditions re-measured at invocation. Any mismatch ⇒ approval **INVALIDATED**, HALT |
 | `018-F` `active -> done` at **S-10/S4** | **moderate** — single reversible status write under a five-condition conjunctive gate | pending | Covered by the §3.2 Role Boundary grant; no separate approval |
-| Revert/quarantine commits at **R-3/R-4** | **low** — purely additive; no overwrite, no deletion | pending | No approval needed; **R-7 escalates to the operator on any verification failure** |
+| Revert/quarantine commits at **R-3/R-4a/R-4b** | **low** — purely additive; no overwrite, no deletion | pending | **In-approval, not "no approval needed".** Prerequisite §10.3.2 sanctions this mechanism precisely because it uses **only** the `git revert` primitive — `git add -A` on the two record trees, commit, then `git revert --no-edit` on the **same** branch: exactly those actions and nothing else. R-3 reproduces that shape verbatim; R-4a/R-4b add no new primitive. **R-7 escalates to the operator on any verification failure** |
 | Implementation of `018.008-T` at **S-5** | **low** — scope-locked | pending | Ordinary task execution |
 
 > **Note.** `strict_safety.enabled` is `false` in `.autoharness/config.yaml`, so no automated
