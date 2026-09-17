@@ -1101,17 +1101,17 @@ Verdict ledger. One row per attempt; detail lives in Git history, PR #57 and the
 | 8 | 11 | multi-agent | correctness, constitution, scope-boundary | ADVISORY | 714fc2f |
 | 9 | 12 | multi-agent | correctness, constitution, scope-boundary | FAIL | 8472ba7 |
 | 10 | 13 | multi-agent | correctness, constitution, scope-boundary | FAIL | e63ecc2 |
+| — | 15 | operator-disposition | — (operator; not a reviewer verdict) | OPERATOR_ACCEPTED_RESIDUALS | 4b92d52 |
 
-**Current status:** attempt 10 returned **FAIL (correctness) + FAIL (constitution) + ADVISORY
-(scope) / 0 P0 / 4 consensus-weighted P1** against revision 13, remediated in **revision 14**.
-The dominant defect was the `{run_log}` artifact introduced in revision 13 colliding with the
-D1(e) deny-list, the changed-path bindings and the cleanliness gates — closed by the D-H6
-canonical exclusion pathspec and the D1(e) carve-out. **PF-2 requires the winning
-attempt row's `decision` cell to read `PASS`** (the ledger is a table and renders values as
-cells; no literal in-row marker token is required — see PF-2). No such row exists yet. Attempt
-history, per-finding detail and remediation rationale live in
-`docs/plans/evidence/2026-09-16-017-S-closure/`, Git history and PR #57 — not in this executable
-procedure.
+**Current status:** the winning row is the **operator disposition** on revision 15 at
+`4b92d52`. `OPERATOR_ACCEPTED_RESIDUALS` is an **operator residual-risk acceptance**, recorded on
+the operator's explicit authorization after attempts 8, 9 and 10 each returned **zero P0** and the
+attempt-10 P1 remediations were **scoped-verified** against revision 14. It is **not** a reviewer
+PASS and no persona issued one. Contract **D-L7** governs it; PF-2 accepts it exactly as it accepts
+`PASS`. The scoped-verification record, attempt history, per-finding detail and the residuals
+accepted live in `docs/plans/evidence/2026-09-16-017-S-closure/`, Git history and PR #57 — not in
+this executable procedure.
 
-`017-S` is **NOT claimable** until an attempt's `decision` cell records **PASS** here and this
-plan is present on `origin/main` (PF-2).
+PF-2 has **two** conditions. Condition (a), the winning `decision` cell, is **discharged** by the
+row above. Condition (b), presence on `origin/main`, is **not yet discharged**: it requires PR #57
+to merge. `017-S` is therefore **not claimable** until that merge lands.
