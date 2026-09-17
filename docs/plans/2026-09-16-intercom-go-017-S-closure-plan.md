@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — 017-S closure (Stage artifact branch/PR policy gap correction)"
 date: 2026-09-16
-revision: 10
+revision: 11
 status: draft
 agent: Stage
 shipment: 017-S
@@ -73,7 +73,7 @@ invocation** and is never inherited.
 | **M-15** | **No binding parameter on either close surface** — CLI as M-14; registry `ship_shipment.params` = `shipment_id`, `sha`, `message`, `author`. Only `shipment-reconcile` `mode: safe-close` accepts `classification_binding`. |
 | **M-16** | `backlogit link list` takes a **positional** ID; the `--id` form no longer resolves on 1.10.1. |
 
-### 3.1 External-interface measurements (attempt-5 remediation)
+### 3.1 External-interface measurements
 
 Measured against the installed workspace. Where the `021-S` closure of 2026-09-16 supplies
 empirical evidence, it is cited: cascade commit `17f891f`, closure merge `f2d4cf9` (PR #56).
@@ -94,6 +94,14 @@ empirical evidence, it is cited: cascade commit `17f891f`, closure merge `f2d4cf
 | **M-28** | **Worktree state is single** (`git worktree list` → one entry), satisfying P-016. P-011 requires branch-before-mutation. | `git worktree list` |
 | **M-29** | **P-002's ordering is structurally unsatisfiable here.** P-002 gates task claiming on a `harness-ready` label, but by M-9 the *shipment* claim auto-activates `018.008-T`, so the task claim precedes any harness. The `harness-architect` skill **is** installed — the producer exists, the ordering does not. Disposition in §4.1. | §P-002; Probe 26 `C2`; `.github/skills/harness-architect/` |
 
+**Canonical consumers.** Every measurement binds to exactly one enforcing gate, step or criterion,
+so no row is inert background. Rows not cited in the body bind here: **M-2** → §2 ground 1 and
+**PF-9**; **M-3** → **PF-4**; **M-6** → **PF-6**; **M-7** → **PF-3**; **M-8** → **PF-8**; **M-9** →
+§4.1 and **S-4** (the auto-activation this route depends on); **M-13** → §8 prohibited-mechanism
+list (`backlogit archive` is the only archive operation); **M-18** → §6.1 **P4** (reconcile reports
+are version-controlled, hence expected, not drift); **M-24** → **AC-17**; **M-27** → **S-10**/**S-22**
+merge gates; **M-28** → **AC-21** and **S-1**/**S-12** branch discipline.
+
 ## 4. Close-path authority
 
 Installed Ship requires the returned `CLASSIFICATION_BINDING` to be carried into the close call.
@@ -106,9 +114,6 @@ its `returned_ids`, two-set `allowed_ids`/`required_ids`, and `parent_id` gates.
 installed Ship's own mandate — not an alternative to it.** A direct, unbound
 `backlogit shipment ship` on this route is a **HALT**: it discards the mandated binding and
 bypasses the Sub-Procedure's gates.
-
-**No prerequisite Ship release unit is required.** Harmonizing the installed Ship prose is a
-clarity improvement, captured out-of-scope as stash entry **`11B75632`** (§10).
 
 **PF-11 makes this falsifiable** rather than asserted.
 
@@ -165,10 +170,6 @@ recorded **AC-13** literals verbatim:
 * the harness manifest records `Compilation: PASS` and `Red Phase: CONFIRMED`.
 
 Any shortfall ⇒ **do not apply the label** and **HALT** (Regime B).
-
-The general conflict affects every shipment-claim route in this workspace. It is captured as stash
-**`DB12DA37`** and is out of scope for `017-S` (§10) — resolving it would require amending P-002 or
-changing claim semantics, either of which exceeds this shipment's frozen 13-member scope.
 
 ## 5. Preflight gates
 
@@ -325,8 +326,8 @@ guarded at runtime by S-17, S-18, S-20 and §8 — not by probe evidence.
 * **S-10** — **Implementation PR.** Open, review, P-018 engagement, operator-approved merge.
   * **The merge MUST be a true merge commit (P-009). Squash-merge and rebase-merge are
     FORBIDDEN.**
-  * **Changed-path control — deny-list plus positive invariants (§6.1). The exhaustive
-    allowlist is withdrawn; see §6.1 for why and for the post-claim failure semantics.**
+  * **Changed-path control — deny-list plus positive invariants (§6.1), never an exhaustive
+    allowlist; §6.1 also governs the post-claim failure semantics.**
     * **D1 deny match** ⇒ HALT (§9 condition 9, per §8).
     * **P1–P6 positive invariants** (§6.1). A **D1 deny match or a P2/P3/P5/P6 breach ⇒ HALT**; a
     **P4 shortfall is RECORDED and does NOT halt** (§6.1 D5). The two dispositions differ and must
@@ -462,13 +463,10 @@ guarded at runtime by S-17, S-18, S-20 and §8 — not by probe evidence.
 
 ### 6.1 Changed-path control (authoritative)
 
-**Why the allowlist was withdrawn.** The exhaustive form (`anything not enumerated ⇒ HALT`)
-required perfectly predicting every path a multi-tool chain touches, and its failure mode was
-catastrophic: a halt **after** the one-way door, stranding `017-S` `active` with no unclaim.
-Three of attempt 5's seven P0s were instances of that single design choice — the `018.008-T`
-queue→archive rename (**M-17**), the reconcile reports (**M-18**–**M-20**), and the closure
-knowledge artifacts (**M-21**) were all real, expected emissions that the allowlist would have
-treated as fatal drift.
+**Design rule.** Path control is a **deny-list plus positive invariants**, never an exhaustive
+allowlist. An allowlist must predict every path a multi-tool chain touches, and its failure mode is
+a halt **after** the one-way door — stranding `017-S` `active` with no unclaim. Expected tool
+emissions (**M-17**–**M-21**) are therefore satisfied as positive invariants, never treated as drift.
 
 **D1 — FORBIDDEN SURFACES (deny-list).** A changed path is a violation **if and only if** it
 matches one of:
