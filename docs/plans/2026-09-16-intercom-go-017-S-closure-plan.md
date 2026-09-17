@@ -138,7 +138,7 @@ release. Prerequisite plan **AC-19** is normative and is inherited verbatim in s
 * **Ship MUST NOT transition it either.** If the claim does not yield `active`, **S-3 HALTs
   and returns to Stage.** No agent may repair it by writing the status directly.
 
-## 4. Preflight gate set (PF-1 … PF-9)
+## 4. Preflight gate set (PF-0 … PF-10)
 
 Run **in order**, **before** the claim, on the **pre-claim branch** defined in §5 S-0 (a
 Stage-independent, Ship-created working branch; **NOT** the post-merge *closure* branch of
@@ -149,7 +149,7 @@ gates; none is inherited by reference.
 | Gate | Check | Pass criterion |
 |---|---|---|
 | **PF-0** | **Engine identity** | `backlogit version` ⇒ `1.10.1-…`; SHA-256 of the resolved `backlogit` binary equals `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98`. **A mismatch invalidates every measurement in §2 and in PF-6 ⇒ HALT, return to Stage** for re-measurement. Resolve via `Get-Command backlogit`, never a hardcoded path |
-| **PF-1** | This plan is present on `origin/main` | `git show origin/main:docs/plans/2026-09-16-intercom-go-017-S-closure-plan.md` resolves **and is byte-identical to the reviewed revision**; its `## Plan Review` section records a literal **`dispatch_mode:`** marker and a literal **`decision: PASS`** for **attempt 3**, with the attempt-3 persona coverage named. **No separate `docs/reviews/` artifact is required** — revision 3 demanded one that does not exist, making the first preflight gate unevaluable; the verdict lives in this plan's own `## Plan Review` section |
+| **PF-1** | This plan is present on `origin/main` | `git show origin/main:docs/plans/2026-09-16-intercom-go-017-S-closure-plan.md` resolves, **and everything above the `## Plan Review` heading is byte-identical to the reviewed revision** (compared against the reviewing commit SHA recorded in the winning attempt block). Its `## Plan Review` section records a **most-recent** attempt carrying a literal **`dispatch_mode:`** marker, a literal **`decision: PASS`**, and its named persona coverage; **no later attempt supersedes it**. *(Revision 5.2: the byte-identity scope is restricted to the pre-`## Plan Review` body, and the attempt number is no longer hardcoded. Revision 5 pinned a literal `decision: PASS` for **attempt 3** — which is recorded `FAIL` and can never become `PASS` — so PF-1 could never evaluate true and the route deadlocked at its first gate, leaving §6 escrow condition 1 unreleasable. The two clauses were also jointly self-referential: the reviewed bytes cannot contain the verdict produced by reviewing those bytes.)* |
 | **PF-2** | Workspace integrity | `backlogit doctor` ⇒ `No issues found.`, exit **0** |
 | **PF-3** | Manifest + topology | manifest = 13; descendant graph ∪ `{018-F}` **set-equal** to manifest; every descendant's `parent_id` resolves to `018-F` transitively; enumeration completed without error |
 | **PF-4** | §3.3 allowlist | the archived-declaring descendant set is **exactly** the 11-member allowlist; each satisfies §3.3 conditions 1–4. **Any off-list archived descendant ⇒ HALT** |
@@ -230,7 +230,7 @@ session and returns to Stage.
 **Branch vocabulary (revision 2 — revision 1 used "closure branch" for two different
 branches).** This plan names exactly two:
 
-* **pre-claim branch** (`S-0`) — created by Ship before preflight; carries PF-0…PF-9, the
+* **pre-claim branch** (`S-0`) — created by Ship before preflight; carries PF-0…PF-10, the
   claim, the `018.008-T` implementation, and the S-7 PR. It is the *implementation* branch.
 * **closure branch** (`S-8`) — created **after** the S-7 merge, off the merged `main`; carries
   the a0/a1/cascade S2 mutations and the S-17 closure PR. It is the *record-mutation* branch.
@@ -289,6 +289,12 @@ No PF gate references the closure branch; no S2 mutation occurs on the pre-claim
     phase before writing any implementation line (S-5)**. Ship performs no separate
     `queued -> active` write on `018.008-T`; if it re-reads as anything other than `active`
     here ⇒ **HALT**.
+  * **Capture `{harness_paths}` (revision 5.2).** Record the exact set of harness/test/config
+    paths created or modified by this step: `git status --porcelain` limited to the working
+    tree at S-4 exit, normalized to repo-relative paths. **This binding is mandatory** — S-7's
+    allowlist part 1 and AC-16 consume `{harness_paths}`, and an unbound value makes a
+    **post-claim** gate unevaluable (the same unbound-variable class as revision 2's
+    `{merge_sha}`, but downstream of the one-way door).
   * **Pass criterion (revision 2 — revision 1 had none):** the harness executes, **fails**,
     and the failure is attributable to the **absent `018.008-T` behavior** (not a compile
     error, missing fixture, or unrelated breakage). Record the failing test name and
@@ -310,8 +316,21 @@ No PF gate references the closure branch; no S2 mutation occurs on the pre-claim
   FORBIDDEN.** Additionally assert the **two-part changed-path allowlist**:
   1. **Source/test/config paths** changed by the PR MUST equal `{impl_paths}` ∪
      `{harness_paths}` (captured at S-5 and S-4 respectively) — no extras, no omissions.
-  2. **Backlog record paths** changed by the PR MUST be confined to exactly
-     `.backlogit/queue/017-S.md`, `.backlogit/queue/018-F.md`, `.backlogit/queue/018.008-T.md`.
+  2. **Backlog record paths** changed by the PR MUST be confined to
+     `.backlogit/queue/017-S.md`, `.backlogit/queue/018-F.md`, `.backlogit/queue/018.008-T.md`
+     — **plus `.backlogit/queue/019.007-T.md` when and ONLY when the engine's own
+     dependency-unblock produced it**, evidenced in the run log by a `018.008-T -> done`
+     transition immediately preceding the `019.007-T` delta, with that delta confined to the
+     dependency/status fields. **Any other backlog path — or a `019.007-T` delta without that
+     evidence — HALTs.**
+
+> **Revision-5.2 correction (P0).** Revision 5's two-part allowlist was validated against the
+> attempt-3 equality defect but **not re-validated against this plan's own S-6 carve-out**,
+> which states that `019.007-T` (live, `status: blocked`, `dependencies: [018.008-T]`) may
+> legitimately change once `018.008-T` reaches `done`. S-6 executes on the **pre-claim branch**,
+> so that delta lands **inside the S-7 PR diff** — part 2 would then fail and HALT the route
+> **after the one-way-door claim**, stranding `017-S` `active` in the P-001 slot with no in-band
+> exit. Same unsatisfiable-after-the-claim class as the defect it replaced.
 
   Anything outside both sets is scope drift (PA-017 condition 9) ⇒ **HALT** per §7.1's S-7 row.
 
@@ -546,7 +565,8 @@ mechanism's invocation shape, not to a bare mention, or it will self-match this 
 > installed; where that remedy applies, it takes precedence over this section. This plan's
 > additive-only discipline governs **only** the post-cascade unwind it defines.
 
-**Trigger for R-1…R-7 (cascade unwind only):** any **S-14/S-15** failure, any out-of-manifest
+**Trigger for R-1…R-7 (cascade unwind only):** any **POST-INVOCATION S-14** failure (i.e. the
+cascade op was actually invoked), any **S-15** failure, any out-of-manifest
 archival, or any postcheck failure. **Every HALT at S-0…S-13 is governed by §7.1 instead** —
 R-1…R-7 presuppose cascade effects and a `{pre_cascade_sha}` anchor, and applying them earlier
 would be incoherent.
@@ -630,7 +650,6 @@ above, **no destructive action is unwound**, and the escrow remains **unexercise
 |---|---|
 | **R-1 QUARANTINE** | **Stop. Mutate nothing further.** Do not commit the cascade result. Record the observed failure token verbatim. **`{post_paths}` is already captured (S-14a, unconditional)** — it is the evidentiary anchor for R-5 |
 | **R-2 CLASSIFY** | Route on the S-16 distinction: **(a) uncommitted** ⇒ R-3. **(b) committed, closure branch unmerged** (defect found at S-17 review) ⇒ **R-4a**. **(c) committed and the S-17 closure merge landed** ⇒ **R-4b**. **(d) committed with postchecks failed or unrun** ⇒ **out of contract: HALT to the operator after R-1 quarantine, no automatic revert** |
-| **R-3 UNCOMMITTED PATH** | The tree still carries only uncommitted cascade effects. Capture them to a **quarantine branch** (`quarantine/017-S-<utc>`) via an **additive commit** so the evidence survives, then return the closure branch to `{pre_cascade_sha}` **by adding a revert commit**, never by overwriting or deleting. Proceed to R-5 |
 | **R-3 UNCOMMITTED PATH** | The tree still carries only uncommitted cascade effects. **Use the §10.3.2 operator-approved mechanism verbatim in shape, ON THE CLOSURE BRANCH — not a separate branch:** (1) `git add -A -- .backlogit/queue/ .backlogit/archive/`; (2) commit as **`{quarantine_sha}`** on the **existing closure branch**; (3) `git revert --no-edit {quarantine_sha}` on that same branch. Optionally point a `quarantine/017-S-<utc>` **ref at `{quarantine_sha}`** for evidence retention — a ref, never a separate commit target. *(Revision-5 correction: revision 4 captured the effects to a **different branch**, which left the closure branch with **no commit to revert** and a dirty tree that `git revert` refuses to run against — the `M-13` "rollback path that does not execute" class, over a DESTRUCTIVE action. The approved mechanism is in-approval precisely because it uses only the sanctioned `git revert` primitive.)* Proceed to R-5 |
 | **R-4a COMMITTED, CLOSURE BRANCH UNMERGED** | The reachable primary case: the S-16 cascade result is committed as **`{cascade_commit_sha}`** and a defect is found at the S-17 review. Target = **`{cascade_commit_sha}`**, an **ordinary single-parent commit**. Revert with plain **`git revert --no-edit {cascade_commit_sha}`**. **A single parent here is EXPECTED and is NOT a P-009 signal — P-009 governs PR merges, not intra-branch commits.** Proceed to R-5 |
 | **R-4b COMMITTED, CLOSURE MERGE LANDED** | A defect is found after the S-17 closure merge. Target = the **closure merge commit** `{closure_merge_sha}` — **never `{merge_sha}`**. Verify exactly two parents with parent 1 = mainline, then `git revert -m 1 {closure_merge_sha}`. Any other shape at this point is a **P-009 violation ⇒ HALT to the operator, no automatic revert**. Proceed to R-5 |
@@ -815,7 +834,7 @@ dual verification (R-5 **and** R-6) and a fail-closed escalation (R-7), and a co
 * **Monitoring signals:** the S-15 closure triple (`doctor`; `017-S` ⇒ `archived`; frontmatter
   ⇒ `archived_status: shipped` + `commit`), plus the `{post_paths} △ {pre_paths}` scope
   assertion and the `019.007-T` raw-byte identity check **anchored at S-11** (never at PF-5).
-* **Rollback trigger:** any S-14/S-15 failure, any out-of-manifest archival, any postcheck
+* **Rollback trigger:** any post-invocation S-14 failure, any S-15 failure, any out-of-manifest archival, any postcheck
   failure. **Owner: Ship**, escalating to the **operator** at R-7.
 * **Validation window:** closure is not final until S-17 verifies the closure PR merged and
   present on `origin/main`.
@@ -1000,20 +1019,6 @@ violation and destroyed the `-m 1` target). New **AC-14**.
 
 ### Attempt 3 — revision 4
 
-<!-- plan-review-attempt: 3 -->
-
-dispatch_mode: multi-agent
-reviewers: pending
-decision: NOT YET RUN
-
-All blocking escalation findings are closed on revision 4. Attempt 3 is now justified, but
-**has not been run**, and this plan claims no PASS it has not earned. `017-S` remains
-**NOT claimable**; ground 3 stays open until attempt 3 returns `decision: PASS` and this plan
-is on `origin/main`.
-
-
-### Attempt 3 — revision 4
-
 dispatch_mode: multi-agent
 reviewers: correctness-reviewer, constitution-reviewer
 decision: FAIL
@@ -1045,3 +1050,45 @@ against the finding it answers, but not re-validated against the rest of the pla
 **Attempt 4 is NOT self-authorized.** Revision 5 closes all four P0s, but it is **unreviewed**,
 and on this lineage's demonstrated record an unreviewed revision is not evidence of
 correctness. **Ground 3 remains OPEN. `017-S` is NOT claimable. Returned to the operator.**
+
+### Attempt 4 — revision 5.1 (operator-authorized full multi-persona review)
+
+<!-- plan-review-attempt: 4 -->
+
+dispatch_mode: multi-agent
+reviewers: correctness-reviewer, constitution-reviewer, scope-boundary-auditor
+decision: FAIL
+
+| Reviewer | Verdict | Counts |
+|---|---|---|
+| correctness-reviewer | **FAIL** | 3 P0, 6 P1, 8 P2, 4 P3 |
+| constitution-reviewer | **FAIL** | 2 P0, 11 P1 |
+| scope-boundary-auditor | **FAIL** | 1 P0, 4 P1, 9 P2, 4 P3 |
+
+**Convergent blocking findings (all three reviewers independently):**
+
+| P0 | Defect | Status in revision 5.2 |
+|---|---|---|
+| **Duplicate R-3 rows** | Revision 5 **added** the corrected §10.3.2 on-branch quarantine row but **never deleted the defective revision-4 quarantine-*branch* row**. Two rows, same ID, contradictory mechanisms, on the **only unwind path for a destructive action**. An executor reading top-down hits the defective one first. Attempt-3 P0 #4 was therefore **NOT closed** | **FIXED** — stale row deleted; exactly one R-3 row remains |
+| **PF-1 unsatisfiable ⇒ first-gate deadlock** | PF-1 pinned a literal decision: PASS for **attempt 3**, which is recorded FAIL and can never become PASS; and its byte-identity clause was jointly self-referential (reviewed bytes cannot contain the verdict produced by reviewing them). §6 escrow condition 1 gates on PF-1, so even a PASS would leave PA-017-CASCADE unreleasable | **FIXED** — attempt number no longer hardcoded ("most recent attempt, no later attempt supersedes it"); byte-identity scoped to the body **above** ## Plan Review and compared against a recorded reviewing commit SHA |
+| **S-7 allowlist vs the plan's own  19.007-T carve-out** | Revision 5's two-part allowlist was validated against the attempt-3 equality defect but **not re-validated against S-6's carve-out**:  19.007-T may legitimately unblock when  18.008-T reaches done, and S-6 runs on the pre-claim branch, so that delta lands **inside the S-7 PR diff** ⇒ deterministic HALT **after the one-way door**. Same unsatisfiable-after-claim class it replaced | **FIXED** — conditional  19.007-T carve-out with run-log evidence requirement; any unevidenced delta still HALTs |
+| **{harness_paths} unbound** (P1, post-claim consequence) | S-7 part 1 and AC-16 consume {harness_paths} "captured at S-4", but S-4 never captured it — an unevaluable **post-claim** gate | **FIXED** — explicit mandatory capture added to S-4 |
+
+**Also fixed:** duplicate ### Attempt 3 block (the stale decision: NOT YET RUN copy, machine-scannable by PF-1); stale ny S-14/S-15 failure R-trigger prose in **two** places; §4 heading and branch-vocabulary PF-1…PF-9 → PF-0…PF-10.
+
+**The pattern held for a fourth time.** Three of the four blocking findings were **introduced by
+revision 5's own fixes** — the corrected R-3 row added beside the defect instead of replacing it;
+the allowlist fix re-committing the unsatisfiable-after-claim class; PF-1's remediation pinning a
+verdict that cannot exist. The lineage defect is not any individual error but the **absence of a
+whole-document re-validation pass after each remediation**. Revision 5.2 therefore added a
+mechanical consistency sweep (duplicate-ID, dangling-anchor, unbound-variable, stale-prose checks)
+as a precondition of any future attempt.
+
+**Outstanding and NOT addressed in revision 5.2:** the remaining P1 set — S-17 closure-PR
+changed-path allowlist; P-005 violation telemetry on named-policy HALTs; P-016/P-011 prechecks at
+S-0/S-8; P-021 C1/C2/C3 disposition for S-5/S-7 findings; the missing Constitution Check section;
+AC coverage gaps (S-3b, S-4, S-6, S-12); stash 11B75632 not referenced from §8 while S-14
+adjudicates the contradiction inline; PF-10(c)/(d) inverted drift gates; document sprawl.
+
+** 17-S remains NOT claimable. Ground 3 stays OPEN.** Revision 5.2 is **unreviewed**; attempt 5
+is **not self-authorized**.
