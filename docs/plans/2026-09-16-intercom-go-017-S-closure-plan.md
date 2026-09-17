@@ -611,16 +611,45 @@ inheriting it.
 
 Verdict ledger. One row per attempt; detail lives in Git history, PR #57 and the review evidence.
 
-| Attempt | Revision | dispatch_mode | Reviewers | decision |
-|---|---|---|---|---|
-| 1 | 1 | multi-agent | correctness | FAIL |
-| 2 | 2 | multi-agent | correctness, scope-boundary | FAIL |
-| 3 | 4 | multi-agent | correctness, constitution | FAIL |
-| 4 | 5.1 | multi-agent | correctness, constitution, scope-boundary | FAIL |
+| Attempt | Revision | dispatch_mode | Reviewers | decision | reviewing_sha |
+|---|---|---|---|---|---|
+| 1 | 1 | multi-agent | correctness | FAIL | — |
+| 2 | 2 | multi-agent | correctness, scope-boundary | FAIL | — |
+| 3 | 4 | multi-agent | correctness, constitution | FAIL | — |
+| 4 | 5.1 | multi-agent | correctness, constitution, scope-boundary | FAIL | 79103d9 |
+| 5 | 6 | multi-agent | correctness, constitution, scope-boundary | FAIL | 5004c84 |
 
-**Current status:** revision 6 is a clean remaster from
-`docs/plans/2026-09-16-017-S-closure-canonical-contract.md`. It is **unreviewed**. Attempt 5
-requires explicit operator authorization.
+**Current status:** revision 6 FAILED attempt 5 with **7 distinct P0 findings**, all of which Stage
+independently verified against the workspace as genuine (none was a reviewer misreading).
+
+The remaster achieved what it targeted: internal consistency. Both reviewers confirmed substantial
+verified-correct surfaces — variable binding order sound, halt table step-complete, `{post_paths}`
+sequencing correct, `{merge_sha}` correctly excluded as a rollback target, R-3 faithful to the
+prerequisite §10.3.2, PF-7 tokens exact, no duplicate or contradictory rule IDs, PF-2 non-circular.
+
+**Five of the seven P0s are collisions with reality external to the plan**, on surfaces no attempt
+has ever systematically measured: `.backlogit/registry.yaml` routes `status: done` to `archive/`
+(so `018.008-T → done` relocates its record outside the S-10 allowlist); `.backlogit/reconcile/` is
+not gitignored and already carries committed reports, so the plan's own mandated reconcile calls
+emit tracked files outside every allowlist; **P-002** requires a `harness-ready` label produced by
+the installed `harness-architect` skill, and neither artifact mentions either; `018.008-T`'s own
+recorded scope is a **P-010** amendment, which §10/D-M3 forbids; and R-5 names no execution site
+for a revert that targets `origin/main`, where P-010 forbids Ship from committing directly.
+
+**Do not patch these seven and re-review.** That loop has now failed five times, and one of this
+attempt's findings (the §8.2 trigger list diverging from contract D-J8) was introduced by Stage's
+own verification-gap fix in the immediately preceding turn. The next revision requires a
+**systematic external-interface measurement pass** — enumerate every external surface the plan
+touches (tool routing, tool-emitted artifacts, installed policy obligations, the recorded scope of
+every item the plan mutates), measure each empirically, record each as an `M-` row in the contract,
+and only then regenerate the plan.
+
+**Design-level finding:** the exhaustive-allowlist formulation (`anything else ⇒ HALT`) is
+inherently fragile — it must perfectly predict every path a multi-tool chain touches, and its
+failure mode is catastrophic (post-claim halt with no unclaim, stranding `017-S` `active`). Three
+of the seven P0s are instances of this single design choice. Consider inverting it to a deny-list
+of forbidden surfaces plus a positive "no production implementation code" assertion, which is
+robust to unanticipated tool emissions.
 
 `017-S` is **NOT claimable** until an attempt records `decision: PASS` here and this plan is
 present on `origin/main` (PF-2).
