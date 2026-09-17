@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — 017-S closure (Stage artifact branch/PR policy gap correction)"
 date: 2026-09-16
-revision: 14
+revision: 15
 status: draft
 agent: Stage
 shipment: 017-S
@@ -46,7 +46,7 @@ classifier or policy surface.
 |---|---|---|
 | 1 — `021-S` shipped | discharged (`archived` + `archived_status: shipped`, `74330d3`, merge `f2d4cf9`, PR #56) | **PF-9** |
 | 2 — parent-completion capability live | discharged (`0cb4a42`) | **PF-10** |
-| 3 — governing closure plan exists | discharged by this document **on its review PASS and presence on `origin/main`** | **PF-2** |
+| 3 — governing closure plan exists | discharged by this document **on its PF-2 winning disposition — reviewer `PASS` or operator `OPERATOR_ACCEPTED_RESIDUALS` (contract D-L7) — and its presence on `origin/main`** | **PF-2** |
 | 4 — root-included cascade probe committed | discharged (Probe 25 @ `e36d853`) | **PF-7** |
 
 No ground is waived by assertion. Every Stage-time measurement below is **re-measured by Ship at
@@ -184,7 +184,7 @@ mutation.**
 | Gate | Check | Pass criterion | On failure |
 |---|---|---|---|
 | **PF-1** | Engine identity | `backlogit version` ⇒ `1.10.1-…`; SHA-256 of the resolved binary = `1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98`. Resolve via `Get-Command backlogit`, never a hardcoded path | **HALT to Stage** — a mismatch invalidates every measurement in §3 and PF-7 |
-| **PF-2** | This plan on `origin/main` | `git show origin/main:docs/plans/2026-09-16-intercom-go-017-S-closure-plan.md` resolves; everything **above the `## Plan Review` heading** is byte-identical to `git show <reviewing_sha>:<this plan path>`, where `reviewing_sha` is read from the **`reviewing_sha` column** of the winning attempt row; that row's `decision` cell is `PASS` and its `Reviewers` cell names the persona coverage; **no later attempt supersedes it**. **No literal in-row marker tokens are required** — the ledger is a table and renders values as cells, so demanding literal `dispatch_mode:` / `decision: PASS` strings made this gate unsatisfiable against the plan's own format | **HALT to Stage** |
+| **PF-2** | This plan on `origin/main` | `git show origin/main:docs/plans/2026-09-16-intercom-go-017-S-closure-plan.md` resolves; everything **above the `## Plan Review` heading** is byte-identical to `git show <reviewing_sha>:<this plan path>`, where `reviewing_sha` is read from the **`reviewing_sha` column** of the winning attempt row; that row's `Reviewers` cell names the persona coverage and **no later attempt supersedes it**; its `decision` cell reads **either `PASS` (reviewer verdict) or `OPERATOR_ACCEPTED_RESIDUALS` (operator disposition, contract **D-L7**)** — both are sufficient. **No literal in-row marker tokens are required** — the ledger is a table and renders values as cells, so demanding literal `dispatch_mode:` / `decision: PASS` strings made this gate unsatisfiable against the plan's own format | **HALT to Stage** |
 | **PF-3** | Workspace integrity | `backlogit doctor` ⇒ `No issues found.`, exit 0 | **HALT to Stage** |
 | **PF-4** | Manifest + topology | manifest = 13; **`018-F` is a root — raw frontmatter declares no `parent_id` (absent/empty/null) and no artifact claims `018-F` as a child** (P-015 precondition 1, **D-D9**); descendant graph ∪ `{018-F}` set-equal to manifest; every `parent_id` resolves to `018-F` transitively; enumeration error-free | **HALT to Stage** |
 | **PF-5** | §3.3 allowlist | the archived-declaring descendant set is **exactly** the 11-ID allowlist; each satisfies §3.3 conditions 1–4 | **HALT to Stage** — any off-list archived descendant |
@@ -787,14 +787,16 @@ site prerequisite §11.1 required, and nothing about the approval is widened.
 eligibility, never by this approval. Its scope is the **cascade close only** — not abandonment,
 not manifest mutation.
 
-**The escrow's release condition is satisfied only when this plan is review-PASSed and present on
-`origin/main`, as verified at PF-2.** This plan does not self-certify that condition.
+**The escrow's release condition is satisfied only when this plan is present on `origin/main`
+and carries a PF-2 winning disposition — reviewer `PASS` or operator
+`OPERATOR_ACCEPTED_RESIDUALS` (contract **D-L7**) — both verified at PF-2.** This plan does not
+self-certify that condition.
 
 **ALL conditions must hold at invocation, re-measured by Ship — never inherited:**
 
 | # | Condition | Gate |
 |---|---|---|
-| 1 | Escrow released by an existing, review-passed Stage closure plan on `origin/main` supplying execution site, preflight gates, baseline and rollback | **PF-2** |
+| 1 | Escrow released by an existing Stage closure plan on `origin/main` carrying a PF-2 winning disposition (reviewer `PASS` or operator `OPERATOR_ACCEPTED_RESIDUALS`, contract **D-L7**) and supplying execution site, preflight gates, baseline and rollback | **PF-2** |
 | 2 | `classify-close-path` returns `CASCADE` **before any close call** | **S-17** |
 | 3 | `safe-close` **revalidates the returned binding before any mutation** | **S-18** |
 | 4 | `021-S` has shipped | **PF-9** |
@@ -861,8 +863,8 @@ not manifest mutation.
    Probe 26 script and their engine agreement. This plan authors no probe, no test and no backlog
    item, and PF-7 adds no manifest member.
 3. **AC-3** — **PF-2 gates escrow release**: the plan resolves on `origin/main`, its pre-review
-   body is byte-identical to the reviewed revision, and the most recent attempt records
-   `decision: PASS` unsuperseded.
+   body is byte-identical to the reviewed revision, and the winning attempt row's `decision`
+   cell records an unsuperseded `PASS` or `OPERATOR_ACCEPTED_RESIDUALS` (contract **D-L7**).
 4. **AC-4** — `018-F` is `queued` at S-2, **exactly `active` at S-14 entry**, and **exactly `done`
    on S-14 success**; **no agent performs a `queued → active` write on it**.
 5. **AC-5** — S-5 verifies all 11 archived members undrifted after the claim; any drift halts.
@@ -1015,7 +1017,7 @@ not manifest mutation.
 | **Principle VIII** explicit safety modes | **S-0** declares **careful + freeze-scope** before any mutation (contract **D-A7**): every irreversible step (S-3 claim, S-18 cascade, R-3…R-5) is enumerated with its approval path, and edits are frozen to the §6.1 permitted surfaces. Recorded in `{run_log}`. **AC-33** |
 | **Principle IX** git-friendly persistence | All **durable** state this route writes is markdown + YAML frontmatter under version control, and backlog records move by tool-managed transitions, never hand-edited archives. Engine-emitted run artifacts that land outside version control (**M-18**, **M-22**) are evidence inputs, not durable route state, and are copied into `{run_log}` / the S-21.5 closure artifact to bring them under Principle IX |
 | **Principle X** agent context efficiency | Backlog facts are read through targeted `backlogit` queries and raw-frontmatter reads (§3 **M-** rows), never bulk directory scans; **S-21.5** invokes compact-context `target: all` |
-| **Principle XI** merge-commit history preservation | The constitutional source of the merge-shape rule enforced at **S-11**, **S-22** and R-5's revert PR. No squash or rebase limb exists anywhere in this route, including rollback. **AC-17**, **AC-19**, **AC-27** |
+| **Principle XI** merge-commit history preservation | The constitutional source of the merge-shape rule. Enforced as a **pre-merge gate at S-10 and S-22** (contract **D-I1**) and confirmed empirically at **S-11**; the same rule governs R-5's revert PR. No squash or rebase limb exists anywhere in this route, including rollback. **AC-17**, **AC-19**, **AC-27** |
 | **P-001** single active release unit | `017-S` is the sole active shipment from S-3; S-6 verifies. Regime B's disclosed cost is explicit occupation of this slot pending operator action |
 | **P-002** harness-ready precondition | **DISCLOSED DEVIATION — NOT conformance.** Structurally unsatisfiable on any shipment-claim route (**M-29**). Disclosed at **S-0** before the irreversible claim, gated on **explicit recorded operator authorization** (fail-closed), with the full P-005 record. §4.1; **AC-26**; §8.1 S-0 halt row. P-002 is not amended; the general conflict is stash `DB12DA37` |
 | **P-004** red phase before implementation | **CONFORMANT — the producer is never bypassed.** `harness-ready` is applied solely by the installed `harness-architect` skill at **S-7**, against P-004's precondition plus `018.008-T`'s AC-13 literals and a `Compilation: PASS` / `Red Phase: CONFIRMED` manifest. §4.2; **AC-6**, **AC-29** |
@@ -1063,7 +1065,7 @@ one-way-door claim with no unclaim operation.
 
 | ProposedAction | ActionRisk | ActionResult | Approval |
 |---|---|---|---|
-| Cascade close of `017-S` (archives the 13-member subtree) via the M-14 command at **S-18** | **destructive** | **approved** — `PA-017-CASCADE`, operator-authorized 2026-09-13T11:35:43-07:00 | Held in escrow; release condition verified at **PF-2**. All nine §9 conditions re-measured at invocation; any mismatch ⇒ approval **INVALIDATED**, halt |
+| Cascade close of `017-S` (archives the 13-member subtree) via the M-14 command at **S-18** | **destructive** | **approved** — `PA-017-CASCADE`, operator-authorized 2026-09-13T11:35:43-07:00 | Held in escrow; release condition (PF-2 winning disposition — reviewer `PASS` or operator `OPERATOR_ACCEPTED_RESIDUALS`, contract **D-L7** — plus presence on `origin/main`) verified at **PF-2**. All nine §9 conditions re-measured at invocation; any mismatch ⇒ approval **INVALIDATED**, halt |
 | `018-F` `active → done` at **S-14/S4** | **moderate** — single reversible status write under a five-condition conjunctive gate | pending | Covered by the §3.2 Role Boundary grant; no separate approval |
 | Quarantine/revert commits at **R-3/R-4** | **low** — purely additive, same-branch; no overwrite, no deletion | pending | **In-approval.** Prerequisite §10.3.2 sanctions this mechanism precisely because it uses **only** the `git revert` primitive — `git add -A` on the two record trees, commit, then `git revert --no-edit` on the **same** branch: exactly those actions and nothing else. R-3 reproduces that shape; R-4 adds no new primitive |
 | **Revert of a landed closure merge at R-5** | **moderate–high** — creates a branch off `main`, opens a PR, and **lands a merge commit on `main`** | pending | **NOT covered by prerequisite §10.3.2's same-branch shape — this is a new primitive.** Requires its own **explicit operator approval** at R-5 step (5) under **P-014 / P-018 / P-009**, on a branch that is never `main` (**P-010**/M-26), after P-011/P-016 prechecks. **R-8 escalates to the operator on any verification failure** |

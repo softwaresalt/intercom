@@ -81,7 +81,7 @@ failure halts with **zero mutation**.
 | ID | Gate |
 |---|---|
 | **PF-1** | Engine identity: version + binary SHA-256 match the recorded digest. Mismatch invalidates every measurement ⇒ halt to Stage. |
-| **PF-2** | This plan resolves on `origin/main`. The body above `## Plan Review` is **byte-identical** to the reviewed revision, compared as `git show <reviewing_sha>:<plan path>` where `reviewing_sha` is read from the **`reviewing_sha` column** of the winning attempt row. That row's `decision` cell is `PASS`, its `Reviewers` cell names the persona coverage, and no later row supersedes it. **No literal in-row marker tokens are required** — the ledger is a table and renders values as cells, so demanding literal `dispatch_mode:` / `decision: PASS` strings made this gate unsatisfiable by construction against the plan's own format. |
+| **PF-2** | This plan resolves on `origin/main`. The body above `## Plan Review` is **byte-identical** to the reviewed revision, compared as `git show <reviewing_sha>:<plan path>` where `reviewing_sha` is read from the **`reviewing_sha` column** of the winning attempt row. That row's `Reviewers` cell names the persona coverage, no later row supersedes it, and its `decision` cell reads **either `PASS` (a reviewer verdict) or `OPERATOR_ACCEPTED_RESIDUALS` (an operator disposition, defined at D-L7)**; the two are equally sufficient for this gate and for eligibility ground 3. **No literal in-row marker tokens are required** — the ledger is a table and renders values as cells, so demanding literal `dispatch_mode:` / `decision: PASS` strings made this gate unsatisfiable by construction against the plan's own format. |
 | **PF-3** | `backlogit doctor` ⇒ `No issues found.`, exit 0. |
 | **PF-4** | Manifest = 13; **`018-F` is a root — its raw frontmatter declares no `parent_id` and no artifact claims it as a child (P-015 precondition 1, D-D9)**; descendant graph ∪ `{018-F}` set-equal to manifest; every `parent_id` resolves transitively. |
 | **PF-5** | The archived-declaring descendant set is **exactly** the 11-ID allowlist, each satisfying §3.3 conditions 1–4. Any off-list archived descendant ⇒ halt. |
@@ -139,11 +139,14 @@ failure halts with **zero mutation**.
 | `{quarantine_sha}` | **R-3** | R-3 |
 | `{revert_merge_sha}` | **R-5** step (5) | R-6, R-7 |
 
-**Binding discipline.** **Both** `{harness_paths}` and `{impl_paths}` are bound from
-`git status --porcelain=v1 -- . ':(exclude).backlogit/'` (D-H6) so the claim's uncommitted backlog
-writes are never ingested. The exclusion is **not** a `{harness_paths}`-only convenience: it is
-required identically for `{impl_paths}`, because the same S-3 claim writes and the same S-2
-reconcile report are present in the working tree at S-8, and an unfiltered binding would make the
+**Binding discipline.** **Both** `{harness_paths}` and `{impl_paths}` are bound under the
+**canonical exclusion pathspec of D-H6** —
+`git status --porcelain=v1 -- . ':(exclude).backlogit/' ':(exclude)docs/plans/evidence/2026-09-16-017-S-closure/'`
+— so neither the claim's uncommitted backlog writes nor this run's uncommitted evidence artifacts
+are ever ingested. The exclusion is **not** a `{harness_paths}`-only convenience: it is
+required identically for `{impl_paths}`, because the same S-3 claim writes, the same S-2
+reconcile report and the same appended run log are present in the working tree at S-8, and an
+unfiltered binding would make the
 S-8 membership test unsatisfiable by construction. `{impl_paths}` is then tested for **membership**
 in the D-H2 authorized surface — the binding alone is not the check (I-9).
 
@@ -232,8 +235,9 @@ fatal.
 | **D-L2** | **It is NOT a claim authorization.** Claiming `017-S` is authorized by the shipment's own eligibility. |
 | **D-L3** | Its scope is the **cascade close only**. It does not cover abandonment, manifest mutation, or any widening. |
 | **D-L4** | **All nine conditions are re-measured by Ship at invocation; none is inherited.** Any mismatch **invalidates the approval** and halts. |
-| **D-L5** | The nine conditions: (1) released by a review-passed Stage closure plan present on `origin/main` supplying execution site, gates, baseline and rollback — **verified at PF-2**; (2) `classify-close-path` returns `CASCADE` before any close call — S-17; (3) `safe-close` revalidates the binding before any mutation — S-18; (4) `021-S` shipped — PF-9; (5) parent-completion capability live — PF-10; (6) manifest unchanged at 13 — PF-4; (7) pre-cascade baseline and **pre-invocation** inventory exist and are verified — S-15 (`{pre_cascade_sha}` + `{pre_paths}` only; `{post_paths}` cannot be a precondition of the call that produces it); (8) linked-deliberation set for this manifest verified EMPTY by this plan's own measurement — PF-6; (9) no scope expansion — **PF-4** live manifest invariant, **D-H1/D-H2** deny-list and closed-set membership, **P6** sub-file content lock, S-10/S-22 changed-path control, S-20.3 cascade-scope assertion, and the §M out-of-scope list. *(PF-7 is read-only probe re-verification over two committed artifacts and performs no live manifest check; anchoring condition 9 to it was a mis-anchor. The live manifest invariant is PF-4, which condition 6 also binds.)* |
-| **D-L6** | Escrow release is **conditional, not self-certified**: the release condition is satisfied only when this plan is review-PASSed and present on `origin/main`, as verified at PF-2. |
+| **D-L5** | The nine conditions: (1) released by a Stage closure plan present on `origin/main` carrying a PF-2 winning disposition (D-L7) and supplying execution site, gates, baseline and rollback — **verified at PF-2**; (2) `classify-close-path` returns `CASCADE` before any close call — S-17; (3) `safe-close` revalidates the binding before any mutation — S-18; (4) `021-S` shipped — PF-9; (5) parent-completion capability live — PF-10; (6) manifest unchanged at 13 — PF-4; (7) pre-cascade baseline and **pre-invocation** inventory exist and are verified — S-15 (`{pre_cascade_sha}` + `{pre_paths}` only; `{post_paths}` cannot be a precondition of the call that produces it); (8) linked-deliberation set for this manifest verified EMPTY by this plan's own measurement — PF-6; (9) no scope expansion — **PF-4** live manifest invariant, **D-H1/D-H2** deny-list and closed-set membership, **P6** sub-file content lock, S-10/S-22 changed-path control, S-20.3 cascade-scope assertion, and the §M out-of-scope list. *(PF-7 is read-only probe re-verification over two committed artifacts and performs no live manifest check; anchoring condition 9 to it was a mis-anchor. The live manifest invariant is PF-4, which condition 6 also binds.)* |
+| **D-L6** | Escrow release is **conditional, not self-certified**: the release condition is satisfied only when this plan carries a PF-2 winning disposition (`PASS` or `OPERATOR_ACCEPTED_RESIDUALS`, per D-L7) **and** is present on `origin/main`, both verified at PF-2. |
+| **D-L7** | **`OPERATOR_ACCEPTED_RESIDUALS` is a PASS-equivalent disposition for eligibility ground 3, and it is an OPERATOR RESIDUAL-RISK ACCEPTANCE — never a reviewer PASS.** It is recorded only by an explicit operator authorization token, never by Stage and never by a reviewer persona. Its admissibility preconditions are: (a) the last three review attempts each returned **zero P0**; (b) the P1 findings of the most recent attempt were remediated and those remediations were **scoped-verified** against the current revision; and (c) the verification scope, result and accepted residuals are recorded in review evidence. Where it appears in a ledger `decision` cell it satisfies PF-2 and D-L6 exactly as `PASS` does, and it carries **no** further authority: it does not authorize the claim (D-L2), does not widen `PA-017-CASCADE` scope (D-L3), and does not exempt any of the nine conditions from re-measurement at invocation (D-L4). |
 
 ## M. Out of scope
 
