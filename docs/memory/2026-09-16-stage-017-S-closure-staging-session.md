@@ -120,3 +120,13 @@ revision 1 for exactly it.
    verdict artifact; `{impl_paths}` consumer binding.
 3. On PASS: pin PF-6b's commit SHA, merge PR #57, then `017-S` becomes claimable by Ship.
 4. Re-attempt the engram prune; only then resolve `checkpoint-20260916-193114.json`.
+
+## Update — attempt 3 FAIL, revision 5, cycle budget exhausted
+
+- Attempt 3 (correctness + constitution, parallel): **FAIL**, four distinct P0s; both reviewers independently converged on the R-4 revert-target defect.
+- **All four P0s were introduced by revision 4 itself**, three of them by revision 4's own fixes. The P-009 hardening broke the rollback path it protected; the escalation-demanded path allowlist was written as an unsatisfiable equality.
+- Revision 5 (commit 493030c) closes all four plus the uncovered S-14 pre-mutation refusal state. **Unreviewed.**
+- **Plan-review budget EXHAUSTED** (3 consecutive FAILs; P-013.6 escalation already consumed). Attempt 4 is NOT self-authorized. Returned to operator.
+- Ship-contract contradiction captured as stash entry **11B75632** (Stage authority; not a 017-S manifest item).
+- Engram still unreachable; checkpoint `checkpoint-20260916-193114.json` deliberately left **ACTIVE** (fail closed).
+- **Ground 3 OPEN. 017-S NOT claimable.**
