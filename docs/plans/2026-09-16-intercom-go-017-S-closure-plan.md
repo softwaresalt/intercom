@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — 017-S closure (Stage artifact branch/PR policy gap correction)"
 date: 2026-09-16
-revision: 11
+revision: 12
 status: draft
 agent: Stage
 shipment: 017-S
@@ -97,10 +97,11 @@ empirical evidence, it is cited: cascade commit `17f891f`, closure merge `f2d4cf
 **Canonical consumers.** Every measurement binds to exactly one enforcing gate, step or criterion,
 so no row is inert background. Rows not cited in the body bind here: **M-2** → §2 ground 1 and
 **PF-9**; **M-3** → **PF-4**; **M-6** → **PF-6**; **M-7** → **PF-3**; **M-8** → **PF-8**; **M-9** →
-§4.1 and **S-4** (the auto-activation this route depends on); **M-13** → §8 prohibited-mechanism
-list (`backlogit archive` is the only archive operation); **M-18** → §6.1 **P4** (reconcile reports
-are version-controlled, hence expected, not drift); **M-24** → **AC-17**; **M-27** → **S-10**/**S-22**
-merge gates; **M-28** → **AC-21** and **S-1**/**S-12** branch discipline.
+§4.1 and **S-4** (the auto-activation this route depends on); **M-13** → §8.1 prohibited-mechanism
+list (`move --status archived` is a silent no-op, not an archive operation); **M-18** → §6.1 **P4**
+(reconcile reports are version-controlled, hence expected, not drift); **M-23** → **S-17**
+(`classify-close-path` is the mode S-17 invokes); **M-24** → **AC-17**; **M-27** →
+**S-10**/**S-22** merge gates; **M-28** → **AC-21** and **S-1**/**S-12** branch discipline.
 
 ## 4. Close-path authority
 
@@ -159,11 +160,13 @@ than omitting it and would void §4.1(4) entirely.
 
 S-7 therefore **invokes the installed `harness-architect` skill** (present at
 `.github/skills/harness-architect/`, **M-29**); the skill applies the label at its own Step 6 after
-its Step 5.1/5.2 checks. The pass criterion adopts P-004's precondition **and** `018.008-T`'s
-recorded **AC-13** literals verbatim:
+its Step 5.1/5.2 checks. The pass criterion applies P-004's precondition to this manifest's single
+generated function **and** adopts `018.008-T`'s recorded **AC-13** literals:
 
 * `go vet ./...` exits **0**;
-* `go test ./tests/integration/ -run TestStageBranchGate_ContractCorrected` exits **non-zero**;
+* `go test ./...` exits **non-zero**, and the scoped
+  `go test ./tests/integration/ -run TestStageBranchGate_ContractCorrected` also exits **non-zero**
+  (equivalent here, because this release unit generates exactly one failing function);
 * the captured output contains the literal marker `not implemented: stage branch gate contract`,
   attributed to `TestStageBranchGate_ContractCorrected`;
 * the H0 red count over this release unit's generated functions is **literally 1 of 1**;
@@ -568,7 +571,7 @@ the gate unsatisfiable by construction. `.backlogit/` paths are governed solely 
 | `{harness_paths}` | S-7 | S-10 |
 | `{impl_paths}` | S-8 | **S-8** (membership assertion), then S-10 |
 | `{merge_sha}`, `{msg}`, `{author}` | S-11 | S-18 |
-| `{pre_cascade_sha}` | S-15 | R-8 |
+| `{pre_cascade_sha}` | S-15 | R-6 |
 | `{pre_paths}` | S-15 | S-20 |
 | `{post_paths}` | S-19 | S-20 |
 | `{cascade_commit_sha}` | S-21 | R-4, R-5 |
@@ -611,7 +614,9 @@ out of `active` are `shipped` and `abandoned`.
    `018.008-T` and the 11 allowlisted members.
 3. **Leave `017-S` `active`. Perform NO backlog mutation of any kind.** Specifically
    **FORBIDDEN**: `shipment return-blocked` (M-11), any `backlogit move` on the shipment (M-12),
-   `abandoned`, and **R-1…R-8** (they presuppose cascade effects and a `{pre_cascade_sha}` anchor
+   `backlogit move <id> --status archived` on any member — a **silent no-op**, not an archive
+   operation, so it reports success while changing nothing (M-13); `abandoned`; and
+   **R-1…R-8** (they presuppose cascade effects and a `{pre_cascade_sha}` anchor
    that may not exist).
 4. **HALT to the operator** with the record from (2). Disposition of the claim is the
    **operator's** decision, informed by Stage re-measurement — never Ship's improvisation.
@@ -898,6 +903,9 @@ not manifest mutation.
 
 | Principle / policy | Engagement |
 |---|---|
+| **Principle III/IV** workspace isolation, CLI containment | Every path this route touches resolves inside the workspace root; §6.1 **P5** rejects any changed path outside the repository, and §10 fixes the out-of-scope surfaces |
+| **Principle VII** destructive command approval | The cascade close archives a 13-member subtree. It is escrowed as `PA-017-CASCADE` (§9) under an explicit operator approval whose nine conditions are re-measured at invocation; §14.2 classifies it and every rollback limb by risk |
+| **Principle IX** git-friendly persistence | All state this route writes is markdown + YAML frontmatter under version control; backlog records move by tool-managed transitions, never hand-edited archives |
 | **P-001** single active release unit | `017-S` is the sole active shipment from S-3; S-6 verifies. Regime B's disclosed cost is explicit occupation of this slot pending operator action |
 | **P-002** harness-ready precondition | **DISCLOSED DEVIATION — NOT conformance.** Structurally unsatisfiable on any shipment-claim route (**M-29**). Disclosed at **S-0** before the irreversible claim, gated on **explicit recorded operator authorization** (fail-closed), with the full P-005 record. §4.1; **AC-26**; §8.1 S-0 halt row. P-002 is not amended; the general conflict is stash `DB12DA37` |
 | **P-004** red phase before implementation | **CONFORMANT — the producer is never bypassed.** `harness-ready` is applied solely by the installed `harness-architect` skill at **S-7**, against P-004's precondition plus `018.008-T`'s AC-13 literals and a `Compilation: PASS` / `Red Phase: CONFIRMED` manifest. §4.2; **AC-6**, **AC-29** |
@@ -908,7 +916,7 @@ not manifest mutation.
 | **P-010** role boundary | Stage authors and gates only; every mutating step is Ship's. **S-8 amends P-010 within `018.008-T`'s recorded scope — authorized work, bounded by §6.1 D2 and P6.** **R-5 never executes on `main`** (**M-26**). §10; **AC-27**, **AC-30** |
 | **P-011** branch discipline | **S-1**, **S-12**, and **R-5 step (1)** before its branch creation; **AC-21**, **AC-27** |
 | **P-012** tool availability | Broadcast surface probed at **S-0**; `harness-architect` producer probed at **S-7**; `TOOL_OK`/`TOOL_DEGRADED` logged with declared fallbacks. **AC-26**, **AC-29** |
-| **P-013** consecutive-failure circuit breaker | **DISCLOSED — OPEN CIRCUIT, operator-authorized re-attempts.** This plan's review lineage has failed **7 consecutive** multi-persona attempts, far past P-013.3's 3-attempt threshold. The P-013.6 escalation was compiled and dispatched once (route `gpt-5.6-sol`/`openai`/`high` — distinct from Stage's own Tier-3 route, so **not** `ESCALATION_DEGRADED`), its findings were consumed, and the circuit is **open**. Every attempt from 4 onward proceeded **only** on an exact, explicitly recorded operator authorization token; Stage never self-authorized a re-attempt, which preserves P-013.6's authority-preservation invariant ("the handoff is for asynchronous or **operator** review"). The P-013 event is recorded through the full P-005 triple (D-J13). **Ship inherits no obligation from this row** — it governs Stage's planning loop, not the closure execution. |
+| **P-013** consecutive-failure circuit breaker | **DISCLOSED — OPEN CIRCUIT.** The circuit governing this plan's Stage-side review loop is open past P-013.3's threshold. Every re-attempt proceeds **only** on an exact, explicitly recorded operator authorization token; Stage never self-authorizes one, preserving P-013.6's authority-preservation invariant ("the handoff is for asynchronous or **operator** review"). Recorded through the full P-005 triple (D-J13). **Ship inherits no obligation from this row** — it governs Stage's planning loop, not the closure execution. Attempt history lives in the review evidence and PR #57. |
 | **P-014 / P-018** review and merge approval | **S-10**, **S-22**, and **R-5's revert PR** — operator-approved merges only |
 | **P-015** single-artifact shipment closure (no cascade ship) | **This route's authorizing exception.** The cascade close is permitted only under P-015's verified fully-covered-root exception, classified at **S-17** (`CLOSE_PATH_VERDICT`) and revalidated at **S-18**; **PF-4**/**PF-5** establish the covered-root facts. **P6** keeps the P-015 section itself byte-identical — this plan never amends it |
 | **P-016** worktree classification | **S-1**, **S-12**, and **R-5 step (1)**, fail-closed; **AC-21**, **AC-27**. Not a changed-path predicate (§6.1 D1 rationale) |
@@ -978,12 +986,14 @@ Verdict ledger. One row per attempt; detail lives in Git history, PR #57 and the
 | 5 | 6 | multi-agent | correctness, constitution, scope-boundary | FAIL | 5004c84 |
 | 6 | 7 | multi-agent | correctness, constitution, scope-boundary | FAIL | 2f72187 |
 | 7 | 8 | multi-agent | correctness, constitution, scope-boundary | FAIL | 394a45f |
+| 8 | 11 | multi-agent | correctness, constitution, scope-boundary | ADVISORY | 714fc2f |
 
-**Current status:** revision 8 FAILED attempt 7 (correctness FAIL, constitution FAIL, scope-boundary
-ADVISORY / 0 P0). Revision 9 remediates every confirmed finding; one reported P0 was refuted by direct
-measurement. Per-finding detail, refutation evidence and remediation rationale live in
-`docs/plans/evidence/2026-09-16-017-S-closure/attempt-7-review-findings.md`, Git history and PR #57 —
-not in this executable procedure.
+**Current status:** attempt 8 returned **ADVISORY ×3 / 0 P0 / 0 P1** against revision 11. Its
+findings were reference-integrity and disclosure-accuracy defects only; all are remediated in
+revision 12. **PF-2 requires a literal `decision: PASS` row**, so no PASS exists yet. Attempt
+history, per-finding detail and remediation rationale live in
+`docs/plans/evidence/2026-09-16-017-S-closure/`, Git history and PR #57 — not in this executable
+procedure.
 
 `017-S` is **NOT claimable** until an attempt records `decision: PASS` here and this plan is
 present on `origin/main` (PF-2).
