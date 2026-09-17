@@ -1,0 +1,137 @@
+PROBE 26 - claim-cascade behaviour over the EXACT 017-S root-included manifest shape
+====================================================================================
+PURPOSE: close the plan-review P0 raised against
+docs/plans/2026-09-16-intercom-go-017-S-closure-plan.md revision 1 -
+"what does `backlogit shipment claim` do to a 13-member manifest containing 11
+members declaring status: archived (archived_status: queued)?"
+
+SCOPE OF THE GAP THIS CLOSES: the only prior evidence for the claim-cascade
+premise was 021-S's live run, whose manifest was [022-F, 022.001-T] - TWO live
+queued artifacts with ZERO archived members. That measurement cannot speak for a
+manifest containing archived members. This probe measures the 017-S shape
+directly, against the real engine, in an isolated fixture workspace.
+
+SCRIPT: docs/plans/evidence/2026-09-16-017-S-closure/probe26.ps1 (committed alongside this
+evidence; it was authored under .backlogit/runtime/, which is gitignored, so the committed
+copy lives here where PF-6b can resolve it via `git show origin/main:<path>`)
+
+ENGINE_RESOLVED_VIA=Get-Command backlogit (registered command; not a hardcoded path)
+ENGINE_PATH_OBSERVED=C:\Tools\backlogit.exe
+ENGINE_SHA256=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+ENGINE_SHA256_EXPECTED=1E106F5FD1E2D82E4F632AFEE40FD70B95DC7416886C3EBF266361F406959A98
+DIGEST_GATE=PASS
+ENGINE_VERSION=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty
+AUTHORIZATION_SURFACE=CLI-only (MCP not probed, not authorized)
+REPO_ROOT=C:\Source\GitHub\intercom-go
+PROBE_HEAD=f2d4cf9
+PROBE_RUN_BY=Stage (pre-claim planning evidence; Ship re-verifies read-only)
+FIXTURE_BACKLOG_ROOT=C:\Source\GitHub\intercom-go\.backlogit\runtime\stage-probe-scratch\p26
+FIXTURE_STORAGE_ROOT=...\p26\.backlog   (note: `backlogit init` creates `.backlog`, not `.backlogit`)
+FIXTURE_ISOLATED_FROM_LIVE=True
+LIVE_BACKLOGIT_DIRTY_PATHS_BEFORE=0
+
+### STEP 1: build the EXACT 017-S topology - root feature + 3 legacy tasks + 8 subtasks (3/3/2) + 1 live task
+ROOT_FEATURE=001-F                     (the 018-F analogue)
+LEGACY_TASKS=001.001-T,001.002-T,001.003-T
+LEGACY_SUBTASKS=001.001.001-ST,001.001.002-ST,001.001.003-ST,001.002.001-ST,001.002.002-ST,001.002.003-ST,001.003.001-ST,001.003.002-ST
+LIVE_TASK=001.004-T                    (the 018.008-T analogue)
+CONTROL_OUT_OF_MANIFEST=002-F,002.001-T
+
+### STEP 2: archive the 11 legacy descendants DIRECTLY FROM queued
+  (this yields archived_status: queued - the harder case; NOT archived_status: done)
+  CORRECT COMMAND IS `backlogit archive <id>`.
+  RECORDED TOOLING FACT: `backlogit move <id> --status archived` does NOT archive an
+  item - it leaves the record queued and queue-located, and returns no error that a
+  naive loop would notice. A first run of this probe used `move --status archived`,
+  produced PRE_ARCHIVED=0, and therefore measured a plain all-queued manifest while
+  appearing to measure the archived shape. That run emitted a FALSE C3 FAIL.
+  A FIXTURE-VALIDITY GATE was added as a result and is now mandatory (see below).
+
+TOPOLOGY_MEMBERS=13
+ROOT_INCLUDED=True
+PRE_ARCHIVED=11
+ARCHIVED_STATUS_FLAVOUR=queued
+FIXTURE_VALIDITY_GATE=PASS
+  (fail-closed: if PRE_ARCHIVED != 11 or ARCHIVED_STATUS_FLAVOUR != queued, the probe
+   aborts with PROBE26_RESULT=INVALID and takes NO claim measurement, so a fixture that
+   never reached the target shape can never be reported as a measurement of that shape)
+
+### STEP 3: create the shipment with the 13-member manifest
+### STEP 4: PRE-CLAIM state
+  PRE  001-F              loc=queue    status=queued    archived_status=NONE     parent=(unset)
+  PRE  001.001.001-ST     loc=archive  status=archived  archived_status=queued   parent=001.001-T
+  PRE  001.001.002-ST     loc=archive  status=archived  archived_status=queued   parent=001.001-T
+  PRE  001.001.003-ST     loc=archive  status=archived  archived_status=queued   parent=001.001-T
+  PRE  001.002.001-ST     loc=archive  status=archived  archived_status=queued   parent=001.002-T
+  PRE  001.002.002-ST     loc=archive  status=archived  archived_status=queued   parent=001.002-T
+  PRE  001.002.003-ST     loc=archive  status=archived  archived_status=queued   parent=001.002-T
+  PRE  001.003.001-ST     loc=archive  status=archived  archived_status=queued   parent=001.003-T
+  PRE  001.003.002-ST     loc=archive  status=archived  archived_status=queued   parent=001.003-T
+  PRE  001.001-T          loc=archive  status=archived  archived_status=queued   parent=001-F
+  PRE  001.002-T          loc=archive  status=archived  archived_status=queued   parent=001-F
+  PRE  001.003-T          loc=archive  status=archived  archived_status=queued   parent=001-F
+  PRE  001.004-T          loc=queue    status=queued    archived_status=NONE     parent=001-F
+  PRE  002-F              loc=queue    status=queued    archived_status=NONE     parent=(unset)
+  PRE  002.001-T          loc=queue    status=queued    archived_status=NONE     parent=002-F
+
+### STEP 5: THE MEASUREMENT - `backlogit shipment claim 001-S`
+CLAIM_EXIT_CODE=0
+
+### STEP 6: POST-CLAIM state
+  POST 001-F              loc=queue    status=active    archived_status=NONE     parent=(unset)
+  POST 001.001.001-ST     loc=archive  status=archived  archived_status=queued   parent=001.001-T
+  POST 001.001.002-ST     loc=archive  status=archived  archived_status=queued   parent=001.001-T
+  POST 001.001.003-ST     loc=archive  status=archived  archived_status=queued   parent=001.001-T
+  POST 001.002.001-ST     loc=archive  status=archived  archived_status=queued   parent=001.002-T
+  POST 001.002.002-ST     loc=archive  status=archived  archived_status=queued   parent=001.002-T
+  POST 001.002.003-ST     loc=archive  status=archived  archived_status=queued   parent=001.002-T
+  POST 001.003.001-ST     loc=archive  status=archived  archived_status=queued   parent=001.003-T
+  POST 001.003.002-ST     loc=archive  status=archived  archived_status=queued   parent=001.003-T
+  POST 001.001-T          loc=archive  status=archived  archived_status=queued   parent=001-F
+  POST 001.002-T          loc=archive  status=archived  archived_status=queued   parent=001-F
+  POST 001.003-T          loc=archive  status=archived  archived_status=queued   parent=001-F
+  POST 001.004-T          loc=queue    status=active    archived_status=NONE     parent=001-F
+  POST 002-F              loc=queue    status=queued    archived_status=NONE     parent=(unset)
+  POST 002.001-T          loc=queue    status=queued    archived_status=NONE     parent=002-F
+
+### STEP 7: CRITERIA
+ROOT_FEATURE_POST_STATUS=active
+C1_ROOT_FEATURE_QUEUED_TO_ACTIVE=PASS
+LIVE_TASK_POST_STATUS=active
+C2_LIVE_TASK_QUEUED_TO_ACTIVE=PASS
+ARCHIVED_MEMBERS_DRIFTED=(none)
+C3_ARCHIVED_MEMBERS_UNCHANGED_BY_CLAIM=PASS
+CONTROL_OUT_OF_MANIFEST_DRIFTED=(none)
+C4_NOTHING_OUTSIDE_MANIFEST_TOUCHED=PASS
+C5_PARENT_ID_PRESERVED=PASS
+LIVE_BACKLOGIT_DIRTY_PATHS_AFTER=0
+LIVE_BACKLOG_UNMUTATED=True
+
+### STEP 9: AGGREGATE VERDICT
+  C1_ROOT_FEATURE_QUEUED_TO_ACTIVE           PASS
+  C2_LIVE_TASK_QUEUED_TO_ACTIVE              PASS
+  C3_ARCHIVED_MEMBERS_UNCHANGED_BY_CLAIM     PASS
+  C4_NOTHING_OUTSIDE_MANIFEST_TOUCHED        PASS
+  C5_PARENT_ID_PRESERVED                     PASS
+  C6_LIVE_BACKLOG_UNMUTATED                  PASS
+FAILED_CRITERIA=0
+PROBE26_RESULT=PASS
+SCRATCH_REMOVED=True
+
+### FINDINGS CARRIED INTO THE CLOSURE PLAN
+1. The claim cascade transitions the ROOT COVERING FEATURE queued -> active on a
+   root-included manifest whose siblings are genuinely status: archived. This is the
+   direct evidence for section 3.2 condition 5 and step S-3, replacing the prior
+   reliance on AC-19 (a normative requirement, not a measurement) and on 021-S's
+   2-member manifest.
+2. The claim cascade SKIPS members declaring status: archived. All 11 retained
+   loc=archive, status=archived, archived_status=queued, parent_id intact. The
+   section 3.3 pre-archived exemption and section 3.2 condition 2 are therefore NOT
+   disturbed by the claim.
+3. The claim cascade also activates the live TASK member (001.004-T). Ship's Step 4.1
+   task claim is pre-empted by the engine for manifest tasks; the closure plan must
+   disclose this rather than prescribe an ordering the engine has already performed.
+4. Nothing outside the manifest was touched by the claim.
+5. TOOLING: `backlogit move <id> --status archived` is NOT an archive operation.
+   Use `backlogit archive <id>`. Any probe or runbook step that archives via `move`
+   silently produces a non-archived record.
