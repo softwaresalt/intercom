@@ -130,3 +130,14 @@ revision 1 for exactly it.
 - Ship-contract contradiction captured as stash entry **11B75632** (Stage authority; not a 017-S manifest item).
 - Engram still unreachable; checkpoint `checkpoint-20260916-193114.json` deliberately left **ACTIVE** (fail closed).
 - **Ground 3 OPEN. 017-S NOT claimable.**
+
+## Update — attempt 4 FAIL (authorized full multi-persona), revision 5.2
+
+- Pre-dispatch consistency sweep caught 6 dangling refs from rev-5 edits (condition 7 contradicting S-14a, AC-14, risk register, H.2 approval basis) -> revision 5.1 (79103d9).
+- Attempt 4 dispatched to correctness + constitution + scope-boundary, full-plan. **All three FAIL.**
+- Convergent P0s: duplicate contradictory R-3 rows (rev 5 added the fix without deleting the defect); PF-1 unsatisfiable (pinned an attempt-3 PASS that is recorded FAIL) deadlocking the first gate and leaving the escrow unreleasable; S-7 allowlist re-committing the unsatisfiable-after-claim class against the plan's own 019.007-T carve-out; {harness_paths} consumed but never bound.
+- Revision 5.2 (5a69c4a) closes all four plus duplicate attempt-3 block and stale R-trigger prose in two places. **Unreviewed.**
+- Three of four blocking findings were introduced by revision 5's own fixes. Root cause named: no whole-document re-validation pass after each remediation. A mechanical consistency sweep is now a precondition of any future attempt.
+- PR #57 MERGEABLE/UNSTABLE, CI pending, no review approval. **Not merged** - merging an un-PASSed plan would defeat PF-1.
+- Engram still unreachable; checkpoint left **ACTIVE** (fail closed). All 3 Stage checkpoints intact.
+- **Ground 3 OPEN. 017-S NOT claimable. Attempt 5 not self-authorized.**
