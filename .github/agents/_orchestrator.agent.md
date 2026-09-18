@@ -279,16 +279,57 @@ After Stage completes and before routing to Ship, verify that all staging artifa
    `git log origin/main..main --oneline`
    - If output is empty: local and remote are in sync. Proceed to step 4.
    - If output is non-empty: local commits exist that are not on the remote. Proceed to step 3.
-3. When staging artifacts are uncommitted or unpushed:
-   a. Commit any uncommitted backlog files to a staging branch: `chore/stage-{shipment_id}`
-   b. Push the staging branch and create a PR to `main`
-   c. Wait for the staging PR to merge (operator approval required)
-   d. After merge, pull `main` and proceed to step 4
-   e. **Branch protection handling**: Attempt a direct push to `main` first. If the push is rejected (exit code non-zero, typically due to branch protection rules), fall back to creating a staging PR:
-      - Create branch `chore/stage-{shipment_id}` from the current commit
-      - Push the branch and create a PR to `main`
-      - Wait for the staging PR to merge (operator approval required)
-      This attempt-and-handle-failure approach is deterministic regardless of when branch protection was enabled or changed.
+3. **When staging artifacts are uncommitted or unpushed — ACTOR-BOUND, NO DEFAULT-BRANCH WRITE.**
+   Every action below is bound to a named actor exercising only authority that actor already holds
+   under P-010 (see `.github/policies/workflow-policies.md`). This item grants no new authority to
+   any role and narrows none.
+
+   a. **Uncommitted Stage artifacts (actor: Stage, in-session).** Committing backlog and planning
+      artifacts is Stage work under P-010's `Stage MAY` grant, performed inside Stage's own
+      session, on its own Stage artifact branch, before handback. The Orchestrator MUST NOT commit
+      them — performing Stage work directly is precisely what P-010 forbids it. If artifacts are
+      still uncommitted when this gate runs, halt with
+      `STAGING_GATE_UNCOMMITTED: Stage artifacts uncommitted at handoff — re-route to Stage`.
+      Do not commit, do not infer, do not proceed.
+
+   b. **Local default branch ahead of the remote (actor: Orchestrator — detect and halt only;
+      disposition: operator).** If item 2 reported unpushed commits on the local default branch,
+      halt with `STAGING_GATE_LOCAL_MAIN_AHEAD: local {default_branch} is ahead of origin/{default_branch} — operator disposition required`.
+      State the condition; do not attribute it. If a *pipeline agent* produced these commits that
+      is a P-010 breach, but the same state arises legitimately from operator activity, and P-010
+      governs only `stage`, `ship` and `orchestrator`. Do not push, do not reset, do not merge.
+
+   c. **Unpushed Stage artifact branch (actor: OPERATOR).** Pushing the Stage artifact branch and
+      opening the staging PR is reserved to the operator, per the installed Stage Role Boundary
+      **PR row**: "The operator — never Stage — pushes the Stage artifact branch and opens/approves
+      the resulting merge-commit staging PR; no Orchestrator authority to do so is granted or
+      assumed by this release unit." The operator is the **always-available substitute actor**,
+      including for a direct Stage invocation that no Orchestrator bracketed. Emit an explicit
+      operator action request naming the branch, then wait:
+      `STAGING_GATE_AWAITING_OPERATOR: push the Stage artifact branch and open a merge-commit
+      staging PR to {default_branch}`. **The wait is bounded to a single Orchestrator cycle**: emit
+      the request once, then halt with `STAGING_GATE_OPERATOR_TIMEOUT` and return control. Do not
+      block indefinitely, do not re-poll inside this step, and never act in the operator's place.
+      The same terminal covers a staging PR that is closed or rejected.
+
+   d. **Merge (actor: OPERATOR).** The operator approves and merges the staging PR using a merge
+      commit, preserving the merge-commit-only guarantee P-009 enforces for pipeline merges.
+
+   e. **After merge (actor: Orchestrator).** Refresh the remote-tracking ref with
+      `git fetch origin {default_branch}` and proceed to step 4. This is a read/refresh only — the
+      Orchestrator performs no write to the default branch and does not check it out.
+
+   f. **NO DIRECT DEFAULT-BRANCH PUSH (P-010; P-009 rationale).** No pipeline agent may push
+      directly to the default branch, and this gate must never attempt one. The prohibition is
+      P-010's and is unqualified: both the `Ship MUST NOT` and `Stage MUST NOT` lists in
+      `.github/policies/workflow-policies.md` forbid committing or pushing directly to the default
+      branch, Stage's Role Boundary PR row forbids Stage from pushing or opening pull requests at
+      all, and the Orchestrator may perform neither agent's work. P-009 supplies the rationale: a
+      direct push produces no merge commit, defeating the full-history, attribution and bisect
+      guarantees the merge-commit-only rule exists to preserve, and structurally bypassing P-009's
+      own Ship Step 5 gate point. The staging PR path in items (c)–(d) is the SOLE route. If it
+      cannot complete for a reason item (c) does not already cover, halt with
+      `STAGING_GATE_NO_ROUTE` — never fall back to a direct push.
 4. Verify the shipment manifest exists on the remote default branch:
    `git show origin/main:.backlogit/queue/{shipment_id}.md`
    - If the file exists: staging artifacts are confirmed on the remote. Proceed to Step 2.
