@@ -13,8 +13,6 @@ revision_note: "Rev 2 remediates plan-review attempt 1 (FAIL). F1: restructure p
 
 <!-- plan-review-attempt: 2 -->
 
-# Stage handback record emission contract
-
 Source decision: `docs/decisions/2026-09-18-intercom-go-harness-execution-model-decision.md`
 (**OPTION 1 — single-task features and shipments**).
 This plan covers exactly one release unit: covering feature **`025-F`** holding exactly one
@@ -364,7 +362,7 @@ recorded as a **P-005** event. **No shipment was created** — AC-5 is gated on 
 | Attempt | Dispatch mode | Decision | Findings |
 |---|---|---|---|
 | 1 | `multi-reviewer` | **FAIL** | P0: F1 (restructure asserted in past tense but never performed), F2 (manifest classifies CASCADE not safe-close; H-A4/C3 prescribed an unreachable closure path), F3 (Option 1 Step 2 proof refuted by the artifact's own §5.2; R1 "already harnessed partition" mechanism factually false). P1: F4–F7. Advisory: F8–F18. |
-| 2 | `multi-reviewer` | **FAIL** | 9 of attempt 1's findings verified remediated; reviewers independently re-measured and confirmed the live backlog restructure. **16 new findings, 5 at P0**: N1, N2, N3, N4, N6, N7. P1: N5, N8, N10, N11, N13, N14. |
+| 2 | `multi-reviewer` | **FAIL** | 9 of attempt 1's findings verified remediated; reviewers independently re-measured and confirmed the live backlog restructure. **16 new findings, 6 at P0**: N1, N2, N3, N4, N6, N7. P1: N5, N8, N10, N11, N13, N14. |
 
 ### Attempt-2 findings and disposition
 

@@ -9,8 +9,6 @@ shipment: none
 escalation: P-013.6 threshold crossed — payload below
 ---
 
-# Stage session record — 021.001-T
-
 ## Outcome
 
 **Decision made. Downstream implementation unit BLOCKED. No shipment created.**
