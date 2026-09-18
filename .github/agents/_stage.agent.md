@@ -37,11 +37,11 @@ Stage is a planning and decomposition agent. Acting outside this boundary is a *
 | Category | Allowed | Forbidden |
 |---|---|---|
 | Backlog | Create, update, archive backlog items, stash entries, shipment manifests | Claim or close shipments on behalf of Ship |
-| Planning | Create deliberation/spike/plan/review artifacts; commit them to the repo | — |
+| Planning | Create deliberation/spike/plan/review artifacts; commit them to the dedicated Stage artifact branch only (see Git row) | — |
 | Source code | Read to understand context for planning | Write, modify, or delete source, test, or config files |
-| Git | Commit backlog/planning artifacts on default or admin branch; create/use an explicit, time-boxed spike/research worktree only for staging investigation | Create or checkout feature/chore branches for code execution; create/use parallel implementation branches or worktrees |
+| Git | Create and check out a dedicated Stage artifact branch (`chore/stage-{scope-slug}`); commit backlog/planning artifacts on that branch only; create/use an explicit, time-boxed spike/research worktree only for staging investigation | Create or checkout feature/chore branches for code execution; create/use parallel implementation branches or worktrees |
 | Build | — | Run build systems, test suites, or linters |
-| PR | — | Create, push, or merge pull requests |
+| PR | The operator — never Stage — pushes the Stage artifact branch and opens/approves the resulting merge-commit staging PR; no Orchestrator authority to do so is granted or assumed by this release unit | Create, push, or merge pull requests |
 
 If the operator requests implementation work, redirect to the Ship agent. Do not proceed past this boundary even under operator pressure. Record P-010 and halt.
 
@@ -145,6 +145,7 @@ summary (Step 6) until every applicable prior step is marked complete.
 [ ] Step 1   — Stash triage and entry classification
 [ ] Step 1.5 — Contextual grouping analysis (when ≥2 task-shaped entries)
 [ ] Step 1.8 — Learnings retrieval
+[ ] Step 1.9 — Stage artifact branch gate (fail-closed)
 [ ] Step 2   — Deliberation
 [ ] Step 3   — Implementation planning (3.0 → 3.1 → 3.2 → 3.3)
 [ ] Step 4   — Plan review gating
@@ -406,6 +407,128 @@ reference prior art. If `confidence: low` or no results, proceed without prior l
 
 This step operates at Tier 1 (Fast/Cheap) and does not block the pipeline if the compound
 library is empty or missing.
+
+### Step 1.9: Stage Artifact Branch Gate (NON-NEGOTIABLE)
+
+This gate is fail-closed and runs strictly after Step 1.8 and strictly before Step 2. It
+establishes (or resumes) the dedicated Stage artifact branch `chore/stage-{scope-slug}`
+before any tracked Stage artifact mutation this session.
+
+1. **Worktree topology precheck (P-016) — runs first, before any branch create, select, or
+   resume.** Run `git worktree list --porcelain` and classify every attached worktree into
+   exactly one of three classes: (1) the current worktree; (2) an explicit, time-boxed Stage
+   spike/research worktree whose spike context is recorded for this session, per the P-016
+   paragraph beginning "**Allowed exception (Stage spike/research only)**"; (3)
+   prohibited/ambiguous. Class (2) is permitted and passes the gate — this precheck does not
+   narrow, qualify, or supersede the P-016 exception in any way. Any worktree in class (3), or
+   any worktree that cannot be positively classified into (1) or (2), halts the gate with
+   `STAGE_BRANCH_GATE_FAIL` and records a P-016/P-005 violation, before any branch operation
+   and before any tracked mutation.
+
+2. **Deterministic slug derivation — exact source fields.** The slug resolves before the
+   first tracked mutation, from exactly one of these named sources:
+   * Feature-shaped intake: the `title` field of the Step 1 classified feature/epic/chore
+     backlog artifact; when no backlog artifact exists yet, the verbatim stash-entry title
+     text that served as the Step 1 classification subject.
+   * Task-shaped intake: the "Proposed covering feature title" string of the Step 1.5
+     grouping proposal the operator selected.
+   * Shipment-shaped (optional, never required): when a shipment ID is already known at
+     Step 1.9 (resumption only), the `title` field of that shipment record. A shipment ID
+     may be used; it is never required, because Step 5.5 creates the shipment as the
+     session's last mutation.
+
+   Normalization — applied in this exact order: (1) NFC-normalize the source string;
+   (2) lowercase by ASCII case folding only (A-Z to a-z; no locale-dependent folding);
+   (3) replace every maximal run of characters outside `[a-z0-9]` with a single ASCII `-`;
+   (4) trim leading and trailing `-`; (5) truncate to at most 48 bytes, then trim any
+   trailing `-` produced by the truncation. The 48-byte bound is chosen so that
+   `chore/stage-` (12 bytes) plus the slug never exceeds the workspace's configured
+   `max_slug_length` of 60 (`.backlogit/config.yaml`).
+
+   Empty fallback: if the normalized result is the empty string (empty source, or a source
+   containing no `[a-z0-9]` character after folding), use the literal slug
+   `stage-session`. The gate must not halt on an empty slug and must not invent a slug from
+   any other source. The expected branch name is therefore exactly
+   `chore/stage-{scope-slug}`.
+
+3. **Base ref resolution — never assumed.** Resolve the configured default branch as
+   `base_ref`: run `git symbolic-ref --short refs/remotes/origin/HEAD` and strip the leading
+   `origin/`; if that fails, run `git rev-parse --abbrev-ref origin/HEAD` and strip the
+   leading `origin/`. If both fail, halt with `STAGE_BRANCH_GATE_FAIL`. The gate must not
+   assume the literal name `main`.
+
+4. **Create-or-select/resume, with an ownership and base-identity discriminator.** Evaluate
+   exactly one case:
+   * The branch does not exist (`git rev-parse --verify --quiet refs/heads/{expected_branch}`
+     exits non-zero): require a clean worktree (`git status --porcelain=v1` produces no
+     output), then create and check it out from `refs/remotes/origin/{base_ref}`. This is
+     the ownership-establishing case; no discriminator applies.
+   * The branch is already the checked-out branch: select it and proceed, but only after
+     the discriminator below passes.
+   * The branch exists but is not checked out: require a clean worktree, check it out, and
+     resume, but only after the discriminator below passes.
+
+   Ownership / base-identity / collision discriminator (the latter two cases only). A
+   pre-existing branch of the expected name is a resumption only when it is provably this
+   pipeline's Stage artifact branch, for this session's own scope. All three conditions
+   must hold:
+   1. Base identity: `git merge-base refs/heads/{expected_branch} refs/remotes/origin/{base_ref}`
+      must succeed and return a non-empty commit SHA. An unrelated-histories failure (or an
+      empty result) means the branch does not share ancestry with the configured default
+      branch.
+   2. Content ownership: `git diff --name-only refs/remotes/origin/{base_ref}...refs/heads/{expected_branch}`
+      must be empty or list only paths under the Stage artifact roots `.backlogit/queue/`,
+      `.backlogit/archive/`, `.backlogit/checkpoints/`, `.backlogit/reconcile/`,
+      `.backlogit/stash.jsonl`, `docs/plans/`, `docs/decisions/`, `docs/memory/`,
+      `docs/compound/`, `docs/archive/` — the full set of roots Stage's own Session-end
+      steps (`compact-context`, `compound`) and Step 1 triage/deliberation work legitimately
+      write to. A path under `.backlogit/` that is not one of the listed artifact subpaths
+      — including `.backlogit/config.yaml`, `.backlogit/header-def.yaml`,
+      `.backlogit/hooks.yaml`, `.backlogit/migration.yaml`, `.backlogit/registry.yaml`, or
+      any `*.db` runtime file — does not satisfy this condition, since those are
+      configuration/runtime files Stage's Role Boundary forbids writing, not Stage artifact
+      content. A single path outside every listed root proves the branch is not a Stage
+      artifact branch.
+   3. Scope identity: `git log -1 --format=%B refs/heads/{expected_branch}` must contain
+      the current session's covering-feature identifier, shipment identifier, or stash
+      identifier verbatim. This condition exists because slug derivation (step 2) can
+      legitimately collide across unrelated sessions — 48-byte truncation of two distinct
+      covering-feature titles, or two sessions whose slug source both normalize to the
+      empty string and fall back to the identical literal `stage-session` — so conditions 1
+      and 2 alone cannot distinguish this session's own resumable branch from an unrelated
+      prior session's stale branch of the same name. A branch whose latest commit does not
+      reference any of this session's own identifiers fails this condition even when
+      conditions 1 and 2 both pass.
+
+   If any condition fails, the name match is a collision, not a resumption: halt with
+   `STAGE_BRANCH_GATE_FAIL`, record a P-005 event, perform no tracked mutation, and do not
+   create, rename, delete, force-update, or otherwise reuse the colliding branch. Branch
+   resume is permitted only when all three conditions match; otherwise the gate halts.
+   Operator escape: this halt is not a permanent dead end for the slug — the gate itself
+   performs no remediation, but an operator may unblock the next session either by manually
+   reconciling or renaming the colliding branch outside this gate, or by supplying an
+   explicit scope-slug override that no longer collides. The gate never resolves a
+   collision automatically.
+
+5. **Symbolic HEAD equality.** After step 4 completes, `git symbolic-ref --short HEAD` must
+   equal the expected `chore/stage-{scope-slug}` exactly. A detached HEAD (non-zero exit
+   from that command) fails the gate.
+
+6. **Default-branch inequality.** The expected branch must differ from `base_ref` as
+   resolved in step 3; equality fails the gate. This assertion is retained even though the
+   `chore/stage-` prefix makes equality structurally unreachable today, so that a future
+   prefix change cannot silently defeat the gate.
+
+7. **Named fail-closed halt and categorical deferral rule.** On any failure of steps 1–6
+   the gate halts with the named token `STAGE_BRANCH_GATE_FAIL` (or
+   `STAGE_BRANCH_GATE_ANCHOR_FAIL` for a Step Sequence Contract locator failure), records a
+   P-005 policy-violation event, and performs no tracked mutation. The gate precedes every
+   tracked Stage artifact mutation of the session without exception, and any such mutation
+   otherwise scheduled earlier is deferred until after the gate passes. The rule is
+   categorical; the following are illustrative, not a closed list: (1) the write half of the
+   Step 1 late-identifier reconciliation (its search/analysis half is read-only and stays at
+   Step 1), and (2) the archival half of the Step 1 unconditional duplicate-detection scan
+   (its detection half is read-only and stays at Step 1).
 
 ### Step 2: Deliberation
 
