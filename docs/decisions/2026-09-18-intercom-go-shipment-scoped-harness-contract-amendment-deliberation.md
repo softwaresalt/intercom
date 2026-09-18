@@ -1,14 +1,14 @@
 ---
 title: "Deliberation — Scoped Option 3 harness contract amendment (B1 / B2 / DB12DA37)"
 date: 2026-09-18
-status: decided — Option 3-S adopted; Unit 1 claimable, Unit 2 deferred blocked
+status: decided — Option 3-S adopted in analysis but NOT adoptable this cycle; Unit 1 BLOCKED and not claimable; Unit 2 blocked; no shipment
 agent: Stage
 governs: stash DB12DA37; blockers B1, B2 from docs/decisions/2026-09-18-intercom-go-harness-execution-model-decision.md §9.2
 supersedes: nothing — extends the Option 1 decision's §9.4 unblock path
 base_commit: 101e974a2890e7ba82aacb22d734866fddaf973b
 stage_branch: chore/stage-shipment-scoped-harness-contract-amendment
 measured_against: installed surfaces at 101e974 (PR #61 merge)
-outcome: OPTION_3_S_SCOPED_CONFORMANCE_AMENDMENT
+outcome: OPTION_3_S_SCOPED_CONFORMANCE_AMENDMENT — TERMINAL BLOCKED, NO SHIPMENT, NO TASK AUTHORIZED
 separability: NOT one inseparable unit — two units with an explicit DAG
 revision: 1
 ---
@@ -232,9 +232,9 @@ that merged #59/#60/#61 — including the staging PR that closes this very sessi
                  │ conformance — Ship Step 2 / Step 3 item 2 │
                  │ / harness-architect Step 1                │
                  │ resolves: DB12DA37, B1, B3                │
-                 │ STATUS: queued — claimable this cycle     │
+                 │ STATUS: blocked — NOT claimable (§12)     │
                  └───────────────────┬───────────────────────┘
-                                     │ blocks
+                                     │ sequencing preference (NOT a blocking edge)
                                      ▼
                  ┌───────────────────────────────────────────┐
                  │ UNIT 2  (027-F)                           │
@@ -267,6 +267,11 @@ and because Unit 1 is the unit that makes any shipment-claim route TDD-safe — 
 | **E — ADOPTED: Option 3-S (scoped)** | Manifest-scope + status-include Ship Step 2 item 1; restore the `harness-ready` conjunct in Step 3 item 2's substitution; disambiguate harness-architect's exclusion rule for explicitly-listed `active` tasks; **name** the F-2 branch slot. **No change to P-002, P-004, or Step 4.3.** | **ADOPTED.** |
 
 ## 6. Chosen direction — Option 3-S
+
+> **Status note (§12).** Option 3-S is the option selected *by this analysis*, but it was **NOT
+> adopted for execution this cycle**: plan-review returned FAIL and the unit is BLOCKED with no
+> shipment and no authorized task. The surface design below stands as the starting position for the
+> O-3/O-4 re-scope, not as a claimable work item.
 
 Three surfaces plus tests, delivered as **one atomic red→green task** (cardinality `N = 1`
 preserved, per Option 1):
@@ -302,6 +307,10 @@ preserved, per Option 1):
 
 ## 7. Bootstrap — how Unit 1 ships before its own fix exists
 
+> **Status note (§12).** This bootstrap is **DESIGNED, NOT INSTANTIATED**. No shipment was formed,
+> no task was created, and step 2 below self-blocks at the C3/C4 acceptance-surface defect. It is
+> retained as prospective design for the O-4 re-scope only; nothing here is executable today.
+
 Unit 1 repairs the route it must itself travel, so its first claim runs under the **unrepaired**
 contract. The bootstrap is Option C applied once, and it is exactly the proven `017-S` precedent
 (`018.008-T` carried `harness-ready` at claim time, so Step 2's partition routed it to *"Already
@@ -335,7 +344,7 @@ authorizes any deviation from it.
 | **P-009** | Merge-commit-only. Stage opens no PR; the staging PR is operator-driven. Unit 2 will remove Orchestrator item 3(e)'s direct-push-to-`main` direction, which currently conflicts. |
 | **P-010** | Stage writes only decision/plan/backlog artifacts on its own `chore/stage-*` branch. No source, test, or config mutation this session. |
 | **P-011 / P-014 / P-016** | Ship's branch-creation, local-review-readiness and worktree-topology gates are untouched. Stage ran a single-worktree topology precheck at Step 1.9 and created no additional worktree. |
-| **P-015** | Closure semantics unchanged. Manifest `[026-F, 026.001-T]` is a root, fully covered at every depth, set-equal ⇒ `CASCADE` / `FULLY_COVERED_ROOT`; no protected set arises. |
+| **P-015** | Closure semantics unchanged. **No shipment was formed and no manifest exists** (§12.4), so no closure classification is invoked and no protected set arises. The `CASCADE` / `FULLY_COVERED_ROOT` shape described in §7 is prospective design only, contingent on a future re-scope under O-4. |
 | **P-021** | `DB12DA37` triaged under C6 (deliberation forced by the marker); C5 duplicate scan CLEAN; late-identifier reconciliation ran with no result (§9). |
 
 ## 9. `DB12DA37` P-021 C5/C6 disposition
@@ -349,8 +358,10 @@ authorizes any deviation from it.
   is a truthful terminal record — the finding arose from an internal multi-persona plan-review
   (constitution persona F-03), never from a GitHub review thread, so no thread ID can exist. The
   recorded `N/A` **stands**; reconciliation completes as a no-op and does not gate this deliberation.
-* **Disposition:** `DB12DA37` is **consumed** by Unit 1 (`026-F`) and archived with a forward
-  reference. `3F546E63` and `11B75632` remain **active** for future triage.
+* **Disposition:** `DB12DA37` remains **ACTIVE** — updated in place and **not** archived, because no
+  shipment delivered it and it is therefore **not consumed** (§12.4). Its root-cause localization and
+  the B1 refutation are recorded on the entry so the next session starts from the measured position.
+  `3F546E63` and `11B75632` also remain **active** for future triage.
 
 ## 10. Residual risks
 
@@ -374,9 +385,12 @@ authorizes any deviation from it.
 
 ## 11. Open questions
 
-None blocking. Ship selects the concrete test mechanism for S4 at implementation time. Whether Unit 2
-also folds in `3F546E63` (claim-last expressibility) is a triage decision for Unit 2's own
-deliberation, not resolved here.
+**Superseded by §12.5 — this section's original "none blocking" finding did not survive plan-review.**
+**O-1 is BLOCKING**: the acceptance surface for agent-interpreted contract text is an operator
+determination Stage may not self-grant, and it gates everything else. O-2 (P-002 Statement clause) is
+also owed. Nothing is routed to Ship and no task exists, so no implementation-time selection of the
+S4 test mechanism arises. Whether Unit 2 also folds in `3F546E63` (claim-last expressibility) remains
+a triage decision for Unit 2's own deliberation, not resolved here.
 
 ## 12. TERMINAL OUTCOME — decision stands, unit BLOCKED, no shipment
 
@@ -469,4 +483,3 @@ Ship.**
 `019-F`, `019.004-T`, `019.008-T`, `019.009-T` and `020.004-T` still carry prose references to the
 retired ID `019.007-T`. Structured dependency edges are correct. Untouched here; flagged for the next
 session that opens the `019-F` strand.
-

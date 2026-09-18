@@ -1,14 +1,28 @@
 ---
 title: "Implementation Plan — Option 3-S harness selection and enforcement conformance (026-F)"
 date: 2026-09-18
-status: planned
+status: BLOCKED — plan-review attempt 1 FAIL; P-005 recorded; no shipment, no task authorized
 agent: Stage
 source_document: docs/decisions/2026-09-18-intercom-go-shipment-scoped-harness-contract-amendment-deliberation.md
-governs: feature 026-F; task 026.001-T
+governs: feature 026-F (blocked; no child task authorized this cycle)
 bound_snapshot: 101e974a2890e7ba82aacb22d734866fddaf973b
 stage_branch: chore/stage-shipment-scoped-harness-contract-amendment
 revision: 1
 ---
+
+> **TERMINAL STATUS — READ FIRST.** `plan-review` attempt 1 returned **FAIL** (2× P0, 14× P1). Stage
+> Step 4 option **(c)** was taken and **P-005 recorded**. Consequently:
+>
+> * **No task was created.** `026-F` has **no child task** and no task ID is allocated or reserved.
+>   Defining the Unit 1 task shape is deferred to **O-4**, after O-1 and O-3 close.
+> * **No shipment was created.** No manifest exists and no shipment ID is allocated.
+> * Every section below describing a shipment, a manifest, a claim, a harness run or a closure is
+>   **prospective design only** — the unrealized target state, retained as the starting position for
+>   the O-3/O-4 re-scope. None of it is executable today, and none of it authorizes routing to Ship.
+>
+> Where this plan previously named a concrete member task ID, that ID **never existed**; the false
+> task-governance and manifest claims have been removed rather than satisfied by fabricating a
+> claimable unit.
 
 ## Problem Frame
 
@@ -122,15 +136,18 @@ scenarios passing, having first been observed red.
 ## Dependency Graph
 
 ```text
-U1 (026.001-T)  — no unfinished upstream dependencies
+U1 (026-F — no task authorized; shape deferred to O-4)
    │
-   └── blocks ──▶ 027-F / Unit 2 (B2, Orchestrator Step 1.5)   [blocked, not in this shipment]
-                     │
-                     └── blocks ──▶ 025-F / 025.001-T           [remains blocked]
+   └── sequencing preference, NOT a blocking edge ──▶ 027-F / Unit 2 (B2, Orchestrator Step 1.5)
+                     │                                 [blocked; may proceed independently per O-5]
+                     └── blocks ──▶ 025-F / 025.001-T   [remains blocked]
 ```
 
-No cycles. U1 is the single executable node this cycle. `026.001-T → DB12DA37` is a traceability
-link, not a blocking edge (the stash entry is consumed, not a prerequisite).
+No cycles. U1 would be the single executable node once unblocked, but it is **blocked and has no
+task**, so nothing is executable this cycle. The only structured dependency edges in the backlog are
+`025-F → 026-F (blocks)` and `025-F → 027-F (blocks)`; there is deliberately **no** `026-F → 027-F`
+edge. The link from Unit 1 to `DB12DA37` is a traceability link, not a blocking edge; `DB12DA37`
+remains **ACTIVE and not consumed**, because no shipment delivered it.
 
 ## Decisions and Rationale
 
@@ -149,7 +166,7 @@ link, not a blocking edge (the stash entry is consumed, not a prerequisite).
 | # | Risk | Mitigation |
 |---|---|---|
 | R-1 | **Bootstrap depends on a manual operator step.** If the shipment is claimed without the pre-claim harness, Ship executes an unharnessed task — the exact defect being fixed. | Hard pre-claim precondition recorded on the shipment record; Stage halts there and does not authorize deviation. Self-eliminating after U1 merges. |
-| R-2 | **CASCADE closure is destructive and irreversible.** Manifest `[026-F, 026.001-T]` classifies `CASCADE`/`FULLY_COVERED_ROOT`, invoking `backlogit_ship_shipment`. | Classify `ActionRisk: destructive`; require recorded operator approval; document a backlog-state unwind distinct from `git revert`. |
+| R-2 | **CASCADE closure is destructive and irreversible.** The intended (never-created) manifest of `026-F` plus its single future task would classify `CASCADE`/`FULLY_COVERED_ROOT`, invoking `backlogit_ship_shipment`. | Classify `ActionRisk: destructive`; require recorded operator approval; document a backlog-state unwind distinct from `git revert`. |
 | R-3 | **Cross-artifact closure risk (7 prior FAILs).** A producer-scoped fix that leaves a consumer surface open. | Build the surface matrix (producer, every consumer, authority grant, refusal path, tests, probes) against the bound snapshot `101e974` **before** editing. F-4's third surface is already caught. Probe the tool, not the prose. |
 | R-4 | **Editing `_ship.agent.md` could disturb adjacent clauses**, as B5 showed for `_stage.agent.md`. | Edits are additive-conjunct and two-branch restatements at clause level; T4 pins Step 4.3 as an anti-regression witness; verify heading/list structure after each edit. |
 | R-5 | **Substring-only tests cannot observe behaviour** (022.001-T / IV-5 precedent). | T1–T3 assert clause structure AND the presence of the decisive conjuncts/branches; where feasible, drive a fixture manifest through the derivation logic rather than asserting prose alone. Needles taken from post-edit pinned wording, never from soft-wrapped source. |
@@ -184,7 +201,7 @@ non-applicability does **not** apply, because a new Go test file is added — `g
 4. Structural integrity: heading levels and list numbering in both instruction files unchanged
    outside the edited clauses.
 
-**Operational closure artifact:** `docs/closure/026-S-026-F-post-merge-closure.md` recording —
+**Operational closure artifact:** `docs/closure/{shipment_id}-026-F-post-merge-closure.md` recording —
 *monitoring*: the next shipment-claim route run must show Step 2 emitting a **non-empty** batch (the
 direct observable proving the repair); *rollback trigger*: any Step 2 batch that is empty while the
 manifest has an executable member, or any Step 4 execution of a task lacking `harness-ready`;
@@ -239,7 +256,7 @@ as a design defect: stop, rebuild the matrix, do not patch locally.
 | **I2** | P-002 and P-004 policy text are byte-unchanged | Diff review: `workflow-policies.md` must not appear in the PR diff |
 | **I3** | The non-shipment/direct-invocation path is behaviourally unchanged | T3 |
 | **I4** | No derived member without `harness-ready` can reach Step 4 | T2 |
-| **I5** | `N = 1` holds — exactly one harnessed-but-unimplemented function exists at any time | Manifest is `[026-F, 026.001-T]`; one task |
+| **I5** | `N = 1` holds — exactly one harnessed-but-unimplemented function exists at any time | Would require the intended single-task manifest; **not provable today** — no manifest and no task exist |
 | **I6** | No rev-11…rev-15 mechanism is reintroduced in explicit or disguised form | Review assertion: zero new manifest/witness/selector-flag/predicate constructs |
 | **I7** | The `023-F`/`024-F` task-only trigger is not fired | Manifest is a fully-covered root ⇒ `CASCADE`, never task-only |
 | **I8** | Structural integrity of both instruction files outside the edited clauses | Heading/list-level read-back (R-4) |
@@ -252,8 +269,8 @@ fence; a green suite that violates any of them is a false green.
 | ID | ProposedAction | ActionRisk | Approval | Expected ActionResult |
 |---|---|---|---|---|
 | **PA-1** | Operator pushes `chore/stage-*` and merges the merge-commit staging PR | `moderate` — reversible by revert | Operator (P-009 merge-commit only) | Backlog + shipment artifacts present on `origin/main` |
-| **PA-2** | Operator creates `feat/{shipment-slug}` from fresh `main` and invokes **harness-architect** for `026.001-T` | `moderate` — red harness committed on the shipment branch, inside the PR gate | Operator (P-004 producer duty; P-010 forbids Stage) | `026.001-T` carries `harness-ready`; red phase CONFIRMED |
-| **PA-3** | Ship claims shipment `026-S` | **`irreversible`** — one-way door; no `unclaim`/`release` exists | Operator, and **only after PA-2 is verified** | Shipment `active`, sole active shipment; task auto-activated |
+| **PA-2** | Operator creates `feat/{shipment-slug}` from fresh `main` and invokes **harness-architect** for the Unit 1 task (**not created — shape deferred to O-4**) | `moderate` — red harness committed on the shipment branch, inside the PR gate | Operator (P-004 producer duty; P-010 forbids Stage) | The Unit 1 task carries `harness-ready`; red phase CONFIRMED |
+| **PA-3** | Ship claims the Unit 1 shipment (**not created**) | **`irreversible`** — one-way door; no `unclaim`/`release` exists | Operator, and **only after PA-2 is verified** | Shipment `active`, sole active shipment; task auto-activated |
 | **PA-4** | Ship edits three installed contract surfaces | `elevated` — contract blast radius | Covered by PR review + P-014 gate | I1–I8 all provable |
 | **PA-5** | `CASCADE` closure via `backlogit_ship_shipment` | **`destructive`** — irreversible archive of the manifest subtree | **Explicit recorded operator approval, mandatory** | `archived_ids == required_ids`; `returned_ids == []` |
 
@@ -262,13 +279,13 @@ on approval ⇒ **HALT, zero mutation**.
 
 ### H-4 — Pre-claim environment prechecks (all must pass before PA-3)
 
-1. `026.001-T` carries `harness-ready` **and** a real red harness exists on the branch (PA-2 done).
+1. The Unit 1 task carries `harness-ready` **and** a real red harness exists on the branch (PA-2 done).
 2. No other top-level release unit is `active` (**P-001**). `021-F`/`021.001-T` are `done`; `027-F`
    is created `blocked` precisely so it is not a competing active unit.
 3. Current branch is `feat/{shipment-slug}` ⇒ Step 0.5 3a logs `BRANCH_OK` (never `BRANCH_MISMATCH`).
 4. `git worktree list --porcelain` shows exactly one worktree (**P-016**).
-5. `git show origin/main:.backlogit/queue/026-S.md` resolves (**PA-1 verified on the remote**).
-6. Shipment status is `queued`; `026.001-T` status is `queued` — no `SHIPMENT_STATE_INCONSISTENT`.
+5. `git show origin/main:.backlogit/queue/{shipment_id}.md` resolves (**PA-1 verified on the remote**).
+6. Shipment status is `queued`; the Unit 1 task status is `queued` — no `SHIPMENT_STATE_INCONSISTENT`.
 
 **Blocked-path handling:** if any precheck fails, do **not** claim. Report the failing precheck and
 halt. A failed precheck is never remediated by proceeding.
@@ -283,7 +300,7 @@ separate domain.
 | Before PA-3 (claim) | Delete the feature branch | None — nothing mutated |
 | After PA-3, before merge | Reset/abandon the branch | **No `unclaim` exists.** Shipment is stranded `active` in the P-001 slot. Exit is operator-directed only (`return-blocked` is single-item; `abandoned` is destructive and requires approval). **This is the point of no cheap return — the reason PA-3 is gated on H-4.** |
 | After merge, before PA-5 | `git revert` the merge commit (merge-commit-only, P-009) | Shipment remains `active`; re-plan required |
-| After PA-5 (cascade) | `git revert` the merge commit | **Irreversible archive.** Unwind = restore `026-F`/`026.001-T` records from `.backlogit/archive/` to `.backlogit/queue/` and reset the shipment record — a manual, operator-approved backlog surgery, explicitly **not** `git revert`. |
+| After PA-5 (cascade) | `git revert` the merge commit | **Irreversible archive.** Unwind = restore the `026-F` record and its member task record from `.backlogit/archive/` to `.backlogit/queue/` and reset the shipment record — a manual, operator-approved backlog surgery, explicitly **not** `git revert`. |
 
 ### H-6 — Monitoring signals and validation window
 
