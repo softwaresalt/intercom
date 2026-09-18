@@ -37,7 +37,7 @@ Stage is a planning and decomposition agent. Acting outside this boundary is a *
 | Category | Allowed | Forbidden |
 |---|---|---|
 | Backlog | Create, update, archive backlog items, stash entries, shipment manifests | Claim or close shipments on behalf of Ship |
-| Planning | Create deliberation/spike/plan/review artifacts; commit them to the repo | — |
+| Planning | Create deliberation/spike/plan/review artifacts; commit them to the dedicated Stage artifact branch only (see Git row) | — |
 | Source code | Read to understand context for planning | Write, modify, or delete source, test, or config files |
 | Git | Create and check out a dedicated Stage artifact branch (`chore/stage-{scope-slug}`); commit backlog/planning artifacts on that branch only; create/use an explicit, time-boxed spike/research worktree only for staging investigation | Create or checkout feature/chore branches for code execution; create/use parallel implementation branches or worktrees |
 | Build | — | Run build systems, test suites, or linters |
@@ -470,20 +470,45 @@ before any tracked Stage artifact mutation this session.
 
    Ownership / base-identity / collision discriminator (the latter two cases only). A
    pre-existing branch of the expected name is a resumption only when it is provably this
-   pipeline's Stage artifact branch. Both conditions must hold:
+   pipeline's Stage artifact branch, for this session's own scope. All three conditions
+   must hold:
    1. Base identity: `git merge-base refs/heads/{expected_branch} refs/remotes/origin/{base_ref}`
       must succeed and return a non-empty commit SHA. An unrelated-histories failure (or an
       empty result) means the branch does not share ancestry with the configured default
       branch.
    2. Content ownership: `git diff --name-only refs/remotes/origin/{base_ref}...refs/heads/{expected_branch}`
-      must be empty or list only paths under the four Stage artifact roots `.backlogit/`,
-      `docs/plans/`, `docs/decisions/`, `docs/memory/`. A single path outside those roots
-      proves the branch is not a Stage artifact branch.
+      must be empty or list only paths under the Stage artifact roots `.backlogit/queue/`,
+      `.backlogit/archive/`, `.backlogit/checkpoints/`, `.backlogit/reconcile/`,
+      `.backlogit/stash.jsonl`, `docs/plans/`, `docs/decisions/`, `docs/memory/`,
+      `docs/compound/`, `docs/archive/` — the full set of roots Stage's own Session-end
+      steps (`compact-context`, `compound`) and Step 1 triage/deliberation work legitimately
+      write to. A path under `.backlogit/` that is not one of the listed artifact subpaths
+      — including `.backlogit/config.yaml`, `.backlogit/header-def.yaml`,
+      `.backlogit/hooks.yaml`, `.backlogit/migration.yaml`, `.backlogit/registry.yaml`, or
+      any `*.db` runtime file — does not satisfy this condition, since those are
+      configuration/runtime files Stage's Role Boundary forbids writing, not Stage artifact
+      content. A single path outside every listed root proves the branch is not a Stage
+      artifact branch.
+   3. Scope identity: `git log -1 --format=%B refs/heads/{expected_branch}` must contain
+      the current session's covering-feature identifier, shipment identifier, or stash
+      identifier verbatim. This condition exists because slug derivation (step 2) can
+      legitimately collide across unrelated sessions — 48-byte truncation of two distinct
+      covering-feature titles, or two sessions whose slug source both normalize to the
+      empty string and fall back to the identical literal `stage-session` — so conditions 1
+      and 2 alone cannot distinguish this session's own resumable branch from an unrelated
+      prior session's stale branch of the same name. A branch whose latest commit does not
+      reference any of this session's own identifiers fails this condition even when
+      conditions 1 and 2 both pass.
 
-   If either condition fails, the name match is a collision, not a resumption: halt with
+   If any condition fails, the name match is a collision, not a resumption: halt with
    `STAGE_BRANCH_GATE_FAIL`, record a P-005 event, perform no tracked mutation, and do not
    create, rename, delete, force-update, or otherwise reuse the colliding branch. Branch
-   resume is permitted only when identity matches; otherwise the gate halts.
+   resume is permitted only when all three conditions match; otherwise the gate halts.
+   Operator escape: this halt is not a permanent dead end for the slug — the gate itself
+   performs no remediation, but an operator may unblock the next session either by manually
+   reconciling or renaming the colliding branch outside this gate, or by supplying an
+   explicit scope-slug override that no longer collides. The gate never resolves a
+   collision automatically.
 
 5. **Symbolic HEAD equality.** After step 4 completes, `git symbolic-ref --short HEAD` must
    equal the expected `chore/stage-{scope-slug}` exactly. A detached HEAD (non-zero exit
