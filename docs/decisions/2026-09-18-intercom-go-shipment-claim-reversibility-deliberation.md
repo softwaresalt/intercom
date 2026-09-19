@@ -86,7 +86,7 @@ inheriting the stranding exposure.
 
 ## 5. Interaction with this cycle's own shipments
 
-Ten shipments are queued this cycle, so the stranding exposure is inherited ten times. That is an
+Nine shipments are queued this cycle, so the stranding exposure is inherited nine times. That is an
 argument for raising O-5's urgency, **not** for Stage resolving it unilaterally. Two mitigations are
 available without any contract change and are applied:
 
