@@ -1,3 +1,13 @@
+---
+title: "Implementation Plan — pathsafe Containment Correctness"
+date: 2026-09-07
+status: reviewed
+agent: Stage
+mode: DARK_MODE_ACTIVE
+governs: 012-F / shipment 011-S
+source: docs/decisions/2026-09-07-intercom-go-pathsafe-containment-correctness-deliberation.md
+---
+
 # Implementation Plan — pathsafe Containment Correctness (rev 2, post-review)
 
 - **Date**: 2026-09-07
