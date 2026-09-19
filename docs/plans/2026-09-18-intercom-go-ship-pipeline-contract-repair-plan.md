@@ -128,7 +128,7 @@ carry the requeue/detach rationale. The scope below names the true range.
 
 | ID | Task | Scope | Size | Cx |
 |---|---|---|---|---|
-| U2-T1 | Fill the Step 4.3 **Format** gate command slot | `_ship.agent.md:440` only. Supply **`gofmt -l .`** — the non-mutating check `ci.yml`'s lint job already gates on. A **mutating** variant (`go fmt ./...`, `gofmt -w`) does **not** satisfy this task: installing a writing command into a verification gate is a defect. Gates #1 (`:439`) and #3 (`:441`) byte-unchanged. Deleting the `**Format**:` line is **not** an option. | XS | trivial |
+| U2-T1 | Fill the Step 4.3 **Format** gate command slot | `_ship.agent.md:440` only. Supply the **non-mutating failing check** `ci.yml`'s lint job already gates on: **capture the output of `gofmt -l .` and fail (exit non-zero) when that output is non-empty**, matching `ci.yml:303–310`. A **bare `gofmt -l .`** does **not** satisfy this task: it only prints unformatted paths and still exits 0, leaving the Format quality gate unable to fail. A **mutating** variant (`go fmt ./...`, `gofmt -w`) does **not** satisfy this task either: installing a writing command into a verification gate is a defect. Gates #1 (`:439`) and #3 (`:441`) byte-unchanged. Deleting the `**Format**:` line is **not** an option. | XS | trivial |
 | U2-T2 | Re-point the CASCADE branch at `shipment-reconcile mode:safe-close` | `_ship.agent.md:830` and `:861–869`. Rewrite `:830`'s conditional authorization so the CASCADE verdict routes to `mode:safe-close`, **explicitly naming safe-close as the close path a `CLOSE_PATH_VERDICT: CASCADE` designates** and carrying `CLASSIFICATION_BINDING` into it; replace the direct-cascade branch at `:861–869` with the safe-close route, preserving the requeue/detach semantics at `:865–869`. The replacement wording must be **pinned in the plan before the edit** (see §3.3). | M | medium |
 | U2-T3 | Contract test asserting no binding-incapable CASCADE route remains | One new contract test whose PRESENT/ABSENT needles are cut **verbatim** from §3.3's pinned replacement wording — never authored from prose or intent (compound rule, `cross-artifact-contract-closure-requires-every-surface-2026-09-13`). **Single red→green assertion only**; revision 2's green-on-arrival second assertion is deleted. | S | medium |
 
@@ -139,8 +139,11 @@ inspection criteria, not assertions, and this plan does not claim a red phase fo
 
 ### Acceptance criteria
 
-* **AC-2.1** `_ship.agent.md:440` names **`gofmt -l .`**. No empty command slot remains in Step 4.3,
-  and no mutating formatter is installed into a verification gate.
+* **AC-2.1** `_ship.agent.md:440` carries a **non-mutating** `gofmt` check whose failure condition is
+  **non-empty `gofmt -l .` output** (behavioural parity with the `ci.yml:303–310` gate: unformatted
+  files produce a non-zero exit). A bare `gofmt -l .`, which exits 0 even when it lists unformatted
+  files, does **not** satisfy this criterion. No empty command slot remains in Step 4.3, and no
+  mutating formatter is installed into a verification gate.
 * **AC-2.2** `_ship.agent.md:439` and `:441` are **content-identical** to the bound snapshot. This
   is the criterion that preserves blocked 026-F's Step 4.3 full-suite anti-regression pin.
 * **AC-2.3** No direction to invoke `backlogit shipment ship` / `backlogit_ship_shipment` for a
@@ -241,7 +244,7 @@ contract suite reads both edited files and must be green on both sides (AC-2.9).
 |---|---|---|
 | `:832–835` freeze vs. CASCADE→safe-close reroute leaves the frozen "only the named close path" rule false — same defect class as attempt-1's P0-2, under-constrained | P1 | **AC-2.8** added; U2-T2 scope now mandates naming safe-close as the designated CASCADE close path |
 | Frontmatter still pre-stamped its own verdict | P1 | Status records the actual attempt-2 verdict (ADVISORY) and that revision 4 applies its findings |
-| "canonical formatting command" not single-valued; `go fmt ./...` **mutates** | P2 | U2-T1 and AC-2.1 pin `gofmt -l .`; mutating variants explicitly excluded |
+| "canonical formatting command" not single-valued; `go fmt ./...` **mutates** | P2 | U2-T1 and AC-2.1 pin a captured-output `gofmt -l .` check that fails on non-empty output; bare (non-failing) and mutating variants explicitly excluded |
 | U2-T3's oracle not mechanically decidable over markdown | P2 | **§3.3** pins the replacement wording before the edit; needles derived verbatim from it |
 | §6 omitted the existing 33-row contract suite that reads both edited files | P2 | AC-2.9 + §6 |
 | U1-T2's parse anchor unspecified pre/post repair | P3 | Parse rule stated in U1-T2 |
