@@ -1,18 +1,20 @@
 ---
 title: "Implementation Plan — Merge-strategy governance and merge-blocking gate reliability (S-3…S-6)"
 date: 2026-09-18
-status: plan-review attempt 1 FAIL (4× P0) → revised; attempt 2 ADVISORY (0 P0, 4 P1) → P1s applied in revision 4
+status: plan-review attempt 1 FAIL (4× P0) → revised; attempt 2 ADVISORY (0 P0, 4 P1) → P1s applied in revision 4; PR #66 Copilot cycle 3 (1× high) → applied in revision 5
 agent: Stage
 source_document: docs/decisions/2026-09-18-intercom-go-ship-contract-and-gate-reliability-deliberation.md
+spike_findings: docs/decisions/2026-09-19-intercom-go-call-extent-extraction-and-allowance-predicate-spike.md
 governs: four release units — merge-strategy verification, engine extraction, scan-scope unification, write-path gate hardening
 bound_snapshot: 14d44e3c1f28b321e8db24ab8cafcba346996133
 stage_branch: chore/stage-ship-pipeline-contract-repair
 requires_plan_hardening: yes
-revision: 4
+revision: 5
 ---
 
 <!-- plan-review-attempt: 2 -->
-<!-- attempt 2 verdict: ADVISORY. Findings applied in revision 4; see §9. No attempt 3 submitted. -->
+<!-- attempt 2 verdict: ADVISORY. Findings applied in revision 4; see §10. No attempt 3 submitted. -->
+<!-- PR #66 Copilot cycle 3 (final permitted review-fix cycle): 1 high finding on 034.001-T applied in revision 5; see §9. -->
 
 > **Revision 3 — corrections from plan-review attempt 1 (FAIL, 4× P0, 5× P1).** The review refuted
 > this plan's central premise. Summary of what changed:
@@ -241,7 +243,7 @@ path; re-measured absent). Adding a write primitive is a named stop condition.
 | ID | Task | Scope | Size | Cx |
 |---|---|---|---|---|
 | U4-T1 | Extend the selector list with decidable qualified entry points | Add `syscall.CreateFile`, `syscall.Write`, `os.OpenRoot`, `os.Root`. *(rev 4, was P2)* The "unlisted DB-driver `Open` selectors" item is **removed as unbounded and unfalsifiable** — `go.mod` declares no database dependency at all (BurntSushi/toml, copilot-sdk, cobra + indirects), so even the existing `sql.Open`/`bbolt.Open` selectors are speculative. Vector (d) is **deferred as an unfired trigger**, consistent with this plan's own stop-condition discipline. | S | medium |
-| U4-T1b | Add call-extent extraction and an access-mode allowance predicate | *(new in rev 4, closes attempt-2 P1 #3)* AC-4.2 is unsatisfiable under a line-oriented scanner: `scan_file` iterates `masked.splitlines()` and matches per line, while the live call in `internal/pathsafe/reparse_windows.go` spans multiple lines with the desired-access literal `0` on the line **after** the `syscall.CreateFile` token. No allowance mechanism exists today at all. This task builds call-extent (argument-aware) extraction plus the allowance predicate AC-4.2 and AC-4.3 depend on. | L | high |
+| U4-T1b | Add call-extent extraction and an access-mode allowance predicate | *(new in rev 4; **spike completed by Stage in rev 5** — see `docs/decisions/2026-09-19-intercom-go-call-extent-extraction-and-allowance-predicate-spike.md`)* AC-4.2 is unsatisfiable under a line-oriented scanner: `scan_file` iterates `masked.splitlines()` and matches per line, while the live call in `internal/pathsafe/reparse_windows.go` spans `:164–172` with the desired-access literal `0` on `:166`, the line **after** the `syscall.CreateFile` token. No allowance mechanism existed. The spike **prototyped extraction against the real masker and the real file and proved it feasible**, so this row is now **split into two specified `S` tasks** rather than one `L`/`high` task: **U4-T1b-1** offset-based, paren-depth call-extent extraction over the masked text (D-1), and **U4-T1b-2** the access-mode allowance predicate (D-2). **AC-4.2 is NOT narrowed.** | ~~L~~ → **2× S** | ~~high~~ → **medium** |
 | U4-T2 | *(moved to Unit 0 in revision 4)* | The advisory toggle and the `--self-test-integrity` split are now **S-0**, a prerequisite that must merge before U2-T5 and before this unit. See §2. | — | — |
 | U4-T3 | Resolve **named** import aliases to canonical package paths | *(split in rev 3, was over-sized)* Parse the import block; map named aliases (live in-repo: `copilot "github.com/github/copilot-sdk/go"`) to package paths; match on the canonical path. | M | medium |
 | U4-T4 | Record the undecidable alias residuals explicitly | *(new in rev 3)* Dot-imports (`import . "os"` → a bare `WriteFile(` call, undecidable without type info), blank imports, and local identifiers shadowing an import name are **out of scope and documented as residual**, not silently unhandled. | S | low |
@@ -252,9 +254,12 @@ path; re-measured absent). Adding a write primitive is a named stop condition.
 
 * **AC-4.1** `--self-test` catches every vector in U4-T6; each fixture fails pre-change.
 * **AC-4.2** The existing metadata-only `syscall.CreateFile` in `reparse_windows.go` does not trip
-  the gate, and the allowance is keyed on the **call's access mode**, not on the file.
+  the gate, and the allowance is keyed on the **call's access mode**, not on the file. *(rev 5: the
+  spike proved call-extent extraction feasible, so this criterion stands **unnarrowed**; the
+  predicate shape it binds to is D-2 of the spike findings.)*
 * **AC-4.3** *(positive control)* A *writing* `syscall.CreateFile` in the same allowance-scoped file
-  is still **rejected**. An allowance that fails this criterion is a defect.
+  is still **rejected**. An allowance that fails this criterion is a defect. *(rev 5: demonstrated
+  in the spike's adversarial case set.)*
 * **AC-4.4** The tripwire fires on a fixture introducing a production `Root.Resolve` caller and does
   not fire at the bound snapshot (zero callers, re-measured), using U4-T5's stated matching rule.
 * **AC-4.5** No TOCTOU/hardlink mitigation is added. No write primitive is introduced anywhere.
@@ -262,7 +267,10 @@ path; re-measured absent). Adding a write primitive is a named stop condition.
   merged; the LOCAL DIVERGENCE enumeration is updated.
 * **AC-4.7** The gate's documentation states its residual evasion surface honestly — at minimum
   `os.Root` method calls, dot-imports, and identifier shadowing — and does not present itself as a
-  complete mechanical tripwire.
+  complete mechanical tripwire. *(rev 5: **also** the undecidable-call-extent residual — a
+  `syscall.CreateFile` reached through a wrapper, a function value, a non-literal access variable,
+  or an unbalanced argument list is **rejected, not exempted**; this is a false-positive surface,
+  never a silent hole. See D-2/§5 of the spike findings.)*
 * **AC-4.8** Zero false positives across the 17 existing non-test `.go` files.
 * **AC-4.9** All new fixtures are `gofmt` and `goimports` clean.
 
@@ -316,8 +324,12 @@ require the LOCAL DIVERGENCE enumeration be updated in the same change.
 **H-9 — Task sizing.** Revision 2's "reduce a 1199-line script to a wrapper" and "resolve import
 aliases" were both over-sized. Mitigation: U2 is split into seven tasks with the canonicalization
 *decision* separated from the code move; U4's alias work is split into named-alias resolution
-(U4-T3) and an explicit residual record (U4-T4). *(rev 4)* U4-T1b is sized **L/high** honestly
-rather than being smuggled into U4-T1 at size S.
+(U4-T3) and an explicit residual record (U4-T4). *(rev 4)* U4-T1b was sized **L/high** honestly
+rather than being smuggled into U4-T1 at size S. *(rev 5)* An `L`/`high` task cannot be shipped
+under the 2-hour rule, so **Stage executed the de-risking spike itself** rather than queueing it
+for Ship: U4-T1b is now two **specified `S`** tasks (`034.002-T`, `034.003-T`) whose design is
+fixed by D-1/D-2 of the spike findings. Honest sizing is preserved — the size fell because the
+uncertainty was actually retired, not because it was re-labelled.
 
 **H-10 — Assertions with no execution vehicle.** *(new in rev 4)* There is no Python lint/test step
 in any workflow, so the extracted modules' unit tests would never run in CI. Mitigation: U2-T7 adds
@@ -327,7 +339,13 @@ one, or relocates the assertions into the unconditionally-run `--self-test-integ
 anchored to source text an outside process can disagree with. Mitigation: U3-T3 forbids degrading
 it to a module-constant self-comparison.
 
-## 9. Review findings applied (attempt 2 → revision 4)
+## 9. Review findings applied (PR #66 Copilot cycle 3 → revision 5)
+
+| Finding | Sev | Resolution |
+|---|---|---|
+| `034.001-T` delegates **planning authority** to Ship — its required outcome includes choosing the design, re-sizing follow-on tasks, and possibly narrowing AC-4.2. Ship may not update task planning fields or create/modify spike and plan artifacts (`_ship.agent.md:38,43`), so `031-S` halts on this item. (thread `PRRT_kwDOTPuhps6kCdf5`) | high | **Stage executed the spike** and recorded it at `docs/decisions/2026-09-19-intercom-go-call-extent-extraction-and-allowance-predicate-spike.md`: D-1 fixes the extraction approach, D-2 fixes the allowance-predicate shape, **D-3 declines to narrow AC-4.2** (extraction proved feasible against the real masker and the real file). **Downstream tasks updated by Stage**: `034.002-T` and `034.003-T` re-sized `M`→`S` and rewritten to specify D-1/D-2 rather than defer to a design decision; `034.007-T` extended with the undecidable-call-extent residual; `034.001-T` converted to a **read-only verification gate** with no design, sizing, or AC authority. |
+
+## 10. Review findings applied (attempt 2 → revision 4)
 
 | Finding | Sev | Resolution |
 |---|---|---|
@@ -345,7 +363,7 @@ it to a module-constant self-comparison.
 | `ci-gate` `needs:` citation drift; advisory mode must be step-level | P3 | U1-T3 corrected to `:610`/`:614` and step-level `continue-on-error` |
 | `selection pathspec pin` cited as `:1013–1059` | P3 | Corrected to `:1004–1059` |
 
-## 10. Review findings applied (attempt 1 → revision 3)
+## 11. Review findings applied (attempt 1 → revision 3)
 
 | Finding | Severity | Resolution |
 |---|---|---|

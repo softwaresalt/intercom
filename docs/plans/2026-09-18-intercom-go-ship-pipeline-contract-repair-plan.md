@@ -1,7 +1,7 @@
 ---
 title: "Implementation Plan — Ship pipeline contract repair (S-1, S-2)"
 date: 2026-09-18
-status: plan-review attempt 1 FAIL (2× P0) → revised; attempt 2 ADVISORY (0 P0, 2 P1) → P1s applied in revision 4
+status: plan-review attempt 1 FAIL (2× P0) → revised; attempt 2 ADVISORY (0 P0, 2 P1) → P1s applied in revision 4; PR #66 Copilot cycle 3 (1× high) → applied in revision 5
 agent: Stage
 source_document: docs/decisions/2026-09-18-intercom-go-ship-contract-and-gate-reliability-deliberation.md
 secondary_source: docs/decisions/2026-09-18-intercom-go-shipment-claim-reversibility-deliberation.md
@@ -9,14 +9,15 @@ governs: two release units — closure/reconcile skill contract repair, and Ship
 bound_snapshot: 14d44e3c1f28b321e8db24ab8cafcba346996133
 stage_branch: chore/stage-ship-pipeline-contract-repair
 requires_plan_hardening: yes
-revision: 4
+revision: 5
 ---
 
 <!-- plan-review-attempt: 2 -->
 <!-- attempt 2 verdict: ADVISORY. Findings applied in revision 4; see §8. No attempt 3 submitted. -->
+<!-- PR #66 Copilot cycle 3 (final permitted review-fix cycle): 1 high finding on 029.003-T applied in revision 5; see §7. -->
 
 > **Revision 3 — corrections from plan-review attempt 1 (FAIL, 2× P0, 5× P1).** Every finding is
-> applied below and summarized in §7. The two P0s were: (1) Problem A misread `:442` as an
+> applied below and summarized in §9. The two P0s were: (1) Problem A misread `:442` as an
 > unspecified *evidence format* when `:440` is the *command slot of quality gate #2*; (2) AC-2.3 and
 > AC-2.4 were mutually unsatisfiable because `:830` conditionally authorizes the direct cascade call.
 
@@ -129,7 +130,7 @@ carry the requeue/detach rationale. The scope below names the true range.
 | ID | Task | Scope | Size | Cx |
 |---|---|---|---|---|
 | U2-T1 | Fill the Step 4.3 **Format** gate command slot | `_ship.agent.md:440` only. Supply the **non-mutating failing check** `ci.yml`'s lint job already gates on: **capture the output of `gofmt -l .` and fail (exit non-zero) when that output is non-empty**, matching `ci.yml:303–310`. A **bare `gofmt -l .`** does **not** satisfy this task: it only prints unformatted paths and still exits 0, leaving the Format quality gate unable to fail. A **mutating** variant (`go fmt ./...`, `gofmt -w`) does **not** satisfy this task either: installing a writing command into a verification gate is a defect. Gates #1 (`:439`) and #3 (`:441`) byte-unchanged. Deleting the `**Format**:` line is **not** an option. | XS | trivial |
-| U2-T2 | Re-point the CASCADE branch at `shipment-reconcile mode:safe-close` | `_ship.agent.md:830` and `:861–869`. Rewrite `:830`'s conditional authorization so the CASCADE verdict routes to `mode:safe-close`, **explicitly naming safe-close as the close path a `CLOSE_PATH_VERDICT: CASCADE` designates** and carrying `CLASSIFICATION_BINDING` into it; replace the direct-cascade branch at `:861–869` with the safe-close route, preserving the requeue/detach semantics at `:865–869`. The replacement wording must be **pinned in the plan before the edit** (see §3.3). | M | medium |
+| U2-T2 | Re-point the CASCADE branch at `shipment-reconcile mode:safe-close` | `_ship.agent.md:830` and `:861–869`. Rewrite `:830`'s conditional authorization so the CASCADE verdict routes to `mode:safe-close`, **explicitly naming safe-close as the close path a `CLOSE_PATH_VERDICT: CASCADE` designates** and carrying `CLASSIFICATION_BINDING` into it; replace the direct-cascade branch at `:861–869` with the safe-close route, preserving the requeue/detach semantics at `:865–869`. The replacement wording is **already pinned in §3.3 (PIN-830 / PIN-861) by Stage**; U2-T2 applies it mechanically and authors no wording. | M | medium |
 | U2-T3 | Contract test asserting no binding-incapable CASCADE route remains | One new contract test whose PRESENT/ABSENT needles are cut **verbatim** from §3.3's pinned replacement wording — never authored from prose or intent (compound rule, `cross-artifact-contract-closure-requires-every-surface-2026-09-13`). **Single red→green assertion only**; revision 2's green-on-arrival second assertion is deleted. | S | medium |
 
 **Red phase (genuine).** U2-T3 fails against the pre-repair file, where `:830` authorizes and
@@ -171,13 +172,81 @@ inspection criteria, not assertions, and this plan does not claim a red phase fo
 > quoted clause text, not line-index equality: the `:440` fill and the `:861–869` rewrite both shift
 > downstream indices. §6 already verifies them in this form via `git diff`.
 
-### 3.3 Pinned replacement wording (authored before the edit)
+### 3.3 Pinned replacement wording (authored by Stage; frozen)
 
 Per the binding compound rule, U2-T3's needles are derived mechanically from this block; backticks,
-emphasis markers and punctuation are part of the literal. The executor pins the exact replacement
-text for `:830` and `:861–869` **here, in this plan**, before touching the file, and the reviewer
-checks needle↔wording correspondence rather than intent. A needle that does not appear verbatim in
-this block is inadmissible.
+emphasis markers and punctuation are part of the literal. A needle that does not appear verbatim in
+this block is inadmissible, and the reviewer checks needle↔wording correspondence rather than
+intent.
+
+> **Authorship (rev 5, closes cycle-3 P1 on `029.003-T`).** This wording is authored **by Stage, in
+> this plan, in PR #66** — *not* by the executor. Revision 4 instructed "the executor pins the exact
+> replacement text … here, in this plan", which was unexecutable: Ship is forbidden from creating or
+> modifying plan artifacts (`.github/agents/_ship.agent.md:43`), so shipment `026-S` would have
+> halted under P-010 at `029.003-T`. The executor's remaining obligation is **mechanical
+> application** of the two frozen blocks below plus **read-only verification** that they are present
+> — it authors no wording and exercises no planning discretion.
+
+**PIN-830 — replacement for `_ship.agent.md:830`** (replaces the conditional authorization of the
+direct cascade op). Replaces the existing bullet in full:
+
+```text
+      * **A `CLOSE_PATH_VERDICT: CASCADE` designates `shipment-reconcile` `mode: safe-close` — specifically its Cascade Close Sub-Procedure — as this shipment's close path**, and Ship invokes it carrying the returned `CLASSIFICATION_BINDING` into that call. **Ship NEVER calls `backlogit shipment ship` / `backlogit_ship_shipment` directly, for any verdict**: the cascade primitive is reachable only from inside that sub-procedure, after the skill has itself revalidated the binding. **HALT on any result token the installed classification did not name**, and HALT on `BLOCK`, and on any absent, empty, unparseable
+        or ambiguous result.
+```
+
+**PIN-861 — replacement for `_ship.agent.md:861–869`** (replaces the direct-cascade branch). Replaces
+those nine lines in full:
+
+```text
+      **When `CLOSE_PATH_VERDICT: CASCADE`** — invoke the `shipment-reconcile`
+      skill with `mode: safe-close`, the `shipment_id`, and the
+      `merge_commit_sha`, carrying the returned `CLASSIFICATION_BINDING` into
+      that call. Safe-close's own Step 0 revalidates that binding and, on a
+      bound `CASCADE` verdict, delegates to its **Cascade Close Sub-Procedure**
+      — the only sanctioned caller of the underlying cascade primitive. That
+      sub-procedure requeues + detaches unshipped descendant tasks back to the
+      backlog with `parent_id` cleared, archives release-scope members outside
+      the manifest-scoped ordering, and preserves/restores a non-member
+      covering feature via snapshot — a hazard that is acceptable only because
+      the classification boundary has already verified this manifest is a
+      fully-covered root set.
+```
+
+**Needle-admissibility set (U2-T3).** Needles must be cut verbatim from PIN-830 / PIN-861 above.
+The following are pre-cleared as the intended red→green pair:
+
+* **PRESENT (post-repair only):** ``designates `shipment-reconcile` `mode: safe-close` `` — absent
+  from the pre-repair file, present after U2-T2. This is the single red→green assertion.
+* **ABSENT (post-repair):** ``invoke the cascade`` — the pre-repair `:861` opener.
+
+**Pins this wording must not break (verified against `tests/integration/` at the bound snapshot).**
+These are existing rows of the 33-row contract suite that read `_ship.agent.md`; AC-2.9 requires
+them green **before and after**:
+
+| Row | Needle | Sense | How the pin satisfies it |
+|---|---|---|---|
+| 25 | ``HALT on any result token the installed classification did not name`` | present | carried verbatim into PIN-830 |
+| 26 | ``carrying the returned `CLASSIFICATION_BINDING` into that call`` | present | carried verbatim into **both** PIN-830 and PIN-861 (also survives at frozen `:832`) |
+| 26 | ``in place of the safe-close sequence above for this shipment's`` | **absent** | phrase does not occur in either pin |
+| 31 | ``skill with `mode: safe-close`, `shipment_id`, and the`` | **absent** | PIN-861 writes ``mode: safe-close`, the `shipment_id`, and the`` — the interposed `the ` prevents the match |
+
+**Mechanical verification performed (Stage, rev 5).** Both pins were applied to an off-tree copy of
+`_ship.agent.md` at the bound snapshot and every row above was re-checked in both directions
+(pre-repair and post-repair). Result: **all 14 checked rows green before and after**; the U2-T3
+red→green pair behaves as specified (the PRESENT needle is absent pre / present post, the ABSENT
+needle is present pre / absent post); the frozen spans `:832–836`, `:439`, `:441`, `:265`, `:322`,
+`:338–358` and `:362–367` are content-identical after the edit; and the post-repair file contains
+exactly **one** remaining mention of `backlogit shipment ship` / `backlogit_ship_shipment` — the
+**prohibition** inside PIN-830 itself, which is not a direction to invoke, so **AC-2.3 holds**.
+Applying both pins moves the file from 1154 to **1157** lines (PIN-830 is 2 lines replacing 2;
+PIN-861 is 12 lines replacing 9).
+
+**Deliberate semantic delta (Stage decision, rev 5).** Pre-repair `:830` HALTed on `SAFE_CLOSE`
+because that bullet existed to guard a *cascade-op authorization*. PIN-830 removes `SAFE_CLOSE` from
+its HALT list: once no cascade-op authorization exists at `:830`, HALTing on `SAFE_CLOSE` there
+would contradict the `SAFE_CLOSE` branch at `:841`. `BLOCK`, unnamed tokens, and
+absent/empty/unparseable/ambiguous results still HALT. No contract row pins ``HALT on `SAFE_CLOSE```.
 
 *Contract-surface matrix (required before the first edit, per compound entry
 `cross-artifact-contract-closure-requires-every-surface-2026-09-13`, which is 026-F unblock step
@@ -238,7 +307,13 @@ Unit 2: `git diff` the bound snapshot and confirm `:439`, `:441`, `:832–836`, 
 red→green. **Run `go test ./tests/integration/` before and after U2-T2 and U1-T3** — the 33-row
 contract suite reads both edited files and must be green on both sides (AC-2.9).
 
-## 7. Review findings applied (attempt 2 → revision 4)
+## 7. Review findings applied (PR #66 Copilot cycle 3 → revision 5)
+
+| Finding | Sev | Resolution |
+|---|---|---|
+| `029.003-T` is not executable by Ship: it requires authoring the replacement block *in a plan*, but Ship may not create or modify plan artifacts (`_ship.agent.md:43`); §3.3 rev 4 contained only the instruction, not the wording. `026-S` would halt under P-010. (thread `PRRT_kwDOTPuhps6kCdfo`) | high | **§3.3 rewritten**: Stage authored the actual wording as frozen blocks **PIN-830** and **PIN-861**, plus the needle-admissibility set, a contract-row compatibility table verified against `tests/integration/`, and the deliberate `SAFE_CLOSE`-HALT delta. **`029.003-T` converted to read-only verification** (no plan mutation, no authorship). U2-T2 row now says the wording is already pinned and is applied mechanically. |
+
+## 8. Review findings applied (attempt 2 → revision 4)
 
 | Finding | Sev | Resolution |
 |---|---|---|
@@ -257,7 +332,7 @@ binding route is singular" is deliberately not implemented** — it was green-on
 `14d44e3c` and would be a decorative test. No work change; recorded so the plan and its source
 deliberation do not silently disagree.
 
-## 8. Review findings applied (attempt 1 → revision 3)
+## 9. Review findings applied (attempt 1 → revision 3)
 
 | Finding | Severity | Resolution |
 |---|---|---|
