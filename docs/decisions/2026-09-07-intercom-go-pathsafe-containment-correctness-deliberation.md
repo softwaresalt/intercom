@@ -1,3 +1,12 @@
+---
+title: "Deliberation — pathsafe Containment Correctness and Cross-Platform Coverage"
+date: 2026-09-07
+status: accepted
+agent: Stage
+mode: DARK_MODE_ACTIVE
+governs: 012-F / shipment 011-S
+---
+
 # Deliberation — pathsafe Containment Correctness and Cross-Platform Coverage
 
 - **Date**: 2026-09-07
