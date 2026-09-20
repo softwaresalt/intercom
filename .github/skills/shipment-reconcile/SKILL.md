@@ -1039,11 +1039,14 @@ report:
 
 #### Mixed-Role Detection Audit + Telemetry
 
-Mirrors the `pipeline-topology` force-audit + telemetry pattern
-(`src/autoharness/cli.py` `_audit_pipeline_topology_force` /
-`_emit_pipeline_topology_telemetry`), adapted for a detection-only outcome —
-there is NO repair/mutation/confirm/post-condition field, because nothing is
-ever mutated.
+Mirrors the `pipeline-topology` force-audit + telemetry pattern (this
+installed skill markdown is the authoritative description of that pattern;
+`src/autoharness/cli.py` `_audit_pipeline_topology_force` /
+`_emit_pipeline_topology_telemetry` is an upstream reference implementation
+in the self-hosting repository that may be absent in other workspaces),
+adapted for a detection-only outcome — there is NO
+repair/mutation/confirm/post-condition field, because nothing is ever
+mutated.
 
 1. **Audit log**: for EVERY candidate outcome (`DETECTED` / `REPORTED` /
    `DEGRADED`), append one structured JSON line to
@@ -1165,7 +1168,7 @@ If pre-mode cannot acquire the lock because another process holds it:
 * `.github/agents/_ship.agent.md` — integration points (Step 0.5, Step 6 safe-close)
 * `.github/agents/_stage.agent.md` — scope guard (Step 5.5)
 * `.github/policies/workflow-policies.md` — P-007 archive integrity policy; P-015 single-artifact closure (cascade prohibition) plus the verified fully-covered-root exception
-* `src/autoharness/gates/shipment_closure.py` — this self-hosting repository's own `classify_shipment_close_path` implementation, reused by Step 0 of Safe-Close Mode
+* `src/autoharness/gates/shipment_closure.py` — optional upstream reference: this self-hosting repository's own `classify_shipment_close_path` implementation, reused by Step 0 of Safe-Close Mode when present. This installed skill markdown is authoritative; the path is an upstream reference that may be absent in other workspaces.
 
 ## Model Routing
 
