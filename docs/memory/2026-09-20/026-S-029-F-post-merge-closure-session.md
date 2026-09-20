@@ -66,12 +66,18 @@ status: closure-pr-pending-approval
   closure on a non-terminating local run; PR #69's own CI already proved the suite green
   at the merged HEAD.
 
-## Next steps
+## Next steps — COMPLETED THIS SESSION
 
-1. Push `post-merge/026-s-repair-ship-agent-execution-contract`.
-2. Invoke `pr-lifecycle` to open the closure PR titled
-   `chore: post-merge closure for 029-F — Repair Ship agent execution contract`.
-3. Record local review readiness + P-018 + §1.9 gates for the closure PR HEAD.
-4. **HALT** and present the closure PR to the operator — await a **separate, explicit**
-   merge approval. Do NOT merge the closure PR under the `PR 69: Merge approved` token.
-5. `stash@{0}` disposition remains open pending separate explicit operator approval.
+1. ✅ Pushed `post-merge/026-s-repair-ship-agent-execution-contract`.
+2. ✅ Opened closure PR #70:
+   `chore: post-merge closure for 029-F — Repair Ship agent execution contract`
+   (`https://github.com/softwaresalt/intercom/pull/70`).
+3. ✅ Recorded local review readiness (`READY`, reviewed HEAD `7caf1f94d64af010f48c9cadff62f90fc7cae140`),
+   P-018 gate (`NOT_APPLICABLE`, exit 0), CI (`ci gate` SUCCESS; code-dependent jobs
+   correctly SKIPPED for this backlog/docs-only diff), and P-009 merge-strategy check
+   (merge-commit only) for the closure PR HEAD.
+4. **HALTED as required** — presenting closure PR #70 to the operator. Awaiting a
+   **separate, explicit** merge approval. The `PR 69: Merge approved` token does **not**
+   cover this closure PR and was not used to merge it.
+5. `stash@{0}` disposition remains open pending separate explicit operator approval — not
+   touched this session.
