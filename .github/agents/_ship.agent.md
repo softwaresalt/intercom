@@ -827,7 +827,7 @@ lifecycle to transition out of. See
       `shipment_id`. Read the returned `CLOSE_PATH_VERDICT`, `VERDICT_REASON` and
       `CLASSIFICATION_BINDING`.
 
-      * **Do NOT call `backlogit shipment ship` / `backlogit_ship_shipment`** unless **`mode: classify-close-path` has already returned `CLOSE_PATH_VERDICT: CASCADE`** for this shipment. **HALT on any result token the installed classification did not name**, and HALT on `SAFE_CLOSE`, on `BLOCK`, and on any absent, empty, unparseable
+      * **A `CLOSE_PATH_VERDICT: CASCADE` designates `shipment-reconcile` `mode: safe-close` — specifically its Cascade Close Sub-Procedure — as this shipment's close path**, and Ship invokes it carrying the returned `CLASSIFICATION_BINDING` into that call. **Ship NEVER calls `backlogit shipment ship` / `backlogit_ship_shipment` directly, for any verdict**: the cascade primitive is reachable only from inside that sub-procedure, after the skill has itself revalidated the binding. **HALT on any result token the installed classification did not name**, and HALT on `BLOCK`, and on any absent, empty, unparseable
         or ambiguous result.
       * Invoke the close path the boundary named, **carrying the returned `CLASSIFICATION_BINDING` into that call**, in place of any locally selected sequence
         for this shipment's closure.
@@ -858,15 +858,18 @@ lifecycle to transition out of. See
         `.backlogit/queue/` + `.backlogit/archive/`, surface the
         protected-set violation, and halt. Do NOT commit a corrupt backlog.
 
-      **When `CLOSE_PATH_VERDICT: CASCADE`** — invoke the cascade
-      `backlogit shipment ship` / `backlogit_ship_shipment` operation as this shipment's
-      closure instead of the safe-close sequence, carrying the returned
-      `CLASSIFICATION_BINDING` into that call. This cascade operation requeues + detaches
-      unshipped descendant tasks back to the backlog with `parent_id` cleared, archives
-      release-scope members outside the manifest-scoped ordering, and
-      preserves/restores a non-member covering feature via snapshot — a hazard that is
-      acceptable only because the classification boundary has already verified this
-      manifest is a fully-covered root set.
+      **When `CLOSE_PATH_VERDICT: CASCADE`** — invoke the `shipment-reconcile`
+      skill with `mode: safe-close`, the `shipment_id`, and the
+      `merge_commit_sha`, carrying the returned `CLASSIFICATION_BINDING` into
+      that call. Safe-close's own Step 0 revalidates that binding and, on a
+      bound `CASCADE` verdict, delegates to its **Cascade Close Sub-Procedure**
+      — the only sanctioned caller of the underlying cascade primitive. That
+      sub-procedure requeues + detaches unshipped descendant tasks back to the
+      backlog with `parent_id` cleared, archives release-scope members outside
+      the manifest-scoped ordering, and preserves/restores a non-member
+      covering feature via snapshot — a hazard that is acceptable only because
+      the classification boundary has already verified this manifest is a
+      fully-covered root set.
    c. **Verify archive integrity (P-007)**: Run `git status -- ".backlogit/archive/"`.
       If any archive files appear as working-tree deletions, restore them immediately:
       `git restore .backlogit/archive/`. See P-007 in workflow-policies for the
