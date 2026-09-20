@@ -335,3 +335,27 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 		assertAbsent(t, ship, "018.", "guard")
 	})
 }
+
+// TestCascadeRoutesThroughSafeClose is the 029.005-T contract test (plan
+// docs/plans/2026-09-18-intercom-go-ship-pipeline-contract-repair-plan.md
+// §3.3, PIN-830/PIN-861). Its single red->green assertion pair is cut
+// VERBATIM from the pinned replacement wording per the binding compound rule
+// in docs/compound/workflow-issues/cross-artifact-contract-closure-requires-
+// every-surface-2026-09-13.md: needles are never authored from prose or
+// intent.
+//
+// PRESENT (post-repair only): "designates `shipment-reconcile` `mode: safe-
+// close`" -- introduced by PIN-830, absent from the pre-repair file.
+// ABSENT (post-repair): "invoke the cascade" -- the pre-repair `:861` opener,
+// replaced in full by PIN-861.
+//
+// This is deliberately the ONLY assertion in this test (plan §3.2: "SINGLE
+// red-to-green assertion only"); the earlier green-on-arrival second
+// assertion is intentionally not implemented here.
+func TestCascadeRoutesThroughSafeClose(t *testing.T) {
+	files := loadInstructionSurfaces(t)
+	ship := files["ship"]
+
+	assertPresent(t, ship, "designates `shipment-reconcile` `mode: safe-close`", "U2-T3")
+	assertAbsent(t, ship, "invoke the cascade", "U2-T3")
+}
