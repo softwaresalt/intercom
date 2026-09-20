@@ -20,7 +20,8 @@ Invoke when a feature, fix, or risky change is ready to hand off into merge, dep
 
 ## Output
 
-* Closure artifact at `docs/closure/{YYYY-MM-DD}-{slug}-closure.md`
+* **post-merge** mode: Closure artifact at `docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md`
+* **pre-merge** and **post-deploy** modes: Closure artifact at `docs/closure/{YYYY-MM-DD}-{slug}-closure.md`
 * Structured releasability evidence summarizing whether the change is `READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`
 * A **compaction status** field (`pending` → `done` / `degraded`) recording P-020 post-merge context compaction state
 * Follow-up tasks or compound-learnings triggers when needed
