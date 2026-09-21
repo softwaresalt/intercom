@@ -14,7 +14,9 @@ feature: 030-F
 pr: 71
 merge_commit_sha: 5208085379da4b945eae6d341089f0f985adc09c
 compaction_status: done
+closure_status: READY
 releasability: READY
+conditions: []
 ---
 
 # Post-merge closure: 027-S / 030-F — Write-path gate kill switch (plan unit 3)
