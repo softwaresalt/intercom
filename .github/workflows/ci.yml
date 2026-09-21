@@ -25,7 +25,7 @@
 # `WRITE_PATH_GATE_ADVISORY` repository variable -- same case-insensitive
 # `'true'` opt-in semantics as `RETIRED_ARCH_GATE_ADVISORY` below; unset
 # or any non-'true'-like value stays BLOCKING) and "Run
-# write-path-precondition self-test (011.004-T, 030.001-T)"
+# write-path-precondition self-test" (011.004-T, 030.001-T)
 # (unconditionally blocking, runs `--self-test-integrity`), the
 # un-ignore-regression check steps (011.012-T, job
 # `gitignore-append-only`), the pip/setuptools/wheel bootstrap install
@@ -312,7 +312,7 @@ jobs:
         # non-'true'-like value stays BLOCKING (fail closed).
         continue-on-error: ${{ vars.WRITE_PATH_GATE_ADVISORY == 'true' }}
         run: bash scripts/check-write-path-precondition.sh
-      - name: Run write-path-precondition self-test (011.004-T, 030.001-T)
+      - name: Run write-path-precondition self-test
         # Integrity step: fixture self-test only, via
         # --self-test-integrity. Deliberately carries NO
         # continue-on-error -- stays unconditionally blocking (AC-0.2).
