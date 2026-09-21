@@ -43,7 +43,18 @@
 # must preserve the `RETIRED_ARCH_GATE_ADVISORY` and
 # `WRITE_PATH_GATE_ADVISORY` variable names (not the retired
 # `RETIRED_ARCH_GATE_REQUIRED` name from the now-closed `015.001-T`
-# advisory window).
+# advisory window), and the merge-strategy structural verification job
+# (`merge-strategy`, 031.001-T…031.004-T, shipment 028-S): "Self-test the
+# checker's own logic (regression guard)" (unconditionally blocking, runs
+# `scripts/check-merge-strategy.sh --self-test`) and "Run merge-strategy
+# gate" (toggled via the `MERGE_STRATEGY_GATE_REQUIRED` repository
+# variable -- advisory when unset or any non-'true'-like value, blocking
+# only when set to 'true', same case-insensitive semantics as the other
+# `*_GATE_REQUIRED` toggles in this file; see docs/merge-strategy-gate.md
+# for the GITHUB_TOKEN credential finding that promotion also depends
+# on). The job is also added to `ci-gate`'s `needs:` array and results
+# aggregation string. A future `autoharness install`/`tune` regeneration
+# must re-apply this job too, not only the five above.
 #
 # Regular PR/push CI was Linux-only (ubuntu-latest) prior to 010-S; an
 # advisory `windows-latest` job (`windows`, see the LOCAL DIVERGENCE note
@@ -614,6 +625,51 @@ jobs:
         continue-on-error: ${{ vars.PIPELINE_TOPOLOGY_GATE_REQUIRED != 'true' }}
         run: bash scripts/ci-topology-check.sh
 
+  # Merge-strategy structural verification gate (031-F / U1, shipment
+  # 028-S). Constitution Principle XI / P-009 require merge-commit-only PR
+  # merges. Verification-only: asserts allow_squash_merge == false and
+  # allow_rebase_merge == false; never mutates a repository setting
+  # (AC-1.7 -- flipping the settings remains operator-only GitHub
+  # administration per deliberation D-5). Runs unconditionally (not gated
+  # on `changes`, like topology-check above) because it verifies
+  # repository-wide settings rather than code content.
+  #
+  # REQUIRED-VS-ADVISORY toggle, same shape as PIPELINE_TOPOLOGY_GATE_REQUIRED
+  # and WINDOWS_GATE_REQUIRED above: unset (default) means advisory --
+  # continue-on-error keeps this step's reported result `success` even when
+  # the checker reports FAIL. Setting MERGE_STRATEGY_GATE_REQUIRED to
+  # 'true' flips continue-on-error to false, making a FAIL verdict block
+  # ci-gate for real. Promotion also requires the `administration: read`
+  # permission below to actually be granted -- the default `contents:
+  # read`-scoped GITHUB_TOKEN cannot read allow_squash_merge /
+  # allow_rebase_merge and the checker will SKIP rather than PASS or FAIL
+  # (031.002-T finding, docs/merge-strategy-gate.md). continue-on-error is
+  # scoped to only the verdict step, not the job, so a genuine
+  # checkout/self-test failure always fails the job for real.
+  merge-strategy:
+    name: merge-strategy structural verification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      administration: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Self-test the checker's own logic (regression guard)
+        # Deliberately carries NO continue-on-error -- stays
+        # unconditionally blocking, same rationale as the self-test steps
+        # in the `lint` and `gitignore-append-only` jobs above: a broken
+        # checker must be reported as "self-test failed", not misread as a
+        # real merge-strategy violation.
+        run: bash scripts/check-merge-strategy.sh --self-test
+      - name: Run merge-strategy gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: ${{ vars.MERGE_STRATEGY_GATE_REQUIRED != 'true' }}
+        run: bash scripts/check-merge-strategy.sh
+
   # Always-reporting aggregation gate. REQUIRE THIS job in branch protection
   # instead of the guarded expensive job: when the expensive job is skipped for a
   # docs-only PR, GitHub reports it "skipped" — which a required
@@ -628,12 +684,12 @@ jobs:
   ci-gate:
     name: ci gate
     if: always()
-    needs: [changes, expensive, windows, lint, security, cross-compile-targets, cross-compile, topology-check, gitignore-append-only]
+    needs: [changes, expensive, windows, lint, security, cross-compile-targets, cross-compile, topology-check, gitignore-append-only, merge-strategy]
     runs-on: ubuntu-latest
     steps:
       - name: Verify no required job failed
         run: |
-          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.windows.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }} ${{ needs['gitignore-append-only'].result }}"
+          results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.windows.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }} ${{ needs['gitignore-append-only'].result }} ${{ needs['merge-strategy'].result }}"
           echo "job results: $results"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
