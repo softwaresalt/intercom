@@ -1,0 +1,12 @@
+v1
+shipment=027-S
+verdict=CASCADE
+reason=FULLY_COVERED_ROOT
+skill=1c7d523de56e3aa8f1597c75365c9c8c9a29c3d44c9e098d40dac9d34d573ff2
+engine=backlogit version 1.10.1-0.20260823032255-b07729386a31+dirty (latest: v1.10.0 -- up to date)
+manifest=030-F,030.001-T,030.002-T
+deps=
+status=active
+030-Ffeaturedone-archive
+030.001-Ttaskdone030-Farchive
+030.002-Ttaskdone030-Farchive
