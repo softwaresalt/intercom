@@ -39,6 +39,15 @@ set -euo pipefail
 #     Verifies every committed scripts/testdata/writepath/*.go fixture
 #     against its expected verdict, then verifies the real tracked tree
 #     passes. Exits 0 only when both succeed.
+#   scripts/check-write-path-precondition.sh --self-test-integrity
+#     Integrity-only mode (030.001-T, mirrors
+#     check-retired-architecture.sh's --self-test-integrity split): runs
+#     ONLY the fixture self-test above. Does NOT run the repo scan. Used
+#     by ci.yml's unconditionally-blocking integrity step so it stays
+#     blocking while a separately WRITE_PATH_GATE_ADVISORY-toggled verdict
+#     step owns the repo scan. AC-0.5: verdicts at bound snapshot
+#     14d44e3c are unchanged -- this mode addition changes no selector or
+#     masking logic.
 
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN=python3
@@ -264,6 +273,13 @@ if mode == 'repo':
     run_repo_scan()
 elif mode == 'self-test':
     run_fixture_self_test()
+elif mode == 'self-test-integrity':
+    # 030.001-T: additive integrity-only mode -- fixture self-test only,
+    # deliberately NOT run_repo_scan(). --self-test above is UNCHANGED
+    # (still runs the repo scan); this mode exists so ci.yml's integrity
+    # step can stay unconditionally blocking without also owning the
+    # WRITE_PATH_GATE_ADVISORY-toggled repo scan.
+    run_fixture_self_test()
 else:
     raise SystemExit(f'unknown mode: {mode}')
 PY
@@ -278,8 +294,12 @@ case "${1:-}" in
     run_mode repo
     echo "self-test passed: fixtures matched expectations and the tracked tree is clean"
     ;;
+  --self-test-integrity)
+    run_mode self-test-integrity
+    echo "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)"
+    ;;
   *)
-    echo "usage: scripts/check-write-path-precondition.sh [--self-test]" >&2
+    echo "usage: scripts/check-write-path-precondition.sh [--self-test|--self-test-integrity]" >&2
     exit 2
     ;;
 esac
