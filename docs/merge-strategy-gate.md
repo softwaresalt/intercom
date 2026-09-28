@@ -59,12 +59,23 @@ fields are absent from the API response, and the checker correctly
 reports `SKIP` rather than a false `PASS` or a job failure.
 
 **Credential required for promotion to `MERGE_STRATEGY_GATE_REQUIRED`**:
-GitHub Actions supports an `administration: read` permission scope for
-the workflow-scoped `GITHUB_TOKEN` (see "Permissions for the
-`GITHUB_TOKEN`" in GitHub's Actions security documentation). Granting
-`permissions: administration: read` to the merge-strategy job — no new
-secret or PAT needed — is sufficient to let `GITHUB_TOKEN` read these
-fields going forward. See "Advisory-to-required promotion" below for the
+the workflow-scoped `GITHUB_TOKEN` **cannot** read these fields under
+any `permissions:` setting. The permission scopes a workflow may grant to
+`GITHUB_TOKEN` are `actions`, `artifact-metadata`, `attestations`,
+`checks`, `contents`, `deployments`, `discussions`, `id-token`, `issues`,
+`models`, `packages`, `pages`, `pull-requests`, `repository-projects`,
+`security-events`, and `statuses`; there is no `administration` scope.
+Declaring one is rejected by GitHub as an invalid workflow file, which
+stops every job, including the required `ci gate` (confirmed locally
+with actionlint: `unknown permission scope "administration"`).
+
+Promotion therefore needs a credential that sits outside `GITHUB_TOKEN`:
+a **fine-grained personal access token or a GitHub App installation
+token with the repository `Administration: read` permission**, stored as
+a repository Actions secret and passed to the checker via `GH_TOKEN`.
+The current workflow does not consume such a secret. Wiring it in is
+tracked as deferred entry `124AE9DE`. Until then, the job reports
+`SKIP` on every run. See "Advisory-to-required promotion" below for the
 exact steps and condition.
 
 ## Operator trigger and advisory→required promotion (031.005-T)
@@ -113,11 +124,22 @@ treats as `SKIP`, never a `PASS` (AC-1.3).
 
 ### Required credential (from the 031.002-T finding above)
 
-Reading `allow_squash_merge`/`allow_rebase_merge` in CI requires the
-`merge-strategy` job's `GITHUB_TOKEN` to carry the `administration: read`
-permission scope. This repository's `ci.yml` already grants that scope to
-the job (031.003-T), so no additional secret or PAT is needed to move from
-`SKIP` to a real `PASS`/`FAIL` verdict.
+To read `allow_squash_merge`/`allow_rebase_merge` in CI, the job needs a
+fine-grained PAT or GitHub App installation token with repository
+`Administration: read`, supplied as a repository Actions secret and
+passed to the checker as `GH_TOKEN`. The job's `GITHUB_TOKEN` can't be
+granted this access. The `merge-strategy` job in `ci.yml` (031.003-T)
+currently runs with `GITHUB_TOKEN` (`contents: read`) and therefore
+reports `SKIP`. Consuming the stronger credential is a separate follow-up
+(deferred entry `124AE9DE`).
+
+**Required mode and `SKIP`**: under the current contract, `SKIP` is
+reported and is never treated as a `PASS`, but it doesn't fail the job
+in either mode. `MERGE_STRATEGY_GATE_REQUIRED=true` makes only a `FAIL`
+verdict block `ci-gate`. Whether required mode should also fail on
+`SKIP` is tracked as deferred entry `C8914513`. Until that is decided,
+promotion condition 1 below is the safeguard: it forbids promotion
+until a real `PASS` has been observed.
 
 ### Exact promotion condition (advisory → required)
 
@@ -125,9 +147,11 @@ Promote `MERGE_STRATEGY_GATE_REQUIRED` from advisory to blocking only when
 **all** of the following hold:
 
 1. The `merge-strategy` CI job has run on `main` at least once (any recent
-   push or PR) and returned a real `PASS` verdict — not `SKIP` — confirming
-   the `administration: read` grant actually lets `GITHUB_TOKEN` read the
-   fields in this repository's live CI environment.
+   push or PR) and returned a real `PASS` verdict, not `SKIP`. This
+   confirms that the `Administration: read` credential described above is
+   wired in and can read the fields in this repository's live CI
+   environment. This condition can't be met while the job uses only
+   `GITHUB_TOKEN`.
 2. The live repository settings already satisfy the gate
    (`allow_squash_merge == false` and `allow_rebase_merge == false`), so
    flipping the toggle to blocking does not immediately fail every open PR.

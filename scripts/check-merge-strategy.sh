@@ -19,8 +19,10 @@ set -euo pipefail
 #     Resolves the current repository via `gh repo view` and queries
 #     `gh api repos/{owner}/{repo}`, then asserts allow_squash_merge == false
 #     and allow_rebase_merge == false. Prints one of PASS / FAIL / SKIP plus
-#     a reason. Exit code 0 for PASS or SKIP, exit code 1 for FAIL. An
-#     unauthorized, failed, or malformed API read is reported SKIPPED with a
+#     a reason. Exit code 0 for PASS or SKIP, exit code 1 for FAIL, exit
+#     code 2 if the evaluator produces no recognized verdict. An
+#     unauthorized, failed, or malformed API read (including non-boolean
+#     field values) is reported SKIPPED with a
 #     reason and is NEVER treated as a pass (AC-1.3); it also never fails
 #     the job by itself, so a default GITHUB_TOKEN that cannot read these
 #     fields does not block CI (see docs/decisions and 031.002-T /
@@ -98,6 +100,13 @@ elif squash is True:
     emit("FAIL", "allow_squash_merge is true")
 elif rebase is True:
     emit("FAIL", "allow_rebase_merge is true")
+elif not isinstance(squash, bool) or not isinstance(rebase, bool):
+    emit(
+        "SKIP",
+        "allow_squash_merge/allow_rebase_merge present but not boolean "
+        f"(got {type(squash).__name__}/{type(rebase).__name__}); "
+        "malformed response is never a pass",
+    )
 else:
     emit("PASS", "allow_squash_merge and allow_rebase_merge are both false")
 PY
@@ -166,10 +175,16 @@ run_repo_scan() {
   local output
   output="$(evaluate_json <<<"$response" || true)"
   echo "$output"
-  if [ "${output%% *}" = "FAIL" ]; then
-    return 1
-  fi
-  return 0
+  case "${output%% *}" in
+    PASS|SKIP) return 0 ;;
+    FAIL) return 1 ;;
+    *)
+      # An empty or unrecognized verdict means the evaluator itself broke
+      # (e.g. interpreter crash). Never let that read as success.
+      echo "ERROR merge-strategy evaluator produced no recognized verdict" >&2
+      return 2
+      ;;
+  esac
 }
 
 case "${1:-}" in

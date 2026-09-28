@@ -639,10 +639,12 @@ jobs:
   # continue-on-error keeps this step's reported result `success` even when
   # the checker reports FAIL. Setting MERGE_STRATEGY_GATE_REQUIRED to
   # 'true' flips continue-on-error to false, making a FAIL verdict block
-  # ci-gate for real. Promotion also requires the `administration: read`
-  # permission below to actually be granted -- the default `contents:
-  # read`-scoped GITHUB_TOKEN cannot read allow_squash_merge /
-  # allow_rebase_merge and the checker will SKIP rather than PASS or FAIL
+  # ci-gate for real. The workflow GITHUB_TOKEN cannot read
+  # allow_squash_merge / allow_rebase_merge under ANY `permissions:` setting
+  # (there is no `administration` scope for GITHUB_TOKEN -- declaring one
+  # makes GitHub reject this workflow file), so with GITHUB_TOKEN the
+  # checker reports SKIP rather than PASS or FAIL. Promotion requires a
+  # fine-grained PAT or GitHub App token with Administration: read
   # (031.002-T finding, docs/merge-strategy-gate.md). continue-on-error is
   # scoped to only the verdict step, not the job, so a genuine
   # checkout/self-test failure always fails the job for real.
@@ -651,7 +653,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      administration: read
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
