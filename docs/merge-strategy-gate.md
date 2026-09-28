@@ -40,11 +40,12 @@ repository — but the response body omits all four fields entirely
 rather than returning `null` or `false`).
 
 **Finding**: `allow_squash_merge`, `allow_rebase_merge`,
-`allow_merge_commit`, and `permissions` are returned by GitHub's REST API
-only to a credential holding at least push-level access to the
-repository; an anonymous or pull-only read gets a normal `200` response
-with those fields silently absent. `scripts/check-merge-strategy.sh`
-treats this absence as `SKIP`, never a `PASS` (AC-1.3).
+`allow_merge_commit`, and `permissions` were returned to the classic PAT
+with admin access (Command 1). An anonymous read (Command 2) got a normal
+`200` response with those fields silently absent. The measurement didn't
+isolate the minimum threshold: whether push-level access is enough or
+admin is required remains unverified. `scripts/check-merge-strategy.sh`
+treats the absence as `SKIP`, never a `PASS` (AC-1.3).
 
 This repository's CI workflow (`.github/workflows/ci.yml`) declares an
 explicit top-level `permissions: contents: read` block (and each job that
@@ -73,6 +74,12 @@ Promotion therefore needs a credential that sits outside `GITHUB_TOKEN`:
 a **fine-grained personal access token or a GitHub App installation
 token with the repository `Administration: read` permission**, stored as
 a repository Actions secret and passed to the checker via `GH_TOKEN`.
+The only credential verified empirically so far is the posture from
+Command 1: a classic PAT with `repo` scope, held by a repository admin.
+`Administration: read` is the fine-grained permission that covers
+repository settings, but no one has measured it against this endpoint
+yet. Confirming the minimum fine-grained permission is part of the same
+follow-up.
 The current workflow does not consume such a secret. Wiring it in is
 tracked as deferred entry `124AE9DE`. Until then, the job reports
 `SKIP` on every run. See "Advisory-to-required promotion" below for the
@@ -107,7 +114,8 @@ $ bash scripts/check-merge-strategy.sh
 ```
 
 Prints `PASS`/`FAIL`/`SKIP` plus a reason and exits `0` for `PASS`/`SKIP`,
-`1` for `FAIL`. In CI, the same command runs in the `merge-strategy` job
+`1` for `FAIL`, and `2` if the evaluator produces no recognized verdict
+or on a usage or prerequisite error. In CI, the same command runs in the `merge-strategy` job
 of `.github/workflows/ci.yml` on every push/PR, and is advisory
 (non-blocking) by default (AC-1.2).
 
@@ -117,10 +125,10 @@ To confirm the current live repository state directly:
 $ gh api repos/softwaresalt/intercom --jq "{allow_squash_merge, allow_rebase_merge}"
 ```
 
-This requires a credential with at least push-level repository access
-(see the GITHUB_TOKEN feasibility finding above) — an unauthorized or
-insufficiently-scoped read reports the fields absent, which the checker
-treats as `SKIP`, never a `PASS` (AC-1.3).
+This requires a credential that can read repository settings; see the
+GITHUB_TOKEN feasibility finding above for the verified posture. An
+unauthorized or insufficiently-scoped read reports the fields as absent,
+which the checker treats as `SKIP`, never a `PASS` (AC-1.3).
 
 ### Required credential (from the 031.002-T finding above)
 
