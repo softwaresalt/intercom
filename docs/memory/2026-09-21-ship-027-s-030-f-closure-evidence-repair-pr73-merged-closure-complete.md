@@ -63,7 +63,8 @@ repair PR. Explicit scope boundary: do NOT claim or execute shipment
 * Created post-merge closure branch `post-merge/027-s-030-f-closure-evidence-repair`
   from `main` (fast-forwarded, clean).
 * Wrote lightweight, proportionate operational-closure artifact:
-  `docs/closure/027-S-030-F-closure-evidence-repair-post-merge-closure.md`
+  `docs/closure/2026-09-21-027-s-030-f-closure-evidence-repair-closure.md`
+  (renamed from its original `-post-merge-closure.md` name per DCD67C30)
   (`closure_status: READY`, `releasability: READY`, `conditions: []`,
   `compaction_status: done`).
 * **P-020 mandatory compact-context invocation**: compacted this repair

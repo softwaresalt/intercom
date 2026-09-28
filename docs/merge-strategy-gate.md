@@ -1,0 +1,174 @@
+# Merge-strategy structural verification gate
+
+Tracks the standing verification for Constitution Principle XI / P-009
+(merge-commit-only PR merges), implemented by
+`scripts/check-merge-strategy.sh` (031.001-T, shipment 028-S).
+
+## GITHUB_TOKEN feasibility finding (031.002-T)
+
+**Question**: can the workflow's default `GITHUB_TOKEN` read
+`allow_squash_merge` / `allow_rebase_merge` from
+`GET /repos/{owner}/{repo}`?
+
+**Method**: compared the API response for the same public repository
+(`softwaresalt/intercom`) under two credential postures — an
+authenticated `gh` CLI session holding a classic PAT with `repo` scope
+(admin/push/maintain/pull/triage on this repository), and a fully
+anonymous, unauthenticated `curl` request.
+
+**Command 1 — authenticated (repo-scope PAT, admin/push access)**:
+
+```console
+$ gh api repos/softwaresalt/intercom --jq "{allow_squash_merge, allow_rebase_merge, allow_merge_commit, permissions}"
+{"allow_merge_commit":true,"allow_rebase_merge":false,"allow_squash_merge":false,"permissions":{"admin":true,"maintain":true,"pull":true,"push":true,"triage":true}}
+```
+
+Exit code: `0`. All three merge-strategy fields, plus the `permissions`
+block, are present.
+
+**Command 2 — anonymous, no token**:
+
+```console
+$ curl -s -o response_anon.json -w "HTTP_STATUS:%{http_code}\n" https://api.github.com/repos/softwaresalt/intercom
+HTTP_STATUS:200
+$ python -c "import json; d=json.load(open('response_anon.json')); print({k: d.get(k, '<ABSENT>') for k in ['allow_squash_merge','allow_rebase_merge','allow_merge_commit','permissions']})"
+{'allow_squash_merge': '<ABSENT>', 'allow_rebase_merge': '<ABSENT>', 'allow_merge_commit': '<ABSENT>', 'permissions': '<ABSENT>'}
+```
+
+HTTP status: `200` (the read itself succeeds — this is a public
+repository — but the response body omits all four fields entirely
+rather than returning `null` or `false`).
+
+**Finding**: `allow_squash_merge`, `allow_rebase_merge`,
+`allow_merge_commit`, and `permissions` were returned to the classic PAT
+with admin access (Command 1). An anonymous read (Command 2) got a normal
+`200` response with those fields silently absent. The measurement didn't
+isolate the minimum threshold: whether push-level access is enough or
+admin is required remains unverified. `scripts/check-merge-strategy.sh`
+treats the absence as `SKIP`, never a `PASS` (AC-1.3).
+
+This repository's CI workflow (`.github/workflows/ci.yml`) declares an
+explicit top-level `permissions: contents: read` block (and each job that
+sets its own `permissions:` restates the same narrow scope). Declaring
+any explicit `permissions:` block switches the default `GITHUB_TOKEN`
+from GitHub's broad repository-level default down to an allow-list where
+every unlisted scope is `none` — there is no `administration` scope
+granted anywhere in this workflow today. A `contents: read`-scoped token
+carries no elevated repository-administration permission, so it is
+expected to behave like the anonymous case above: the merge-strategy
+fields are absent from the API response, and the checker correctly
+reports `SKIP` rather than a false `PASS` or a job failure.
+
+**Credential required for promotion to `MERGE_STRATEGY_GATE_REQUIRED`**:
+the workflow-scoped `GITHUB_TOKEN` **cannot** read these fields under
+any `permissions:` setting. The permission scopes a workflow may grant to
+`GITHUB_TOKEN` are `actions`, `artifact-metadata`, `attestations`,
+`checks`, `contents`, `deployments`, `discussions`, `id-token`, `issues`,
+`models`, `packages`, `pages`, `pull-requests`, `repository-projects`,
+`security-events`, and `statuses`; there is no `administration` scope.
+Declaring one is rejected by GitHub as an invalid workflow file, which
+stops every job, including the required `ci gate` (confirmed locally
+with actionlint: `unknown permission scope "administration"`).
+
+Promotion therefore needs a credential that sits outside `GITHUB_TOKEN`:
+a **fine-grained personal access token or a GitHub App installation
+token with the repository `Administration: read` permission**, stored as
+a repository Actions secret and passed to the checker via `GH_TOKEN`.
+The only credential verified empirically so far is the posture from
+Command 1: a classic PAT with `repo` scope, held by a repository admin.
+`Administration: read` is the fine-grained permission that covers
+repository settings, but no one has measured it against this endpoint
+yet. Confirming the minimum fine-grained permission is part of the same
+follow-up.
+The current workflow does not consume such a secret. Wiring it in is
+tracked as deferred entry `124AE9DE`. Until then, the job reports
+`SKIP` on every run. See "Advisory-to-required promotion" below for the
+exact steps and condition.
+
+## Operator trigger and advisory→required promotion (031.005-T)
+
+**Scope note**: this section documents the operator trigger only. Flipping
+the repository settings themselves, and flipping the
+`MERGE_STRATEGY_GATE_REQUIRED` repository variable, are both GitHub
+repository administration actions outside both Stage's and Ship's role
+boundary (deliberation D-5). No repository setting is changed by this
+unit or by this document (AC-1.7).
+
+### The two settings to disable
+
+| Setting | Required value | Where |
+|---|---|---|
+| `allow_squash_merge` | `false` | GitHub → repo Settings → General → Pull Requests |
+| `allow_rebase_merge` | `false` | GitHub → repo Settings → General → Pull Requests |
+
+In the GitHub UI these correspond to unchecking **"Allow squash merging"**
+and **"Allow rebase merging"** (leaving **"Allow merge commits"** checked),
+per Constitution Principle XI.
+
+### How to verify
+
+Advisory (default), local, no CI required:
+
+```console
+$ bash scripts/check-merge-strategy.sh
+```
+
+Prints `PASS`/`FAIL`/`SKIP` plus a reason and exits `0` for `PASS`/`SKIP`,
+`1` for `FAIL`, and `2` if the evaluator produces no recognized verdict
+or on a usage or prerequisite error. In CI, the same command runs in the `merge-strategy` job
+of `.github/workflows/ci.yml` on every push/PR, and is advisory
+(non-blocking) by default (AC-1.2).
+
+To confirm the current live repository state directly:
+
+```console
+$ gh api repos/softwaresalt/intercom --jq "{allow_squash_merge, allow_rebase_merge}"
+```
+
+This requires a credential that can read repository settings; see the
+GITHUB_TOKEN feasibility finding above for the verified posture. An
+unauthorized or insufficiently-scoped read reports the fields as absent,
+which the checker treats as `SKIP`, never a `PASS` (AC-1.3).
+
+### Required credential (from the 031.002-T finding above)
+
+To read `allow_squash_merge`/`allow_rebase_merge` in CI, the job needs a
+fine-grained PAT or GitHub App installation token with repository
+`Administration: read`, supplied as a repository Actions secret and
+passed to the checker as `GH_TOKEN`. The job's `GITHUB_TOKEN` can't be
+granted this access. The `merge-strategy` job in `ci.yml` (031.003-T)
+currently runs with `GITHUB_TOKEN` (`contents: read`) and therefore
+reports `SKIP`. Consuming the stronger credential is a separate follow-up
+(deferred entry `124AE9DE`).
+
+**Required mode and `SKIP`**: under the current contract, `SKIP` is
+reported and is never treated as a `PASS`, but it doesn't fail the job
+in either mode. `MERGE_STRATEGY_GATE_REQUIRED=true` makes only a `FAIL`
+verdict block `ci-gate`. Whether required mode should also fail on
+`SKIP` is tracked as deferred entry `C8914513`. Until that is decided,
+promotion condition 1 below is the safeguard: it forbids promotion
+until a real `PASS` has been observed.
+
+### Exact promotion condition (advisory → required)
+
+Promote `MERGE_STRATEGY_GATE_REQUIRED` from advisory to blocking only when
+**all** of the following hold:
+
+1. The `merge-strategy` CI job has run on `main` at least once (any recent
+   push or PR) and returned a real `PASS` verdict, not `SKIP`. This
+   confirms that the `Administration: read` credential described above is
+   wired in and can read the fields in this repository's live CI
+   environment. This condition can't be met while the job uses only
+   `GITHUB_TOKEN`.
+2. The live repository settings already satisfy the gate
+   (`allow_squash_merge == false` and `allow_rebase_merge == false`), so
+   flipping the toggle to blocking does not immediately fail every open PR.
+3. An operator with repository administration access has explicitly
+   confirmed the flip via the repository's `MERGE_STRATEGY_GATE_REQUIRED`
+   variable (GitHub → repo Settings → Secrets and variables → Actions →
+   Variables), analogous to the documented
+   `PIPELINE_TOPOLOGY_GATE_REQUIRED` / `WINDOWS_GATE_REQUIRED` rollout
+   precedent in this repository.
+
+Until all three hold, `MERGE_STRATEGY_GATE_REQUIRED` stays unset
+(advisory) and the job never blocks a merge (AC-1.2).
