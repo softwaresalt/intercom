@@ -54,7 +54,19 @@ class ImportTimeBindingTest(unittest.TestCase):
         tree = ast.parse(MODULE_PATH.read_text(encoding='utf-8'))
         offenders: list[str] = []
 
+        def is_main_guard(node: ast.AST) -> bool:
+            # `if __name__ == '__main__':` never executes on import.
+            return (
+                isinstance(node, ast.If)
+                and isinstance(node.test, ast.Compare)
+                and isinstance(node.test.left, ast.Name)
+                and node.test.left.id == '__name__'
+                and any(isinstance(c, ast.Constant) and c.value == '__main__' for c in node.test.comparators)
+            )
+
         def visit(node: ast.AST, in_function: bool) -> None:
+            if not in_function and is_main_guard(node):
+                return
             nested = in_function or isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
             if not in_function and isinstance(node, ast.Attribute):
                 owner = node.value
