@@ -13,7 +13,7 @@ shipment: 029-S
 feature: 032-F
 pr: 77
 merge_commit_sha: 16519360c551ee44c0405fc436bb8b4a8718c4d5
-compaction_status: pending
+compaction_status: done
 closure_status: READY
 releasability: READY
 conditions: []
@@ -211,7 +211,23 @@ Post-merge closure produced no new follow-ups. Ship created or modified no stash
 
 ## Compaction status (P-020)
 
-`pending`. Ship Step 6 item 8 finalizes this field after it runs `compact-context`.
+`done`. Ship Step 6 item 8 ran `compact-context` with `target: all`, performing the bounded per-merge Tier-1 floor.
+
+* **Memory**:
+  * The 029-S checkpoint `2026-09-28-ship-029-s-feature-pr-open-awaiting-merge-approval.md` was compacted into
+    `docs/memory/compacted/2026-09-28-029-s-032-f-compacted.md`.
+  * The now-complete 028-S closure checkpoint `2026-09-28-ship-028-s-post-merge-closure-pr-awaiting-approval.md` was
+    folded into `docs/memory/compacted/2026-09-28-028-s-031-f-compacted.md` as an addendum. Closure PR #76 was
+    merged at `beeb84f`.
+  * Both originals were moved to `docs/archive/memory/`.
+* **Plans**: not consolidated. `docs/plans/2026-09-18-intercom-go-gate-reliability-plan.md` still has outstanding
+  units (030-S onward).
+* **Closure records**: this pass compacted none.
+* **Residual, disclosed and not actioned in this closure**: `docs/memory/` still holds more than `max_files` (40)
+  uncompacted files, about 52. About 32 of them are dated before the 14-day threshold. `docs/closure/` holds 11
+  records dated before the threshold. Earlier post-merge closures also left this aged pool alone. It spans
+  Stage-authored memory and many long-closed shipments, so it is better handled by a dedicated compaction chore than
+  folded into a per-shipment closure PR. That decision belongs to the operator or Stage.
 
 ## Releasability evidence
 
