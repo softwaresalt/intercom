@@ -70,7 +70,8 @@ route `028-S` in a later, separate invocation. Do not claim or execute
   `git merge-base --is-ancestor c8aa2c8344d558e981190cb640f68bfaf2916d1d origin/main`
   → exit `0`. `MERGE_CONFIRMED`.
 * Verified on `origin/main` tree (`git ls-tree -r origin/main`):
-  `docs/closure/027-S-030-F-closure-evidence-repair-post-merge-closure.md`
+  `docs/closure/2026-09-21-027-s-030-f-closure-evidence-repair-closure.md`
+  (renamed from its original `-post-merge-closure.md` name per DCD67C30)
   and
   `docs/memory/compacted/2026-09-21-027-s-030-f-closure-evidence-repair-compacted.md`
   both present.

@@ -51,7 +51,7 @@ returns `PREDECESSOR_CLOSURE_INCOMPLETE` on account of `027-S`.
 ## Post-merge closure
 
 * Post-merge closure branch: `post-merge/027-s-030-f-closure-evidence-repair`
-* Closure artifact: `docs/closure/027-S-030-F-closure-evidence-repair-post-merge-closure.md`
+* Closure artifact: `docs/closure/2026-09-21-027-s-030-f-closure-evidence-repair-closure.md` (renamed from its original `-post-merge-closure.md` name per DCD67C30)
   (releasability: READY)
 * No shipment claim, no backlog archival mutation this session (`027-S`
   was already archived before the session began).
