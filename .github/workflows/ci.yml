@@ -54,7 +54,13 @@
 # for the GITHUB_TOKEN credential finding that promotion also depends
 # on). The job is also added to `ci-gate`'s `needs:` array and results
 # aggregation string. A future `autoharness install`/`tune` regeneration
-# must re-apply this job too, not only the five above.
+# must re-apply this job too, not only the five above. The same applies to
+# the Python gate-engine steps in job `lint` (032.006-T, shipment 029-S):
+# "Set up Python (gate engines)" (SHA-pinned `actions/setup-python`,
+# `python-version: '3.12'`) and "Python gate-engine lint and unit tests"
+# (unconditionally blocking, runs
+# `python -m unittest discover -s scripts/lib/tests -v` against the
+# extracted scripts/lib/ modules).
 #
 # Regular PR/push CI was Linux-only (ubuntu-latest) prior to 010-S; an
 # advisory `windows-latest` job (`windows`, see the LOCAL DIVERGENCE note
@@ -330,6 +336,23 @@ jobs:
         # The repo scan itself is NOT run here; it is owned by the
         # toggled verdict step above.
         run: bash scripts/check-write-path-precondition.sh --self-test-integrity
+      - name: Set up Python (gate engines)
+        # LOCAL DIVERGENCE (032.006-T, shipment 029-S): pins the interpreter
+        # that runs the extracted gate-engine unit tests below. SHA and
+        # python-version match the topology-check job's setup-python pin.
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Python gate-engine lint and unit tests
+        # LOCAL DIVERGENCE (032.006-T, shipment 029-S): executes the
+        # scripts/lib/tests suite -- importability of scripts/lib/gomask.py
+        # and scripts/lib/retired_arch.py, the canonical-masker and
+        # source-anchored pathspec-pin assertions, and a stdlib lint pass
+        # (warnings-as-errors compile + unused-import check), AC-2.8.
+        # Unconditionally blocking: no advisory toggle on this step.
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -m unittest discover -s scripts/lib/tests -v
       - name: Install goimports (pinned)
         run: go install golang.org/x/tools/cmd/goimports@v0.49.0
       - name: gofmt

@@ -58,6 +58,10 @@ else
   exit 2
 fi
 
+# 032.005-T: importing scripts/lib/gomask.py would otherwise drop
+# scripts/lib/__pycache__/*.pyc into the working tree on every gate run.
+export PYTHONDONTWRITEBYTECODE=1
+
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
@@ -73,6 +77,17 @@ from pathlib import Path
 
 mode = sys.argv[1]
 root = Path.cwd()
+
+# 032.005-T (shipment 029-S): the local mask_go_non_code() clone is deleted;
+# the canonical Go masker is imported from scripts/lib/gomask.py, the ONE
+# definition shared with the retired-architecture gate (AC-2.1). Canonical =
+# the retired-architecture superset (032.001-T). Re-baseline: the expected
+# write-path verdict delta set enumerated by 032.001-T is EMPTY (class D-1
+# only, 0 measured instances on fixtures and on tracked cmd/**, internal/**),
+# and the observed delta set is EMPTY -- see the CANONICAL GO MASKER DECISION
+# note in scripts/check-retired-architecture.sh.
+sys.path.insert(0, str(root / 'scripts' / 'lib'))
+from gomask import mask_go_non_code  # noqa: E402  (path set up just above)
 
 SELECTORS = [
     "os.WriteFile", "os.Create", "os.OpenFile", "os.Remove", "os.RemoveAll",
@@ -96,100 +111,6 @@ FIXTURE_DIR = root / "scripts" / "testdata" / "writepath"
 
 REGISTER_NAME = "the consolidated risk register (internal/pathsafe package doc, root.go)"
 EXCEPTION_NAME = "011.003-T's Constitution Check exception (internal/config/validate.go rule 7)"
-
-
-def mask_go_non_code(text: str) -> str:
-    # Same state machine as scripts/check-retired-architecture.sh's
-    # mask_go_non_code: blanks out comments/string/rune literal contents
-    # (preserving line structure and total length) so a selector name
-    # appearing only in a comment or string is never mistaken for real code.
-    code, line_comment, block_comment, string, raw_string, rune = range(6)
-    state = code
-    out = []
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        nxt = text[i + 1] if i + 1 < len(text) else ''
-
-        if state == code:
-            if ch == '/' and nxt == '/':
-                out.extend('  ')
-                i += 2
-                state = line_comment
-                continue
-            if ch == '/' and nxt == '*':
-                out.extend('  ')
-                i += 2
-                state = block_comment
-                continue
-            if ch == '"':
-                out.append(' ')
-                i += 1
-                state = string
-                continue
-            if ch == '`':
-                out.append(' ')
-                i += 1
-                state = raw_string
-                continue
-            if ch == "'":
-                out.append(' ')
-                i += 1
-                state = rune
-                continue
-            out.append(ch)
-            i += 1
-            continue
-
-        if state == line_comment:
-            if ch == '\n':
-                out.append('\n')
-                state = code
-            else:
-                out.append(' ')
-            i += 1
-            continue
-
-        if state == block_comment:
-            if ch == '*' and nxt == '/':
-                out.extend('  ')
-                i += 2
-                state = code
-            else:
-                out.append('\n' if ch == '\n' else ' ')
-                i += 1
-            continue
-
-        if state == string:
-            if ch == '\\' and nxt:
-                out.extend('  ')
-                i += 2
-                continue
-            out.append('\n' if ch == '\n' else ' ')
-            i += 1
-            if ch == '"':
-                state = code
-            continue
-
-        if state == raw_string:
-            out.append('\n' if ch == '\n' else ' ')
-            i += 1
-            if ch == '`':
-                state = code
-            continue
-
-        if state == rune:
-            if ch == '\\' and nxt:
-                out.extend('  ')
-                i += 2
-                continue
-            out.append('\n' if ch == '\n' else ' ')
-            i += 1
-            if ch == "'":
-                state = code
-            continue
-
-    return ''.join(out)
 
 
 def scan_file(path: Path):

@@ -122,3 +122,8 @@ diff.txt
 # shipment 010-S).
 internal/depguardfixture/
 internal/copilotprobe2/
+
+# Python bytecode caches written when the extracted gate engines under
+# scripts/lib/ are imported or executed (032-F, shipment 029-S).
+__pycache__/
+*.pyc
