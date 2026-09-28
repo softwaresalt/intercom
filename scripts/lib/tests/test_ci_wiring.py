@@ -55,6 +55,8 @@ class CiWiringTest(unittest.TestCase):
     def test_lint_job_pins_python(self):
         self.assertRegex(self.lint, r'uses: actions/setup-python@[0-9a-f]{40}')
         self.assertRegex(self.lint, r"python-version: '3\.12'")
+        # The pin only governs the unit-test step if it runs BEFORE it.
+        self.assertLess(self.lint.index('actions/setup-python@'), self.lint.index(TEST_CMD))
 
     def test_step_is_enumerated_as_local_divergence(self):
         header = self.text.split('\nname: CI\n', 1)[0]

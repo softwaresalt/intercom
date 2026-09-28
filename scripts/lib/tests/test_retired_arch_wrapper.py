@@ -93,7 +93,10 @@ class WrapperTest(unittest.TestCase):
         self.assertNotIn('def ', '\n'.join(self.code_lines))
 
     def test_wrapper_dispatches_to_the_extracted_module(self):
-        self.assertIn('scripts/lib/retired_arch.py', '\n'.join(self.code_lines))
+        # The engine is resolved relative to the wrapper itself (scripts/),
+        # not via the caller's cwd repo root.
+        self.assertIn('ENGINE="$SCRIPT_DIR/lib/retired_arch.py"', '\n'.join(self.code_lines))
+        self.assertIn('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"', '\n'.join(self.code_lines))
         for flag in ('--self-test)', '--self-test-integrity)'):
             self.assertIn(flag, self.text)
 

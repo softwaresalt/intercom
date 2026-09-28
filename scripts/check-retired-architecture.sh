@@ -156,6 +156,16 @@ else
   exit 2
 fi
 
+# Importing the extracted engine/masker modules would otherwise drop
+# scripts/lib/__pycache__/*.pyc into the working tree on every gate run.
+export PYTHONDONTWRITEBYTECODE=1
+
+# Resolve the engine next to THIS script (not via the caller's cwd repo), so
+# invoking this wrapper by absolute path from inside another repository
+# still runs the engine that ships with it. The engine anchors its own repo
+# root on its module location (retired_arch.resolve_repo_root).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
@@ -165,7 +175,7 @@ cd "$ROOT"
 # This script is only the argv-dispatch wrapper: it resolves the repo root,
 # cds there, and runs one engine mode per invocation. The wrapper -> mode
 # mapping and every exit code are unchanged.
-ENGINE="$ROOT/scripts/lib/retired_arch.py"
+ENGINE="$SCRIPT_DIR/lib/retired_arch.py"
 
 scan_with_mode() {
   local mode="$1"

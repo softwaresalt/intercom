@@ -67,7 +67,19 @@ class ImportTimeBindingTest(unittest.TestCase):
         def visit(node: ast.AST, in_function: bool) -> None:
             if not in_function and is_main_guard(node):
                 return
-            nested = in_function or isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
+            if not in_function and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                # Decorators and argument defaults are evaluated when the
+                # `def`/`lambda` executes (i.e. at import for top-level
+                # definitions); only the body is deferred.
+                for deco in getattr(node, 'decorator_list', []):
+                    visit(deco, False)
+                for default in [*node.args.defaults, *[d for d in node.args.kw_defaults if d is not None]]:
+                    visit(default, False)
+                body = node.body if isinstance(node.body, list) else [node.body]
+                for stmt in body:
+                    visit(stmt, True)
+                return
+            nested = in_function
             if not in_function and isinstance(node, ast.Attribute):
                 owner = node.value
                 if isinstance(owner, ast.Name):

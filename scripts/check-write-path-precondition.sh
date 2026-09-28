@@ -58,6 +58,10 @@ else
   exit 2
 fi
 
+# 032.005-T: importing scripts/lib/gomask.py would otherwise drop
+# scripts/lib/__pycache__/*.pyc into the working tree on every gate run.
+export PYTHONDONTWRITEBYTECODE=1
+
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
