@@ -64,10 +64,21 @@ class MaskGoNonCodeTest(unittest.TestCase):
         self.assertIn('z := 4', masked)
 
     def test_multiline_raw_string_is_masked(self):
+        text = 'q := `first line channel_id\nsecond line`\n'
+        masked = gomask.mask_go_non_code(text)
+        self.assert_shape_preserved(text, masked)
+        self.assertNotIn('channel_id', masked)
+        self.assertNotIn('line', masked)
+
+    def test_multiline_tag_shaped_raw_string_is_unmasked(self):
+        # Characterization (behaviour-preserving move): struct_tag_re's
+        # inter-pair `\s+` also matches a newline, so a raw string whose
+        # whole content is newline-separated tag pairs is left visible.
+        # Fail-closed direction (more text scanned, never less).
         text = 'q := `json:"a"\njson:"b"`\n'
         masked = gomask.mask_go_non_code(text)
         self.assert_shape_preserved(text, masked)
-        self.assertNotIn('json', masked)
+        self.assertIn('json:"a"\njson:"b"', masked)
 
     def test_unterminated_raw_string_at_eof_fails_closed(self):
         text = 'x := 1\ny := `json:"channel_id"'
