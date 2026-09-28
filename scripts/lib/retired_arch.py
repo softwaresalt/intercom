@@ -23,6 +23,7 @@ Usage: python3 scripts/lib/retired_arch.py {repo|self-test|self-test-integrity}
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import subprocess
@@ -650,6 +651,50 @@ def report_assertion(name: str, ok: bool, success: str, failure: str, failures: 
     failures.append(f"{name}: {failure}")
 
 
+PATHSPEC_PIN_LITERALS = ("'config.toml.example'", "'cmd/**'", "'internal/**'")
+PREFIX_PIN_LITERALS = ("'cmd/'", "'internal/'")
+
+
+def _function_source(fn):
+    """Return fn's own source text, or None (fail closed) when it cannot be
+    retrieved -- e.g. a builtin, or a module loaded without its .py file."""
+    try:
+        return inspect.getsource(fn)
+    except (OSError, TypeError):
+        return None
+
+
+def selection_pathspec_pin(select_fn=None, guard_fn=None) -> dict[str, bool]:
+    """Selection pathspec pin (015.011-T AC-6/AG-1; re-derived by 032.004-T,
+    AC-2.5).
+
+    The pin is SOURCE-TEXT-ANCHORED: it reads the real source of
+    select_repo_paths() and should_scan_repo_path() with inspect.getsource()
+    and requires the pathspec / prefix literals to appear INSIDE those
+    functions' own text, so a future pathspec or prefix edit is observable
+    and falsifiable. It must never degrade into a module-constant
+    self-comparison: nothing outside this process could ever disagree with
+    a constant compared to itself. A whole-file containment check would be
+    vacuous too, because the literals also appear in this pin's own source.
+
+    Before extraction the engine ran from a stdin heredoc, where __file__
+    and inspect.getsource() were unavailable, so the pin located the Python
+    by reading scripts/check-retired-architecture.sh from disk and slicing
+    function regions out of it. As an ordinary module the functions' own
+    source is directly retrievable, and that disk-read workaround is
+    retired. Retrieval failure fails CLOSED (found=False, ok=False).
+    """
+    select_fn = select_repo_paths if select_fn is None else select_fn
+    guard_fn = should_scan_repo_path if guard_fn is None else guard_fn
+    select_region = _function_source(select_fn)
+    guard_region = _function_source(guard_fn)
+    return {
+        'select_found': select_region is not None,
+        'guard_found': guard_region is not None,
+        'pathspec_ok': select_region is not None and all(lit in select_region for lit in PATHSPEC_PIN_LITERALS),
+        'prefix_ok': guard_region is not None and all(lit in guard_region for lit in PREFIX_PIN_LITERALS),
+    }
+
 def run_repo_selection_self_test(root: Path):
     rel_paths = select_repo_paths(root)
     internal_actual = sorted(path for path in rel_paths if path.startswith('internal/'))
@@ -766,56 +811,20 @@ def run_repo_selection_self_test(root: Path):
         failures,
     )
 
-    # 015.011-T (AC-6/AG-1): pin the git ls-files pathspec and the
-    # should_scan_repo_path prefix set by READING THIS SCRIPT FROM DISK and
-    # extracting the two functions' own regions, so the pin is falsifiable
-    # against an actual future pathspec/prefix edit. A module-constant
-    # self-comparison would be self-referential (nothing outside this
-    # process could ever disagree with it), and a whole-file containment
-    # check is vacuous because the asserted literals also appear in THIS
-    # very assertion's own source text below. __file__ and
-    # inspect.getsource() are unavailable (this interpreter is fed the
-    # script body on stdin via a heredoc), so the script is located by its
-    # known, fixed path relative to the repo root instead.
-    script_path = root / 'scripts' / 'check-retired-architecture.sh'
-    try:
-        script_source = script_path.read_text(encoding='utf-8')
-    except OSError:
-        script_source = None
-
-    def extract_function_region(source: str, func_name: str):
-        # Anchor on the FIRST occurrence of 'def <func_name>(' only -- the
-        # anchor string recurs later in this file inside this very
-        # function's own failure-message f-strings, so a last-match/rfind
-        # implementation would extract THIS assertion's region instead of
-        # the real function definition. str.find() always returns the
-        # first match, which is safe by construction regardless of how
-        # many later mentions exist.
-        anchor = f"def {func_name}("
-        start = source.find(anchor)
-        if start == -1:
-            return None
-        tail_start = start + len(anchor)
-        next_def = re.search(r'^def ', source[tail_start:], re.MULTILINE)
-        end = tail_start + next_def.start() if next_def else len(source)
-        return source[start:end]
-
-    select_region = extract_function_region(script_source, 'select_repo_paths') if script_source is not None else None
-    guard_region = extract_function_region(script_source, 'should_scan_repo_path') if script_source is not None else None
-
-    pathspec_literals = ("'config.toml.example'", "'cmd/**'", "'internal/**'")
-    prefix_literals = ("'cmd/'", "'internal/'")
-    pathspec_ok = select_region is not None and all(lit in select_region for lit in pathspec_literals)
-    prefix_ok = guard_region is not None and all(lit in guard_region for lit in prefix_literals)
-
+    # 015.011-T (AC-6/AG-1), re-derived by 032.004-T: pin the git ls-files
+    # pathspec and the should_scan_repo_path prefix set against the REAL
+    # SOURCE TEXT of those two functions -- see selection_pathspec_pin().
+    pin = selection_pathspec_pin()
+    pathspec_ok = pin['pathspec_ok']
+    prefix_ok = pin['prefix_ok']
     report_assertion(
         'selection pathspec pin (AC-6/AG-1)',
         pathspec_ok and prefix_ok,
-        'select_repo_paths pathspec and should_scan_repo_path prefix set pinned via disk-read, region-anchored extraction',
+        'select_repo_paths pathspec and should_scan_repo_path prefix set pinned via inspect.getsource() source-text extraction',
         (
-            'AC-6/AG-1 pin failed -- region extraction failed (fail-closed) or an expected '
-            f"literal is missing: select_repo_paths region found={select_region is not None}, "
-            f"should_scan_repo_path region found={guard_region is not None}, "
+            'AC-6/AG-1 pin failed -- source extraction failed (fail-closed) or an expected '
+            f"literal is missing: select_repo_paths region found={pin['select_found']}, "
+            f"should_scan_repo_path region found={pin['guard_found']}, "
             f"pathspec literals present={pathspec_ok}, prefix literals present={prefix_ok}"
         ),
         failures,
