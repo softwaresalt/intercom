@@ -87,7 +87,8 @@ set -euo pipefail
 # behaviour is recorded here, with the reason it is untested, rather than
 # committing a fixture that would be permanently red under one engine.
 #
-# check-write-path-precondition.sh divergence: that script (outside this
+# check-write-path-precondition.sh divergence (SUPERSEDED by 032.001-T,
+# retained verbatim as the historical record): that script (outside this
 # shipment's pathspec, per AG-3) carries its own independent
 # mask_go_non_code() clone that has NOT been updated with this shipment's
 # raw_string buffering / struct-tag-visibility change (015.007-T). This
@@ -95,6 +96,46 @@ set -euo pipefail
 # statement of permanent intent, so the deferred follow-up (stash
 # provenance 6C24E2E4, unification of the two clones) keeps its own
 # decision about whether and when to converge them.
+#
+# CANONICAL GO MASKER DECISION (032.001-T) -- shipment 029-S, plan unit 2
+# / U2-T1 of docs/plans/2026-09-18-intercom-go-gate-reliability-plan.md:
+# the convergence direction left undecided above is now DECIDED. The
+# canonical Go masker is the retired-architecture SUPERSET -- raw_string
+# content buffering, struct_tag_re unmasking of a raw-string literal whose
+# ENTIRE content is a well-formed struct tag, and the
+# unterminated-raw-string EOF fail-closed branch. Rationale: AC-2.3
+# (retired-arch verdicts identical pre/post extraction) forecloses the
+# alternative -- adopting the write-path clone would drop struct_tag_re
+# unmasking and flip the 015.007-T struct-tag fixture
+# retired-reject-struct-tag.go from reject to clean (measured: the only
+# retiredgo*/ fixture whose verdict changes under the clone; the
+# go-differential suite scans unmasked and is unaffected), so only the
+# superset can be canonical. The masker
+# moves to scripts/lib/gomask.py (032.002-T) and both gates import it
+# (032.003-T / 032.005-T).
+#
+# EXPECTED WRITE-PATH VERDICT DELTAS (enumerated in advance, AC-2.4):
+#   Masker output differs from the write-path clone ONLY for a raw-string
+#   literal whose whole content matches struct_tag_re: the superset leaves
+#   that content visible instead of blanking it. The unterminated-raw EOF
+#   branch masks the buffered content, which is byte-identical to the
+#   clone's char-by-char masking, so it is NOT a delta.
+#   D-1 (class): a write-path finding can newly appear iff such a struct
+#       tag's content itself contains a qualified selector token (e.g.
+#       `x:"os.Remove"`) with valid selector boundaries. Direction: fail
+#       closed (a new finding, never a lost one) -- nothing the clone
+#       exposed is masked by the superset.
+#   D-1 measured instances at the pre-extraction base (beeb84f, verdict-
+#       equivalent to bound snapshot 14d44e3c for every gate input):
+#       write-path fixtures (scripts/testdata/writepath/*.go): 0;
+#       tracked cmd/** and internal/** non-test .go files: 0. One
+#       write-path-selected file (internal/config/config.go) has
+#       struct-tag content newly exposed, and none of it contains a
+#       selector token, so its verdict is unchanged.
+#   Therefore the expected write-path verdict delta set is EMPTY; any
+#   observed delta is unenumerated and a defect (AC-2.4), and any delta on
+#   a tracked cmd/** or internal/** file must be remediated in the same
+#   change (AC-2.2 precedence).
 #
 # Forward-looking guard rail (attributed as such, not yet load-bearing):
 # any future scope expansion of this gate MUST keep the tracked-only
