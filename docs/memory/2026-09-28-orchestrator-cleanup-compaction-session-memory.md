@@ -18,8 +18,12 @@ status: complete
   same clarification. All 3 threads were replied to and resolved. CI is green and Copilot recommends approval.
 * backlogit PR #457 was already clean and merged; no action was needed.
 
-## Open decisions
+## Decisions and follow-up (2026-09-29)
 
-* Keep or reset `chore/stage-stash-python-to-go-migration`. The Orchestrator recommends keeping it: the hold on
-  030-S to 032-S is implemented as `blocks` edges onto 037-S, which exists only in this plan.
-* PRs awaiting operator merge approval: #79 and softwaresalt/backlogit#458.
+* The operator chose to keep the Go migration plan. At the operator's direction, the Orchestrator pushed
+  `chore/stage-stash-python-to-go-migration` and opened staging PR #80. It had previously held this step as
+  operator-only under the Step 1.5(c) rule; in future, where the operator directs it, the Orchestrator opens
+  the staging PR itself.
+* softwaresalt/backlogit#458 was approved and merged by the operator.
+* Awaiting operator merge: #79 (this compaction) and #80 (the staging PR). After #80 merges, the hold on 030-S
+  to 032-S takes effect.
