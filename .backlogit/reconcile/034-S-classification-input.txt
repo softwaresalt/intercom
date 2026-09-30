@@ -1,0 +1,22 @@
+v1
+shipment=034-S
+verdict=CASCADE
+reason=FULLY_COVERED_ROOT
+skill=1c7d523de56e3aa8f1597c75365c9c8c9a29c3d44c9e098d40dac9d34d573ff2
+engine=backlogit version 1.11.0 (latest: v1.11.0 -- up to date)
+manifest=044-F,044.001-T,044.002-T,044.003-T,044.004-T,044.005-T,044.006-T,044.007-T,044.008-T,044.009-T,044.010-T,044.011-T,044.012-T
+deps=029-S
+status=active
+044-Ffeaturedone-archive
+044.001-Ttaskdone044-Farchive
+044.002-Ttaskdone044-Farchive
+044.003-Ttaskdone044-Farchive
+044.004-Ttaskdone044-Farchive
+044.005-Ttaskdone044-Farchive
+044.006-Ttaskdone044-Farchive
+044.007-Ttaskdone044-Farchive
+044.008-Ttaskdone044-Farchive
+044.009-Ttaskdone044-Farchive
+044.010-Ttaskdone044-Farchive
+044.011-Ttaskdone044-Farchive
+044.012-Ttaskdone044-Farchive
