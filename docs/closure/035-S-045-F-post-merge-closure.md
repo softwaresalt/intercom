@@ -390,10 +390,12 @@ bounded per-merge Tier-1 floor.
   Stage-owned triage items, not release conditions — none block `045-F`'s feature-done criterion,
   which explicitly accounts for the two most significant ones (`9FC28DB9`, `9FF9EEB4`) in its own
   conclusion (m2.md §15).
-* **Disclosed process-compliance gap** (found and fixed during PR #84's Copilot review, discussion
-  `#discussion_r4148317558`): the shipment-reconcile skill's mandated
+* **Disclosed process-compliance gap** (found during PR #84's Copilot review, discussion
+  `#discussion_r4148317558`; **not retroactively repairable — documented and disposed of, not
+  "fixed"**): the shipment-reconcile skill's mandated
   `classify-close-path` → `CLASSIFICATION_BINDING` → bound `safe-close` sequence was not followed
-  when 035-S was archived; the cascade primitive was invoked directly instead. This does not
+  when 035-S was archived; the cascade primitive was invoked directly instead, and that original
+  unbound invocation cannot be undone now that the shipment is already archived. This does not
   affect releasability — the archival outcome is independently re-verified correct by the
   safe-close report's own post-hoc Steps 2–4 (two-set gate, `returned_ids` empty, `parent_id`
   preservation) — but is disclosed here for transparency, with full disposition in the "Process
