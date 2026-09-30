@@ -13,7 +13,7 @@ shipment: 035-S
 feature: 045-F
 pr: 83
 merge_commit_sha: 97b8d77f62baddde6f85a48632330a7ef537112d
-compaction_status: pending
+compaction_status: done
 closure_status: READY
 releasability: READY
 conditions: []
@@ -335,8 +335,26 @@ such ambiguity).
 
 ## Compaction status (P-020)
 
-`pending`. Compact-context (`target: all`) has not yet run for this closure; this field will be
-finalized to `done`/`degraded` once Ship Step 6 item 8 completes, per the mandatory P-020 gate.
+`done`. Ship Step 6 item 8 ran `compact-context` (manual execution, per this workspace's
+lack of a dedicated compact-context MCP/CLI tool) with `target: all`, performing the
+bounded per-merge Tier-1 floor.
+
+* **Memory**: this shipment's own session checkpoint
+  (`docs/memory/2026-09-30/035-s-gate-engine-go-migration-m2-memory.md`) was compacted into
+  `docs/memory/compacted/2026-09-30-035-s-045-f-compacted.md`. The original was moved to
+  `docs/archive/memory/2026-09-30/`.
+* **Plans**: not consolidated. `docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md`
+  still has outstanding units (M3, M4).
+* **Closure records**: this pass compacted none.
+* **Residual, disclosed and not actioned in this closure**: `docs/memory/` holds 9
+  uncompacted files after this pass (down from the 10 disclosed at 034-S's own closure —
+  this shipment's own file is now compacted, no new stray files were added). These are
+  Stage-authored and aged files spanning multiple prior shipments (some in
+  `docs/memory/2026-09-18/`, some loose root-level files dated 2026-09-12 through
+  2026-09-28, plus 034-S's own still-uncompacted post-merge-closure-session memory file).
+  As with 034-S's own closure before it, this residual pool is better handled by a
+  dedicated compaction chore than folded into a per-shipment closure PR. That decision
+  belongs to the operator or Stage.
 
 ## Releasability evidence
 
