@@ -182,6 +182,30 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# Caller-argument allowlist (post-review remediation, PR #83 Copilot
+# finding): gatecheck_invoke appends the trusted "--root ${ROOT}" ahead of
+# any args this wrapper forwards, but main.go's parseRoot scans the WHOLE
+# arg list for "--root"/"--root=" and the LAST occurrence wins. The
+# pre-M2-T11 wrapper never had this exposure because its own `case
+# "${1:-}"` dispatch rejected any input other than the three modes below
+# (anything else, including a second --root, hit the `*)` branch and
+# exited 2 before an engine ever ran). Restoring that same allowlist here
+# -- and refusing more than one argument outright -- closes the gap
+# without touching the shared --root contract in main.go, which is used
+# by every gate engine (write-path, unignore, merge-strategy-evaluate)
+# outside this shipment's scope.
+case "${1:-}" in
+"" | --self-test | --self-test-integrity) ;;
+*)
+  echo "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]" >&2
+  exit 2
+  ;;
+esac
+if [ "$#" -gt 1 ]; then
+  echo "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]" >&2
+  exit 2
+fi
+
 gatecheck_build
 build_rc=$?
 if [ "${build_rc}" -ne 0 ]; then
