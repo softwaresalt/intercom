@@ -35,7 +35,7 @@ func TestScanTomlPrimary_MatchesGolden_Fixtures(t *testing.T) {
 				assertFailClosedReject(t, got, want)
 				return
 			}
-			if !reflect.DeepEqual(got, want) && !(len(got) == 0 && len(want) == 0) {
+			if !reflect.DeepEqual(got, want) && (len(got) != 0 || len(want) != 0) {
 				t.Fatalf("scanTomlPrimary(%s) = %v, want %v", path, got, want)
 			}
 		})
@@ -90,7 +90,7 @@ func TestScanTomlPrimary_MatchesGolden_Inline(t *testing.T) {
 				// ED-4: only the reject verdict, not the literal prose.
 				assertFailClosedReject(t, got, want)
 			default:
-				if !reflect.DeepEqual(got, want) && !(len(got) == 0 && len(want) == 0) {
+				if !reflect.DeepEqual(got, want) && (len(got) != 0 || len(want) != 0) {
 					t.Fatalf("scanTomlPrimary(%s) = %v, want %v", name, got, want)
 				}
 			}
