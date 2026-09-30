@@ -59,13 +59,20 @@ in this particular execution, no drift occurred.
 ## Disposition
 
 Not retroactively repairable (the shipment was already correctly archived),
-but independently re-verified as correct: the safe-close report's own
+and **not** fully re-verified either: the safe-close report's own
 Steps 2–4 (two-set gate over `allowed_ids`/`required_ids`/`archived_ids`,
-`returned_ids` empty, `parent_id` preservation re-read post-close) happen to
-re-verify, after the fact, exactly the invariants the binding revalidation
-protects before the fact. All passed. The gap was disclosed transparently
-in the reconcile report and the closure artifact's releasability evidence
-rather than silently corrected or hidden — per Copilot's explicit ask:
+`returned_ids` empty, `parent_id` preservation re-read post-close) confirm
+**final archive consistency** — the output set matches the manifest and
+structural preservation held — but that is a narrower guarantee than what
+`CLASSIFICATION_BINDING` covers. The binding also snapshots shipment
+dependencies/status, skill and engine identity, and each member's declared
+type, pre-close status, and resolved location (SKILL.md §Canonical Binding
+Format); Steps 2–4 cannot reconstruct those inputs from the archived output
+alone, so the residual uncertainty from skipping the pre-mutation
+revalidation of those specific inputs is **retained, not closed**, by the
+post-hoc checks. The gap was disclosed transparently in the reconcile report
+and the closure artifact's releasability evidence rather than silently
+corrected or hidden — per Copilot's explicit ask:
 "record the process violation and obtain an explicit disposition... rather
 than presenting this as a conforming skill run."
 

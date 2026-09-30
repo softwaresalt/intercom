@@ -131,7 +131,7 @@ The surfaces that did change are `tools/gatecheck/internal/retiredarch`,
   structural verification`, `pipeline-topology (ambient)`, `security`, `test`, `test (windows,
   advisory)`.
 * **Local review readiness**: `READY_WITH_FOLLOWUPS` (0 P0, 0 unresolved P1 — all P1-equivalent
-  findings fixed or deferred with explicit stash capture) across the full 18-commit branch diff,
+  findings fixed or deferred with explicit stash capture) across the full 17-commit branch diff,
   recorded in the PR body's `## Local Review Readiness` block, refreshed after every HEAD change
   (14 refreshes total) through the merge.
 * **Adversarial review**: multi-persona local review plus escalation to the Adversarial Review
@@ -180,8 +180,9 @@ transition itself is an intentionally irreversible backlog state change (by desi
 what is separately flagged below is that the specific invocation path used to perform that
 transition deviated from the mandated bound `safe-close` sequence, and — because the archival has
 since taken effect — that specific unbound invocation cannot be re-run through the correct
-sequence after the fact. The archived outcome itself is independently re-verified correct (see the
-disclosed process-compliance gap below).
+sequence after the fact. Final archive consistency for the specific outcome is independently
+confirmed (see the disclosed process-compliance gap below for the narrower scope of that
+confirmation relative to what the skipped binding would have covered).
 
 * **Merge**: performed under P-017 DARK FACTORY MODE with `merge_approval_pre_authorized: true`
   (operator AFK, pre-authorized per the DARK_MODE_ACTIVE record for shipment 035-S only). It used
@@ -218,9 +219,12 @@ disclosed process-compliance gap below).
   cascade primitive (`backlogit shipment ship`) was invoked directly, without a computed
   binding and without its pre-mutation TOCTOU revalidation. This is a disclosed P-005
   process-compliance gap, not a confirmed data-integrity failure: Steps 2–4 of the safe-close
-  report (two-set gate, `returned_ids` empty, `parent_id` preservation) independently
-  re-verify, post-hoc, exactly the invariants the skipped binding revalidation exists to
-  protect pre-hoc, and all passed. Full disposition recorded in the "Process Deviation
+  report (two-set gate, `returned_ids` empty, `parent_id` preservation) confirm **final archive
+  consistency** post-hoc, but that is narrower than what the skipped `CLASSIFICATION_BINDING`
+  would have revalidated pre-hoc (shipment dependencies/status, skill and engine identity, and
+  each member's declared type, pre-close status, and resolved location) — those inputs cannot
+  be reconstructed from the archived output alone, so that residual uncertainty is retained, not
+  closed, even though Steps 2–4 all passed. Full disposition recorded in the "Process Deviation
   Disclosure" section added to
   `.backlogit/reconcile/035-S-safe-close-20260930T185100Z.md`, with a corrective-instruction
   compound learning captured at
@@ -428,9 +432,12 @@ and the `setup-*` commands, none of which perform compaction. There is therefore
   `classify-close-path` → `CLASSIFICATION_BINDING` → bound `safe-close` sequence was not followed
   when 035-S was archived; the cascade primitive was invoked directly instead, and that original
   unbound invocation cannot be undone now that the shipment is already archived. This does not
-  affect releasability — the archival outcome is independently re-verified correct by the
+  affect releasability — final archive consistency is independently confirmed by the
   safe-close report's own post-hoc Steps 2–4 (two-set gate, `returned_ids` empty, `parent_id`
-  preservation) — but is disclosed here for transparency, with full disposition in the "Process
+  preservation) — but those checks are narrower than what the skipped binding would have
+  revalidated pre-mutation (shipment dependencies/status, skill/engine identity, each member's
+  declared type/pre-close status/location), so that residual uncertainty is retained, not
+  closed. Disclosed here for transparency, with full disposition in the "Process
   Deviation Disclosure" section of
   `.backlogit/reconcile/035-S-safe-close-20260930T185100Z.md` and a corrective-instruction
   compound learning at
