@@ -479,6 +479,57 @@ func TestRunFixtureSelfTest_UnknownExpectation_NonStringValue(t *testing.T) {
 	}
 }
 
+// TestRunFixtureSelfTest_RejectOnly_NullExpectationBreaksExemption is a
+// Copilot round-12 finding (PR #83): Python's reject-only check is
+// `expectations <= {'reject'}`, where `expectations` is a SET that
+// includes a `None` member whenever any discovered fixture's manifest
+// entry is absent or explicit JSON null (`manifest.get(name)`'s
+// sentinel). `{'reject', None} <= {'reject'}` is False, so Python FAILS
+// the "suite is a named reject-only exemption" assertion for a
+// go-differential manifest that mixes a 'reject' fixture with a
+// null/missing one. The prior port silently dropped None entries from
+// BOTH expectationStrs and otherPresent, so it reported PASS for this
+// exact mixed manifest -- a parity break this test pins down.
+func TestRunFixtureSelfTest_RejectOnly_NullExpectationBreaksExemption(t *testing.T) {
+	root := t.TempDir()
+	testdataDir := filepath.Join(root, "scripts", "testdata")
+	differentialDir := filepath.Join(testdataDir, "retiredgo-differential")
+	if err := os.MkdirAll(differentialDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(differentialDir, "fixture_a.go"), []byte("package retiredgo\n"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile fixture_a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(differentialDir, "fixture_b.go"), []byte("package retiredgo\n"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile fixture_b.go: %v", err)
+	}
+	// fixture_a.go: 'reject' (a string member). fixture_b.go: explicit
+	// JSON null -- present as a manifest KEY (so the separate "missing
+	// from manifest" check does not also fire) but collapsing to
+	// isNone, exactly like an absent key would.
+	manifest := `{"fixture_a.go": "reject", "fixture_b.go": null}`
+	if err := os.WriteFile(filepath.Join(testdataDir, "retiredgo-differential-manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("os.WriteFile retiredgo-differential-manifest.json: %v", err)
+	}
+	// "toml" / "go" suites: minimal valid empty manifests so
+	// loadFixtureManifest never hard-errors on those.
+	if err := os.WriteFile(filepath.Join(testdataDir, "retired-manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile retired-manifest.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testdataDir, "retiredgo-manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile retiredgo-manifest.json: %v", err)
+	}
+
+	res := runFixtureSelfTest(root)
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 (a null-mixed manifest must break the reject-only exemption, matching Python's `expectations <= {'reject'}` set check)", res.Code)
+	}
+	want := "suite go-differential is declared reject-only but manifest expectations are ['reject']"
+	if !strings.Contains(res.Stderr, want) {
+		t.Fatalf("Stderr = %q, want it to contain %q", res.Stderr, want)
+	}
+}
+
 // TestConfigTomlExample_DualEngineAgreement_LiveCorpus is M2-T5's live
 // corpus check (ED-6 disclosure): config.toml.example is tracked, selected
 // by selectRepoPaths, and dispatched to the TOML engine in production, but

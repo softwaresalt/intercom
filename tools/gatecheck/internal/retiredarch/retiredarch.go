@@ -402,33 +402,49 @@ func runFixtureSelfTest(root string) Result {
 		// values seen across this suite's discovered fixtures (mirroring
 		// Python's `expectations = {manifest.get(name) for name in
 		// discovered}` restricted to the string members that
-		// sortedNonEmptyKeys/pyStrList can faithfully repr). An absent
-		// key or an explicit JSON null both collapse to Python's None
-		// (excluded here, same as Python's `if e is not None`), but an
-		// explicit empty string "" is a real member and IS included --
-		// unlike the prior map[string]string-based port, which conflated
-		// "" already keying it OR a missing manifest entry into the same
-		// "" sentinel (F-2). otherPresent additionally tracks whether any
-		// discovered fixture's expectation was a non-string, non-null
-		// JSON value (number/bool/array/object): such a value can never
-		// equal 'accept' or 'reject', so its mere presence must still be
-		// able to break the reject-only "all expectations are exactly
+		// sortedNonEmptyKeys/pyStrList can faithfully repr). An explicit
+		// empty string "" is a real member and IS included -- unlike the
+		// prior map[string]string-based port, which conflated "" already
+		// keying it OR a missing manifest entry into the same ""
+		// sentinel (F-2). Python's `expectations` set itself still
+		// contains a `None` member whenever any fixture's manifest entry
+		// is absent or explicit JSON null (dict.get's sentinel), and
+		// Python's reject-only check is `expectations <= {'reject'}` --
+		// a None member fails that subset test exactly like any other
+		// non-'reject' member would. So this port must track None's mere
+		// presence (nonePresent) exactly as it tracks otherPresent: a
+		// manifest with fixtures {"a": "reject", "b": null} is NOT
+		// reject-only-clean in Python (None ⊄ {'reject'}), and folding
+		// None silently out of the check here would let such a manifest
+		// pass in Go while Python fails it. The display text this port
+		// derives from expectationStrs deliberately mirrors Python's own
+		// `sorted(e for e in expectations if e is not None)` filtering,
+		// so None/otherPresent are excluded from the rendered failure
+		// list even though they still gate the pass/fail verdict.
+		// otherPresent additionally tracks whether any discovered
+		// fixture's expectation was a non-string, non-null JSON value
+		// (number/bool/array/object): such a value can never equal
+		// 'accept' or 'reject', so its mere presence must still be able
+		// to break the reject-only "all expectations are exactly
 		// 'reject'" assertion below, even though this port does not
 		// attempt to reproduce Python's exact mixed-type sorted() display
 		// text for that narrow edge (see reprJSONValue's doc comment).
 		expectationStrs := map[string]bool{}
 		otherPresent := false
+		nonePresent := false
 		for _, name := range discovered {
 			exp := lookupExpectation(manifest, name)
 			switch {
 			case exp.isString:
 				expectationStrs[exp.str] = true
-			case !exp.isNone:
+			case exp.isNone:
+				nonePresent = true
+			default:
 				otherPresent = true
 			}
 		}
 		if rejectOnlySuites[suite.name] {
-			onlyReject := len(expectationStrs) > 0 && !otherPresent
+			onlyReject := len(expectationStrs) > 0 && !otherPresent && !nonePresent
 			for e := range expectationStrs {
 				if e != "reject" {
 					onlyReject = false
