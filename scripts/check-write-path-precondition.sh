@@ -31,6 +31,19 @@ set -euo pipefail
 # script only detects the FIRST write path arriving; it does not mitigate
 # anything once one does.
 #
+# M1-T10 (docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md,
+# plan section C-3/M1-T10): the engine that used to run under an embedded
+# interpreter now runs entirely in Go, at
+# tools/gatecheck/internal/writepath. This wrapper is reduced to argument
+# parsing plus the shared build/invoke/cleanup runner
+# (scripts/lib/gatecheck-run.sh, C-3): it builds the gatecheck binary once
+# per invocation and forwards this script's own first argument straight
+# through as `gatecheck write-path`'s mode flag, exactly mirroring the
+# retired dispatch below (repo mode, --self-test, --self-test-integrity,
+# or an unrecognized flag -> usage + exit 2). Exit codes and ordered
+# stdout/stderr bytes are preserved (ED-3/ED-5 are the only permitted
+# deltas; see m1.md for the parent-vs-head parity evidence).
+#
 # Usage:
 #   scripts/check-write-path-precondition.sh
 #     Scans tracked, non-test Go files under internal/** and cmd/**. Exits 0
@@ -49,178 +62,24 @@ set -euo pipefail
 #     14d44e3c are unchanged -- this mode addition changes no selector or
 #     masking logic.
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN=python
-else
-  echo "python3 or python is required" >&2
-  exit 2
-fi
-
-# 032.005-T: importing scripts/lib/gomask.py would otherwise drop
-# scripts/lib/__pycache__/*.pyc into the working tree on every gate run.
-export PYTHONDONTWRITEBYTECODE=1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/gatecheck-run.sh
+source "${SCRIPT_DIR}/lib/gatecheck-run.sh"
 
 ROOT="$(git rev-parse --show-toplevel)"
-cd "$ROOT"
 
-run_mode() {
-  local mode="$1"
-  "$PYTHON_BIN" - "$mode" <<'PY'
-from __future__ import annotations
-
-import re
-import subprocess
-import sys
-from pathlib import Path
-
-mode = sys.argv[1]
-root = Path.cwd()
-
-# 032.005-T (shipment 029-S): the local mask_go_non_code() clone is deleted;
-# the canonical Go masker is imported from scripts/lib/gomask.py, the ONE
-# definition shared with the retired-architecture gate (AC-2.1). Canonical =
-# the retired-architecture superset (032.001-T). Re-baseline: the expected
-# write-path verdict delta set enumerated by 032.001-T is EMPTY (class D-1
-# only, 0 measured instances on fixtures and on tracked cmd/**, internal/**),
-# and the observed delta set is EMPTY -- see the CANONICAL GO MASKER DECISION
-# note in scripts/check-retired-architecture.sh.
-sys.path.insert(0, str(root / 'scripts' / 'lib'))
-from gomask import mask_go_non_code  # noqa: E402  (path set up just above)
-
-SELECTORS = [
-    "os.WriteFile", "os.Create", "os.OpenFile", "os.Remove", "os.RemoveAll",
-    "os.Rename", "os.Mkdir", "os.MkdirAll", "os.Symlink", "os.Chmod",
-    "os.Truncate", "io.Copy", "sql.Open", "bbolt.Open",
-    # Adversarial review additions (two independent reviewers, non-
-    # overlapping, both plausible): os.CreateTemp/os.MkdirTemp create real
-    # files/directories; os.Link creates a hardlink (a write primitive
-    # distinct from os.Symlink, already covered); os.Chown/os.Lchown/
-    # os.Chtimes mutate existing filesystem metadata in place.
-    "os.CreateTemp", "os.MkdirTemp", "os.Link", "os.Chown", "os.Lchown",
-    "os.Chtimes",
-]
-
-SELECTOR_RES = [
-    (sel, re.compile(r'(?<![\w.])' + re.escape(sel) + r'(?![\w])'))
-    for sel in SELECTORS
-]
-
-FIXTURE_DIR = root / "scripts" / "testdata" / "writepath"
-
-REGISTER_NAME = "the consolidated risk register (internal/pathsafe package doc, root.go)"
-EXCEPTION_NAME = "011.003-T's Constitution Check exception (internal/config/validate.go rule 7)"
-
-
-def scan_file(path: Path):
-    findings = []
-    masked = mask_go_non_code(path.read_text(encoding='utf-8'))
-    for line_no, line in enumerate(masked.splitlines(), start=1):
-        for sel, pattern in SELECTOR_RES:
-            if pattern.search(line):
-                findings.append(f"{path.as_posix()}:{line_no}: write primitive {sel!r} found")
-    return findings
-
-
-def should_scan(rel_path: str) -> bool:
-    if rel_path.endswith('_test.go') is True:
-        return False
-    if not rel_path.endswith('.go'):
-        return False
-    return rel_path.startswith('internal/') or rel_path.startswith('cmd/')
-
-
-def run_repo_scan():
-    proc = subprocess.run(
-        ['git', 'ls-files', '--', 'internal/**', 'cmd/**'],
-        cwd=root, text=True, capture_output=True, check=True,
-    )
-    rel_paths = [p for p in proc.stdout.splitlines() if should_scan(p)]
-
-    findings = []
-    for rel_path in rel_paths:
-        findings.extend(scan_file(root / rel_path))
-
-    if findings:
-        print('\n'.join(findings), file=sys.stderr)
-        print(
-            f"::error::a destructive filesystem write primitive was found under "
-            f"internal/** or cmd/**. This trips the write-path precondition "
-            f"recorded in {EXCEPTION_NAME} and tracked in {REGISTER_NAME}. "
-            f"RETIREMENT PROCEDURE: re-evaluate every finding in the risk "
-            f"register against this new write call site, land a mitigation "
-            f"(or an explicit, re-justified acceptance) in the SAME change, "
-            f"and update both the register and the Constitution Check "
-            f"exception to reflect the arrival of a real write path.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-
-
-def run_fixture_self_test():
-    if not FIXTURE_DIR.is_dir():
-        raise SystemExit(f"fixture dir not found: {FIXTURE_DIR.as_posix()}")
-
-    failures = []
-    discovered = sorted(FIXTURE_DIR.glob('*.go'))
-    if not discovered:
-        raise SystemExit(f"no fixtures discovered under {FIXTURE_DIR.as_posix()}")
-
-    for path in discovered:
-        findings = scan_file(path)
-        rejected = bool(findings)
-        name = path.name
-        if name.startswith('reject-'):
-            if rejected:
-                print(f"PASS {name}: rejected as expected")
-            else:
-                failures.append(f"{name}: expected rejection (write primitive), got clean")
-        elif name.startswith('accept-'):
-            if rejected:
-                detail = '; '.join(findings)
-                failures.append(f"{name}: expected clean, got findings: {detail}")
-            else:
-                print(f"PASS {name}: clean as expected")
-        else:
-            failures.append(f"{name}: fixture filename must start with 'accept-' or 'reject-'")
-
-    if failures:
-        print('\n'.join(f"FAIL {f}" for f in failures), file=sys.stderr)
-        raise SystemExit(1)
-
-
-if mode == 'repo':
-    run_repo_scan()
-elif mode == 'self-test':
-    run_fixture_self_test()
-elif mode == 'self-test-integrity':
-    # 030.001-T: additive integrity-only mode -- fixture self-test only,
-    # deliberately NOT run_repo_scan(). --self-test above is UNCHANGED
-    # (still runs the repo scan); this mode exists so ci.yml's integrity
-    # step can stay unconditionally blocking without also owning the
-    # WRITE_PATH_GATE_ADVISORY-toggled repo scan.
-    run_fixture_self_test()
-else:
-    raise SystemExit(f'unknown mode: {mode}')
-PY
+cleanup() {
+  gatecheck_cleanup
 }
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-case "${1:-}" in
-  "")
-    run_mode repo
-    ;;
-  --self-test)
-    run_mode self-test
-    run_mode repo
-    echo "self-test passed: fixtures matched expectations and the tracked tree is clean"
-    ;;
-  --self-test-integrity)
-    run_mode self-test-integrity
-    echo "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)"
-    ;;
-  *)
-    echo "usage: scripts/check-write-path-precondition.sh [--self-test|--self-test-integrity]" >&2
-    exit 2
-    ;;
-esac
+gatecheck_build
+build_rc=$?
+if [ "${build_rc}" -ne 0 ]; then
+  exit "${build_rc}"
+fi
+
+gatecheck_invoke write-path "$@"
+exit $?

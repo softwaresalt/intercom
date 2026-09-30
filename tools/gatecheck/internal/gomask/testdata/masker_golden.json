@@ -1,0 +1,212 @@
+[
+  {
+    "name": "scripts/testdata/retiredgo/retired-accept-block-comment.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\n/*\nsocketmode appears only inside this block comment and should be ignored.\n*/\ntype Clean string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\n  \n                                                                        \n  \ntype Clean string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-accept-comment-only.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\n// slack appears in this comment only and should be ignored.\ntype Clean string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\n                                                            \ntype Clean string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-accept-interpreted-string-escaped-quote.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\nvar note = \"an escaped quote \\\" precedes team_id inside this string\"\n",
+    "masked": "                                                                                  \npackage retiredgo\n\nvar note =                                                          \n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-accept-raw-string-multiline.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\nvar query = `SELECT *\nFROM sessions\nWHERE host_cli = 'inert'\n`\n",
+    "masked": "                                                                                  \npackage retiredgo\n\nvar query =          \n             \n                        \n \n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-accept-struct-tag-benign.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype TeamWithBenignTag struct {\n\tName string `json:\"team_name\"`\n}\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype TeamWithBenignTag struct {\n\tName string  json:\"team_name\" \n}\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-accept-struct-tag-non-tag-raw-string.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\n// Non-tag raw backtick literal (e.g. a SQL query) that happens to mention a\n// retired token in prose. This is NOT a struct tag literal -- its content\n// does not match struct_tag_re -- so it must stay fully masked and remain\n// an ACCEPT, proving the struct-tag unmasking seam does not regress into a\n// general raw-string regex over unlexed text.\nconst retiredTokenInQuery = `SELECT * FROM t WHERE channel_id = ?`\n",
+    "masked": "                                                                                  \npackage retiredgo\n\n                                                                            \n                                                                          \n                                                                          \n                                                                           \n                                              \nconst retiredTokenInQuery =                                       \n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-accept-token-corpus.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype HostClient struct{}\n\ntype ChannelIdentifier string\n\ntype TeamIdentity string\n\nvar channelIdx int\n\ntype IPCNamespace string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype HostClient struct{}\n\ntype ChannelIdentifier string\n\ntype TeamIdentity string\n\nvar channelIdx int\n\ntype IPCNamespace string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-after-rune-literal.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\nconst quote = '\\''\n\ntype ChannelID string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\nconst quote =     \n\ntype ChannelID string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-channel-ids.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype ChannelIDs []string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype ChannelIDs []string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-host-clis.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype HostCLIs []string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype HostCLIs []string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-ipc-names.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype IPCNames []string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype IPCNames []string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-slack-team-id.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype SlackTeamID string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype SlackTeamID string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-socket-modes.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype SocketModes struct{}\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype SocketModes struct{}\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-socketmode-lower.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\nvar socketmode string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\nvar socketmode string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-socketmode-mixed.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype Socketmode struct{}\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype Socketmode struct{}\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-socketmode-plural-fused.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\n// Post-015.005-T review (M-2 regression): a fused, unseparated, PLURAL\n// identifier -- neither a case boundary (like SocketModes) nor an\n// underscore (like socket_modes) breaks it into multiple components, and\n// it is not the bare singular fused form (socketmode) either. Proves\n// segment_whole()'s plural-suffix retry closes this combined evasion.\nvar socketmodes []string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\n                                                                       \n                                                                  \n                                                                         \n                                                                     \n                                                                      \nvar socketmodes []string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-struct-tag.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype ConfigWithTag struct {\n\tChannel string `toml:\"channel_id\"`\n}\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype ConfigWithTag struct {\n\tChannel string  toml:\"channel_id\" \n}\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-team-ids-cache.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype TeamIDsCache struct{}\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype TeamIDsCache struct{}\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo/retired-reject-team-ids.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\ntype TeamIDs []string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\ntype TeamIDs []string\n"
+  },
+  {
+    "name": "scripts/testdata/retiredgo-differential/retired-differential-comment-only.go",
+    "input": "// Package retiredgo lives under scripts/testdata, so the Go toolchain ignores it.\npackage retiredgo\n\n// slack appears in this comment only. Under the PRODUCTION masked scan\n// (scan_go(path, mask=True)) this comment is stripped and the token is\n// invisible, which is what the sibling retired-accept-comment-only.go\n// fixture (ACCEPT) proves. This file lives in the go-differential suite\n// instead, whose engine_override runs scan_go(path, mask=False) -- masking\n// intentionally bypassed -- so this same comment-only token IS visible and\n// MUST be caught (manifest expects \"reject\"). The differential suite's\n// purpose is exactly this: prove the masked production path is not\n// false-green by re-scanning the identical content unmasked and requiring\n// it to fail.\ntype Clean string\n",
+    "masked": "                                                                                  \npackage retiredgo\n\n                                                                       \n                                                                       \n                                                                      \n                                                                        \n                                                                           \n                                                                           \n                                                                       \n                                                                   \n                                                                          \n              \ntype Clean string\n"
+  },
+  {
+    "name": "scripts/testdata/writepath/accept-clean.go",
+    "input": "// Package writepath is a fixture used only by\n// scripts/check-write-path-precondition.sh --self-test. It lives under a\n// \"testdata\" directory, which the Go toolchain always ignores for\n// build/vet/test/list purposes, so it is never compiled as part of\n// `go build ./...` despite this scan input existing purely to be read as\n// text by the detector, not imported by anything.\npackage writepath\n\nfunc CleanHelper(a, b int) int {\n\treturn a + b\n}\n",
+    "masked": "                                              \n                                                                         \n                                                                  \n                                                                   \n                                                                         \n                                                  \npackage writepath\n\nfunc CleanHelper(a, b int) int {\n\treturn a + b\n}\n"
+  },
+  {
+    "name": "scripts/testdata/writepath/accept-mentions-in-comment.go",
+    "input": "// Package writepath is a fixture used only by\n// scripts/check-write-path-precondition.sh --self-test.\n//\n// This fixture's only purpose is to prove the detector masks comments and\n// string literals before scanning: it mentions os.WriteFile and\n// os.RemoveAll below, but only inside a comment and a string literal, never\n// as real code, and must therefore be scored ACCEPT (clean).\npackage writepath\n\n// A caller must never call os.WriteFile directly here; see the risk\n// register for why.\nfunc DescribeNonWritePrimitive() string {\n\treturn \"this string literal mentions os.RemoveAll but calls nothing\"\n}\n",
+    "masked": "                                              \n                                                        \n  \n                                                                          \n                                                                \n                                                                            \n                                                             \npackage writepath\n\n                                                                    \n                    \nfunc DescribeNonWritePrimitive() string {\n\treturn                                                              \n}\n"
+  },
+  {
+    "name": "scripts/testdata/writepath/accept-non-tag-raw-string-selector.go",
+    "input": "// Package writepath is a fixture used only by\n// scripts/check-write-path-precondition.sh --self-test. It lives under a\n// \"testdata\" directory, which the Go toolchain always ignores for\n// build/vet/test/list purposes, so it is never compiled as part of\n// `go build ./...` despite this scan input existing purely to be read as\n// text by the detector, not imported by anything.\n//\n// 8387758F (029-S decision delta D-1, folded into shipment 044-F / M1-T1):\n// the counterpart to reject-struct-tag-selector.go. This raw string holds\n// the SAME \"x:\\\"os.Remove\\\"\" text, but trailing free-form prose after the\n// key:\"value\" pair means the content does NOT match the tag grammar end to\n// end (struct_tag_re requires the whole content to be one or more\n// whitespace-separated key:\"value\" pairs and nothing else). The masker\n// therefore fully masks this raw string's content, and the detector must\n// report this fixture ACCEPT (clean).\npackage writepath\n\nfunc DescribeNonTagSelectorText() string {\n\tq := `x:\"os.Remove\" is only prose here, not a struct tag`\n\treturn q\n}\n",
+    "masked": "                                              \n                                                                         \n                                                                  \n                                                                   \n                                                                         \n                                                  \n  \n                                                                           \n                                                                          \n                                                                          \n                                                                           \n                                                                  \n                                                                       \n                                                                         \n                                      \npackage writepath\n\nfunc DescribeNonTagSelectorText() string {\n\tq :=                                                     \n\treturn q\n}\n"
+  },
+  {
+    "name": "scripts/testdata/writepath/reject-createtemp.go",
+    "input": "// Package writepath is a fixture used only by\n// scripts/check-write-path-precondition.sh --self-test. It lives under a\n// \"testdata\" directory, which the Go toolchain always ignores for\n// build/vet/test/list purposes, so it is never compiled as part of\n// `go build ./...` despite containing a package-qualified write primitive.\npackage writepath\n\nimport \"os\"\n\nfunc CreateTempSomething(dir, pattern string) (*os.File, error) {\n\treturn os.CreateTemp(dir, pattern)\n}\n",
+    "masked": "                                              \n                                                                         \n                                                                  \n                                                                   \n                                                                           \npackage writepath\n\nimport     \n\nfunc CreateTempSomething(dir, pattern string) (*os.File, error) {\n\treturn os.CreateTemp(dir, pattern)\n}\n"
+  },
+  {
+    "name": "scripts/testdata/writepath/reject-link.go",
+    "input": "// Package writepath is a fixture used only by\n// scripts/check-write-path-precondition.sh --self-test. It lives under a\n// \"testdata\" directory, which the Go toolchain always ignores for\n// build/vet/test/list purposes, so it is never compiled as part of\n// `go build ./...` despite containing a package-qualified write primitive.\npackage writepath\n\nimport \"os\"\n\nfunc LinkSomething(oldname, newname string) error {\n\treturn os.Link(oldname, newname)\n}\n",
+    "masked": "                                              \n                                                                         \n                                                                  \n                                                                   \n                                                                           \npackage writepath\n\nimport     \n\nfunc LinkSomething(oldname, newname string) error {\n\treturn os.Link(oldname, newname)\n}\n"
+  },
+  {
+    "name": "scripts/testdata/writepath/reject-struct-tag-selector.go",
+    "input": "// Package writepath is a fixture used only by\n// scripts/check-write-path-precondition.sh --self-test. It lives under a\n// \"testdata\" directory, which the Go toolchain always ignores for\n// build/vet/test/list purposes, so it is never compiled as part of\n// `go build ./...` despite containing a package-qualified write primitive.\n//\n// 8387758F (029-S decision delta D-1, folded into shipment 044-F / M1-T1):\n// the masker leaves a raw-string literal's content fully VISIBLE when that\n// content, taken as text, matches Go's struct-tag grammar end to end — real\n// struct tags carry config keys the gate must not hide. This fixture proves\n// that same rule also lets a qualified write selector hide in plain sight\n// when it is the VALUE half of a tag-shaped key:\"value\" pair: the struct\n// tag below is real (attached to a real exported field), so its content is\n// unmasked, and the selector os.Remove must be reported as a finding at the\n// tag's own source line.\npackage writepath\n\ntype StructTagSelector struct {\n\tField int `x:\"os.Remove\"`\n}\n",
+    "masked": "                                              \n                                                                         \n                                                                  \n                                                                   \n                                                                           \n  \n                                                                           \n                                                                           \n                                                                            \n                                                                            \n                                                                          \n                                                                         \n                                                                           \n                                                                            \n                         \npackage writepath\n\ntype StructTagSelector struct {\n\tField int  x:\"os.Remove\" \n}\n"
+  },
+  {
+    "name": "scripts/testdata/writepath/reject-writefile.go",
+    "input": "// Package writepath is a fixture used only by\n// scripts/check-write-path-precondition.sh --self-test. It lives under a\n// \"testdata\" directory, which the Go toolchain always ignores for\n// build/vet/test/list purposes, so it is never compiled as part of\n// `go build ./...` despite containing a package-qualified write primitive.\npackage writepath\n\nimport \"os\"\n\nfunc WriteSomething(path string, data []byte) error {\n\treturn os.WriteFile(path, data, 0o644)\n}\n",
+    "masked": "                                              \n                                                                         \n                                                                  \n                                                                   \n                                                                           \npackage writepath\n\nimport     \n\nfunc WriteSomething(path string, data []byte) error {\n\treturn os.WriteFile(path, data, 0o644)\n}\n"
+  },
+  {
+    "name": "multibyte-rune-in-comment",
+    "input": "a := 1 // café 中文\nb := 2\n",
+    "masked": "a := 1           \nb := 2\n"
+  },
+  {
+    "name": "multibyte-in-string",
+    "input": "s := \"café 中文\"\nb := 2\n",
+    "masked": "s :=          \nb := 2\n"
+  },
+  {
+    "name": "x1c-in-struct-tag",
+    "input": "type T struct {\n\tA int `x:\"a\u001cb\"`\n}\n",
+    "masked": "type T struct {\n\tA int  x:\"a\u001cb\" \n}\n"
+  },
+  {
+    "name": "nbsp-between-tag-pairs",
+    "input": "type T struct {\n\tA int `x:\"a\" y:\"b\"`\n}\n",
+    "masked": "type T struct {\n\tA int  x:\"a\" y:\"b\" \n}\n"
+  },
+  {
+    "name": "nel-in-tag",
+    "input": "type T struct {\n\tA int `x:\"ab\"`\n}\n",
+    "masked": "type T struct {\n\tA int  x:\"ab\" \n}\n"
+  },
+  {
+    "name": "digit-leading-tag-key",
+    "input": "q := `1x:\"a\"`\nz := 1\n",
+    "masked": "q :=         \nz := 1\n"
+  },
+  {
+    "name": "adjacent-tag-pairs-no-space",
+    "input": "q := `x:\"a\"y:\"b\"`\nz := 1\n",
+    "masked": "q :=             \nz := 1\n"
+  },
+  {
+    "name": "multiline-tag-shaped-raw-string",
+    "input": "q := `json:\"a\"\njson:\"b\"`\n",
+    "masked": "q :=  json:\"a\"\njson:\"b\" \n"
+  },
+  {
+    "name": "unterminated-raw-string-eof",
+    "input": "x := 1\ny := `json:\"channel_id\"",
+    "masked": "x := 1\ny :=                   "
+  },
+  {
+    "name": "unterminated-string-eof",
+    "input": "x := 1\ny := \"abc",
+    "masked": "x := 1\ny :=     "
+  },
+  {
+    "name": "escaped-quote",
+    "input": "s := \"a\\\"b\"\nz := 1\n",
+    "masked": "s :=       \nz := 1\n"
+  },
+  {
+    "name": "rune-literal-quote",
+    "input": "r := '\\''\nz := 1\n",
+    "masked": "r :=     \nz := 1\n"
+  },
+  {
+    "name": "crlf-line-endings",
+    "input": "a := 1\r\n// comment\r\nb := 2\r\n",
+    "masked": "a := 1\r\n           \nb := 2\r\n"
+  },
+  {
+    "name": "lone-cr",
+    "input": "a := 1\r// comment\rb := 2\r\n",
+    "masked": "a := 1\r                  \n"
+  },
+  {
+    "name": "block-comment-with-newlines",
+    "input": "a := 1\n/* line1\nline2\nline3 */\nb := 2\n",
+    "masked": "a := 1\n        \n     \n        \nb := 2\n"
+  }
+]
