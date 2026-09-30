@@ -87,10 +87,19 @@ func engineForPath(path string) string {
 // every selected path in a loop, and this path must travel through the
 // exact same reporting/advisory-toggle machinery as any real finding.
 //
-// A per-file read error (scanGo's or scanTomlFallback's I/O error) is
-// likewise converted into one synthetic finding line here rather than
-// propagated as a Go error, matching ED-2 ("a read error... a synthetic
-// finding where the engine has a finding channel").
+// A per-file read error from scanGo is converted into one synthetic
+// finding line here rather than propagated as a Go error, matching ED-2
+// ("a read error... a synthetic finding where the engine has a finding
+// channel"). The "toml" case below never reaches this conversion: real
+// production TOML dispatch only ever calls scanTomlPrimary (never
+// scanTomlFallback, which is exercised only via --self-test), and
+// scanTomlPrimary already converts its own read/parse failures into a
+// fail-closed finding string internally (see tomlprimary.go) before this
+// function ever sees a result -- so scanPath itself has no TOML I/O-error
+// path to document beyond the one noted in the "toml" case's own comment
+// below (Copilot review finding, PR #83, round 9: an earlier version of
+// this comment incorrectly attributed this conversion to "scanGo's or
+// scanTomlFallback's I/O error" as if both engines' errors landed here).
 func scanPath(path string) []string {
 	switch engineForPath(path) {
 	case "go":

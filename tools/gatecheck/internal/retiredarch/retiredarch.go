@@ -98,8 +98,14 @@ func selfTestEnginesForName(engineName string) []selfTestEngine {
 }
 
 // manifestShapeError is the error type loadFixtureManifest returns for a
-// genuinely non-object top-level manifest shape (or a read/decode
-// failure it cannot otherwise attribute). The caller checks for this type
+// genuinely non-object (or null) top-level JSON value -- the ONLY case
+// this type is used for. Every read failure, invalid-UTF-8 rejection,
+// JSON syntax error, and trailing-data-after-top-level-value error is
+// returned as a plain error instead (Copilot review finding, PR #83,
+// round 9: an earlier version of this comment described this type as
+// also covering "a read/decode failure it cannot otherwise attribute",
+// which stopped being true once those paths gained their own explicit
+// plain-error returns above). The caller checks for this type
 // specifically so it can emit the BARE message Python's
 // `raise SystemExit(f"invalid fixture manifest shape: ...")` prints
 // (no "::error::" prefix -- see F-6), while any other loadFixtureManifest
