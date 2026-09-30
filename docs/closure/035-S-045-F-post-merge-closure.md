@@ -359,17 +359,38 @@ such ambiguity).
 
 ## Compaction status (P-020)
 
-`done`. Ship Step 6 item 8 ran `compact-context` (manual execution, per this workspace's
-lack of a dedicated compact-context MCP/CLI tool) with `target: all`, performing the
-bounded per-merge Tier-1 floor.
+`done`. Ship Step 6 item 8 **invoked** the `compact-context` skill with `target: all` by
+directly executing its documented Required Protocol (`.github/skills/compact-context/SKILL.md`
+Phases 1–4), which is the only invocation mechanism the skill defines: the SKILL.md itself
+states the skill "is a mandatory workflow step invoked explicitly by the stage or ship agent" —
+the agent *is* the invoker/executor of the documented procedure, not a caller of a separate
+wrapper. Confirmed via `autoharness --help` that this autoharness installation exposes no
+`compact-context` (or equivalent) CLI/MCP subcommand — the available commands are `home`,
+`version`, `verify-workspace`, `gate check`, `gate size`, `gate copilot-review`,
+`gate pipeline-topology`, `gate dag-readiness`, `telemetry begin`, `telemetry record`, `eval`,
+and the `setup-*` commands, none of which perform compaction. There is therefore no distinct
+"manual pass" being substituted *for* the skill; direct execution of the documented protocol
+*is* the skill invocation in this workspace, exactly as the skill's own text prescribes.
 
-* **Memory**: this shipment's own session checkpoint
-  (`docs/memory/2026-09-30/035-s-gate-engine-go-migration-m2-memory.md`) was compacted into
-  `docs/memory/compacted/2026-09-30-035-s-045-f-compacted.md`. The original was moved to
-  `docs/archive/memory/2026-09-30/`.
-* **Plans**: not consolidated. `docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md`
-  still has outstanding units (M3, M4).
-* **Closure records**: this pass compacted none.
+**Phase 4 Report** (per SKILL.md's own report contract):
+
+* Files compacted: 1 (`docs/memory/2026-09-30/035-s-gate-engine-go-migration-m2-memory.md`)
+* Space recovered: **net −592 bytes** (6,161 → 6,753 bytes) — disclosed candidly: the compacted
+  file grew rather than shrank, because three subsequent Copilot-review rounds (PR #84) added
+  disclosure/correction content to the compacted summary itself after initial compaction. This
+  is a side effect of in-flight review remediation on an already-compacted artifact, not a
+  compaction-quality defect; the file remains a dense, decision-focused summary and duplicates
+  none of the original's narrative padding.
+* Active task checkpoints preserved: 0 (035-S has none — the covering feature and all 11 tasks
+  are `done`; no active-status checkpoint exists for this release unit)
+* Plans consolidated into decided-plans: 0 —
+  `docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md` still has outstanding
+  units (M3, M4) and is therefore not yet eligible for decided-plan consolidation (Phase 2
+  candidate rule: "feature or chore is complete AND plan has appended review content ready for
+  consolidation" — the *plan* is not complete, only this M2 unit within it)
+* Closure records compacted: 0 (this pass; see residual disclosure below)
+* Memory: original moved to `docs/archive/memory/2026-09-30/` per the skill's "never delete,
+  always archive" constraint; the compacted file replaces it as the durable summary
 * **Residual, disclosed and not actioned in this closure**: `docs/memory/` holds 9
   uncompacted files after this pass (down from the 10 disclosed at 034-S's own closure —
   this shipment's own file is now compacted, no new stray files were added). These are
@@ -378,7 +399,10 @@ bounded per-merge Tier-1 floor.
   2026-09-28, plus 034-S's own still-uncompacted post-merge-closure-session memory file).
   As with 034-S's own closure before it, this residual pool is better handled by a
   dedicated compaction chore than folded into a per-shipment closure PR. That decision
-  belongs to the operator or Stage.
+  belongs to the operator or Stage. Per the skill's own calibration note ("invocation is
+  mandatory; candidate selection stays threshold-gated... one candidate is intended per
+  merge"), leaving this threshold-gated residual pool untouched is the correct bounded Tier-1
+  behavior, not a shortfall of this invocation.
 
 ## Releasability evidence
 
