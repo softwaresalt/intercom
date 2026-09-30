@@ -213,10 +213,38 @@ func reprJSONValue(v interface{}) string {
 // per-value shapes for lookupExpectation/manifestExpectation to carry
 // through to the per-fixture loop.
 //
-// A read or decode error, or a non-object top-level shape, fails closed
-// with a *manifestShapeError the caller reports as a BARE message (no
-// "::error::" prefix -- see F-6) + exit 1, matching Python's
-// SystemExit(str) -> exit 1 with the message on stderr.
+// This function decodes into a bare interface{} FIRST, deliberately
+// separating two Python-distinguishable failure classes that a prior
+// port revision (see F-6/F-3 history above) conflated into one
+// *manifestShapeError bucket (a Copilot-review finding on PR #83, HEAD
+// 2c5fe8e, review round 2):
+//
+//   - A genuine JSON syntax error (malformed/truncated input) or trailing
+//     data after the top-level value is, in Python, an UNCAUGHT
+//     json.JSONDecodeError from `json.loads` -- load_fixture_manifest
+//     never catches it, so it propagates as an ordinary Python exception
+//     (a traceback + exit 1), NOT the function's own
+//     `raise SystemExit(f"invalid fixture manifest shape: ...")`. That
+//     traceback class is exactly ED-2's "today a Python traceback with
+//     exit 1; after, a one-line ::error:: message with exit 1" delta, so
+//     this port returns a PLAIN error here, letting the caller's
+//     "::error::"-prefixed branch (the ED-2 path) handle it -- not the
+//     bare-message manifestShapeError branch.
+//   - A value that decodes as syntactically valid JSON but is not a JSON
+//     object at the top level (an array, string, number, bool, or the
+//     `null` literal, which decodes to a nil interface{} and therefore
+//     also fails the map type-assertion below) IS what Python's
+//     `isinstance(data, dict)` guard rejects with its own
+//     SystemExit(str) -- a BARE message (C-2's usage/infrastructure-error
+//     class), no "::error::" prefix (see F-6). That is the ONLY case
+//     that still produces a *manifestShapeError here.
+//
+// dec.More() (trailing non-whitespace content after the top-level value)
+// is Python's "Extra data" JSONDecodeError -- the SAME uncaught-exception
+// class as a syntax error, not a shape mismatch -- so it also returns a
+// plain error, matching ED-8's explicit "trailing data after the
+// top-level value stays a SKIP [via the decode-error path]" rule for the
+// sibling merge-strategy JSON evaluator.
 func loadFixtureManifest(manifestPath string) (map[string]interface{}, error) {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -224,25 +252,39 @@ func loadFixtureManifest(manifestPath string) (map[string]interface{}, error) {
 	}
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	dec.UseNumber()
-	var raw map[string]interface{}
-	if err := dec.Decode(&raw); err != nil || dec.More() || raw == nil {
-		// dec.More() rejects trailing non-whitespace content after the
-		// top-level value, matching json.Unmarshal's stricter
-		// whole-document semantics (json.Decoder.Decode alone would
-		// silently ignore anything after the first JSON value).
-		//
-		// raw == nil catches a top-level JSON `null`: encoding/json
-		// decodes `null` into a nil map with NO error (a well-known Go
-		// json quirk), but Python's `isinstance(data, dict)` guard
-		// rejects `None` (json.loads("null")) as not a dict -- verified
-		// against a real `python -c` run. Without this check, a
-		// top-level-null manifest would silently behave as an empty
-		// manifest instead of failing closed with the shape error,
+	var raw interface{}
+	if err := dec.Decode(&raw); err != nil {
+		// A decode failure here is a genuine JSON syntax error (or EOF on
+		// empty input): in Python this is an uncaught json.JSONDecodeError,
+		// not the function's own SystemExit -- route it to the caller's
+		// "::error::" (ED-2) branch via a plain error, not
+		// *manifestShapeError.
+		return nil, fmt.Errorf("decode fixture manifest %s: %w", manifestPath, err)
+	}
+	if dec.More() {
+		// Trailing non-whitespace content after the top-level value is
+		// Python's "Extra data" JSONDecodeError -- the same
+		// uncaught-exception class as a syntax error, not a shape
+		// mismatch. Matches json.Unmarshal's stricter whole-document
+		// semantics (json.Decoder.Decode alone would silently ignore
+		// anything after the first JSON value).
+		return nil, fmt.Errorf("decode fixture manifest %s: trailing data after top-level JSON value", manifestPath)
+	}
+	manifest, ok := raw.(map[string]interface{})
+	if !ok {
+		// raw is either a non-object JSON value (array, string, number,
+		// bool) or the `null` literal (which decodes to a nil
+		// interface{}, also failing this assertion): Python's
+		// `isinstance(data, dict)` guard rejects all of these the same
+		// way, via its own SystemExit(str) -- verified against a real
+		// `python -c` run for the null case specifically. Without this
+		// check, a top-level-null manifest would silently behave as an
+		// empty manifest instead of failing closed with the shape error,
 		// diverging from Python's actual behavior (same class of gap as
-		// F-2/F-6, caught by Copilot review on this PR).
+		// F-2/F-6).
 		return nil, &manifestShapeError{path: manifestPath}
 	}
-	return raw, nil
+	return manifest, nil
 }
 
 // discoverFixtures globs fixtureDir/glob and returns the matched paths

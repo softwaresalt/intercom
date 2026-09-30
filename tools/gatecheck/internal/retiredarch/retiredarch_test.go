@@ -179,8 +179,77 @@ func TestLoadFixtureManifest_InvalidShape_Errors(t *testing.T) {
 	if err := os.WriteFile(path, []byte("[1,2,3]"), 0o644); err != nil {
 		t.Fatalf("os.WriteFile: %v", err)
 	}
-	if _, err := loadFixtureManifest(path); err == nil {
+	manifest, err := loadFixtureManifest(path)
+	if err == nil {
 		t.Fatal("expected an error for a non-object manifest shape")
+	}
+	// A syntactically-valid JSON array is exactly the shape-mismatch
+	// class Python's `isinstance(data, dict)` guard rejects via its own
+	// SystemExit -- it must stay a *manifestShapeError (bare message, no
+	// "::error::" prefix -- see F-6 and
+	// TestRunFixtureSelfTest_ManifestShapeError_BareMessage), not the
+	// plain-decode-error class added by the round-2 Copilot-review fix
+	// below.
+	var shapeErr *manifestShapeError
+	if !errors.As(err, &shapeErr) {
+		t.Fatalf("loadFixtureManifest([1,2,3]) error = %v (%T), want a *manifestShapeError, got manifest=%v", err, err, manifest)
+	}
+}
+
+// TestLoadFixtureManifest_MalformedJSON_PlainError is a Copilot-review
+// fix (PR #83, HEAD 2c5fe8e review round 2): a genuine JSON syntax error
+// (truncated/malformed input) must NOT surface as a *manifestShapeError.
+// Python's load_fixture_manifest calls `json.loads` unguarded -- a
+// malformed document raises an UNCAUGHT json.JSONDecodeError, which is
+// NOT load_fixture_manifest's own `raise SystemExit(f"invalid fixture
+// manifest shape: ...")`; it propagates as an ordinary Python exception
+// (a traceback + exit 1), exactly ED-2's "today a Python traceback with
+// exit 1; after, a one-line ::error:: message with exit 1" delta. A
+// prior port revision decoded straight into map[string]interface{} and
+// funneled BOTH failure classes (genuine syntax errors and valid-but-
+// wrong-shape values) into the same *manifestShapeError bucket, which
+// would have made a malformed-JSON manifest print the bare
+// "invalid fixture manifest shape" message instead of an "::error::"-
+// prefixed one -- diverging from Python's actual traceback-class
+// behavior.
+func TestLoadFixtureManifest_MalformedJSON_PlainError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	if err := os.WriteFile(path, []byte(`{"a": `), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	manifest, err := loadFixtureManifest(path)
+	if err == nil {
+		t.Fatalf("expected a decode error for malformed JSON, got manifest=%v, err=nil", manifest)
+	}
+	var shapeErr *manifestShapeError
+	if errors.As(err, &shapeErr) {
+		t.Fatalf("loadFixtureManifest(malformed JSON) error = %v (%T), want a plain decode error (ED-2 class), NOT a *manifestShapeError", err, err)
+	}
+}
+
+// TestLoadFixtureManifest_TrailingData_PlainError is the companion to
+// TestLoadFixtureManifest_MalformedJSON_PlainError: trailing
+// non-whitespace content after the top-level JSON value is Python's
+// "Extra data" json.JSONDecodeError -- the SAME uncaught-exception class
+// as a syntax error, not a shape mismatch -- so it must also stay a
+// plain error routed to the caller's "::error::" (ED-2) branch, matching
+// ED-8's explicit "trailing data after the top-level value stays a SKIP
+// [via the decode-error path]" rule for the sibling merge-strategy JSON
+// evaluator.
+func TestLoadFixtureManifest_TrailingData_PlainError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	if err := os.WriteFile(path, []byte(`{"a": 1} garbage`), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	manifest, err := loadFixtureManifest(path)
+	if err == nil {
+		t.Fatalf("expected a decode error for trailing data after the top-level value, got manifest=%v, err=nil", manifest)
+	}
+	var shapeErr *manifestShapeError
+	if errors.As(err, &shapeErr) {
+		t.Fatalf("loadFixtureManifest(trailing data) error = %v (%T), want a plain decode error (ED-2 class), NOT a *manifestShapeError", err, err)
 	}
 }
 
