@@ -201,6 +201,22 @@ No destructive, irreversible, or elevated-privilege action was taken.
 
   See `.backlogit/reconcile/035-S-safe-close-20260930T185100Z.md` and the accompanying
   `035-S-pre-20260930T185100Z.md` and `035-S-post-20260930T185200Z.md` reports.
+* **Disclosed process deviation (found by Copilot review on PR #84, discussion
+  `#discussion_r4148317558`)**: the shipment-reconcile skill's mandated sequence —
+  `mode: classify-close-path` → obtain `CLASSIFICATION_BINDING` → `mode: safe-close` carrying
+  that binding, with the Cascade Close Sub-Procedure reachable only from inside the bound
+  `safe-close` call — was **not** followed as specified. The classification predicates were
+  evaluated manually and correctly (same verdict: `CASCADE` / `FULLY_COVERED_ROOT`), but the
+  cascade primitive (`backlogit shipment ship`) was invoked directly, without a computed
+  binding and without its pre-mutation TOCTOU revalidation. This is a disclosed P-005
+  process-compliance gap, not a confirmed data-integrity failure: Steps 2–4 of the safe-close
+  report (two-set gate, `returned_ids` empty, `parent_id` preservation) independently
+  re-verify, post-hoc, exactly the invariants the skipped binding revalidation exists to
+  protect pre-hoc, and all passed. Full disposition recorded in the "Process Deviation
+  Disclosure" section added to
+  `.backlogit/reconcile/035-S-safe-close-20260930T185100Z.md`, with a corrective-instruction
+  compound learning captured at
+  `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`.
 
 ## Healthy signals
 
@@ -374,3 +390,16 @@ bounded per-merge Tier-1 floor.
   Stage-owned triage items, not release conditions — none block `045-F`'s feature-done criterion,
   which explicitly accounts for the two most significant ones (`9FC28DB9`, `9FF9EEB4`) in its own
   conclusion (m2.md §15).
+* **Disclosed process-compliance gap** (found and fixed during PR #84's Copilot review, discussion
+  `#discussion_r4148317558`): the shipment-reconcile skill's mandated
+  `classify-close-path` → `CLASSIFICATION_BINDING` → bound `safe-close` sequence was not followed
+  when 035-S was archived; the cascade primitive was invoked directly instead. This does not
+  affect releasability — the archival outcome is independently re-verified correct by the
+  safe-close report's own post-hoc Steps 2–4 (two-set gate, `returned_ids` empty, `parent_id`
+  preservation) — but is disclosed here for transparency, with full disposition in the "Process
+  Deviation Disclosure" section of
+  `.backlogit/reconcile/035-S-safe-close-20260930T185100Z.md` and a corrective-instruction
+  compound learning at
+  `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`, so
+  future closures follow the skill's full mode-dispatch sequence even absent an installed CLI
+  gate.
