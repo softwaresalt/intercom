@@ -168,6 +168,25 @@ set -euo pipefail
 # gatecheck-run.sh) via `git -C`, unlike write-path/unignore/
 # merge-strategy-evaluate's wrappers, which use a plain cwd-based
 # `git rev-parse --show-toplevel`.
+#
+# Caller-cwd precondition guard (Copilot round 13, PR #83): the
+# pre-switch wrapper's OWN `ROOT="$(git rev-parse --show-toplevel)"` call
+# ran in the CALLER's cwd, so under `set -e` the whole invocation failed
+# before the Python engine ever ran when invoked from outside any Git work
+# tree -- independent of, and prior to, Python's own module-anchored
+# resolve_repo_root() call. Collapsing straight to the GATECHECK_SRC-
+# anchored `-C` call above preserves the ENGINE's root-COMPUTATION
+# mechanism (still module-anchored, matching Python exactly) but silently
+# dropped this separate caller-cwd PRECONDITION: GATECHECK_SRC is always
+# inside a git work tree (it is this repo's own checkout), so the `-C`
+# call can never itself fail for this reason, and the wrapper began
+# succeeding from arbitrary non-Git directories -- an observable CLI
+# behavior change the PR's "exit codes and ordered stdout/stderr bytes are
+# preserved" promise does not license. Restore the precondition as its own
+# statement, decoupled from the actual (still engine-anchored) $ROOT
+# value below: same command, same caller cwd, same fatal message and exit
+# 128 on failure, output discarded since only the precondition matters.
+git rev-parse --show-toplevel >/dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/gatecheck-run.sh
