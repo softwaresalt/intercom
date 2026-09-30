@@ -1,9 +1,12 @@
 // This file (tomlfallback.go) ports strip_toml_comment,
 // scan_toml_with_fallback and the shared bare_key_re-based line lexer from
-// scripts/lib/retired_arch.py. It is the defensive fallback engine used as
-// the real scan path only when a tomllib-equivalent parser is unavailable,
-// but --self-test exercises it directly against every fixture regardless,
-// so it is never untested dead code.
+// scripts/lib/retired_arch.py. Unlike the Python original (where this was
+// a real runtime fallback for an environment lacking a tomllib-equivalent
+// parser), the Go port's scanPath dispatch always routes TOML files
+// through scanTomlPrimary (BurntSushi/toml is a build-time dependency, so
+// it is never "unavailable" at runtime): this engine is exercised only
+// via --self-test, directly against every fixture, so it is never
+// untested dead code, but it is not a reachable production scan path.
 package retiredarch
 
 import (

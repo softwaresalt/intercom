@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -225,10 +226,24 @@ func TestSelectRepoPaths_MatchesGolden_LiveTree(t *testing.T) {
 
 // walkInternalGoFiles independently enumerates internal/**.go files
 // (excluding _test.go and testdata/) directly from the filesystem via
-// filepath.WalkDir, deliberately not reusing git ls-files or
+// filepath.WalkDir, deliberately not reusing
 // shouldScanRepoPath/expectedInternalRepoPaths, so
 // TestSelectRepoPaths_MatchesGolden_LiveTree has a genuinely independent
-// oracle rather than a second copy of the same git-based filter.
+// oracle rather than a second copy of the same selection-logic filter.
+//
+// Copilot review round 8 (PR #83, HEAD 660d271) found that a raw
+// filepath.WalkDir enumeration also picks up untracked files (e.g. a
+// local scratch/editor temp file under internal/), which selectRepoPaths
+// never selects (it enumerates only git-tracked paths via `git
+// ls-files`) -- so an untracked stray .go file would make this test fail
+// even though selection behavior is correct. Fixed by cross-checking
+// each walked candidate directly against `git ls-files --error-unmatch`
+// (a raw exec.Command invocation, deliberately NOT going through
+// selectRepoPaths/DefaultGitRunner/the GitRunner type under test) and
+// dropping any untracked file before comparison -- this keeps the
+// oracle's filesystem-presence check and its selection-logic filtering
+// both independent of the code under test, while now also independently
+// verifying trackedness instead of assuming every walked file is tracked.
 func walkInternalGoFiles(t *testing.T, root string) []string {
 	t.Helper()
 	var out []string
@@ -250,7 +265,11 @@ func walkInternalGoFiles(t *testing.T, root string) []string {
 		if err != nil {
 			return err
 		}
-		out = append(out, filepath.ToSlash(rel))
+		relSlash := filepath.ToSlash(rel)
+		if !isGitTrackedFile(t, root, relSlash) {
+			return nil
+		}
+		out = append(out, relSlash)
 		return nil
 	})
 	if err != nil {
@@ -258,4 +277,18 @@ func walkInternalGoFiles(t *testing.T, root string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// isGitTrackedFile reports whether relPath is tracked in git, via a raw
+// `git ls-files --error-unmatch` invocation independent of
+// selectRepoPaths/DefaultGitRunner/the GitRunner type under test (round
+// 8 fix, see walkInternalGoFiles doc comment above).
+func isGitTrackedFile(t *testing.T, root, relPath string) bool {
+	t.Helper()
+	cmd := exec.Command("git", "ls-files", "--error-unmatch", "--", relPath)
+	cmd.Dir = root
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
 }
