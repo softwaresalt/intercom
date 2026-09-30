@@ -133,20 +133,66 @@ shipment 034-S remain `active` — closing them is Step 6 (post-merge
 closure), out of reach this run since merge is not pre-authorized
 (P-017 dark mode).
 
-## Next steps
-1. Shipment-level closeout: full quality gate sequence across all packages
-   (done, all green — build/vet/test clean).
-2. Local review gate (P-021 C1 classification — capture `DEFERRED SCOPE
-   EXPANSION` stash entries for any out-of-scope findings; stash entries
-   8E9F8E55/B72E9715/8E18CCF5/56B16321/C312BD4C remain explicitly out of
-   scope; D-4/C312BD4C masker multiline struct-tag semantics did NOT ride
-   along — pinned as `TestMaskGoNonCode_MultilineTagShapedRawStringPinned`
-   in `gomask_test.go`).
-3. PR creation via `pr-lifecycle` skill, CI/copilot-review handling via
-   `fix-ci`, P-018 copilot-review gate, P-014 §1.9 local readiness gate.
-4. STOP at merge readiness — dark mode, merge NOT pre-authorized. Report to
-   operator and wait for explicit approval.
+## Shipment closeout summary (final, this session)
+
+1. **Quality gates**: full sequence green (gofmt via `git archive`-extracted
+   tree, `go vet ./...`, `go build ./...`, `go test ./...`,
+   `go test -race ./tools/gatecheck/...`). Two genuine pre-PR/CI defects
+   were found and fixed (both P-021 C1 same-contract-surface completions of
+   this shipment's own work, not scope expansion — no deferred-scope-
+   expansion stash entries were needed):
+   - `9df7dfb`: renamed 3 deliberately-malformed `filebased/*.go` reference
+     fixtures (M1-T3) to `*.go.txt` — they broke the repo-wide `gofmt -l .`
+     CI step (parse errors / BOM). Content unchanged; nothing reads them by
+     path at runtime. See evidence doc §8.
+   - `de005ff` (fix-ci cycle 1 of 5): M1-T10's Go-dispatch rewrite of
+     `check-write-path-precondition.sh` broke a pre-existing Python test
+     (`test_shared_masker_is_imported`, from an earlier shipment's
+     032.005-T) that asserted a now-removed `from gomask import ...` line.
+     Replaced with two successor assertions preserving the original intent
+     (no duplicated masker logic in the wrapper). Confirmed in-scope via the
+     migration plan's R-13/M4-T6 scoping (`scripts/lib/tests/` stays a live
+     blocking gate through M1-M3; full retirement is M4-T6's scope, not
+     M1's). See evidence doc §9.
+   - `715063d`: docs-only commit recording the fix-ci evidence (§9 above).
+2. **Local review gate**: verdict **READY**, 0 P0/P1 findings, across the
+   full 18-commit branch diff. D-4/`C312BD4C` masker multiline-struct-tag
+   golden pin confirmed intact (pinned, not "fixed"). All 4 named
+   out-of-scope stash entries (8E9F8E55, B72E9715, 8E18CCF5, 56B16321)
+   confirmed NOT implemented. No P-021 deferred-scope-expansion captures
+   were required — both fixes above were in-scope completions.
+3. **PR #81** created: base `main`, head
+   `feat/034-s-gate-engine-go-migration-m1-gatecheck-scaffold-pysem-masker-write-path`.
+   Body includes the `## Local Review Readiness` block per §1.9, updated
+   twice as HEAD advanced through the fix-ci cycle. Final reviewed HEAD:
+   `715063d533140422d1bce5da785e4e6c20e826af`.
+4. **CI**: RED on first push (`lint` job — the Python test regression
+   above), fixed in fix-ci cycle 1, GREEN on the re-run (`715063d`) across
+   all required checks: `lint`, `test`, `test (windows, advisory)`,
+   `security`, all 4 `cross-compile` targets, plus the repo's structural
+   gates (`detect code changes`, `gitignore append-only + un-ignore
+   regression (I6)`, `merge-strategy structural verification`,
+   `pipeline-topology (ambient)`, `load cross-compile targets`, `ci gate`).
+5. **P-018 copilot-review gate**: `autoharness gate copilot-review 81
+   --repo softwaresalt/intercom --enforcement auto --max-wait 0` returned
+   `NOT_APPLICABLE: PASS` (exit 0) both immediately after CI went green and
+   again on the final HEAD after the docs-only commit — Copilot review is
+   not engaged on this PR and `copilot_review.enforcement` is unset
+   (defaults to `auto`), so the gate does not hold merge.
+6. **No reviews, no review threads, no PR comments** exist on PR #81 as of
+   the final HEAD — nothing to resolve.
+7. **STOP at merge readiness** — dark mode, `merge_approval_pre_authorized:
+   false`, `admin_fallback_pre_authorized: false`. No merge attempted, no
+   `--admin` used. Shipment 034-S and feature 044-F remain `active` in
+   backlogit (all 12/12 tasks `done`) — post-merge closure (P-020
+   compaction, closure doc, shipment archive) is explicitly out of reach
+   this run and will only proceed after an operator-approved merge in a
+   future session.
 
 ## Circuit breaker status
 No circuit breakers tripped this session. No consecutive task failures.
-Review-fix cycles: 0 so far (review gate about to run).
+Fix-ci cycles used: 1 of 5 (resolved the only CI failure encountered).
+Review-fix cycles: 0 (local review gate returned READY on first pass, no
+review-driven fix cycle was needed). No P-021 deferred-scope-expansion
+stash entries were created — both in-scope fixes passed the C1
+same-contract-surface test.
