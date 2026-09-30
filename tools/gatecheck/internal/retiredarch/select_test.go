@@ -3,6 +3,9 @@ package retiredarch
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -132,9 +135,22 @@ func TestSelectRepoPaths_FiltersAndSorts(t *testing.T) {
 	}
 }
 
-// TestSelectRepoPaths_MatchesGolden_LiveTree is M2-T7's evidence AC: the
-// live selected set (real git, real tree) must equal the parent-commit
-// Python selected_path_set golden exactly.
+// TestSelectRepoPaths_MatchesGolden_LiveTree is M2-T7's evidence AC. The
+// parent-commit Python selected_path_set golden was captured ONCE, at
+// evidence-collection time (see m2.md §13.2), and is compared here only
+// as non-fatal diagnostic information (t.Logf) -- never a hard equality
+// assertion -- because freezing an exact file list into a durable
+// `go test ./...` test would fail on every future legitimate addition or
+// removal of a source file under cmd/**/internal/**, even when selection
+// behavior itself remains perfectly correct (Copilot review round 6;
+// this test previously hard-failed on drift). The real pass/fail
+// assertions below are dynamically-derived structural invariants plus an
+// independent second enumeration of the internal/ subset via
+// filepath.WalkDir over the real filesystem (deliberately NOT git
+// ls-files, and NOT shouldScanRepoPath/expectedInternalRepoPaths, both of
+// which already share the same git-based implementation), so this test
+// still catches a real selection regression without depending on a
+// point-in-time snapshot.
 func TestSelectRepoPaths_MatchesGolden_LiveTree(t *testing.T) {
 	root := repoRoot(t)
 	g := loadGolden(t)
@@ -142,13 +158,104 @@ func TestSelectRepoPaths_MatchesGolden_LiveTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("selectRepoPaths(live tree): %v", err)
 	}
+
+	// Evidence-only, non-fatal: log (never fail) any drift from the
+	// frozen parent-commit golden snapshot recorded in m2.md.
 	want := g.RepoModeEvidence.SelectedPathSet
-	if len(got) != len(want) {
-		t.Fatalf("live selected set has %d paths, golden has %d: got=%v want=%v", len(got), len(want), got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("live selected set[%d] = %q, golden = %q (full got=%v want=%v)", i, got[i], want[i], got, want)
+	switch {
+	case len(got) != len(want):
+		t.Logf("live selected set has %d paths, golden snapshot (m2.md) has %d -- informational only: got=%v want=%v", len(got), len(want), got, want)
+	default:
+		for i := range want {
+			if got[i] != want[i] {
+				t.Logf("live selected set[%d] = %q differs from golden snapshot (m2.md) %q -- informational only", i, got[i], want[i])
+				break
+			}
 		}
 	}
+
+	if len(got) == 0 {
+		t.Fatal("selectRepoPaths(live tree) returned zero paths")
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i-1] >= got[i] {
+			t.Fatalf("live selected set not strictly sorted/unique at index %d: %q >= %q", i, got[i-1], got[i])
+		}
+	}
+	for _, p := range got {
+		if strings.HasPrefix(p, "tools/") {
+			t.Fatalf("selected path %q must never start with tools/ (gatecheck's own source is never self-scanned)", p)
+		}
+		switch {
+		case p == "config.toml.example":
+		case strings.HasPrefix(p, "cmd/"):
+			if !strings.HasSuffix(p, ".go") {
+				t.Fatalf("selected cmd/ path %q must end in .go", p)
+			}
+		case strings.HasPrefix(p, "internal/"):
+			if strings.Contains(p, "/testdata/") || strings.HasSuffix(p, "_test.go") {
+				t.Fatalf("selected internal/ path %q must exclude testdata/_test.go", p)
+			}
+			if !strings.HasSuffix(p, ".go") {
+				t.Fatalf("selected internal/ path %q must end in .go", p)
+			}
+		default:
+			t.Fatalf("selected path %q is outside the cmd/**, internal/**, config.toml.example pathspecs", p)
+		}
+	}
+
+	// Independent second enumeration: walk the real filesystem (not git
+	// ls-files) for the internal/ subset and require it to match exactly.
+	wantInternal := walkInternalGoFiles(t, root)
+	var gotInternal []string
+	for _, p := range got {
+		if strings.HasPrefix(p, "internal/") {
+			gotInternal = append(gotInternal, filepath.ToSlash(p))
+		}
+	}
+	if len(gotInternal) != len(wantInternal) {
+		t.Fatalf("selectRepoPaths internal/ subset has %d entries, filesystem walk found %d: got=%v want=%v", len(gotInternal), len(wantInternal), gotInternal, wantInternal)
+	}
+	for i := range wantInternal {
+		if gotInternal[i] != wantInternal[i] {
+			t.Fatalf("selectRepoPaths internal/ subset[%d] = %q, filesystem walk = %q", i, gotInternal[i], wantInternal[i])
+		}
+	}
+}
+
+// walkInternalGoFiles independently enumerates internal/**.go files
+// (excluding _test.go and testdata/) directly from the filesystem via
+// filepath.WalkDir, deliberately not reusing git ls-files or
+// shouldScanRepoPath/expectedInternalRepoPaths, so
+// TestSelectRepoPaths_MatchesGolden_LiveTree has a genuinely independent
+// oracle rather than a second copy of the same git-based filter.
+func walkInternalGoFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	internalRoot := filepath.Join(root, "internal")
+	err := filepath.WalkDir(internalRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, "_test.go") || !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walkInternalGoFiles: %v", err)
+	}
+	sort.Strings(out)
+	return out
 }
