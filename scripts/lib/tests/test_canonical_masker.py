@@ -57,7 +57,20 @@ class SingleDefinitionTest(unittest.TestCase):
 
 
 class WritePathUsesSharedMaskerTest(unittest.TestCase):
-    """032.005-T: write-path gate imports the canonical masker."""
+    """032.005-T: write-path gate imports the canonical masker.
+
+    SUPERSEDED by 034-S/044.012-T (M1-T10, gate-engine Go migration): the
+    write-path wrapper no longer runs any Python at all -- it dispatches to
+    the Go engine at tools/gatecheck/internal/writepath, which itself
+    imports the single canonical Go masker
+    (tools/gatecheck/internal/gomask), enforced by the Go compiler and the
+    Go test suite (tools/gatecheck/main_test.go's
+    TestRun_WritePath_DispatchesToEngine). This class keeps the ORIGINAL
+    intent -- write-path must never carry its own duplicated masker logic
+    -- alive against the new implementation rather than being deleted
+    outright; full retirement of this file is M4-T6's scope (see R-13 "No
+    Python-test assertion is lost" in the migration plan).
+    """
 
     def setUp(self):
         self.text = WRITE_PATH.read_text(encoding='utf-8')
@@ -65,9 +78,18 @@ class WritePathUsesSharedMaskerTest(unittest.TestCase):
     def test_local_clone_is_deleted(self):
         self.assertNotIn('def mask_go_non_code(', self.text)
 
-    def test_shared_masker_is_imported(self):
-        self.assertRegex(self.text, r'(?m)^from gomask import mask_go_non_code\b')
-        self.assertIn("'scripts' / 'lib'", self.text)
+    def test_no_python_masker_import_remains(self):
+        """The wrapper is pure bash (M1-T10): it must not import gomask.py
+        directly, nor invoke a Python interpreter at all."""
+        self.assertNotRegex(self.text, r'(?m)^from gomask import mask_go_non_code\b')
+        self.assertNotRegex(self.text, r'\bpython3?\b')
+
+    def test_dispatches_to_go_engine(self):
+        """The wrapper delegates the actual masking/scan work to the single
+        canonical Go engine via the shared runner (M1-T9/M1-T10), rather
+        than reimplementing or duplicating any masker logic itself."""
+        self.assertIn('gatecheck_invoke write-path', self.text)
+        self.assertIn('gatecheck_build', self.text)
 
 
 if __name__ == '__main__':
