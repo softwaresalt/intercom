@@ -25,7 +25,8 @@ func TestScanTomlFallback_MatchesGolden_Fixtures(t *testing.T) {
 				assertFailClosedReject(t, got, want)
 				return
 			}
-			if !reflect.DeepEqual(got, want) && !(len(got) == 0 && len(want) == 0) {
+			ok := reflect.DeepEqual(got, want) || (len(got) == 0 && len(want) == 0)
+			if !ok {
 				t.Fatalf("scanTomlFallback(%s) = %v, want %v", path, got, want)
 			}
 		})
@@ -52,7 +53,8 @@ func TestScanTomlFallback_MatchesGolden_Inline(t *testing.T) {
 				t.Fatalf("scanTomlFallback(%s): %v", path, err)
 			}
 			want := derootifyAll(row.FallbackFindings, g.RootPlaceholder, rootPosix)
-			if !reflect.DeepEqual(got, want) && !(len(got) == 0 && len(want) == 0) {
+			ok := reflect.DeepEqual(got, want) || (len(got) == 0 && len(want) == 0)
+			if !ok {
 				t.Fatalf("scanTomlFallback(%s) = %v, want %v", name, got, want)
 			}
 		})

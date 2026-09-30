@@ -603,14 +603,14 @@ func runRepoScan(root string, git GitRunner) Result {
 func Run(flag, root string, git GitRunner, stdout, stderr io.Writer) int {
 	switch flag {
 	case "":
-		fmt.Fprintln(stdout, "::notice::retired-arch gate mode=repo")
+		_, _ = fmt.Fprintln(stdout, "::notice::retired-arch gate mode=repo")
 		res := runRepoScan(root, git)
 		_, _ = io.WriteString(stdout, res.Stdout)
 		_, _ = io.WriteString(stderr, res.Stderr)
 		return res.Code
 
 	case "--self-test":
-		fmt.Fprintln(stdout, "::notice::retired-arch gate mode=self-test")
+		_, _ = fmt.Fprintln(stdout, "::notice::retired-arch gate mode=self-test")
 		if code := runSelfTestAssertions(root, git, stdout, stderr); code != 0 {
 			return code
 		}
@@ -620,22 +620,22 @@ func Run(flag, root string, git GitRunner, stdout, stderr io.Writer) int {
 		if repoRes.Code != 0 {
 			return repoRes.Code
 		}
-		fmt.Fprintln(stdout, "self-test passed: fixtures matched expectations and the tracked tree is clean")
+		_, _ = fmt.Fprintln(stdout, "self-test passed: fixtures matched expectations and the tracked tree is clean")
 		return 0
 
 	case "--self-test-integrity":
-		fmt.Fprintln(stdout, "::notice::retired-arch gate mode=self-test-integrity")
+		_, _ = fmt.Fprintln(stdout, "::notice::retired-arch gate mode=self-test-integrity")
 		if code := runSelfTestAssertions(root, git, stdout, stderr); code != 0 {
 			return code
 		}
 		// 015.001-T: the old task ID here is preserved VERBATIM (not
 		// updated to a current task ID) -- see the banner text in the
 		// pre-M2-T11 wrapper, which this line reproduces exactly.
-		fmt.Fprintln(stdout, "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 015.001-T)")
+		_, _ = fmt.Fprintln(stdout, "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 015.001-T)")
 		return 0
 
 	default:
-		fmt.Fprintln(stderr, "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]")
+		_, _ = fmt.Fprintln(stderr, "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]")
 		return 2
 	}
 }
@@ -656,7 +656,7 @@ func runSelfTestAssertions(root string, git GitRunner, stdout, stderr io.Writer)
 	selectionOut, err := runRepoSelectionSelfTest(root, git)
 	_, _ = io.WriteString(stdout, selectionOut.stdout.String())
 	if err != nil {
-		fmt.Fprintf(stderr, "::error::%v\n", err)
+		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
 		return 1
 	}
 	if selectionOut.failed {

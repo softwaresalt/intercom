@@ -126,9 +126,10 @@ func stripTomlComment(line string, state *tomlLineState) string {
 			break
 		}
 		out = append(out, ch)
-		if ch == '"' {
+		switch ch {
+		case '"':
 			state.inBasic = true
-		} else if ch == '\'' {
+		case '\'':
 			state.inLiteral = true
 		}
 		i++

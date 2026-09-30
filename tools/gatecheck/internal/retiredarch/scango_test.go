@@ -42,7 +42,8 @@ func TestScanGo_MatchesGolden(t *testing.T) {
 				t.Fatalf("scanGo(mask=true, %s): %v", path, err)
 			}
 			wantMasked := derootifyAll(row.MaskedFindings, g.RootPlaceholder, filepath.ToSlash(root))
-			if !reflect.DeepEqual(masked, wantMasked) && !(len(masked) == 0 && len(wantMasked) == 0) {
+			maskedOK := reflect.DeepEqual(masked, wantMasked) || (len(masked) == 0 && len(wantMasked) == 0)
+			if !maskedOK {
 				t.Fatalf("scanGo(mask=true) = %v, want %v", masked, wantMasked)
 			}
 
@@ -51,7 +52,8 @@ func TestScanGo_MatchesGolden(t *testing.T) {
 				t.Fatalf("scanGo(mask=false, %s): %v", path, err)
 			}
 			wantUnmasked := derootifyAll(row.UnmaskedFindings, g.RootPlaceholder, filepath.ToSlash(root))
-			if !reflect.DeepEqual(unmasked, wantUnmasked) && !(len(unmasked) == 0 && len(wantUnmasked) == 0) {
+			unmaskedOK := reflect.DeepEqual(unmasked, wantUnmasked) || (len(unmasked) == 0 && len(wantUnmasked) == 0)
+			if !unmaskedOK {
 				t.Fatalf("scanGo(mask=false) = %v, want %v", unmasked, wantUnmasked)
 			}
 		})
