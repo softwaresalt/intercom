@@ -1,6 +1,7 @@
 package retiredarch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -180,6 +181,33 @@ func TestLoadFixtureManifest_InvalidShape_Errors(t *testing.T) {
 	}
 	if _, err := loadFixtureManifest(path); err == nil {
 		t.Fatal("expected an error for a non-object manifest shape")
+	}
+}
+
+// TestLoadFixtureManifest_TopLevelNull_Errors is a Copilot-review fix
+// (PR #83, HEAD c37b3a3 review round 1): encoding/json decodes a
+// top-level JSON `null` into a nil map[string]interface{} with NO error
+// -- a well-known Go json quirk -- but Python's `isinstance(data, dict)`
+// guard rejects `None` (the result of `json.loads("null")`) as not a
+// dict, confirmed against the real CPython 3.14 interpreter
+// (`isinstance(None, dict)` -> `False`, and
+// `raise SystemExit(f"invalid fixture manifest shape: {p}")` fires).
+// Without the raw == nil check, a top-level-null manifest would silently
+// behave as an empty manifest instead of failing closed with the shape
+// error, diverging from Python's actual behavior.
+func TestLoadFixtureManifest_TopLevelNull_Errors(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	if err := os.WriteFile(path, []byte("null"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	manifest, err := loadFixtureManifest(path)
+	if err == nil {
+		t.Fatalf("expected a manifestShapeError for a top-level JSON null manifest, got manifest=%v, err=nil", manifest)
+	}
+	var shapeErr *manifestShapeError
+	if !errors.As(err, &shapeErr) {
+		t.Fatalf("loadFixtureManifest(null) error = %v (%T), want a *manifestShapeError", err, err)
 	}
 }
 

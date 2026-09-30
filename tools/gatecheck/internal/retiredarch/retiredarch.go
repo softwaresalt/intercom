@@ -225,11 +225,21 @@ func loadFixtureManifest(manifestPath string) (map[string]interface{}, error) {
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	dec.UseNumber()
 	var raw map[string]interface{}
-	if err := dec.Decode(&raw); err != nil || dec.More() {
+	if err := dec.Decode(&raw); err != nil || dec.More() || raw == nil {
 		// dec.More() rejects trailing non-whitespace content after the
 		// top-level value, matching json.Unmarshal's stricter
 		// whole-document semantics (json.Decoder.Decode alone would
 		// silently ignore anything after the first JSON value).
+		//
+		// raw == nil catches a top-level JSON `null`: encoding/json
+		// decodes `null` into a nil map with NO error (a well-known Go
+		// json quirk), but Python's `isinstance(data, dict)` guard
+		// rejects `None` (json.loads("null")) as not a dict -- verified
+		// against a real `python -c` run. Without this check, a
+		// top-level-null manifest would silently behave as an empty
+		// manifest instead of failing closed with the shape error,
+		// diverging from Python's actual behavior (same class of gap as
+		// F-2/F-6, caught by Copilot review on this PR).
 		return nil, &manifestShapeError{path: manifestPath}
 	}
 	return raw, nil
