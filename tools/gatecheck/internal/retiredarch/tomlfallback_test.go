@@ -1,6 +1,7 @@
 package retiredarch
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -130,5 +131,35 @@ func TestDualEngineAgreement_Inline(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDualEngineAgreement_ReopenedTableForbiddenToken is a golden-
+// independent regression guard for F-1 (adversarial review
+// docs/closure/2026-09-30-gate-engine-m2-retired-arch-adversarial-
+// review.md), mirroring
+// TestScanTomlPrimary_ReopenedTableForbiddenToken: both engines must
+// agree the reopened table's newly-added forbidden field is rejected
+// (before the fix, the primary engine silently reported clean here while
+// the fallback correctly rejected, i.e. a disagreement this test would
+// have caught).
+func TestDualEngineAgreement_ReopenedTableForbiddenToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "reopened.toml")
+	text := "[a.b]\nx = 1\n\n[a]\nchannel_id = 2\n"
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	primary := scanTomlPrimary(path)
+	fallback, err := scanTomlFallback(path)
+	if err != nil {
+		t.Fatalf("scanTomlFallback: %v", err)
+	}
+	if len(primary) == 0 {
+		t.Fatalf("primary engine reported clean for a reopened table with a forbidden field; want a rejection")
+	}
+	if len(fallback) == 0 {
+		t.Fatalf("fallback engine reported clean for a reopened table with a forbidden field; want a rejection")
 	}
 }

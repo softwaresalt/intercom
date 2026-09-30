@@ -1245,6 +1245,16 @@
       "fallback_findings": [],
       "agree": true
     },
+    "reopened-table-forbidden-token": {
+      "text": "[a.b]\nx = 1\n\n[a]\nchannel_id = 2\n",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/reopened-table-forbidden-token.toml: retired token 'channel_id' in TOML key path 'a.channel_id' (segment 'channel_id') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/reopened-table-forbidden-token.toml:5: retired token 'channel_id' in TOML key 'a.channel_id' (via sequence model)"
+      ],
+      "agree": true
+    },
     "dotted-key-3segment": {
       "text": "a.b.c = 1\n",
       "tomllib_findings": [],

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -122,5 +123,37 @@ func TestScanTomlPrimary_BOMRawBytes(t *testing.T) {
 	got := scanTomlPrimary(path)
 	if len(got) == 0 {
 		t.Fatalf("scanTomlPrimary on raw BOM bytes must fail closed, got clean result")
+	}
+}
+
+// TestScanTomlPrimary_ReopenedTableForbiddenToken is a golden-independent
+// regression guard for F-1 (adversarial review
+// docs/closure/2026-09-30-gate-engine-m2-retired-arch-adversarial-
+// review.md): a plain (non-array) table reopened later in the document
+// via a second "[header]" line must still have its newly-added fields
+// walked and checked against matchesForbiddenParts. Before the fix,
+// walkTable's `if !ok { return nil }` branch on peekChild's rejection of
+// the reopened header's own self-entry treated that as end-of-table even
+// though this table's `channel_id` field was still unvisited, silently
+// returning a clean (false-negative) result. This test writes the exact
+// minimal reproduction directly (independent of the golden JSON/materialized
+// fixture file this same case is ALSO captured under, as
+// "reopened-table-forbidden-token", for the golden-driven
+// MatchesGolden_Inline/DualEngineAgreement_Inline table tests).
+func TestScanTomlPrimary_ReopenedTableForbiddenToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "reopened.toml")
+	text := "[a.b]\nx = 1\n\n[a]\nchannel_id = 2\n"
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := scanTomlPrimary(path)
+	if len(got) != 1 {
+		t.Fatalf("scanTomlPrimary(reopened table with forbidden token) = %v, want exactly 1 finding for the reopened field a.channel_id", got)
+	}
+	want := "retired token 'channel_id' in TOML key path 'a.channel_id' (segment 'channel_id') (via sequence model)"
+	if !strings.Contains(got[0], want) {
+		t.Fatalf("scanTomlPrimary finding = %q, want it to contain %q", got[0], want)
 	}
 }

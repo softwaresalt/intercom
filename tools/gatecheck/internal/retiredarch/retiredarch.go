@@ -10,6 +10,7 @@ package retiredarch
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -95,19 +96,141 @@ func selfTestEnginesForName(engineName string) []selfTestEngine {
 	}
 }
 
+// manifestShapeError is the error type loadFixtureManifest returns for a
+// genuinely non-object top-level manifest shape (or a read/decode
+// failure it cannot otherwise attribute). The caller checks for this type
+// specifically so it can emit the BARE message Python's
+// `raise SystemExit(f"invalid fixture manifest shape: ...")` prints
+// (no "::error::" prefix -- see F-6), while any other loadFixtureManifest
+// error keeps the existing "::error::"-prefixed ED-2 treatment.
+type manifestShapeError struct {
+	path string
+}
+
+func (e *manifestShapeError) Error() string {
+	return fmt.Sprintf("invalid fixture manifest shape: %s", filepath.ToSlash(e.path))
+}
+
+// manifestExpectation models one fixture-manifest lookup result the way
+// Python's `manifest.get(name)` does: Python's dict.get cannot distinguish
+// an absent key from an explicit JSON `null` value (both yield None), so
+// this port collapses both into isNone; but unlike a bare
+// map[string]string, an explicit JSON empty string "" stays
+// distinguishable from either, and a present-but-non-string JSON value
+// (number, bool, list, object) is carried through as `other` instead of
+// being rejected at load time (see loadFixtureManifest and F-2).
+type manifestExpectation struct {
+	isNone   bool
+	isString bool
+	str      string      // valid when isString
+	other    interface{} // the decoded JSON value when present, non-string, non-null
+}
+
+// repr mirrors Python's {expectation!r} formatting used in the
+// "unknown expectation" failure text: None for an absent key or an
+// explicit null, the quoted string for a string value, or a best-effort
+// Python-repr rendering of the raw JSON value for anything else.
+func (e manifestExpectation) repr() string {
+	switch {
+	case e.isNone:
+		return "None"
+	case e.isString:
+		return pysem.Repr(e.str)
+	default:
+		return reprJSONValue(e.other)
+	}
+}
+
+// lookupExpectation looks up name in a manifest decoded by
+// loadFixtureManifest, mirroring Python's manifest.get(name).
+func lookupExpectation(manifest map[string]interface{}, name string) manifestExpectation {
+	v, ok := manifest[name]
+	if !ok || v == nil {
+		return manifestExpectation{isNone: true}
+	}
+	if s, ok := v.(string); ok {
+		return manifestExpectation{isString: true, str: s}
+	}
+	return manifestExpectation{other: v}
+}
+
+// reprJSONValue renders a decoded encoding/json value (as produced by
+// loadFixtureManifest's json.Number-preserving decode) the way Python's
+// repr() would render the equivalent json.loads() value. This is a
+// best-effort rendering for the non-string manifest-expectation values
+// F-2 requires loadFixtureManifest to defer (rather than hard-reject) to
+// the per-fixture "unknown expectation" failure branch; nested
+// object/array values are rare in practice for a fixture manifest and are
+// rendered with sorted keys (Go maps have no ordering to preserve, unlike
+// Python's dict), which is a known, accepted narrower-fidelity trade-off
+// for this MINOR-severity divergence class.
+func reprJSONValue(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return "None"
+	case bool:
+		if t {
+			return "True"
+		}
+		return "False"
+	case string:
+		return pysem.Repr(t)
+	case json.Number:
+		return t.String()
+	case []interface{}:
+		parts := make([]string, len(t))
+		for i, elem := range t {
+			parts[i] = reprJSONValue(elem)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case map[string]interface{}:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = pysem.Repr(k) + ": " + reprJSONValue(t[k])
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	default:
+		return fmt.Sprintf("%v", t)
+	}
+}
+
 // loadFixtureManifest ports load_fixture_manifest: reads and json-decodes
-// manifestPath, requiring a JSON object (map) shape. A read or decode
-// error, or a non-object top-level shape, fails closed with an error the
-// caller reports as an ::error:: line + exit 1 (matching Python's
-// SystemExit(str) -> exit 1 with the message on stderr).
-func loadFixtureManifest(manifestPath string) (map[string]string, error) {
+// manifestPath, requiring a JSON object (map) shape. Unlike Python, which
+// only requires `isinstance(data, dict)` at the top level and defers any
+// per-value type mismatch to the per-fixture "unknown expectation" failure
+// branch inside run_fixture_self_test, an earlier version of this port
+// unmarshalled directly into map[string]string, which hard-rejected the
+// WHOLE manifest the moment any single value was non-string -- a false
+// divergence from Python's actual failure surface (F-2). This port now
+// decodes with json.Number preserved (so an int-valued expectation reprs
+// as "1", not "1e+00") and only hard-rejects a genuinely non-object
+// top-level shape (or a read/decode failure), leaving non-string
+// per-value shapes for lookupExpectation/manifestExpectation to carry
+// through to the per-fixture loop.
+//
+// A read or decode error, or a non-object top-level shape, fails closed
+// with a *manifestShapeError the caller reports as a BARE message (no
+// "::error::" prefix -- see F-6) + exit 1, matching Python's
+// SystemExit(str) -> exit 1 with the message on stderr.
+func loadFixtureManifest(manifestPath string) (map[string]interface{}, error) {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return nil, err
 	}
-	var raw map[string]string
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("invalid fixture manifest shape: %s", filepath.ToSlash(manifestPath))
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.UseNumber()
+	var raw map[string]interface{}
+	if err := dec.Decode(&raw); err != nil || dec.More() {
+		// dec.More() rejects trailing non-whitespace content after the
+		// top-level value, matching json.Unmarshal's stricter
+		// whole-document semantics (json.Decoder.Decode alone would
+		// silently ignore anything after the first JSON value).
+		return nil, &manifestShapeError{path: manifestPath}
 	}
 	return raw, nil
 }
@@ -154,6 +277,18 @@ func runFixtureSelfTest(root string) Result {
 		manifestPath := filepath.Join(root, filepath.FromSlash(suite.manifestPath))
 		manifest, err := loadFixtureManifest(manifestPath)
 		if err != nil {
+			var shapeErr *manifestShapeError
+			if errors.As(err, &shapeErr) {
+				// F-6: Python's raise SystemExit(f"invalid fixture
+				// manifest shape: ...") prints the BARE message + "\n"
+				// (C-2's usage/infrastructure-error class) -- no
+				// "::error::" prefix. That prefix is reserved for ED-2's
+				// traceback-replacement class (git failures, read
+				// failures, invalid UTF-8), which is what the OTHER
+				// loadFixtureManifest error path (a genuine read
+				// failure, e.g. missing file) still uses below.
+				return Result{Stdout: stdout.String(), Stderr: fmt.Sprintf("%v\n", err), Code: 1}
+			}
 			return Result{Stdout: stdout.String(), Stderr: fmt.Sprintf("::error::%v\n", err), Code: 1}
 		}
 		fixtureDir := filepath.Dir(manifestPath)
@@ -173,17 +308,38 @@ func runFixtureSelfTest(root string) Result {
 			fmt.Sprintf("suite %s discovered zero fixtures via %s", suite.name, suite.glob),
 		)
 
-		expectationSet := map[string]bool{}
+		// expectationStrs collects the distinct STRING-typed expectation
+		// values seen across this suite's discovered fixtures (mirroring
+		// Python's `expectations = {manifest.get(name) for name in
+		// discovered}` restricted to the string members that
+		// sortedNonEmptyKeys/pyStrList can faithfully repr). An absent
+		// key or an explicit JSON null both collapse to Python's None
+		// (excluded here, same as Python's `if e is not None`), but an
+		// explicit empty string "" is a real member and IS included --
+		// unlike the prior map[string]string-based port, which conflated
+		// "" already keying it OR a missing manifest entry into the same
+		// "" sentinel (F-2). otherPresent additionally tracks whether any
+		// discovered fixture's expectation was a non-string, non-null
+		// JSON value (number/bool/array/object): such a value can never
+		// equal 'accept' or 'reject', so its mere presence must still be
+		// able to break the reject-only "all expectations are exactly
+		// 'reject'" assertion below, even though this port does not
+		// attempt to reproduce Python's exact mixed-type sorted() display
+		// text for that narrow edge (see reprJSONValue's doc comment).
+		expectationStrs := map[string]bool{}
+		otherPresent := false
 		for _, name := range discovered {
-			if v, ok := manifest[name]; ok {
-				expectationSet[v] = true
-			} else {
-				expectationSet[""] = true
+			exp := lookupExpectation(manifest, name)
+			switch {
+			case exp.isString:
+				expectationStrs[exp.str] = true
+			case !exp.isNone:
+				otherPresent = true
 			}
 		}
 		if rejectOnlySuites[suite.name] {
-			onlyReject := len(expectationSet) > 0
-			for e := range expectationSet {
+			onlyReject := len(expectationStrs) > 0 && !otherPresent
+			for e := range expectationStrs {
 				if e != "reject" {
 					onlyReject = false
 				}
@@ -192,14 +348,14 @@ func runFixtureSelfTest(root string) Result {
 				fmt.Sprintf("suite %s reject-only exemption", suite.name),
 				onlyReject,
 				fmt.Sprintf("suite is a named reject-only exemption and all %d fixture(s) are 'reject'", len(discovered)),
-				fmt.Sprintf("suite %s is declared reject-only but manifest expectations are %s", suite.name, pyStrList(sortedNonEmptyKeys(expectationSet))),
+				fmt.Sprintf("suite %s is declared reject-only but manifest expectations are %s", suite.name, pyStrList(sortedKeys(expectationStrs))),
 			)
 		} else {
 			report(
 				fmt.Sprintf("suite %s has accept and reject coverage", suite.name),
-				expectationSet["accept"] && expectationSet["reject"],
+				expectationStrs["accept"] && expectationStrs["reject"],
 				"suite has at least one 'accept' and one 'reject' fixture",
-				fmt.Sprintf("suite %s is missing accept and/or reject coverage (found %s)", suite.name, pyStrList(sortedNonEmptyKeys(expectationSet))),
+				fmt.Sprintf("suite %s is missing accept and/or reject coverage (found %s)", suite.name, pyStrList(sortedKeys(expectationStrs))),
 			)
 		}
 
@@ -233,7 +389,7 @@ func runFixtureSelfTest(root string) Result {
 
 		for _, path := range discoveredPaths {
 			name := filepath.Base(path)
-			expectation, hasExpectation := manifest[name]
+			exp := lookupExpectation(manifest, name)
 			engineName := engineForPath(path)
 
 			engineDeclared := false
@@ -257,13 +413,14 @@ func runFixtureSelfTest(root string) Result {
 				continue
 			}
 
-			// expectationRepr mirrors Python's {expectation!r}: manifest.get(name)
-			// yields None (repr "None") when the key is absent, otherwise the
-			// stored string's own repr.
-			expectationRepr := "None"
-			if hasExpectation {
-				expectationRepr = pysem.Repr(expectation)
-			}
+			// expectationRepr mirrors Python's {expectation!r}: an absent
+			// key or an explicit JSON null both repr as "None"; a string
+			// value reprs as its own quoted repr; any other JSON value
+			// (F-2: no longer hard-rejected at manifest-load time) reprs
+			// via reprJSONValue, so it still reaches this exact
+			// "unknown expectation %s in %s" failure branch below rather
+			// than a manifest-load-time hard reject.
+			expectationRepr := exp.repr()
 
 			for _, engine := range engines {
 				findings, err := engine.scan(path)
@@ -274,13 +431,13 @@ func runFixtureSelfTest(root string) Result {
 				label := fmt.Sprintf("%s [%s]", name, engine.label)
 
 				switch {
-				case hasExpectation && expectation == "accept":
+				case exp.isString && exp.str == "accept":
 					if rejected {
 						failures = append(failures, fmt.Sprintf("%s: expected clean, got findings: %s", label, strings.Join(findings, "; ")))
 					} else {
 						fmt.Fprintf(&stdout, "PASS %s: clean as expected\n", label)
 					}
-				case hasExpectation && expectation == "reject":
+				case exp.isString && exp.str == "reject":
 					if rejected {
 						fmt.Fprintf(&stdout, "PASS %s: rejected as expected\n", label)
 					} else {
@@ -303,16 +460,17 @@ func runFixtureSelfTest(root string) Result {
 	return Result{Stdout: stdout.String(), Code: 0}
 }
 
-// sortedNonEmptyKeys returns the sorted keys of set, excluding the ""
-// sentinel used above to stand in for a missing manifest entry (Python's
-// manifest.get(name) yields None there, and sorted(e for e in expectations
-// if e is not None) drops it the same way).
-func sortedNonEmptyKeys(set map[string]bool) []string {
-	var out []string
+// sortedKeys returns the sorted keys of set. Since expectationStrs (the
+// only caller) is now built purely from genuine STRING-typed manifest
+// expectations (lookupExpectation's isString branch), an absent key or an
+// explicit JSON null never reaches this map at all -- unlike the prior
+// "" sentinel scheme, an explicit empty-string expectation "" IS a real
+// member here and is no longer dropped (F-2: absent-key vs
+// explicit-empty-string ambiguity).
+func sortedKeys(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
 	for k := range set {
-		if k != "" {
-			out = append(out, k)
-		}
+		out = append(out, k)
 	}
 	sort.Strings(out)
 	return out

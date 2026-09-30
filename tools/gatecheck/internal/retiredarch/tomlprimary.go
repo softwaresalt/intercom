@@ -150,7 +150,28 @@ func walkTable(posixPath string, prefix []string, table map[string]interface{}, 
 	for len(opened) < len(table) {
 		childKey, exact, ok := cursor.peekChild(prefix)
 		if !ok {
-			return nil
+			// peekChild rejects an EXACT self-entry for this table's own
+			// prefix (length == len(prefix)), which arises when a plain
+			// (non-array) table is REOPENED later in the document via a
+			// second "[header]" line to add more siblings (e.g. "[a.b]"
+			// ... "[a]" continuing with more fields under "a"). That is
+			// NOT end-of-table: len(opened) < len(table) still holds,
+			// meaning fields declared under the reopened header remain
+			// unvisited. Consume that self-entry (mirroring
+			// walkArrayOfTables' own analogous reopened-element handling
+			// via peekSelf) and keep looping so those fields are still
+			// discovered and checked against matchesForbiddenParts,
+			// rather than silently returning a false-clean result.
+			if cursor.peekSelf(prefix) {
+				cursor.consume()
+				continue
+			}
+			// Genuine invariant violation: the cursor has nothing left
+			// that extends or repeats this table's own prefix, yet this
+			// table still has unvisited fields. Fail closed rather than
+			// silently under-reporting (matches this file's existing
+			// cursor-desync error style elsewhere).
+			return fmt.Errorf("retiredarch: TOML cursor desync: table at %v has %d unvisited field(s) but cursor has no matching entry left", prefix, len(table)-len(opened))
 		}
 		firstVisit := !opened[childKey]
 		if exact {

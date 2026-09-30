@@ -1,7 +1,9 @@
 package retiredarch
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -178,6 +180,141 @@ func TestLoadFixtureManifest_InvalidShape_Errors(t *testing.T) {
 	}
 	if _, err := loadFixtureManifest(path); err == nil {
 		t.Fatal("expected an error for a non-object manifest shape")
+	}
+}
+
+// TestLoadFixtureManifest_NonStringValue_Accepted is F-2's core fix
+// assertion (adversarial review
+// docs/closure/2026-09-30-gate-engine-m2-retired-arch-adversarial-
+// review.md): unlike the prior map[string]string-based port, a manifest
+// whose top level IS a genuine JSON object but contains a non-string
+// value (e.g. an int) must NOT be hard-rejected at load time -- Python's
+// load_fixture_manifest only requires isinstance(data, dict) and defers
+// any per-value type mismatch to the per-fixture "unknown expectation"
+// failure branch (confirmed against the real CPython 3.14 interpreter;
+// see this task's evidence-file addendum for the exact transient-script
+// invocation and captured output).
+func TestLoadFixtureManifest_NonStringValue_Accepted(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	if err := os.WriteFile(path, []byte(`{"foo.toml": 1, "bar.toml": "accept"}`), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	manifest, err := loadFixtureManifest(path)
+	if err != nil {
+		t.Fatalf("loadFixtureManifest with a non-string value must not hard-reject (F-2), got error: %v", err)
+	}
+	exp := lookupExpectation(manifest, "foo.toml")
+	if exp.isString || exp.isNone {
+		t.Fatalf("lookupExpectation(foo.toml) = %+v, want a non-string/non-none 'other' value", exp)
+	}
+	// Confirmed against real CPython: f"unknown expectation {1!r} in x" ==
+	// "unknown expectation 1 in x" (Python's repr(1) == "1").
+	if got, want := exp.repr(), "1"; got != want {
+		t.Fatalf("manifestExpectation.repr() = %q, want %q", got, want)
+	}
+}
+
+// TestManifestExpectation_AbsentVsExplicitEmptyString is F-2's second
+// fix assertion: an absent manifest key and an explicit JSON empty string
+// value must stay distinguishable (Python's manifest.get(name) already
+// distinguishes them: None vs ”), unlike the prior port's map[string]string
+// lookup, which conflated both into the same "" sentinel.
+func TestManifestExpectation_AbsentVsExplicitEmptyString(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	if err := os.WriteFile(path, []byte(`{"present-empty.toml": ""}`), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	manifest, err := loadFixtureManifest(path)
+	if err != nil {
+		t.Fatalf("loadFixtureManifest: %v", err)
+	}
+
+	present := lookupExpectation(manifest, "present-empty.toml")
+	if !present.isString || present.str != "" || present.isNone {
+		t.Fatalf("lookupExpectation(present-empty.toml) = %+v, want isString=true str=\"\" isNone=false", present)
+	}
+	absent := lookupExpectation(manifest, "absent.toml")
+	if !absent.isNone || absent.isString {
+		t.Fatalf("lookupExpectation(absent.toml) = %+v, want isNone=true", absent)
+	}
+	if present == absent {
+		t.Fatalf("an explicit empty-string expectation must not compare equal to an absent key")
+	}
+}
+
+// TestRunFixtureSelfTest_ManifestShapeError_BareMessage is F-6's fix
+// assertion: loadFixtureManifest's genuinely-non-object hard-reject must
+// surface as Python's own SystemExit(str)-style BARE message + "\n" on
+// stderr (no "::error::" prefix -- that prefix is reserved for ED-2's
+// traceback-replacement class), confirmed against the real CPython 3.14
+// interpreter's f"invalid fixture manifest shape: {path.as_posix()}"
+// (see this task's evidence-file addendum).
+func TestRunFixtureSelfTest_ManifestShapeError_BareMessage(t *testing.T) {
+	root := t.TempDir()
+	manifestDir := filepath.Join(root, "scripts", "testdata")
+	if err := os.MkdirAll(manifestDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	manifestPath := filepath.Join(manifestDir, "retired-manifest.json")
+	if err := os.WriteFile(manifestPath, []byte("[1,2,3]"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+
+	res := runFixtureSelfTest(root)
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1", res.Code)
+	}
+	if strings.Contains(res.Stderr, "::error::") {
+		t.Fatalf("manifest-shape reject must NOT use the \"::error::\" prefix (F-6); got %q", res.Stderr)
+	}
+	want := fmt.Sprintf("invalid fixture manifest shape: %s\n", filepath.ToSlash(manifestPath))
+	if res.Stderr != want {
+		t.Fatalf("Stderr = %q, want %q", res.Stderr, want)
+	}
+}
+
+// TestRunFixtureSelfTest_UnknownExpectation_NonStringValue is F-2's
+// end-to-end fix assertion: a manifest entry whose value is a non-string
+// JSON scalar must reach the SAME "unknown expectation %s in %s" failure
+// text Python's run_fixture_self_test produces for that branch (confirmed
+// against the real CPython 3.14 interpreter), rather than being rejected
+// at manifest-load time.
+func TestRunFixtureSelfTest_UnknownExpectation_NonStringValue(t *testing.T) {
+	root := t.TempDir()
+	testdataDir := filepath.Join(root, "scripts", "testdata")
+	if err := os.MkdirAll(testdataDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	// "toml" suite: one fixture, manifest expectation is the JSON int 1
+	// (never a legal 'accept'/'reject' string).
+	if err := os.WriteFile(filepath.Join(testdataDir, "retired-crafted.toml"), []byte("x = 1\n"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testdataDir, "retired-manifest.json"), []byte(`{"retired-crafted.toml": 1}`), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	// "go" / "go-differential" suites: minimal valid empty manifests so
+	// loadFixtureManifest never hard-errors on those (missing-file errors
+	// return early and would prevent the "toml" suite's own failures from
+	// ever reaching the final aggregated stderr dump).
+	if err := os.WriteFile(filepath.Join(testdataDir, "retiredgo-manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testdataDir, "retiredgo-differential-manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+
+	res := runFixtureSelfTest(root)
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 (an all-1-int manifest can never satisfy accept/reject coverage)", res.Code)
+	}
+	for _, label := range []string{"tomllib", "fallback"} {
+		want := fmt.Sprintf("retired-crafted.toml [%s]: unknown expectation 1 in retired-manifest.json", label)
+		if !strings.Contains(res.Stderr, want) {
+			t.Fatalf("Stderr = %q, want it to contain %q", res.Stderr, want)
+		}
 	}
 }
 
