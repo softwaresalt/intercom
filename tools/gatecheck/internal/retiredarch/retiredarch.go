@@ -239,12 +239,18 @@ func reprJSONValue(v interface{}) string {
 //     class), no "::error::" prefix (see F-6). That is the ONLY case
 //     that still produces a *manifestShapeError here.
 //
-// dec.More() (trailing non-whitespace content after the top-level value)
-// is Python's "Extra data" JSONDecodeError -- the SAME uncaught-exception
-// class as a syntax error, not a shape mismatch -- so it also returns a
-// plain error, matching ED-8's explicit "trailing data after the
-// top-level value stays a SKIP [via the decode-error path]" rule for the
-// sibling merge-strategy JSON evaluator.
+// Trailing non-whitespace content after the top-level value is Python's
+// "Extra data" JSONDecodeError -- the SAME uncaught-exception class as a
+// syntax error, not a shape mismatch -- so it also returns a plain error,
+// matching ED-8's explicit "trailing data after the top-level value
+// stays a SKIP [via the decode-error path]" rule for the sibling
+// merge-strategy JSON evaluator. This check requires a SECOND Decode
+// call to return io.EOF (ED-8's own prescribed pattern), NOT
+// json.Decoder.More(): More() is intended for array/object element
+// iteration and reports false whenever the next byte is a closing
+// delimiter (`]` or `}`), so it silently misses trailing data shaped
+// like `{"a":"accept"}]` or `{"a":"accept"}}` (confirmed empirically) --
+// a Copilot-review finding (PR #83, HEAD 0c3aa94, review round 3).
 func loadFixtureManifest(manifestPath string) (map[string]interface{}, error) {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -261,13 +267,24 @@ func loadFixtureManifest(manifestPath string) (map[string]interface{}, error) {
 		// *manifestShapeError.
 		return nil, fmt.Errorf("decode fixture manifest %s: %w", manifestPath, err)
 	}
-	if dec.More() {
-		// Trailing non-whitespace content after the top-level value is
-		// Python's "Extra data" JSONDecodeError -- the same
-		// uncaught-exception class as a syntax error, not a shape
-		// mismatch. Matches json.Unmarshal's stricter whole-document
-		// semantics (json.Decoder.Decode alone would silently ignore
-		// anything after the first JSON value).
+	var trailing interface{}
+	if err := dec.Decode(&trailing); err != io.EOF {
+		// dec.More() is NOT a top-level EOF check -- it is intended for
+		// array/object element iteration and reports false whenever the
+		// NEXT byte is a closing delimiter (`]` or `}`), so it silently
+		// missed trailing data like `{"a":"accept"}]` or
+		// `{"a":"accept"}}` (confirmed empirically: dec.More() == false
+		// for both, even though a byte remains unconsumed) -- a Copilot
+		// review finding (PR #83, HEAD 0c3aa94, review round 3). A
+		// second Decode call requiring io.EOF is the correct
+		// whole-document-exhaustion check (and is exactly the pattern
+		// ED-8 already prescribes for the sibling merge-strategy JSON
+		// evaluator's identical "trailing data stays a SKIP" rule):
+		// io.EOF means nothing remains; any other result (a
+		// successfully-decoded second value, or a genuine second syntax
+		// error) means something remains, matching Python's "Extra data"
+		// JSONDecodeError for all three cases (confirmed against the
+		// real CPython 3.14 interpreter).
 		return nil, fmt.Errorf("decode fixture manifest %s: trailing data after top-level JSON value", manifestPath)
 	}
 	manifest, ok := raw.(map[string]interface{})

@@ -253,6 +253,39 @@ func TestLoadFixtureManifest_TrailingData_PlainError(t *testing.T) {
 	}
 }
 
+// TestLoadFixtureManifest_TrailingClosingDelimiter_PlainError is a
+// Copilot-review fix (PR #83, HEAD 0c3aa94 review round 3):
+// json.Decoder.More() is NOT a top-level EOF check -- it is intended for
+// array/object element iteration and reports false whenever the NEXT
+// byte is a closing delimiter (`]` or `}`), so a prior fix revision
+// (round 2, using dec.More()) silently ACCEPTED a manifest with trailing
+// `]`/`}` bytes, even though Python's `json.loads` rejects both as
+// "Extra data" (confirmed against the real CPython 3.14 interpreter:
+// `json.loads('{"a":"accept"}]')` and `json.loads('{"a":"accept"}}')`
+// both raise JSONDecodeError). The fix requires a second Decode call and
+// asserting io.EOF -- exactly ED-8's prescribed pattern for the sibling
+// merge-strategy JSON evaluator's identical rule.
+func TestLoadFixtureManifest_TrailingClosingDelimiter_PlainError(t *testing.T) {
+	for _, tc := range []string{
+		`{"a":"accept"}]`,
+		`{"a":"accept"}}`,
+	} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "manifest.json")
+		if err := os.WriteFile(path, []byte(tc), 0o644); err != nil {
+			t.Fatalf("os.WriteFile: %v", err)
+		}
+		manifest, err := loadFixtureManifest(path)
+		if err == nil {
+			t.Fatalf("loadFixtureManifest(%q): expected a decode error for trailing closing-delimiter data, got manifest=%v, err=nil", tc, manifest)
+		}
+		var shapeErr *manifestShapeError
+		if errors.As(err, &shapeErr) {
+			t.Fatalf("loadFixtureManifest(%q) error = %v (%T), want a plain decode error (ED-2 class), NOT a *manifestShapeError", tc, err, err)
+		}
+	}
+}
+
 // TestLoadFixtureManifest_TopLevelNull_Errors is a Copilot-review fix
 // (PR #83, HEAD c37b3a3 review round 1): encoding/json decodes a
 // top-level JSON `null` into a nil map[string]interface{} with NO error
