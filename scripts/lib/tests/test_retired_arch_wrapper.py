@@ -93,11 +93,19 @@ class WrapperTest(unittest.TestCase):
         self.assertNotIn('def ', '\n'.join(self.code_lines))
 
     def test_wrapper_dispatches_to_the_extracted_module(self):
-        # The engine is resolved relative to the wrapper itself (scripts/),
-        # not via the caller's cwd repo root.
-        self.assertIn('ENGINE="$SCRIPT_DIR/lib/retired_arch.py"', '\n'.join(self.code_lines))
-        self.assertIn('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"', '\n'.join(self.code_lines))
-        for flag in ('--self-test)', '--self-test-integrity)'):
+        # M2-T11 (docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md):
+        # the embedded-interpreter/extracted-module Python engine is gone.
+        # SCRIPT_DIR is still resolved relative to the wrapper itself
+        # (scripts/), but it now sources the shared gatecheck-run.sh runner
+        # and dispatches to the Go retired-arch engine via
+        # `gatecheck_invoke retired-arch`, never `retired_arch.py`.
+        joined = '\n'.join(self.code_lines)
+        self.assertIn('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"', joined)
+        self.assertIn('source "${SCRIPT_DIR}/lib/gatecheck-run.sh"', joined)
+        self.assertIn('gatecheck_invoke retired-arch', joined)
+        self.assertNotIn('retired_arch.py', joined)
+        self.assertNotIn('ENGINE=', joined)
+        for flag in ('--self-test', '--self-test-integrity'):
             self.assertIn(flag, self.text)
 
 

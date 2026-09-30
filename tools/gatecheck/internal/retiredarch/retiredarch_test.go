@@ -286,6 +286,37 @@ func TestLoadFixtureManifest_TrailingClosingDelimiter_PlainError(t *testing.T) {
 	}
 }
 
+// TestLoadFixtureManifest_InvalidUTF8_PlainError is a Copilot-review fix
+// (PR #83, HEAD 3006994, review round 7): Python's
+// Path.read_text(encoding='utf-8') decodes in STRICT mode by default, so
+// a manifest file containing invalid UTF-8 byte sequences raises an
+// uncaught UnicodeDecodeError -- the same ED-2 "decode error" class as a
+// JSON syntax error. Go's string(data) conversion performs no such
+// validation, and encoding/json's decoder silently substitutes U+FFFD
+// for invalid sequences inside JSON string literals instead of failing,
+// so without an explicit utf8.Valid check a corrupted manifest could
+// continue through the self-test instead of taking the required ED-2
+// error path.
+func TestLoadFixtureManifest_InvalidUTF8_PlainError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	// 0xFF is never valid as any byte of a well-formed UTF-8 sequence.
+	invalid := []byte(`{"a": "`)
+	invalid = append(invalid, 0xFF)
+	invalid = append(invalid, []byte(`"}`)...)
+	if err := os.WriteFile(path, invalid, 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	manifest, err := loadFixtureManifest(path)
+	if err == nil {
+		t.Fatalf("expected a decode error for invalid UTF-8, got manifest=%v, err=nil", manifest)
+	}
+	var shapeErr *manifestShapeError
+	if errors.As(err, &shapeErr) {
+		t.Fatalf("loadFixtureManifest(invalid UTF-8) error = %v (%T), want a plain decode error (ED-2 class), NOT a *manifestShapeError", err, err)
+	}
+}
+
 // TestLoadFixtureManifest_TopLevelNull_Errors is a Copilot-review fix
 // (PR #83, HEAD c37b3a3 review round 1): encoding/json decodes a
 // top-level JSON `null` into a nil map[string]interface{} with NO error

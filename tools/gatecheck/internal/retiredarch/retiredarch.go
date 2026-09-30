@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
@@ -255,6 +256,20 @@ func loadFixtureManifest(manifestPath string) (map[string]interface{}, error) {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return nil, err
+	}
+	// Python's Path.read_text(encoding='utf-8') decodes in STRICT mode by
+	// default: a manifest file containing invalid UTF-8 byte sequences
+	// raises an uncaught UnicodeDecodeError (the SAME ED-2 "decode error"
+	// class as a JSON syntax error, not a shape mismatch). Go's
+	// string(data) conversion performs no such validation, and
+	// encoding/json's decoder silently substitutes U+FFFD for invalid
+	// byte sequences inside JSON string literals instead of failing --
+	// so, uncaught, a corrupted manifest could continue through the
+	// self-test instead of taking the required ED-2 error path (Copilot
+	// review finding, PR #83, HEAD 3006994, round 7). Reject invalid
+	// UTF-8 up front, before it ever reaches the JSON decoder.
+	if !utf8.Valid(data) {
+		return nil, fmt.Errorf("decode fixture manifest %s: invalid UTF-8", manifestPath)
 	}
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	dec.UseNumber()
