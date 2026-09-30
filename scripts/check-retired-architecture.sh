@@ -183,28 +183,37 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # Caller-argument allowlist (post-review remediation, PR #83 Copilot
-# finding): gatecheck_invoke appends the trusted "--root ${ROOT}" ahead of
-# any args this wrapper forwards, but main.go's parseRoot scans the WHOLE
-# arg list for "--root"/"--root=" and the LAST occurrence wins. The
-# pre-M2-T11 wrapper never had this exposure because its own `case
-# "${1:-}"` dispatch rejected any input other than the three modes below
-# (anything else, including a second --root, hit the `*)` branch and
-# exited 2 before an engine ever ran). Restoring that same allowlist here
-# -- and refusing more than one argument outright -- closes the gap
-# without touching the shared --root contract in main.go, which is used
-# by every gate engine (write-path, unignore, merge-strategy-evaluate)
-# outside this shipment's scope.
-case "${1:-}" in
+# round 4/5 findings): gatecheck_invoke appends the trusted "--root
+# ${ROOT}" ahead of any args this wrapper forwards, but main.go's
+# parseRoot scans the WHOLE arg list for "--root"/"--root=" and the LAST
+# occurrence wins. The pre-M2-T11 wrapper never had this exposure because
+# its own `case "${1:-}"` dispatch inspected ONLY the first argument and
+# silently ignored $2 onward -- it never forwarded them anywhere, so a
+# stray --root past the first argument was inert. Round 4 closed the
+# security gap but overshot the CLI-surface-preservation promise (the PR
+# summary explicitly commits to "no CLI surface changes beyond swapping
+# the interpreter") by rejecting >1 argument outright instead of matching
+# that same silent-ignore behavior.
+#
+# This restores BOTH properties at once: MODE captures only the first
+# argument (validated against the same three-way allowlist the old
+# wrapper used, still rejecting an unrecognized first argument with exit
+# 2, unchanged from round 4), and only that single validated value -- not
+# "$@" -- is ever forwarded to gatecheck_invoke below. Any second or later
+# argument (a duplicate --root included) is therefore never seen by
+# parseRoot at all, exactly reproducing the old wrapper's "$2 onward is
+# ignored" contract while still closing the root-override gap. This does
+# not touch the shared --root contract in main.go, which is used by every
+# gate engine (write-path, unignore, merge-strategy-evaluate) outside
+# this shipment's scope.
+mode="${1:-}"
+case "${mode}" in
 "" | --self-test | --self-test-integrity) ;;
 *)
   echo "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]" >&2
   exit 2
   ;;
 esac
-if [ "$#" -gt 1 ]; then
-  echo "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]" >&2
-  exit 2
-fi
 
 gatecheck_build
 build_rc=$?
@@ -212,5 +221,9 @@ if [ "${build_rc}" -ne 0 ]; then
   exit "${build_rc}"
 fi
 
-gatecheck_invoke retired-arch "$@"
+if [ -n "${mode}" ]; then
+  gatecheck_invoke retired-arch "${mode}"
+else
+  gatecheck_invoke retired-arch
+fi
 exit $?
