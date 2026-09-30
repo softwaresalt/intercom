@@ -175,7 +175,13 @@ every push to `main`, via the shared M1 runner. There is no separate deploy step
 
 ## Risky action record
 
-No destructive, irreversible, or elevated-privilege action was taken.
+No data loss or elevated-privilege action was taken. The shipment/feature/task archival
+transition itself is an intentionally irreversible backlog state change (by design, not a defect);
+what is separately flagged below is that the specific invocation path used to perform that
+transition deviated from the mandated bound `safe-close` sequence, and — because the archival has
+since taken effect — that specific unbound invocation cannot be re-run through the correct
+sequence after the fact. The archived outcome itself is independently re-verified correct (see the
+disclosed process-compliance gap below).
 
 * **Merge**: performed under P-017 DARK FACTORY MODE with `merge_approval_pre_authorized: true`
   (operator AFK, pre-authorized per the DARK_MODE_ACTIVE record for shipment 035-S only). It used
@@ -191,8 +197,10 @@ No destructive, irreversible, or elevated-privilege action was taken.
   gate is installed in this autoharness version) confirmed `CLOSE_PATH_VERDICT: CASCADE` /
   `FULLY_COVERED_ROOT` — `045-F` is a root with no `parent_id`, all 11 tasks are its exact
   descendant set (no grandchildren, no other children, verified via full queue+archive scan), and
-  `045-F` has no `custom_fields.source_deliberation_id`. The Cascade Close Sub-Procedure then ran
-  `backlogit shipment ship 035-S --sha 97b8d77…`. Results:
+  `045-F` has no `custom_fields.source_deliberation_id`. The cascade primitive was then invoked
+  **directly and unbound** (not via a conforming `mode: safe-close` Cascade Close Sub-Procedure —
+  see the disclosed process deviation below): `backlogit shipment ship 035-S --sha 97b8d77…`.
+  Results:
   * `returned_ids=[]`.
   * `archived_ids`, `allowed_ids` and `required_ids` are the same set: {035-S, 045-F,
     045.001-T..045.011-T} (13 items).

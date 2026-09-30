@@ -22,7 +22,16 @@ authorized.
 * PR #83 ("feat(ci): port retired-architecture gate engine to Go (M2)") merged via merge
   commit `97b8d77f62baddde6f85a48632330a7ef537112d` at `2026-09-30T18:45:29Z`.
 * All 11 tasks (`045.001-T`..`045.011-T`) and covering feature `045-F` completed; shipment
-  `035-S` closed via the Cascade Close Sub-Procedure (`FULLY_COVERED_ROOT`).
+  `035-S` closed with classification `CLOSE_PATH_VERDICT: CASCADE` / `FULLY_COVERED_ROOT`
+  evaluated manually and correctly, but the cascade primitive was invoked **directly and
+  unbound** — the `shipment-reconcile` skill's mandated `mode: safe-close`
+  (Cascade Close Sub-Procedure) was never invoked and no `CLASSIFICATION_BINDING` was
+  computed. **SUPERSEDES the original session-time record above**: this statement is
+  corrected per a disclosed process deviation found via Copilot review on PR #84 (not
+  retroactively repairable — the shipment is already archived; independently
+  re-verified correct against the manifest). See
+  `docs/closure/035-S-045-F-post-merge-closure.md` and
+  `.backlogit/reconcile/035-S-safe-close-20260930T185100Z.md` for the full disclosure.
 * 14 Copilot review rounds; 5 `DEFERRED SCOPE EXPANSION` stash entries captured
   (`47F54477`, `990AFA71`, `DD0BB60F`, `9FC28DB9`, `9FF9EEB4`); 0 unresolved review
   threads at merge.
