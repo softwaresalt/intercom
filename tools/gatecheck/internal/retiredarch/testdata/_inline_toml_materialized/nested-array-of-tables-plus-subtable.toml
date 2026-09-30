@@ -1,0 +1,20 @@
+[[t]]
+name = "one"
+
+  [[t.u]]
+  a = 1
+
+  [[t.u]]
+  a = 2
+
+  [t.sub]
+  s = 1
+
+[[t]]
+name = "two"
+
+  [[t.u]]
+  a = 3
+
+  [t.sub]
+  s = 2

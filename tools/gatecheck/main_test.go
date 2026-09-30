@@ -93,10 +93,11 @@ func TestRun_NonDirectoryRoot(t *testing.T) {
 // sub-command stub returns exitError{1, "<name>: not yet ported"} when
 // given a valid --root. "write-path" is excluded: M1-T10 replaced its stub
 // with the real internal/writepath dispatch (see TestRun_WritePath_*
-// below).
+// below). "retired-arch" is excluded: M2-T11 replaced its stub with the
+// real internal/retiredarch dispatch (see TestRun_RetiredArch_* below).
 func TestRun_EachStub(t *testing.T) {
 	root := t.TempDir()
-	names := []string{"retired-arch", "unignore", "merge-strategy-evaluate"}
+	names := []string{"unignore", "merge-strategy-evaluate"}
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
@@ -217,6 +218,51 @@ func TestRun_WritePath_BogusFlag(t *testing.T) {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 	want := "usage: scripts/check-write-path-precondition.sh [--self-test|--self-test-integrity]\n"
+	if got := stderr.String(); got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
+	}
+}
+
+// TestRun_RetiredArch_DispatchesToEngine verifies M2-T11's real wiring:
+// run() parses --root and forwards the remaining positional argument to
+// internal/retiredarch.Run via runRetiredArch, rather than the old
+// "not yet ported" stub. The engine's own behaviour (every mode, every
+// fixture, every golden) is exhaustively covered by internal/retiredarch's
+// own test suite; this test only proves the CLI-level plumbing (arg ->
+// flag, --root -> root, DefaultGitRunner wiring) is correct.
+func TestRun_RetiredArch_DispatchesToEngine(t *testing.T) {
+	root := gatecheckRepoRoot(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"retired-arch", "--root", root}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("repo-mode code = %d, want 0 (stdout: %q, stderr: %q)", code, stdout.String(), stderr.String())
+	}
+	want := "::notice::retired-arch gate mode=repo\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("repo-mode stdout = %q, want %q", got, want)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("repo-mode stderr = %q, want empty", stderr.String())
+	}
+}
+
+// TestRun_RetiredArch_BogusFlag verifies the CLI-level plumbing surfaces
+// retiredarch.Run's own usage/exit-2 fallback for an unrecognized mode
+// flag, matching the pre-switch bash wrapper's own bogus-flag case byte
+// for byte (see m2.md, M2-T11 evidence).
+func TestRun_RetiredArch_BogusFlag(t *testing.T) {
+	root := gatecheckRepoRoot(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"retired-arch", "--root", root, "--bogus-flag"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	want := "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]\n"
 	if got := stderr.String(); got != want {
 		t.Fatalf("stderr = %q, want %q", got, want)
 	}

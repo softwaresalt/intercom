@@ -1,0 +1,5 @@
+[[t]]
+name = "one"
+
+  [[t.u]]
+  socket_mode = 1
