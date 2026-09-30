@@ -80,12 +80,15 @@ wraps the skill:
    skill-hash + engine-version + sorted manifest + deps + status + one
    line per snapshot member, SHA-256 of the UTF-8 bytes) — not just the
    classification predicates.
-2. Treat the cascade primitive (or any direct archival mutation) as
-   reachable ONLY after that binding has been computed and would pass a
-   "no drift since classification" check — i.e., perform the mutation in
-   the same synchronous sequence as the classification, with the binding
-   value recorded in the report as evidence the check was actually done,
-   not merely implied.
+2. Never call the cascade primitive (or any direct archival mutation) outside of a live
+   `mode: safe-close` invocation. The binding is not a standalone artifact to compute, record,
+   and then present as authorization for a separate direct call — `mode: safe-close` itself must
+   actually run: it recomputes the binding from a **freshly-taken** snapshot immediately before
+   mutating, revalidates it against the value just classified, and only then enters the Cascade
+   Close Sub-Procedure internally. A manually-computed binding that is merely recorded alongside
+   a direct cascade call reproduces the exact same bypass this entry exists to prevent, just with
+   a binding-shaped artifact attached — it does not perform the mandated live revalidation and
+   must not be treated as equivalent to it.
 3. If genuinely uncertain whether a "manual equivalent" is sufficient for
    any given mode (classification vs. safe-close vs. cascade), re-read the
    skill's own text for that mode section specifically — "no CLI gate
