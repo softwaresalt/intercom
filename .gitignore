@@ -127,3 +127,5 @@ internal/copilotprobe2/
 # scripts/lib/ are imported or executed (032-F, shipment 029-S).
 __pycache__/
 *.pyc
+
+.backlogit/.locks/
