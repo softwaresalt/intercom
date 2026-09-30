@@ -146,60 +146,47 @@ set -euo pipefail
 # printed to stdout/stderr, which GitHub Actions echoes to a public CI
 # log -- so a filesystem-walk enumeration could turn an ignored secret
 # file into a public-log disclosure vector.
+#
+# M2-T11 (docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md,
+# plan section C-3/M2-T11): the engine that used to run under an embedded
+# interpreter now runs entirely in Go, at
+# tools/gatecheck/internal/retiredarch. This wrapper is reduced to the
+# shared build/invoke/cleanup runner (scripts/lib/gatecheck-run.sh, C-3): it
+# builds the gatecheck binary once per invocation and forwards this
+# script's own first argument straight through as `gatecheck retired-arch`'s
+# mode flag. Exit codes and ordered stdout/stderr bytes are preserved
+# (ED-3/ED-5 are the only permitted deltas; see m2.md for the parent-vs-head
+# parity evidence). The `::notice::` line and the --self-test/
+# --self-test-integrity success banners moved INTO the Go engine itself
+# (internal/retiredarch.Run), so this wrapper no longer prints them.
+#
+# Root anchoring (C-3 exception): retired-arch anchors its root on ITS OWN
+# ENGINE LOCATION, not the caller's working directory -- this MATCHES the
+# pre-switch Python engine's own resolve_repo_root(), which anchored on
+# __file__ rather than cwd. This is why ROOT below is derived from
+# GATECHECK_SRC (the gatecheck tool source location, set by
+# gatecheck-run.sh) via `git -C`, unlike write-path/unignore/
+# merge-strategy-evaluate's wrappers, which use a plain cwd-based
+# `git rev-parse --show-toplevel`.
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN=python
-else
-  echo "python3 or python is required" >&2
-  exit 2
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/gatecheck-run.sh
+source "${SCRIPT_DIR}/lib/gatecheck-run.sh"
+
+ROOT="$(git -C "${GATECHECK_SRC}" rev-parse --show-toplevel)"
+
+cleanup() {
+  gatecheck_cleanup
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+gatecheck_build
+build_rc=$?
+if [ "${build_rc}" -ne 0 ]; then
+  exit "${build_rc}"
 fi
 
-# Importing the extracted engine/masker modules would otherwise drop
-# scripts/lib/__pycache__/*.pyc into the working tree on every gate run.
-export PYTHONDONTWRITEBYTECODE=1
-
-# Resolve the engine next to THIS script (not via the caller's cwd repo), so
-# invoking this wrapper by absolute path from inside another repository
-# still runs the engine that ships with it. The engine anchors its own repo
-# root on its module location (retired_arch.resolve_repo_root).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-ROOT="$(git rev-parse --show-toplevel)"
-cd "$ROOT"
-
-# 032.004-T: the engine formerly embedded here as a quoted Python heredoc now
-# lives in scripts/lib/retired_arch.py (an ordinary, importable, lintable
-# module; the canonical Go masker it uses lives in scripts/lib/gomask.py).
-# This script is only the argv-dispatch wrapper: it resolves the repo root,
-# cds there, and runs one engine mode per invocation. The wrapper -> mode
-# mapping and every exit code are unchanged.
-ENGINE="$SCRIPT_DIR/lib/retired_arch.py"
-
-scan_with_mode() {
-  local mode="$1"
-  "$PYTHON_BIN" "$ENGINE" "$mode"
-}
-
-case "${1:-}" in
-  "")
-    echo "::notice::retired-arch gate mode=repo"
-    scan_with_mode repo
-    ;;
-  --self-test)
-    echo "::notice::retired-arch gate mode=self-test"
-    scan_with_mode self-test
-    scan_with_mode repo
-    echo "self-test passed: fixtures matched expectations and the tracked tree is clean"
-    ;;
-  --self-test-integrity)
-    echo "::notice::retired-arch gate mode=self-test-integrity"
-    scan_with_mode self-test-integrity
-    echo "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 015.001-T)"
-    ;;
-  *)
-    echo "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]" >&2
-    exit 2
-    ;;
-esac
+gatecheck_invoke retired-arch "$@"
+exit $?

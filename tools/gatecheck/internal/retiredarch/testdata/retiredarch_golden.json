@@ -1,0 +1,1962 @@
+{
+  "python_version": "3.14.3",
+  "unidata_version": "16.0.0",
+  "go_unicode_version": "15.0.0",
+  "root_placeholder": "\u0001REPOROOT\u0001",
+  "vocab_words": [
+    "channel",
+    "socket",
+    "slack",
+    "mode",
+    "name",
+    "team",
+    "host",
+    "acp",
+    "ipc",
+    "cli",
+    "id"
+  ],
+  "forbidden_parts_order": [
+    "slack",
+    "socketmode",
+    "channel_id",
+    "team_id",
+    "acp",
+    "host_cli",
+    "ipc_name"
+  ],
+  "forbidden_parts": {
+    "slack": [
+      "slack"
+    ],
+    "socketmode": [
+      "socket",
+      "mode"
+    ],
+    "channel_id": [
+      "channel",
+      "id"
+    ],
+    "team_id": [
+      "team",
+      "id"
+    ],
+    "acp": [
+      "acp"
+    ],
+    "host_cli": [
+      "host",
+      "cli"
+    ],
+    "ipc_name": [
+      "ipc",
+      "name"
+    ]
+  },
+  "go_fixture_findings": [
+    {
+      "name": "retiredgo/retired-accept-block-comment.go",
+      "masked_findings": [],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-accept-block-comment.go:5: retired token 'socketmode' in Go identifier 'socketmode' (via concat model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-accept-comment-only.go",
+      "masked_findings": [],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-accept-comment-only.go:4: retired token 'slack' in Go identifier 'slack' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-accept-interpreted-string-escaped-quote.go",
+      "masked_findings": [],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-accept-interpreted-string-escaped-quote.go:4: retired token 'team_id' in Go identifier 'team_id' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-accept-raw-string-multiline.go",
+      "masked_findings": [],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-accept-raw-string-multiline.go:6: retired token 'host_cli' in Go identifier 'host_cli' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-accept-struct-tag-benign.go",
+      "masked_findings": [],
+      "unmasked_findings": []
+    },
+    {
+      "name": "retiredgo/retired-accept-struct-tag-non-tag-raw-string.go",
+      "masked_findings": [],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-accept-struct-tag-non-tag-raw-string.go:9: retired token 'channel_id' in Go identifier 'channel_id' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-accept-token-corpus.go",
+      "masked_findings": [],
+      "unmasked_findings": []
+    },
+    {
+      "name": "retiredgo/retired-reject-after-rune-literal.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-after-rune-literal.go:6: retired token 'channel_id' in Go identifier 'ChannelID' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-after-rune-literal.go:6: retired token 'channel_id' in Go identifier 'ChannelID' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-channel-ids.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-channel-ids.go:4: retired token 'channel_id' in Go identifier 'ChannelIDs' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-channel-ids.go:4: retired token 'channel_id' in Go identifier 'ChannelIDs' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-host-clis.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-host-clis.go:4: retired token 'host_cli' in Go identifier 'HostCLIs' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-host-clis.go:4: retired token 'host_cli' in Go identifier 'HostCLIs' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-ipc-names.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-ipc-names.go:4: retired token 'ipc_name' in Go identifier 'IPCNames' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-ipc-names.go:4: retired token 'ipc_name' in Go identifier 'IPCNames' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-slack-team-id.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-slack-team-id.go:4: retired token 'slack' in Go identifier 'SlackTeamID' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-slack-team-id.go:4: retired token 'slack' in Go identifier 'SlackTeamID' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-socket-modes.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socket-modes.go:4: retired token 'socketmode' in Go identifier 'SocketModes' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socket-modes.go:4: retired token 'socketmode' in Go identifier 'SocketModes' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-socketmode-lower.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-lower.go:4: retired token 'socketmode' in Go identifier 'socketmode' (via concat model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-lower.go:4: retired token 'socketmode' in Go identifier 'socketmode' (via concat model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-socketmode-mixed.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-mixed.go:4: retired token 'socketmode' in Go identifier 'Socketmode' (via concat model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-mixed.go:4: retired token 'socketmode' in Go identifier 'Socketmode' (via concat model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-socketmode-plural-fused.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-plural-fused.go:9: retired token 'socketmode' in Go identifier 'socketmodes' (via concat model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-plural-fused.go:5: retired token 'socketmode' in Go identifier 'SocketModes' (via sequence model)",
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-plural-fused.go:6: retired token 'socketmode' in Go identifier 'socket_modes' (via sequence model)",
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-plural-fused.go:7: retired token 'socketmode' in Go identifier 'socketmode' (via concat model)",
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-socketmode-plural-fused.go:9: retired token 'socketmode' in Go identifier 'socketmodes' (via concat model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-struct-tag.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-struct-tag.go:5: retired token 'channel_id' in Go identifier 'channel_id' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-struct-tag.go:5: retired token 'channel_id' in Go identifier 'channel_id' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-team-ids-cache.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-team-ids-cache.go:4: retired token 'team_id' in Go identifier 'TeamIDsCache' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-team-ids-cache.go:4: retired token 'team_id' in Go identifier 'TeamIDsCache' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo/retired-reject-team-ids.go",
+      "masked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-team-ids.go:4: retired token 'team_id' in Go identifier 'TeamIDs' (via sequence model)"
+      ],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo/retired-reject-team-ids.go:4: retired token 'team_id' in Go identifier 'TeamIDs' (via sequence model)"
+      ]
+    },
+    {
+      "name": "retiredgo-differential/retired-differential-comment-only.go",
+      "masked_findings": [],
+      "unmasked_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retiredgo-differential/retired-differential-comment-only.go:4: retired token 'slack' in Go identifier 'slack' (via sequence model)"
+      ]
+    }
+  ],
+  "toml_fixture_findings": [
+    {
+      "name": "retired-accept-composed-key-corpus.toml",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    {
+      "name": "retired-architecture-fixture.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-architecture-fixture.toml: retired token 'host_cli' in TOML key path 'host_cli' (segment 'host_cli') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-architecture-fixture.toml:5: retired token 'host_cli' in TOML key 'host_cli' (via sequence model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-malformed-unparseable.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-malformed-unparseable.toml: TOML parse error (fail-closed): Unterminated string (at end of document)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-malformed-unparseable.toml: unterminated string at EOF (fail-closed)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-negative-inside-multiline-literal.toml",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    {
+      "name": "retired-negative-nested-inert-delimiters.toml",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    {
+      "name": "retired-positive-after-multiline-close.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-positive-after-multiline-close.toml: retired token 'host_cli' in TOML key path 'host_cli' (segment 'host_cli') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-positive-after-multiline-close.toml:5: retired token 'host_cli' in TOML key 'host_cli' (via sequence model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-positive-escaped-delimiter-close.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-positive-escaped-delimiter-close.toml: retired token 'channel_id' in TOML key path 'channel_id' (segment 'channel_id') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-positive-escaped-delimiter-close.toml:4: retired token 'channel_id' in TOML key 'channel_id' (via sequence model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-reject-concatenated-key.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-concatenated-key.toml: retired token 'channel_id' in TOML key path 'channelid' (segment 'channelid') (via concat model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-concatenated-key.toml:4: retired token 'channel_id' in TOML key 'channelid' (via concat model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-reject-dotted-key.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-dotted-key.toml: retired token 'channel_id' in TOML key path 'channel.id' (segment 'id') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-dotted-key.toml:6: retired token 'channel_id' in TOML key 'channel.id' (via sequence model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-reject-fused-plural-key.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-fused-plural-key.toml: retired token 'channel_id' in TOML key path 'channelids' (segment 'channelids') (via concat model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-fused-plural-key.toml:6: retired token 'channel_id' in TOML key 'channelids' (via concat model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-reject-hyphenated-key.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-hyphenated-key.toml: retired token 'channel_id' in TOML key path 'channel-id' (segment 'channel-id') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-hyphenated-key.toml:5: retired token 'channel_id' in TOML key 'channel.id' (via sequence model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-reject-multiline-open-key.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-multiline-open-key.toml: retired token 'host_cli' in TOML key path 'host_cli' (segment 'host_cli') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-multiline-open-key.toml:9: retired token 'host_cli' in TOML key 'host_cli' (via sequence model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-reject-quoted-dotted-key.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-quoted-dotted-key.toml: retired token 'channel_id' in TOML key path 'channel.id' (segment 'channel.id') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-quoted-dotted-key.toml:11: retired token 'channel_id' in TOML key 'channel.id' (via sequence model)"
+      ],
+      "agree": true
+    },
+    {
+      "name": "retired-reject-table-plus-key.toml",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-table-plus-key.toml: retired token 'channel_id' in TOML key path 'channel.id' (segment 'id') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/scripts/testdata/retired-reject-table-plus-key.toml:5: retired token 'channel_id' in TOML key 'channel.id' (via sequence model)"
+      ],
+      "agree": true
+    }
+  ],
+  "ident_goldens": [
+    {
+      "name": "Channel",
+      "split_identifier": [
+        "channel"
+      ],
+      "segment_whole_whole": [
+        [
+          "channel"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "ChannelID",
+      "split_identifier": [
+        "channel",
+        "id"
+      ],
+      "segment_whole_whole": [
+        [
+          "channel",
+          "id"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ],
+        [
+          [
+            "id"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "ChannelIDs",
+      "split_identifier": [
+        "channel",
+        "ids"
+      ],
+      "segment_whole_whole": [
+        [
+          "channel",
+          "id"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ],
+        [
+          [
+            "id"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "ChannelIdentifier",
+      "split_identifier": [
+        "channel",
+        "identifier"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "Clean",
+      "split_identifier": [
+        "clean"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "ConfigWithTag",
+      "split_identifier": [
+        "config",
+        "with",
+        "tag"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [],
+        [],
+        []
+      ]
+    },
+    {
+      "name": "HostCLIs",
+      "split_identifier": [
+        "host",
+        "clis"
+      ],
+      "segment_whole_whole": [
+        [
+          "host",
+          "cli"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "host"
+          ]
+        ],
+        [
+          [
+            "cli"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "HostClient",
+      "split_identifier": [
+        "host",
+        "client"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "host"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "IPCNames",
+      "split_identifier": [
+        "ipc",
+        "names"
+      ],
+      "segment_whole_whole": [
+        [
+          "ipc",
+          "name"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "ipc"
+          ]
+        ],
+        [
+          [
+            "name"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "IPCNamespace",
+      "split_identifier": [
+        "ipc",
+        "namespace"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "ipc"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "Name",
+      "split_identifier": [
+        "name"
+      ],
+      "segment_whole_whole": [
+        [
+          "name"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "name"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "SlackTeamID",
+      "split_identifier": [
+        "slack",
+        "team",
+        "id"
+      ],
+      "segment_whole_whole": [
+        [
+          "slack",
+          "team",
+          "id"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "slack"
+          ]
+        ],
+        [
+          [
+            "team"
+          ]
+        ],
+        [
+          [
+            "id"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "SocketModes",
+      "split_identifier": [
+        "socket",
+        "modes"
+      ],
+      "segment_whole_whole": [
+        [
+          "socket",
+          "mode"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "socket"
+          ]
+        ],
+        [
+          [
+            "mode"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Socketmode",
+      "split_identifier": [
+        "socketmode"
+      ],
+      "segment_whole_whole": [
+        [
+          "socket",
+          "mode"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "socket",
+            "mode"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "TeamIDs",
+      "split_identifier": [
+        "team",
+        "ids"
+      ],
+      "segment_whole_whole": [
+        [
+          "team",
+          "id"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "team"
+          ]
+        ],
+        [
+          [
+            "id"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "TeamIDsCache",
+      "split_identifier": [
+        "team",
+        "ids",
+        "cache"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "team"
+          ]
+        ],
+        [
+          [
+            "id"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "TeamIdentity",
+      "split_identifier": [
+        "team",
+        "identity"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "team"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "TeamWithBenignTag",
+      "split_identifier": [
+        "team",
+        "with",
+        "benign",
+        "tag"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "team"
+          ]
+        ],
+        [],
+        [],
+        []
+      ]
+    },
+    {
+      "name": "acp",
+      "split_identifier": [
+        "acp"
+      ],
+      "segment_whole_whole": [
+        [
+          "acp"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "acp"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "channel",
+      "split_identifier": [
+        "channel"
+      ],
+      "segment_whole_whole": [
+        [
+          "channel"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "channelIdx",
+      "split_identifier": [
+        "channel",
+        "idx"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "channel_id",
+      "split_identifier": [
+        "channel",
+        "id"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ],
+        [
+          [
+            "id"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "cli",
+      "split_identifier": [
+        "cli"
+      ],
+      "segment_whole_whole": [
+        [
+          "cli"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "cli"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "const",
+      "split_identifier": [
+        "const"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "host",
+      "split_identifier": [
+        "host"
+      ],
+      "segment_whole_whole": [
+        [
+          "host"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "host"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "id",
+      "split_identifier": [
+        "id"
+      ],
+      "segment_whole_whole": [
+        [
+          "id"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "id"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "int",
+      "split_identifier": [
+        "int"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "ipc",
+      "split_identifier": [
+        "ipc"
+      ],
+      "segment_whole_whole": [
+        [
+          "ipc"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "ipc"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "json",
+      "split_identifier": [
+        "json"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "mode",
+      "split_identifier": [
+        "mode"
+      ],
+      "segment_whole_whole": [
+        [
+          "mode"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "mode"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "name",
+      "split_identifier": [
+        "name"
+      ],
+      "segment_whole_whole": [
+        [
+          "name"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "name"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "note",
+      "split_identifier": [
+        "note"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "package",
+      "split_identifier": [
+        "package"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "query",
+      "split_identifier": [
+        "query"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "quote",
+      "split_identifier": [
+        "quote"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "retiredTokenInQuery",
+      "split_identifier": [
+        "retired",
+        "token",
+        "in",
+        "query"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [],
+        [],
+        [],
+        []
+      ]
+    },
+    {
+      "name": "retiredgo",
+      "split_identifier": [
+        "retiredgo"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "slack",
+      "split_identifier": [
+        "slack"
+      ],
+      "segment_whole_whole": [
+        [
+          "slack"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "slack"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "socket",
+      "split_identifier": [
+        "socket"
+      ],
+      "segment_whole_whole": [
+        [
+          "socket"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "socket"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "socketmode",
+      "split_identifier": [
+        "socketmode"
+      ],
+      "segment_whole_whole": [
+        [
+          "socket",
+          "mode"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "socket",
+            "mode"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "socketmodes",
+      "split_identifier": [
+        "socketmodes"
+      ],
+      "segment_whole_whole": [
+        [
+          "socket",
+          "mode"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "socket",
+            "mode"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "string",
+      "split_identifier": [
+        "string"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "struct",
+      "split_identifier": [
+        "struct"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "team",
+      "split_identifier": [
+        "team"
+      ],
+      "segment_whole_whole": [
+        [
+          "team"
+        ]
+      ],
+      "segment_whole_per_component": [
+        [
+          [
+            "team"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "team_name",
+      "split_identifier": [
+        "team",
+        "name"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "team"
+          ]
+        ],
+        [
+          [
+            "name"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "toml",
+      "split_identifier": [
+        "toml"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "type",
+      "split_identifier": [
+        "type"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "var",
+      "split_identifier": [
+        "var"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        []
+      ]
+    },
+    {
+      "name": "channel\u0130d",
+      "split_identifier": [
+        "channel",
+        "i\u0307d"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "\u0130channelID",
+      "split_identifier": [
+        "i\u0307channel",
+        "id"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [],
+        [
+          [
+            "id"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "channel\uff29d",
+      "split_identifier": [
+        "channel",
+        "\uff49d"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "channel"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "team\uff29ds",
+      "split_identifier": [
+        "team",
+        "\uff49ds"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "team"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "name": "socket\u0130mode",
+      "split_identifier": [
+        "socket",
+        "i\u0307mode"
+      ],
+      "segment_whole_whole": [],
+      "segment_whole_per_component": [
+        [
+          [
+            "socket"
+          ]
+        ],
+        []
+      ]
+    }
+  ],
+  "inline_toml_goldens": {
+    "reopened-table": {
+      "text": "[a.b]\nx = 1\n\n[a]\ny = 2\n",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    "dotted-key-3segment": {
+      "text": "a.b.c = 1\n",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    "array-of-tables-differing-key-order": {
+      "text": "[[t]]\nx = 1\ny = 2\n\n[[t]]\ny = 3\nx = 4\n",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    "inline-tables-in-array-differing-order-and-keyset": {
+      "text": "arr = [ { x = 1, y = 2 }, { y = 3, z = 4 } ]\n",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    "nested-array-of-tables-plus-subtable": {
+      "text": "[[t]]\nname = \"one\"\n\n  [[t.u]]\n  a = 1\n\n  [[t.u]]\n  a = 2\n\n  [t.sub]\n  s = 1\n\n[[t]]\nname = \"two\"\n\n  [[t.u]]\n  a = 3\n\n  [t.sub]\n  s = 2\n",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    "quoted-key-with-dot": {
+      "text": "[\"a.b\"]\nx = 1\n",
+      "tomllib_findings": [],
+      "fallback_findings": [],
+      "agree": true
+    },
+    "ed6-newline-in-inline-table": {
+      "text": "arr = { x = 1,\n y = 2 }\n",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/ed6-newline-in-inline-table.toml: TOML parse error (fail-closed): Invalid initial character for a key part (at line 1, column 15)"
+      ],
+      "fallback_findings": [],
+      "agree": false
+    },
+    "array-of-tables-forbidden-token": {
+      "text": "[[t]]\nchannel_id = 1\n\n[[t]]\nteam_id = 2\n",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/array-of-tables-forbidden-token.toml: retired token 'channel_id' in TOML key path 't.channel_id' (segment 'channel_id') (via sequence model)",
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/array-of-tables-forbidden-token.toml: retired token 'team_id' in TOML key path 't.team_id' (segment 'team_id') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/array-of-tables-forbidden-token.toml:2: retired token 'channel_id' in TOML key 't.channel_id' (via sequence model)",
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/array-of-tables-forbidden-token.toml:5: retired token 'team_id' in TOML key 't.team_id' (via sequence model)"
+      ],
+      "agree": true
+    },
+    "nested-aot-forbidden-token": {
+      "text": "[[t]]\nname = \"one\"\n\n  [[t.u]]\n  socket_mode = 1\n",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/nested-aot-forbidden-token.toml: retired token 'socketmode' in TOML key path 't.u.socket_mode' (segment 'socket_mode') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/nested-aot-forbidden-token.toml:5: retired token 'socketmode' in TOML key 't.u.socket_mode' (via sequence model)"
+      ],
+      "agree": true
+    },
+    "quoted-key-with-dot-forbidden-token": {
+      "text": "[\"channel.id\"]\nx = 1\n",
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/quoted-key-with-dot-forbidden-token.toml: retired token 'channel_id' in TOML key path 'channel.id' (segment 'channel.id') (via sequence model)",
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/quoted-key-with-dot-forbidden-token.toml: retired token 'channel_id' in TOML key path 'channel.id.x' (segment 'x') (via sequence model)"
+      ],
+      "fallback_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/quoted-key-with-dot-forbidden-token.toml:1: retired token 'channel_id' in TOML table key 'channel.id' (via sequence model)",
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/quoted-key-with-dot-forbidden-token.toml:2: retired token 'channel_id' in TOML key 'channel.id.x' (via sequence model)"
+      ],
+      "agree": true
+    },
+    "leading-utf8-bom": {
+      "raw_bytes": [
+        239,
+        187,
+        191,
+        91,
+        97,
+        93,
+        10,
+        120,
+        32,
+        61,
+        32,
+        49,
+        10
+      ],
+      "tomllib_findings": [
+        "\u0001REPOROOT\u0001/tools/gatecheck/internal/retiredarch/testdata/_inline_toml_materialized/bom-case.toml: TOML parse error (fail-closed): Invalid statement (at line 1, column 1)"
+      ],
+      "fallback_findings": [],
+      "agree": false
+    }
+  },
+  "stream_captures": {
+    "self_test": {
+      "cmd": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "scripts/check-retired-architecture.sh",
+        "--self-test"
+      ],
+      "cwd": ".",
+      "stdout": "::notice::retired-arch gate mode=self-test\nPASS suite toml non-empty: suite discovered 14 fixture(s)\nPASS suite toml has accept and reject coverage: suite has at least one 'accept' and one 'reject' fixture\nPASS retired-accept-composed-key-corpus.toml [tomllib]: clean as expected\nPASS retired-accept-composed-key-corpus.toml [fallback]: clean as expected\nPASS retired-architecture-fixture.toml [tomllib]: rejected as expected\nPASS retired-architecture-fixture.toml [fallback]: rejected as expected\nPASS retired-malformed-unparseable.toml [tomllib]: rejected as expected\nPASS retired-malformed-unparseable.toml [fallback]: rejected as expected\nPASS retired-negative-inside-multiline-literal.toml [tomllib]: clean as expected\nPASS retired-negative-inside-multiline-literal.toml [fallback]: clean as expected\nPASS retired-negative-nested-inert-delimiters.toml [tomllib]: clean as expected\nPASS retired-negative-nested-inert-delimiters.toml [fallback]: clean as expected\nPASS retired-positive-after-multiline-close.toml [tomllib]: rejected as expected\nPASS retired-positive-after-multiline-close.toml [fallback]: rejected as expected\nPASS retired-positive-escaped-delimiter-close.toml [tomllib]: rejected as expected\nPASS retired-positive-escaped-delimiter-close.toml [fallback]: rejected as expected\nPASS retired-reject-concatenated-key.toml [tomllib]: rejected as expected\nPASS retired-reject-concatenated-key.toml [fallback]: rejected as expected\nPASS retired-reject-dotted-key.toml [tomllib]: rejected as expected\nPASS retired-reject-dotted-key.toml [fallback]: rejected as expected\nPASS retired-reject-fused-plural-key.toml [tomllib]: rejected as expected\nPASS retired-reject-fused-plural-key.toml [fallback]: rejected as expected\nPASS retired-reject-hyphenated-key.toml [tomllib]: rejected as expected\nPASS retired-reject-hyphenated-key.toml [fallback]: rejected as expected\nPASS retired-reject-multiline-open-key.toml [tomllib]: rejected as expected\nPASS retired-reject-multiline-open-key.toml [fallback]: rejected as expected\nPASS retired-reject-quoted-dotted-key.toml [tomllib]: rejected as expected\nPASS retired-reject-quoted-dotted-key.toml [fallback]: rejected as expected\nPASS retired-reject-table-plus-key.toml [tomllib]: rejected as expected\nPASS retired-reject-table-plus-key.toml [fallback]: rejected as expected\nPASS suite go non-empty: suite discovered 19 fixture(s)\nPASS suite go has accept and reject coverage: suite has at least one 'accept' and one 'reject' fixture\nPASS retired-accept-block-comment.go [go]: clean as expected\nPASS retired-accept-comment-only.go [go]: clean as expected\nPASS retired-accept-interpreted-string-escaped-quote.go [go]: clean as expected\nPASS retired-accept-raw-string-multiline.go [go]: clean as expected\nPASS retired-accept-struct-tag-benign.go [go]: clean as expected\nPASS retired-accept-struct-tag-non-tag-raw-string.go [go]: clean as expected\nPASS retired-accept-token-corpus.go [go]: clean as expected\nPASS retired-reject-after-rune-literal.go [go]: rejected as expected\nPASS retired-reject-channel-ids.go [go]: rejected as expected\nPASS retired-reject-host-clis.go [go]: rejected as expected\nPASS retired-reject-ipc-names.go [go]: rejected as expected\nPASS retired-reject-slack-team-id.go [go]: rejected as expected\nPASS retired-reject-socket-modes.go [go]: rejected as expected\nPASS retired-reject-socketmode-lower.go [go]: rejected as expected\nPASS retired-reject-socketmode-mixed.go [go]: rejected as expected\nPASS retired-reject-socketmode-plural-fused.go [go]: rejected as expected\nPASS retired-reject-struct-tag.go [go]: rejected as expected\nPASS retired-reject-team-ids-cache.go [go]: rejected as expected\nPASS retired-reject-team-ids.go [go]: rejected as expected\nPASS suite go-differential non-empty: suite discovered 1 fixture(s)\nPASS suite go-differential reject-only exemption: suite is a named reject-only exemption and all 1 fixture(s) are 'reject'\nPASS retired-differential-comment-only.go [go-unmasked]: rejected as expected\nPASS selection internal non-empty: independently-derived expected internal/** set is non-empty (15 paths)\nPASS selection structural inclusion: selected every tracked internal non-test, non-testdata Go file (15 paths)\nPASS selection internal exclusions: excluded internal test files and internal testdata paths\nPASS selection self-scan guard: did not select scripts/ paths and predicate rejects scripts/testdata/retiredgo/x.go\nPASS selection non-empty: selected 21 tracked repo paths\nPASS dispatch config.toml.example: engine_for_path routes config.toml.example to the TOML engine\nPASS selection includes config.toml.example: real selection set includes config.toml.example end-to-end\nPASS selection dispatch coverage: every selected repo path resolves to a known scan engine\nPASS selection cmd/ coverage (AG-5/D4): cmd/ deliberately includes *_test.go and testdata/ paths (3 tracked cmd/**/*_test.go file(s) selected)\nPASS selection pathspec pin (AC-6/AG-1): select_repo_paths pathspec and should_scan_repo_path prefix set pinned via inspect.getsource() source-text extraction\nself-test passed: fixtures matched expectations and the tracked tree is clean\n",
+      "stderr": "",
+      "exit_code": 0,
+      "assertions": [
+        {
+          "name": "suite toml non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite toml has accept and reject coverage",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-composed-key-corpus.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-composed-key-corpus.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-architecture-fixture.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-architecture-fixture.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-malformed-unparseable.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-malformed-unparseable.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-negative-inside-multiline-literal.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-negative-inside-multiline-literal.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-negative-nested-inert-delimiters.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-negative-nested-inert-delimiters.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-positive-after-multiline-close.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-positive-after-multiline-close.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-positive-escaped-delimiter-close.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-positive-escaped-delimiter-close.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-concatenated-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-concatenated-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-dotted-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-dotted-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-fused-plural-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-fused-plural-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-hyphenated-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-hyphenated-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-multiline-open-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-multiline-open-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-quoted-dotted-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-quoted-dotted-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-table-plus-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-table-plus-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite go non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite go has accept and reject coverage",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-block-comment.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-comment-only.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-interpreted-string-escaped-quote.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-raw-string-multiline.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-struct-tag-benign.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-struct-tag-non-tag-raw-string.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-token-corpus.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-after-rune-literal.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-channel-ids.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-host-clis.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-ipc-names.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-slack-team-id.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-socket-modes.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-socketmode-lower.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-socketmode-mixed.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-socketmode-plural-fused.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-struct-tag.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-team-ids-cache.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-team-ids.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite go-differential non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite go-differential reject-only exemption",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-differential-comment-only.go [go-unmasked]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection internal non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection structural inclusion",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection internal exclusions",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection self-scan guard",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "dispatch config.toml.example",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection includes config.toml.example",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection dispatch coverage",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection cmd/ coverage (AG-5/D4)",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection pathspec pin (AC-6/AG-1)",
+          "outcome": "PASS"
+        }
+      ]
+    },
+    "self_test_integrity": {
+      "cmd": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "scripts/check-retired-architecture.sh",
+        "--self-test-integrity"
+      ],
+      "cwd": ".",
+      "stdout": "::notice::retired-arch gate mode=self-test-integrity\nPASS suite toml non-empty: suite discovered 14 fixture(s)\nPASS suite toml has accept and reject coverage: suite has at least one 'accept' and one 'reject' fixture\nPASS retired-accept-composed-key-corpus.toml [tomllib]: clean as expected\nPASS retired-accept-composed-key-corpus.toml [fallback]: clean as expected\nPASS retired-architecture-fixture.toml [tomllib]: rejected as expected\nPASS retired-architecture-fixture.toml [fallback]: rejected as expected\nPASS retired-malformed-unparseable.toml [tomllib]: rejected as expected\nPASS retired-malformed-unparseable.toml [fallback]: rejected as expected\nPASS retired-negative-inside-multiline-literal.toml [tomllib]: clean as expected\nPASS retired-negative-inside-multiline-literal.toml [fallback]: clean as expected\nPASS retired-negative-nested-inert-delimiters.toml [tomllib]: clean as expected\nPASS retired-negative-nested-inert-delimiters.toml [fallback]: clean as expected\nPASS retired-positive-after-multiline-close.toml [tomllib]: rejected as expected\nPASS retired-positive-after-multiline-close.toml [fallback]: rejected as expected\nPASS retired-positive-escaped-delimiter-close.toml [tomllib]: rejected as expected\nPASS retired-positive-escaped-delimiter-close.toml [fallback]: rejected as expected\nPASS retired-reject-concatenated-key.toml [tomllib]: rejected as expected\nPASS retired-reject-concatenated-key.toml [fallback]: rejected as expected\nPASS retired-reject-dotted-key.toml [tomllib]: rejected as expected\nPASS retired-reject-dotted-key.toml [fallback]: rejected as expected\nPASS retired-reject-fused-plural-key.toml [tomllib]: rejected as expected\nPASS retired-reject-fused-plural-key.toml [fallback]: rejected as expected\nPASS retired-reject-hyphenated-key.toml [tomllib]: rejected as expected\nPASS retired-reject-hyphenated-key.toml [fallback]: rejected as expected\nPASS retired-reject-multiline-open-key.toml [tomllib]: rejected as expected\nPASS retired-reject-multiline-open-key.toml [fallback]: rejected as expected\nPASS retired-reject-quoted-dotted-key.toml [tomllib]: rejected as expected\nPASS retired-reject-quoted-dotted-key.toml [fallback]: rejected as expected\nPASS retired-reject-table-plus-key.toml [tomllib]: rejected as expected\nPASS retired-reject-table-plus-key.toml [fallback]: rejected as expected\nPASS suite go non-empty: suite discovered 19 fixture(s)\nPASS suite go has accept and reject coverage: suite has at least one 'accept' and one 'reject' fixture\nPASS retired-accept-block-comment.go [go]: clean as expected\nPASS retired-accept-comment-only.go [go]: clean as expected\nPASS retired-accept-interpreted-string-escaped-quote.go [go]: clean as expected\nPASS retired-accept-raw-string-multiline.go [go]: clean as expected\nPASS retired-accept-struct-tag-benign.go [go]: clean as expected\nPASS retired-accept-struct-tag-non-tag-raw-string.go [go]: clean as expected\nPASS retired-accept-token-corpus.go [go]: clean as expected\nPASS retired-reject-after-rune-literal.go [go]: rejected as expected\nPASS retired-reject-channel-ids.go [go]: rejected as expected\nPASS retired-reject-host-clis.go [go]: rejected as expected\nPASS retired-reject-ipc-names.go [go]: rejected as expected\nPASS retired-reject-slack-team-id.go [go]: rejected as expected\nPASS retired-reject-socket-modes.go [go]: rejected as expected\nPASS retired-reject-socketmode-lower.go [go]: rejected as expected\nPASS retired-reject-socketmode-mixed.go [go]: rejected as expected\nPASS retired-reject-socketmode-plural-fused.go [go]: rejected as expected\nPASS retired-reject-struct-tag.go [go]: rejected as expected\nPASS retired-reject-team-ids-cache.go [go]: rejected as expected\nPASS retired-reject-team-ids.go [go]: rejected as expected\nPASS suite go-differential non-empty: suite discovered 1 fixture(s)\nPASS suite go-differential reject-only exemption: suite is a named reject-only exemption and all 1 fixture(s) are 'reject'\nPASS retired-differential-comment-only.go [go-unmasked]: rejected as expected\nPASS selection internal non-empty: independently-derived expected internal/** set is non-empty (15 paths)\nPASS selection structural inclusion: selected every tracked internal non-test, non-testdata Go file (15 paths)\nPASS selection internal exclusions: excluded internal test files and internal testdata paths\nPASS selection self-scan guard: did not select scripts/ paths and predicate rejects scripts/testdata/retiredgo/x.go\nPASS selection non-empty: selected 21 tracked repo paths\nPASS dispatch config.toml.example: engine_for_path routes config.toml.example to the TOML engine\nPASS selection includes config.toml.example: real selection set includes config.toml.example end-to-end\nPASS selection dispatch coverage: every selected repo path resolves to a known scan engine\nPASS selection cmd/ coverage (AG-5/D4): cmd/ deliberately includes *_test.go and testdata/ paths (3 tracked cmd/**/*_test.go file(s) selected)\nPASS selection pathspec pin (AC-6/AG-1): select_repo_paths pathspec and should_scan_repo_path prefix set pinned via inspect.getsource() source-text extraction\nself-test-integrity passed: fixtures matched expectations (repo scan skipped, 015.001-T)\n",
+      "stderr": "",
+      "exit_code": 0,
+      "assertions": [
+        {
+          "name": "suite toml non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite toml has accept and reject coverage",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-composed-key-corpus.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-composed-key-corpus.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-architecture-fixture.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-architecture-fixture.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-malformed-unparseable.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-malformed-unparseable.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-negative-inside-multiline-literal.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-negative-inside-multiline-literal.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-negative-nested-inert-delimiters.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-negative-nested-inert-delimiters.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-positive-after-multiline-close.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-positive-after-multiline-close.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-positive-escaped-delimiter-close.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-positive-escaped-delimiter-close.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-concatenated-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-concatenated-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-dotted-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-dotted-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-fused-plural-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-fused-plural-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-hyphenated-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-hyphenated-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-multiline-open-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-multiline-open-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-quoted-dotted-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-quoted-dotted-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-table-plus-key.toml [tomllib]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-table-plus-key.toml [fallback]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite go non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite go has accept and reject coverage",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-block-comment.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-comment-only.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-interpreted-string-escaped-quote.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-raw-string-multiline.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-struct-tag-benign.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-struct-tag-non-tag-raw-string.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-accept-token-corpus.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-after-rune-literal.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-channel-ids.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-host-clis.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-ipc-names.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-slack-team-id.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-socket-modes.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-socketmode-lower.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-socketmode-mixed.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-socketmode-plural-fused.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-struct-tag.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-team-ids-cache.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-reject-team-ids.go [go]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite go-differential non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "suite go-differential reject-only exemption",
+          "outcome": "PASS"
+        },
+        {
+          "name": "retired-differential-comment-only.go [go-unmasked]",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection internal non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection structural inclusion",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection internal exclusions",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection self-scan guard",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection non-empty",
+          "outcome": "PASS"
+        },
+        {
+          "name": "dispatch config.toml.example",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection includes config.toml.example",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection dispatch coverage",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection cmd/ coverage (AG-5/D4)",
+          "outcome": "PASS"
+        },
+        {
+          "name": "selection pathspec pin (AC-6/AG-1)",
+          "outcome": "PASS"
+        }
+      ]
+    },
+    "unknown_mode": {
+      "cmd": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "scripts/check-retired-architecture.sh",
+        "--bogus"
+      ],
+      "cwd": ".",
+      "stdout": "",
+      "stderr": "usage: scripts/check-retired-architecture.sh [--self-test|--self-test-integrity]\n",
+      "exit_code": 2,
+      "assertions": []
+    },
+    "repo": {
+      "cmd": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "scripts/check-retired-architecture.sh"
+      ],
+      "cwd": ".",
+      "stdout": "::notice::retired-arch gate mode=repo\n",
+      "stderr": "",
+      "exit_code": 0,
+      "assertions": []
+    }
+  },
+  "repo_mode_evidence": {
+    "normal_cwd": {
+      "cmd": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "scripts/check-retired-architecture.sh"
+      ],
+      "cwd": ".",
+      "stdout": "::notice::retired-arch gate mode=repo\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    "subdirectory_cwd": {
+      "cmd": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "C:/Source/GitHub/intercom-go/scripts/check-retired-architecture.sh"
+      ],
+      "cwd": "C:\\Source\\GitHub\\intercom-go\\internal",
+      "stdout": "::notice::retired-arch gate mode=repo\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    "another_repo_cwd": {
+      "cmd": [
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "C:/Source/GitHub/intercom-go/scripts/check-retired-architecture.sh"
+      ],
+      "cwd": "C:\\Users\\Public\\gatecheck_m2_another_repo",
+      "stdout": "::notice::retired-arch gate mode=repo\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    "selected_path_set": [
+      "cmd/intercom-ctl/main.go",
+      "cmd/intercom-ctl/main_test.go",
+      "cmd/intercom/config_flag_test.go",
+      "cmd/intercom/main.go",
+      "cmd/intercom/main_test.go",
+      "config.toml.example",
+      "internal/apperr/apperr.go",
+      "internal/apperr/sentinel.go",
+      "internal/config/config.go",
+      "internal/config/default.go",
+      "internal/config/load.go",
+      "internal/config/validate.go",
+      "internal/config/workspace.go",
+      "internal/copilotprobe/client.go",
+      "internal/copilotprobe/fixture.go",
+      "internal/copilotprobe/permission.go",
+      "internal/pathsafe/lexical.go",
+      "internal/pathsafe/pathsafe.go",
+      "internal/pathsafe/reparse_other.go",
+      "internal/pathsafe/reparse_windows.go",
+      "internal/pathsafe/root.go"
+    ],
+    "selected_path_count": 21
+  }
+}

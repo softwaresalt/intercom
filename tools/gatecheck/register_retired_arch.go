@@ -1,15 +1,27 @@
 package main
 
-import "io"
+import (
+	"io"
 
-// init pre-registers the retired-arch sub-command as a stub. M2-T11 replaces
-// this file's body with the real dispatch to internal/retiredarch once the
-// engine lands (plan §4, M2-T11); no other register_<name>.go file is
-// touched by that change.
+	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/retiredarch"
+)
+
+// init pre-registers the retired-arch sub-command, dispatching to
+// internal/retiredarch.Run (M2-T11; plan §5). No other register_<name>.go
+// file is touched by this change.
 func init() {
-	registerSubcommand("retired-arch", stubRetiredArch)
+	registerSubcommand("retired-arch", runRetiredArch)
 }
 
-func stubRetiredArch(args []string, root string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return writeExitError(stderr, &exitError{code: 1, msg: "retired-arch: not yet ported"})
+// runRetiredArch forwards the first remaining positional argument (if any)
+// as retiredarch.Run's mode flag, mirroring the (pre-M2-T11) bash
+// wrapper's own `"${1:-}"` dispatch and write-path's identical adaptation
+// pattern (register_write_path.go): any further args are ignored, exactly
+// as bash's case statement never inspected $2 onward.
+func runRetiredArch(args []string, root string, stdin io.Reader, stdout, stderr io.Writer) int {
+	flag := ""
+	if len(args) > 0 {
+		flag = args[0]
+	}
+	return retiredarch.Run(flag, root, retiredarch.DefaultGitRunner, stdout, stderr)
 }
