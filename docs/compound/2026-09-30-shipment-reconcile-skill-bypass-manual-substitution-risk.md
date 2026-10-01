@@ -140,3 +140,39 @@ same session that is making the claim. See
 `.backlogit/reconcile/036-S-classify-close-path-2026-09-30T19-21-40Z.md` /
 `036-S-cascade-close-2026-10-01T02-25-49Z.md` for the full binding computation and the corrected
 disclosure.
+
+## Partially applied in 037-S (revalidation performed; tool enforcement still absent)
+
+037-S's post-merge closure (2026-10-01, closure PR #88; implementation PR #87) applied item 2 of the fix and prevention guidance.
+
+* `classify-close-path` produced `CLASSIFICATION_BINDING`
+  `0f9be8a39309d70cd01b641871f84de68fc0abe5a80bce03fe394a0c230792d9` from a snapshot at
+  18:20:09Z. A post-close review later found that this value encoded member location wrongly;
+  the corrected binding is `77985d03e202c5ff61f1ba431d6d087aa7f2b349395eeceaadd3ca41b263a5b4`.
+* Before the cascade mutation, a fresh snapshot was taken at 18:20:12Z and the binding was
+  recomputed independently. The two values matched exactly.
+* `backlogit shipment ship` ran only after that match. The two-set gate then passed:
+  archived ids equal allowed ids equal required ids, a set of 11.
+
+**Same-helper blind spot (new evidence from 037-S).** One session-local helper produced both
+snapshots, and it wrongly encoded every member's `location` as `archive` when the members were
+actually in `queue`. Because both snapshots shared the defect, the recompute-and-compare
+matched without validating location. The verdict happened to be unaffected, since location only
+feeds the ambiguity check. The lesson is general: recomputing a binding with the same
+agent-authored code only proves that the code is deterministic, not that it is correct. Real
+revalidation needs a tool-enforced implementation, or at minimum an independent cross-check
+against filesystem or archive provenance.
+
+This is the first closure since this entry was written to perform the recompute and compare,
+rather than only recording a binding.
+
+The residual is unchanged in kind:
+
+* No invokable `safe-close` exists, so the recompute and the comparison were agent-executed by a
+  session-local helper, not a tool-enforced atomic call.
+* Under two minutes separated the fresh snapshot from the mutation, in a single-agent session
+  with no concurrent backlog writers.
+
+Stash `D10D3AFC`, an invokable `safe-close` CLI or gate, therefore stays relevant. See
+`docs/closure/037-S-047-F-post-merge-closure.md` and
+`.backlogit/reconcile/037-S-cascade-close-2026-10-01T18-21-40Z.md`.
