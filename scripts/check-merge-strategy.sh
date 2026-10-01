@@ -15,13 +15,13 @@ set -euo pipefail
 # never mutates a repository setting (AC-1.7).
 #
 # M3-T11 (docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md,
-# plan section C-3/M3-T11): evaluate_json()'s Python heredoc is replaced by
+# plan section C-3/M3-T11): evaluate_json()'s embedded interpreted engine is replaced by
 # `gatecheck_invoke merge-strategy-evaluate "$src"`
 # (tools/gatecheck/internal/mergestrategy.Evaluate, M3-T9). The
 # surrounding bash orchestration (run_self_test, run_repo_scan,
 # evaluate_response, verdict_exit_code) is UNCHANGED by this switch -- only
-# evaluate_json()'s own internals move to Go, and the python3/python
-# interpreter probe at the top of this script is dropped along with it.
+# evaluate_json()'s own internals move to Go, and the interpreter
+# prerequisite probe at the top of this script is dropped along with it.
 # gatecheck_build runs ONCE at script start, before either mode branch;
 # evaluate_json stays callable inside `$(... || true)` exactly as before,
 # since gatecheck_invoke's own exit status becomes evaluate_json's exit
@@ -119,7 +119,7 @@ FIXTURE_DIR="scripts/testdata/mergestrategy"
 # <reason>" on a single line and exits 0 for PASS/SKIP, 1 for FAIL -- the
 # built binary's own exit code becomes this function's exit code, so a
 # caller capturing this function's stdout via `$(... || true)` observes
-# exactly the same (output, exit-code) pair the retired Python heredoc
+# exactly the same (output, exit-code) pair the retired embedded engine
 # produced.
 evaluate_json() {
   local src="$1"
