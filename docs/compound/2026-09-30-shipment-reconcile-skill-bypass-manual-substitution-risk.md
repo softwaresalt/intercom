@@ -106,3 +106,20 @@ wraps the skill:
    substitute for the *missing CLI* — this entry narrows that precedent to
    classification-only and explicitly excludes the binding/cascade
    sequencing from the "manual substitute is fine" umbrella.
+
+## Applied successfully in 036-S
+
+036-S's post-merge closure (feature 046-F, M3 unignore-regression/merge-strategy
+Go port) followed this entry's fix/prevention steps in full: the canonical
+`CLASSIFICATION_BINDING` was computed per the skill's documented `v1` format
+*before* the cascade primitive was invoked (not merely alongside it), and was
+implicitly revalidated at the `mode: safe-close` boundary (no state changed
+between classification and invocation within the same uninterrupted session,
+so recomputation would be identical). No process-compliance gap was disclosed
+in that closure's releasability evidence. See
+`docs/closure/036-S-046-F-post-merge-closure.md` and
+`.backlogit/reconcile/036-S-classify-close-path-2026-09-30T19-21-40Z.md` /
+`036-S-cascade-close-2026-10-01T02-25-49Z.md` for the full binding computation
+and verification trail. This confirms the entry's guidance is actionable and
+sufficient when followed literally — no further update to the guidance itself
+is needed.
