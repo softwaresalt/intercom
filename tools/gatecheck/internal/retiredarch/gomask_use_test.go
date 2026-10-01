@@ -10,11 +10,83 @@ import (
 	"testing"
 )
 
+// gomaskImportPath is the canonical masker package. Selector calls count only
+// when their qualifier is bound to this import path, so an unrelated package
+// imported under the name gomask cannot satisfy the guards.
+const gomaskImportPath = "github.com/softwaresalt/intercom-go/tools/gatecheck/internal/gomask"
+
+// gomaskName returns the file-local name bound to gomaskImportPath, or "" when
+// the file does not import it under a usable name or a local declaration
+// anywhere in the file reuses that name (which could shadow the import).
+func gomaskName(f *ast.File) string {
+	name := ""
+	for _, imp := range f.Imports {
+		if strings.Trim(imp.Path.Value, "`\"") != gomaskImportPath {
+			continue
+		}
+		name = "gomask"
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+	}
+	if name == "" || name == "_" || name == "." || declaresName(f, name) {
+		return ""
+	}
+	return name
+}
+
+// declaresName reports whether any declaration in f (function, type, const,
+// var, parameter, result, receiver, := or range :=) introduces name.
+func declaresName(f *ast.File, name string) bool {
+	found := false
+	hit := func(id *ast.Ident) {
+		if id != nil && id.Name == name {
+			found = true
+		}
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.FuncDecl:
+			hit(v.Name)
+		case *ast.TypeSpec:
+			hit(v.Name)
+		case *ast.ValueSpec:
+			for _, id := range v.Names {
+				hit(id)
+			}
+		case *ast.Field:
+			for _, id := range v.Names {
+				hit(id)
+			}
+		case *ast.AssignStmt:
+			if v.Tok == token.DEFINE {
+				for _, l := range v.Lhs {
+					if id, ok := l.(*ast.Ident); ok {
+						hit(id)
+					}
+				}
+			}
+		case *ast.RangeStmt:
+			if v.Tok == token.DEFINE {
+				for _, e := range []ast.Expr{v.Key, v.Value} {
+					if id, ok := e.(*ast.Ident); ok {
+						hit(id)
+					}
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
 // maskerUse reports, for one parsed file, how many times gomask.MaskGoNonCode
 // is actually called and the names of any locally declared maskers. Only
 // *ast.CallExpr nodes whose Fun is the selector count: a bare reference such
-// as `var _ = gomask.MaskGoNonCode` is not a call.
+// as `var _ = gomask.MaskGoNonCode` is not a call. The selector qualifier must
+// be the name bound to gomaskImportPath (see gomaskName).
 func maskerUse(f *ast.File) (calls int, locals []string) {
+	pkg := gomaskName(f)
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.FuncDecl:
@@ -24,7 +96,7 @@ func maskerUse(f *ast.File) (calls int, locals []string) {
 			}
 		case *ast.CallExpr:
 			if sel, ok := v.Fun.(*ast.SelectorExpr); ok {
-				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "gomask" && sel.Sel.Name == "MaskGoNonCode" {
+				if id, ok := sel.X.(*ast.Ident); ok && pkg != "" && id.Name == pkg && sel.Sel.Name == "MaskGoNonCode" {
 					calls++
 				}
 			}
@@ -70,39 +142,116 @@ func TestUsesSharedCanonicalMasker(t *testing.T) {
 
 // scanGoMaskFlow reports whether file f declares scanGo and, inside it, the
 // result of gomask.MaskGoNonCode reaches the scan loop: scanGo ranges over
-// pysem.SplitLines(v), and the last write to v positioned before that range
-// statement is a single assignment of a gomask.MaskGoNonCode result. A
+// pysem.SplitLines(v) in a top-level statement, and the last write to v
+// positioned before that range statement is a single assignment of a
+// gomask.MaskGoNonCode result (qualifier bound to gomaskImportPath). A
 // package-level count of calls cannot prove this, because scanGo could switch
 // to a local clone while a dead helper keeps a canonical call.
 //
 // "Last write by source position" is a conservative stand-in for reaching-
-// definition analysis: any later write to v on any branch (a noncanonical
-// reassignment, a multi-assign, a var redeclaration, or v's address being
-// taken) makes the guard red, so it fails closed rather than open.
+// definition analysis, made sound by also pinning the canonical write to the
+// production shape: it must be a top-level statement of scanGo, or a direct
+// statement of a top-level `if p { ... }` with no init and no else whose
+// condition is a scanGo parameter that scanGo never writes. A write anywhere
+// else (a nested block, a loop, `if false`, a constant condition, or an
+// uncalled func literal) can never be canonical, and any later write to v on
+// any branch (a noncanonical reassignment, a multi-assign, a var
+// redeclaration, or v's address being taken) makes the guard red, so it
+// fails closed rather than open.
 func scanGoMaskFlow(f *ast.File) (declared, flows bool) {
+	pkg := gomaskName(f)
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok || fn.Recv != nil || fn.Name.Name != "scanGo" || fn.Body == nil {
 			continue
 		}
 		declared = true
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			rs, ok := n.(*ast.RangeStmt)
+		if pkg == "" {
+			continue
+		}
+		allowed := canonicalSites(fn)
+		for _, st := range fn.Body.List {
+			rs, ok := st.(*ast.RangeStmt)
 			if !ok || !isSelectorCall(rs.X, "pysem", "SplitLines") {
-				return true
+				continue
 			}
-			if arg, ok := rs.X.(*ast.CallExpr).Args[0].(*ast.Ident); ok && lastWriteIsCanonical(fn.Body, arg.Name, rs.Pos()) {
+			if arg, ok := rs.X.(*ast.CallExpr).Args[0].(*ast.Ident); ok && lastWriteIsCanonical(fn.Body, arg.Name, rs.Pos(), pkg, allowed) {
 				flows = true
 			}
-			return true
-		})
+		}
 	}
 	return declared, flows
 }
 
+// canonicalSites returns the statements of fn where a canonical mask write is
+// structurally guaranteed to execute when reached: the top-level statements of
+// fn's body, and the direct statements of a top-level IfStmt with no Init, no
+// Else, and a condition that is a bare parameter of fn never written in fn.
+func canonicalSites(fn *ast.FuncDecl) map[ast.Stmt]bool {
+	params := map[string]bool{}
+	for _, fld := range fn.Type.Params.List {
+		for _, id := range fld.Names {
+			params[id.Name] = true
+		}
+	}
+	sites := map[ast.Stmt]bool{}
+	for _, st := range fn.Body.List {
+		sites[st] = true
+		is, ok := st.(*ast.IfStmt)
+		if !ok || is.Init != nil || is.Else != nil {
+			continue
+		}
+		cond, ok := is.Cond.(*ast.Ident)
+		if !ok || !params[cond.Name] || len(writePositions(fn.Body, cond.Name)) > 0 {
+			continue
+		}
+		for _, inner := range is.Body.List {
+			sites[inner] = true
+		}
+	}
+	return sites
+}
+
+// writePositions returns the positions of every write to name in body: an
+// assignment LHS, a var declaration, an inc/dec, or the address being taken.
+func writePositions(body *ast.BlockStmt, name string) []token.Pos {
+	var pos []token.Pos
+	is := func(e ast.Expr) bool {
+		id, ok := e.(*ast.Ident)
+		return ok && id.Name == name
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			for _, l := range s.Lhs {
+				if is(l) {
+					pos = append(pos, s.Pos())
+				}
+			}
+		case *ast.IncDecStmt:
+			if is(s.X) {
+				pos = append(pos, s.Pos())
+			}
+		case *ast.ValueSpec:
+			for _, id := range s.Names {
+				if id.Name == name {
+					pos = append(pos, s.Pos())
+				}
+			}
+		case *ast.UnaryExpr:
+			if s.Op == token.AND && is(s.X) {
+				pos = append(pos, s.Pos())
+			}
+		}
+		return true
+	})
+	return pos
+}
+
 // lastWriteIsCanonical reports whether, among all writes to name in body that
-// start before limit, the last one is `name = gomask.MaskGoNonCode(x)` (or :=).
-func lastWriteIsCanonical(body *ast.BlockStmt, name string, limit token.Pos) bool {
+// start before limit, the last one is `name = <pkg>.MaskGoNonCode(x)` (or :=)
+// located at one of the allowed canonical sites.
+func lastWriteIsCanonical(body *ast.BlockStmt, name string, limit token.Pos, pkg string, allowed map[ast.Stmt]bool) bool {
 	var last token.Pos
 	canonical := false
 	record := func(pos token.Pos, isCanonical bool) {
@@ -110,25 +259,16 @@ func lastWriteIsCanonical(body *ast.BlockStmt, name string, limit token.Pos) boo
 			last, canonical = pos, isCanonical
 		}
 	}
+	for _, p := range writePositions(body, name) {
+		record(p, false)
+	}
 	ast.Inspect(body, func(n ast.Node) bool {
-		switch s := n.(type) {
-		case *ast.AssignStmt:
-			for i, l := range s.Lhs {
-				if id, ok := l.(*ast.Ident); ok && id.Name == name {
-					record(s.Pos(), len(s.Lhs) == 1 && len(s.Rhs) == 1 && i == 0 &&
-						isSelectorCall(s.Rhs[0], "gomask", "MaskGoNonCode"))
-				}
-			}
-		case *ast.ValueSpec:
-			for _, id := range s.Names {
-				if id.Name == name {
-					record(s.Pos(), false)
-				}
-			}
-		case *ast.UnaryExpr:
-			if id, ok := s.X.(*ast.Ident); ok && s.Op == token.AND && id.Name == name {
-				record(s.Pos(), false)
-			}
+		s, ok := n.(*ast.AssignStmt)
+		if !ok || !allowed[s] || len(s.Lhs) != 1 || len(s.Rhs) != 1 {
+			return true
+		}
+		if id, ok := s.Lhs[0].(*ast.Ident); ok && id.Name == name && s.Pos() == last && isSelectorCall(s.Rhs[0], pkg, "MaskGoNonCode") {
+			canonical = true
 		}
 		return true
 	})
@@ -172,14 +312,20 @@ func TestScanGoConsumesCanonicalMask(t *testing.T) {
 // TestScanGoMaskFlow_Mutations proves scanGoMaskFlow is red when scanGo stops
 // consuming the canonical mask result, and green on the production shape.
 func TestScanGoMaskFlow_Mutations(t *testing.T) {
-	const head = "package p\nfunc scanGo(text string, mask bool) {\n\tmasked := text\n"
+	const imp = "import \"" + gomaskImportPath + "\"\n"
+	const head = "package p\n" + imp + "func scanGo(text string, mask bool) {\n\tmasked := text\n"
 	const loop = "\tfor range pysem.SplitLines(masked) {\n\t}\n}\n"
+	const canon = "\t\tmasked = gomask.MaskGoNonCode(text)\n"
 	cases := []struct {
 		name string
 		src  string
 		want bool
 	}{
-		{"production shape", head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n" + loop, true},
+		{"production shape", head + "\tif mask {\n" + canon + "\t}\n" + loop, true},
+		{"unconditional top-level canonical write", head + "\tmasked = gomask.MaskGoNonCode(text)\n" + loop, true},
+		{"canonical import under an alias",
+			"package p\nimport gm \"" + gomaskImportPath + "\"\nfunc scanGo(text string, mask bool) {\n\tmasked := text\n" +
+				"\tif mask {\n\t\tmasked = gm.MaskGoNonCode(text)\n\t}\n" + loop, true},
 		{"local clone in scanGo, canonical call in dead helper",
 			head + "\tif mask {\n\t\tmasked = clone(text)\n\t}\n" + loop +
 				"func dead(s string) { _ = gomask.MaskGoNonCode(s) }\n", false},
@@ -198,6 +344,21 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tvar masked = text\n" + loop, false},
 		{"address taken after canonical write",
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tclobber(&masked)\n" + loop, false},
+		{"foreign package imported as gomask",
+			"package p\nimport gomask \"example.com/other\"\nfunc scanGo(text string, mask bool) {\n\tmasked := text\n" +
+				"\tif mask {\n" + canon + "\t}\n" + loop, false},
+		{"canonical package not imported", strings.Replace(head, imp, "", 1) + "\tif mask {\n" + canon + "\t}\n" + loop, false},
+		{"local gomask shadows the import", head + "\tgomask := other\n\tif mask {\n" + canon + "\t}\n" + loop, false},
+		{"canonical write under if false", head + "\tif false {\n" + canon + "\t}\n" + loop, false},
+		{"canonical write under constant condition", head + "\tconst on = true\n\tif on {\n" + canon + "\t}\n" + loop, false},
+		{"condition parameter reassigned", head + "\tmask = false\n\tif mask {\n" + canon + "\t}\n" + loop, false},
+		{"canonical write under if with init", head + "\tif _ = 0; mask {\n" + canon + "\t}\n" + loop, false},
+		{"canonical write under if with else", head + "\tif mask {\n" + canon + "\t} else {\n\t}\n" + loop, false},
+		{"canonical write in uncalled func literal", head + "\t_ = func() {\n" + canon + "\t}\n" + loop, false},
+		{"canonical write in nested loop", head + "\tfor range []int{} {\n" + canon + "\t}\n" + loop, false},
+		{"canonical write in nested block under if", head + "\tif mask {\n\t\t{\n" + canon + "\t\t}\n\t}\n" + loop, false},
+		{"scan loop not top-level",
+			head + "\tif mask {\n" + canon + "\t}\n\t{\n\t\tfor range pysem.SplitLines(masked) {\n\t\t}\n\t}\n}\n", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -219,17 +380,24 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 // TestMaskerUse_Mutations proves maskerUse is red on the regressions it
 // guards against and green on a genuine call.
 func TestMaskerUse_Mutations(t *testing.T) {
+	const imp = "import \"" + gomaskImportPath + "\"\n"
 	cases := []struct {
 		name       string
 		src        string
 		wantCalls  int
 		wantLocals int
 	}{
-		{"real call", "package p\nfunc f(b []byte) { _ = gomask.MaskGoNonCode(b) }\n", 1, 0},
-		{"bare reference", "package p\nvar _ = gomask.MaskGoNonCode\n", 0, 0},
-		{"reference passed as value", "package p\nfunc f() { g(gomask.MaskGoNonCode) }\n", 0, 0},
+		{"real call", "package p\n" + imp + "func f(b []byte) { _ = gomask.MaskGoNonCode(b) }\n", 1, 0},
+		{"aliased canonical import", "package p\nimport gm \"" + gomaskImportPath + "\"\nfunc f(b []byte) { _ = gm.MaskGoNonCode(b) }\n", 1, 0},
+		{"bare reference", "package p\n" + imp + "var _ = gomask.MaskGoNonCode\n", 0, 0},
+		{"reference passed as value", "package p\n" + imp + "func f() { g(gomask.MaskGoNonCode) }\n", 0, 0},
 		{"local masker", "package p\nfunc maskGoNonCode(b []byte) []byte { return b }\n", 0, 1},
-		{"other package selector", "package p\nfunc f(b []byte) { _ = other.MaskGoNonCode(b) }\n", 0, 0},
+		{"other package selector", "package p\n" + imp + "func f(b []byte) { _ = other.MaskGoNonCode(b) }\n", 0, 0},
+		{"foreign package imported as gomask", "package p\nimport gomask \"example.com/other\"\nfunc f(b []byte) { _ = gomask.MaskGoNonCode(b) }\n", 0, 0},
+		{"canonical package not imported", "package p\nfunc f(b []byte) { _ = gomask.MaskGoNonCode(b) }\n", 0, 0},
+		{"blank import", "package p\nimport _ \"" + gomaskImportPath + "\"\nfunc f(b []byte) { _ = gomask.MaskGoNonCode(b) }\n", 0, 0},
+		{"local var shadows the import", "package p\n" + imp + "func f(b []byte) { gomask := other; _ = gomask.MaskGoNonCode(b) }\n", 0, 0},
+		{"parameter shadows the import", "package p\n" + imp + "func f(gomask T, b []byte) { _ = gomask.MaskGoNonCode(b) }\n", 0, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
