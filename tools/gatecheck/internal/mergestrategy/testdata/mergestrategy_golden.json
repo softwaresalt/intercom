@@ -1,0 +1,225 @@
+{
+  "python_version": "3.14.3",
+  "fixture_cases": [
+    {
+      "name": "fail-both-enabled.json",
+      "content": "{\n  \"name\": \"intercom\",\n  \"full_name\": \"softwaresalt/intercom\",\n  \"allow_merge_commit\": true,\n  \"allow_squash_merge\": true,\n  \"allow_rebase_merge\": true\n}\n",
+      "verdict": "FAIL",
+      "reason": "both allow_squash_merge and allow_rebase_merge are true",
+      "exit_code": 1
+    },
+    {
+      "name": "fail-rebase-enabled.json",
+      "content": "{\n  \"name\": \"intercom\",\n  \"full_name\": \"softwaresalt/intercom\",\n  \"allow_merge_commit\": true,\n  \"allow_squash_merge\": false,\n  \"allow_rebase_merge\": true\n}\n",
+      "verdict": "FAIL",
+      "reason": "allow_rebase_merge is true",
+      "exit_code": 1
+    },
+    {
+      "name": "fail-squash-enabled.json",
+      "content": "{\n  \"name\": \"intercom\",\n  \"full_name\": \"softwaresalt/intercom\",\n  \"allow_merge_commit\": true,\n  \"allow_squash_merge\": true,\n  \"allow_rebase_merge\": false\n}\n",
+      "verdict": "FAIL",
+      "reason": "allow_squash_merge is true",
+      "exit_code": 1
+    },
+    {
+      "name": "pass-both-false.json",
+      "content": "{\n  \"name\": \"intercom\",\n  \"full_name\": \"softwaresalt/intercom\",\n  \"allow_merge_commit\": true,\n  \"allow_squash_merge\": false,\n  \"allow_rebase_merge\": false\n}\n",
+      "verdict": "PASS",
+      "reason": "allow_squash_merge and allow_rebase_merge are both false",
+      "exit_code": 0
+    },
+    {
+      "name": "skip-empty-response.json",
+      "content": "\n",
+      "verdict": "SKIP",
+      "reason": "empty API response (unauthorized or unreachable)",
+      "exit_code": 0
+    },
+    {
+      "name": "skip-null-squash.json",
+      "content": "{\n  \"name\": \"intercom\",\n  \"full_name\": \"softwaresalt/intercom\",\n  \"allow_merge_commit\": true,\n  \"allow_squash_merge\": null,\n  \"allow_rebase_merge\": false\n}\n",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got NoneType/bool); malformed response is never a pass",
+      "exit_code": 0
+    },
+    {
+      "name": "skip-string-rebase.json",
+      "content": "{\n  \"name\": \"intercom\",\n  \"full_name\": \"softwaresalt/intercom\",\n  \"allow_merge_commit\": true,\n  \"allow_squash_merge\": false,\n  \"allow_rebase_merge\": \"true\"\n}\n",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got bool/str); malformed response is never a pass",
+      "exit_code": 0
+    },
+    {
+      "name": "skip-unauthorized.json",
+      "content": "{\n  \"message\": \"Not Found\",\n  \"documentation_url\": \"https://docs.github.com/rest\"\n}\n",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge absent from API response (unauthorized token or field not exposed to this credential)",
+      "exit_code": 0
+    }
+  ],
+  "inline_cases": [
+    {
+      "name": "empty-input",
+      "verdict": "SKIP",
+      "reason": "empty API response (unauthorized or unreachable)",
+      "exit_code": 0,
+      "content": ""
+    },
+    {
+      "name": "whitespace-only-ascii",
+      "verdict": "SKIP",
+      "reason": "empty API response (unauthorized or unreachable)",
+      "exit_code": 0,
+      "content": "   \t\n  "
+    },
+    {
+      "name": "whitespace-only-nbsp-ideographic",
+      "verdict": "SKIP",
+      "reason": "empty API response (unauthorized or unreachable)",
+      "exit_code": 0,
+      "content": " 　\n"
+    },
+    {
+      "name": "non-object-toplevel-array",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge absent from API response (unauthorized token or field not exposed to this credential)",
+      "exit_code": 0,
+      "content": "[]"
+    },
+    {
+      "name": "non-object-toplevel-string",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge absent from API response (unauthorized token or field not exposed to this credential)",
+      "exit_code": 0,
+      "content": "\"hello\""
+    },
+    {
+      "name": "non-object-toplevel-int",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge absent from API response (unauthorized token or field not exposed to this credential)",
+      "exit_code": 0,
+      "content": "42"
+    },
+    {
+      "name": "missing-key",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge absent from API response (unauthorized token or field not exposed to this credential)",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": false}"
+    },
+    {
+      "name": "case-variant-key",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge absent from API response (unauthorized token or field not exposed to this credential)",
+      "exit_code": 0,
+      "content": "{\"Allow_Squash_Merge\": false, \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "duplicate-keys-last-wins",
+      "verdict": "PASS",
+      "reason": "allow_squash_merge and allow_rebase_merge are both false",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": true, \"allow_squash_merge\": false, \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "null-value",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got NoneType/bool); malformed response is never a pass",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": null, \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "string-value",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got str/bool); malformed response is never a pass",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": \"true\", \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "int-value",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got int/bool); malformed response is never a pass",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": 1, \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "float-value",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got float/bool); malformed response is never a pass",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": 1.5, \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "list-value",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got list/bool); malformed response is never a pass",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": [], \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "dict-value",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got dict/bool); malformed response is never a pass",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": {}, \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "nan-literal",
+      "verdict": "SKIP",
+      "reason": "allow_squash_merge/allow_rebase_merge present but not boolean (got float/bool); malformed response is never a pass",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": NaN, \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "trailing-data-after-object",
+      "verdict": "SKIP",
+      "reason": "could not parse API response as JSON: Extra data: line 1 column 60 (char 59)",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": false, \"allow_rebase_merge\": false} x"
+    },
+    {
+      "name": "two-concatenated-objects",
+      "verdict": "SKIP",
+      "reason": "could not parse API response as JSON: Extra data: line 1 column 59 (char 58)",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": false, \"allow_rebase_merge\": false}{\"allow_squash_merge\": true, \"allow_rebase_merge\": true}"
+    },
+    {
+      "name": "invalid-utf8-bytes",
+      "content_base64": "eyJhbGxvd19zcXVhc2hfbWVyZ2UiOiBmYWxzZSwgImFsbG93X3JlYmFzZV9tZXJnZSI6IP/+fQ==",
+      "verdict": "PYTHON_TRACEBACK",
+      "reason": "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 52: invalid start byte",
+      "exit_code": 1,
+      "is_invalid_utf8": true
+    },
+    {
+      "name": "both-true",
+      "verdict": "FAIL",
+      "reason": "both allow_squash_merge and allow_rebase_merge are true",
+      "exit_code": 1,
+      "content": "{\"allow_squash_merge\": true, \"allow_rebase_merge\": true}"
+    },
+    {
+      "name": "one-true-squash",
+      "verdict": "FAIL",
+      "reason": "allow_squash_merge is true",
+      "exit_code": 1,
+      "content": "{\"allow_squash_merge\": true, \"allow_rebase_merge\": false}"
+    },
+    {
+      "name": "one-true-rebase",
+      "verdict": "FAIL",
+      "reason": "allow_rebase_merge is true",
+      "exit_code": 1,
+      "content": "{\"allow_squash_merge\": false, \"allow_rebase_merge\": true}"
+    },
+    {
+      "name": "both-false",
+      "verdict": "PASS",
+      "reason": "allow_squash_merge and allow_rebase_merge are both false",
+      "exit_code": 0,
+      "content": "{\"allow_squash_merge\": false, \"allow_rebase_merge\": false}"
+    }
+  ]
+}

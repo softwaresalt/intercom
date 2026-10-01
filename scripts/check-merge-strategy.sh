@@ -14,6 +14,37 @@ set -euo pipefail
 # boundary. This script implements ONLY the standing verification -- it
 # never mutates a repository setting (AC-1.7).
 #
+# M3-T11 (docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md,
+# plan section C-3/M3-T11): evaluate_json()'s Python heredoc is replaced by
+# `gatecheck_invoke merge-strategy-evaluate "$src"`
+# (tools/gatecheck/internal/mergestrategy.Evaluate, M3-T9). The
+# surrounding bash orchestration (run_self_test, run_repo_scan,
+# evaluate_response, verdict_exit_code) is UNCHANGED by this switch -- only
+# evaluate_json()'s own internals move to Go, and the python3/python
+# interpreter probe at the top of this script is dropped along with it.
+# gatecheck_build runs ONCE at script start, before either mode branch;
+# evaluate_json stays callable inside `$(... || true)` exactly as before,
+# since gatecheck_invoke's own exit status becomes evaluate_json's exit
+# status. Exit codes and ordered stdout/stderr bytes are preserved (ED-2
+# and ED-8 are the only permitted deltas; see m3.md for the parent-vs-head
+# parity evidence).
+#
+# M3-T12 (fold 150364D2, R-12): (1) every evaluate_response temp file is
+# tracked in MERGE_STRATEGY_TMP_FILES and removed by this script's single
+# composed cleanup() trap, never by an imperative `rm -f` inside the
+# function body, so a file is never leaked even if evaluate_response exits
+# early; (2) the self-test table additionally asserts
+# verdict_exit_code's PASS->0, SKIP->0 and FAIL->1 rows explicitly,
+# alongside the pre-existing unrecognized->2 assertion; (3) a
+# `git rev-parse --show-toplevel` guard runs BEFORE gatecheck_build (ED-1):
+# a run outside a git checkout now exits 2 with an `::error::` message
+# instead of propagating git's own `set -e` failure code, so no build is
+# ever attempted outside a checkout. See m3.md for the red-first proof
+# (verdict_exit_code mapping deliberately broken in a scratch copy to show
+# the new table rows failing) and the ED-1 non-checkout demonstration;
+# both are evidence for THIS task, kept separate from M3-T11's own
+# evidence section.
+#
 # Usage:
 #   scripts/check-merge-strategy.sh
 #     Resolves the current repository via `gh repo view` and queries
@@ -38,94 +69,76 @@ set -euo pipefail
 #     with no network and no token (AC-1.1). Does not query the live
 #     repository.
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON_BIN=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON_BIN=python
-else
-  echo "python3 or python is required" >&2
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/gatecheck-run.sh
+source "${SCRIPT_DIR}/lib/gatecheck-run.sh"
+
+# ED-1 (M3-T12, 150364D2 item 3): a run outside a git checkout must exit 2
+# with a message, rather than propagating git's own `rev-parse` failure
+# code under `set -e`. This guard runs BEFORE gatecheck_build, so no build
+# is ever attempted outside a checkout.
+if ! ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+  echo "::error::check-merge-strategy.sh must be run from inside a git checkout" >&2
   exit 2
 fi
-
-ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
+
+# MERGE_STRATEGY_TMP_FILES (M3-T12, 150364D2 item 1): every temp file
+# evaluate_response creates is appended here and removed only by the
+# single composed cleanup() trap below -- never by an imperative `rm -f`
+# inside evaluate_response itself, so a file is never leaked if that
+# function exits early.
+MERGE_STRATEGY_TMP_FILES=()
+
+cleanup() {
+  local f
+  for f in "${MERGE_STRATEGY_TMP_FILES[@]:-}"; do
+    [ -n "$f" ] && rm -f -- "$f"
+  done
+  gatecheck_cleanup
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+gatecheck_build
+build_rc=$?
+if [ "${build_rc}" -ne 0 ]; then
+  exit "${build_rc}"
+fi
 
 FIXTURE_DIR="scripts/testdata/mergestrategy"
 
 # evaluate_json <json-file>
 #
-# Reads JSON from the given file. Prints "<VERDICT> <reason>" on a single
-# line and exits 0 for PASS/SKIP, 1 for FAIL. The payload MUST be passed as
-# a file: Python's stdin is occupied by the program heredoc below, so a
-# payload piped or here-stringed into this function would never be read.
+# Reads JSON from the given file path via the Go evaluator
+# (gatecheck merge-strategy-evaluate, M3-T9/M3-T11). Prints "<VERDICT>
+# <reason>" on a single line and exits 0 for PASS/SKIP, 1 for FAIL -- the
+# built binary's own exit code becomes this function's exit code, so a
+# caller capturing this function's stdout via `$(... || true)` observes
+# exactly the same (output, exit-code) pair the retired Python heredoc
+# produced.
 evaluate_json() {
   local src="$1"
-  "$PYTHON_BIN" - "$src" <<'PY'
-import json
-import sys
-
-src = sys.argv[1]
-with open(src, 'r', encoding='utf-8') as fh:
-    raw = fh.read()
-
-
-def emit(verdict, reason):
-    print(f"{verdict} {reason}")
-    sys.exit(0 if verdict in ("PASS", "SKIP") else 1)
-
-
-if not raw.strip():
-    emit("SKIP", "empty API response (unauthorized or unreachable)")
-
-try:
-    data = json.loads(raw)
-except json.JSONDecodeError as exc:
-    emit("SKIP", f"could not parse API response as JSON: {exc}")
-
-if (
-    not isinstance(data, dict)
-    or "allow_squash_merge" not in data
-    or "allow_rebase_merge" not in data
-):
-    emit(
-        "SKIP",
-        "allow_squash_merge/allow_rebase_merge absent from API response "
-        "(unauthorized token or field not exposed to this credential)",
-    )
-
-squash = data["allow_squash_merge"]
-rebase = data["allow_rebase_merge"]
-
-if squash is True and rebase is True:
-    emit("FAIL", "both allow_squash_merge and allow_rebase_merge are true")
-elif squash is True:
-    emit("FAIL", "allow_squash_merge is true")
-elif rebase is True:
-    emit("FAIL", "allow_rebase_merge is true")
-elif not isinstance(squash, bool) or not isinstance(rebase, bool):
-    emit(
-        "SKIP",
-        "allow_squash_merge/allow_rebase_merge present but not boolean "
-        f"(got {type(squash).__name__}/{type(rebase).__name__}); "
-        "malformed response is never a pass",
-    )
-else:
-    emit("PASS", "allow_squash_merge and allow_rebase_merge are both false")
-PY
+  gatecheck_invoke merge-strategy-evaluate "$src"
 }
 
 # evaluate_response <json-string>
 #
 # Live repo-scan transport: writes the in-memory API response to a temp
 # file and evaluates it via evaluate_json. Prints the evaluator's output
-# (possibly empty if the evaluator crashed); never fails by itself.
+# (possibly empty if the evaluator crashed); never fails by itself. The
+# temp file is tracked in MERGE_STRATEGY_TMP_FILES and removed by the
+# script's single composed cleanup() trap (M3-T12, 150364D2 item 1), not
+# by an imperative rm here -- so it is never leaked if this function exits
+# early.
 evaluate_response() {
   local tmp
   tmp="$(mktemp)"
+  MERGE_STRATEGY_TMP_FILES+=("$tmp")
   printf '%s' "$1" > "$tmp"
   local output
   output="$(evaluate_json "$tmp" || true)"
-  rm -f "$tmp"
   printf '%s\n' "$output"
 }
 
@@ -195,9 +208,20 @@ run_self_test() {
     fi
   done <<< "$discovered"
 
-  # An empty or unrecognized evaluator verdict must map to exit 2, never
-  # to success.
+  # verdict_exit_code's full exit-code table (M3-T12, 150364D2 item 2):
+  # PASS->0, SKIP->0, FAIL->1, and an empty or unrecognized verdict->2,
+  # never success.
   local rc
+  for row in "PASS reason:0" "SKIP reason:0" "FAIL reason:1"; do
+    local sample="${row%%:*}"
+    local expected_rc="${row##*:}"
+    if verdict_exit_code "$sample" 2>/dev/null; then rc=0; else rc=$?; fi
+    if [ "$rc" = "$expected_rc" ]; then
+      echo "PASS verdict_exit_code('${sample}'): exit ${rc} as expected"
+    else
+      failures+=("verdict_exit_code('${sample}'): expected exit ${expected_rc}, got ${rc}")
+    fi
+  done
   for bogus in "" "garbage verdict"; do
     if verdict_exit_code "$bogus" 2>/dev/null; then rc=0; else rc=$?; fi
     if [ "$rc" = "2" ]; then
