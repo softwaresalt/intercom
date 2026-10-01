@@ -88,7 +88,8 @@ The diff covers 44 files, with 4,785 insertions and 1,792 deletions. `cmd/` is u
 
 ## Pre-deploy audits
 
-None required. The change is CI-only and reverts in a single step.
+None required. The change is CI-only and reverts in a single step until the rollback cutoff
+(see Rollback procedure).
 
 ## Deployment / rollout path
 
@@ -206,6 +207,13 @@ cannot parse: flow mappings, aliases, explicit keys, tags and anchors.
 
 Open a standard merge-commit revert PR for `ec6d1d9938559292363508134ddbf462a62e564d`. That
 restores the Python modules, tests and CI steps exactly. There is no data or state migration.
+
+**Cutoff.** This one-step revert (`git revert -m 1 ec6d1d9`) is valid only until the first
+post-M4 merge of `030-S`, `031-S` or `032-S`, as recorded in
+`docs/plans/evidence/2026-09-28-gate-engine-go-migration/m4.md`. Those shipments are being
+re-planned onto Go. Once one of them merges, restoring the retired Python stack can conflict
+with its changes, so rollback then needs a planned, reviewed change instead of an
+unconditional revert.
 
 ## Validation window
 
