@@ -116,6 +116,22 @@ var (
 	// A node property as an entry of a flow sequence, matched after
 	// ciFlowNoise strips quoted scalars and comments.
 	ciFlowSeqProperty = regexp.MustCompile(`[\[,][ \t]*[!&]`)
+
+	// A double-quoted scalar where a node starts (a key, or the value of a
+	// plain or quoted key, in the same positions as ciAliasNode) that holds a
+	// backslash or does not close on its line. YAML decodes escapes such as
+	// `\u0066` and `\x66` inside double quotes, so `"i\u0066": false` is an
+	// `if:` key and `run: "<escaped interpreter>"` invokes one, yet neither
+	// matches the source-spelling patterns. A double-quoted scalar left open
+	// continues on later lines, where it is not at a node start. Plain,
+	// single-quoted, and block scalars decode no escapes and stay allowed.
+	ciEscapedDoubleQuoted = regexp.MustCompile(`^\s*(?:[-?]\s+)*(?:(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s"'#*&!](?:[^:#"']|:\S)*?)[ \t]*:[ \t]+(?:[-?][ \t]+)*)?"(?:[^"\\])*(?:\\|$)`)
+
+	// An implicit key inside a flow sequence (`[run: x]`), matched on the
+	// part of a ciFlowNoise-stripped line that is inside the sequence. A
+	// single-pair mapping as a sequence entry needs no braces, so a step such
+	// as `steps: [run: <interpreter> -V]` hides its key from the line scans.
+	ciFlowSeqPair = regexp.MustCompile(`:(?:[ \t,\]]|$)`)
 )
 
 // ciYAMLShapeProblems rejects YAML forms outside job topology-check that the
@@ -134,15 +150,36 @@ var (
 //   - Node properties (anchors `&name` and tags such as `!!str`) at node
 //     start. `&a run: ...` or `uses: !!str actions/...` moves the key or value
 //     off the position the scans anchor on.
+//   - Escaped or multi-line double-quoted scalars at node start (see
+//     ciEscapedDoubleQuoted). YAML decodes `"i\u0066"` to `if`, so an escaped
+//     key or value hides its decoded text from every source-spelling pattern.
+//   - Implicit keys (`[run: x]`) and backslashes inside flow sequences. A
+//     sequence is tracked from its `[` across continuation lines until its
+//     brackets balance; any backslash there fails closed because the line
+//     scans cannot tell a decoded double-quoted escape from a plain one.
 //
 // Block scalar bodies are skipped, so shell braces and globs inside a
 // `run: |` script are not flagged.
 func ciYAMLShapeProblems(text string) []string {
 	lines := strings.Split(ciWithoutJob(text, ciTopologyJob), "\n")
 	var probs []string
+	flowDepth := 0
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
 		bare := ciFlowNoise.ReplaceAllString(l, "")
+		seg, inFlow := bare, flowDepth > 0
+		if k := strings.Index(bare, "["); k >= 0 {
+			if !inFlow {
+				seg = bare[k+1:]
+			}
+			inFlow = true
+		}
+		if inFlow && (ciFlowSeqPair.MatchString(seg) || strings.Contains(l, `\`)) {
+			probs = append(probs, "YAML implicit key or escape in a flow sequence outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+		if flowDepth += strings.Count(bare, "[") - strings.Count(bare, "]"); flowDepth < 0 {
+			flowDepth = 0
+		}
 		if strings.ContainsAny(bare, "{}") {
 			probs = append(probs, "flow-style YAML mapping outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
@@ -154,6 +191,9 @@ func ciYAMLShapeProblems(text string) []string {
 		}
 		if ciNodeProperty.MatchString(l) || ciFlowSeqProperty.MatchString(bare) {
 			probs = append(probs, "YAML anchor or tag outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+		if ciEscapedDoubleQuoted.MatchString(l) {
+			probs = append(probs, "YAML escaped or multi-line double-quoted scalar outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 		m := ciBlockScalarKey.FindStringSubmatch(l)
 		if m == nil {
@@ -730,6 +770,88 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			check: ciPythonInvokeProblems,
 			repl:  "      - name: Injected\n        env: {INTERP: " + pyWord + "3}\n        run: \"$INTERP\" x.py\n",
 		},
+		// Double-quoted scalars decode escapes, so an escaped key or value
+		// hides its decoded text from every source-spelling pattern.
+		{
+			name:  "escaped run key",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        \"r\\u0075n\": " + pyWord + " -V\n",
+		},
+		{
+			name:  "escaped shell key",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        \"sh\\x65ll\": " + pyWord + "\n        run: print(1)\n",
+		},
+		{
+			name:  "escaped env key",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        \"\\u0065nv\":\n          INTERP: " + pyWord + "3\n        run: \"$INTERP\" x.py\n",
+		},
+		{
+			name:  "escaped uses key as first key of a list item",
+			check: ciSetupPythonProblems,
+			repl:  "      - \"u\\u0073es\": actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "escaped uses value",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        uses: \"actions/setup-" + pyWord[:4] + "\\u006f" + pyWord[5:] + "@0000000000000000000000000000000000000000\"\n",
+		},
+		{
+			name:  "escaped run value",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run: \"" + pyWord[:4] + "\\u006f" + pyWord[5:] + " -V\"\n",
+		},
+		{
+			name:  "hex-escaped run value",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run: \"\\x70" + pyWord[1:] + " -V\"\n",
+		},
+		{
+			name:  "escaped shell value",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        shell: \"" + pyWord[:4] + "\\U0000006f" + pyWord[5:] + "\"\n        run: print(1)\n",
+		},
+		{
+			name:  "escape on a continuation line of a multi-line double-quoted run value",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run: \"echo ok;\n          " + pyWord[:4] + "\\u006f" + pyWord[5:] + " -V\"\n",
+		},
+		{
+			name:  "implicit run pair in a flow sequence",
+			check: ciPythonInvokeProblems,
+			repl:  "    steps: [run: " + pyWord + " -V]\n",
+		},
+		{
+			name:  "implicit uses pair in a flow sequence",
+			check: ciSetupPythonProblems,
+			repl:  "    steps: [uses: actions/setup-" + pyWord + "@0000000000000000000000000000000000000000]\n",
+		},
+		{
+			name:  "escaped run key in a flow sequence",
+			check: ciPythonInvokeProblems,
+			repl:  "    steps: [ \"r\\u0075n\": x ]\n",
+		},
+		{
+			name:  "implicit run pair on a continuation line of a flow sequence",
+			check: ciPythonInvokeProblems,
+			repl:  "    steps: [\n      a,\n      run: " + pyWord + " -V ]\n",
+		},
+		{
+			name:  "escape on a continuation line of a flow sequence",
+			check: ciPythonInvokeProblems,
+			repl:  "    steps: [\n      a,\n      \"\\x70" + pyWord[1:] + "\" ]\n",
+		},
+		{
+			name:  "implicit run pair after an item on a continuation line of a flow sequence",
+			check: ciPythonInvokeProblems,
+			repl:  "    steps: [\n      a, run: " + pyWord + " -V ]\n",
+		},
+		{
+			name:  "escape after an item on a continuation line of a flow sequence",
+			check: ciPythonInvokeProblems,
+			repl:  "    steps: [\n      a, \"\\x70" + pyWord[1:] + "\" ]\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -764,6 +886,16 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 		// `&` and `!` that do not start a YAML node.
 		"      - name: Injected!\n        run: test ! -f x && sleep 1 & wait\n",
 		"      - name: Injected\n        run: |\n          ! false\n          &>/dev/null true\n",
+		// Backslashes that YAML does not decode: a plain scalar, a
+		// single-quoted scalar, and a block scalar body.
+		"      - name: Injected\n        run: printf \"a\\nb\\u0066\"\n",
+		"      - name: Injected\n        run: 'printf \"\\u0066\"'\n",
+		"      - name: Injected\n        run: |\n          printf \"\\u0066\" \\\n            x\n",
+		// Flow sequences without implicit keys or escapes, and brackets in
+		// a plain scalar.
+		"    needs: [lint, test]\n",
+		"      - name: Injected\n        run: echo [a, b] ok\n",
+		"      - name: Injected\n        run: echo [https://x.test/a]\n",
 	}
 	for i, g := range greens {
 		mutated := mustMutate(t, base, anchor, g+anchor)

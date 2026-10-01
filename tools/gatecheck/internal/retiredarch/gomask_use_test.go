@@ -172,7 +172,10 @@ func TestUsesSharedCanonicalMasker(t *testing.T) {
 // redeclaration, or v's address being taken) makes the guard red, so it
 // fails closed rather than open. A write to v inside any func literal is also
 // red wherever the literal sits, since a closure declared before the canonical
-// write can run after it.
+// write can run after it. Every pysem.SplitLines selector in scanGo, at any
+// depth, must also be the callee of such a qualifying top-level range, so a
+// second loop over raw text, a nested raw call, or SplitLines bound to a
+// variable is red even when one canonical loop exists.
 func scanGoMaskFlow(f *ast.File) (declared, flows bool) {
 	pkg := gomaskName(f)
 	ps := importName(f, pysemImportPath, "pysem")
@@ -186,17 +189,37 @@ func scanGoMaskFlow(f *ast.File) (declared, flows bool) {
 			continue
 		}
 		allowed := canonicalSites(fn)
+		loops := map[*ast.SelectorExpr]bool{}
 		for _, st := range fn.Body.List {
-			rs, ok := st.(*ast.RangeStmt)
-			if !ok || !isSelectorCall(rs.X, ps, "SplitLines") {
+			rs, isRange := st.(*ast.RangeStmt)
+			if !isRange || !isSelectorCall(rs.X, ps, "SplitLines") {
 				continue
 			}
-			if arg, ok := rs.X.(*ast.CallExpr).Args[0].(*ast.Ident); ok && lastWriteIsCanonical(fn.Body, arg.Name, rs.Pos(), pkg, allowed) {
-				flows = true
+			call := rs.X.(*ast.CallExpr)
+			if arg, isIdent := call.Args[0].(*ast.Ident); isIdent && lastWriteIsCanonical(fn.Body, arg.Name, rs.Pos(), pkg, allowed) {
+				loops[call.Fun.(*ast.SelectorExpr)] = true
 			}
 		}
+		flows = len(loops) > 0 && onlyListedSelectors(fn.Body, ps, "SplitLines", loops)
 	}
 	return declared, flows
+}
+
+// onlyListedSelectors reports whether every pkg.name selector in root (a call,
+// a bare reference, or a method value) is one of the listed nodes. It fails
+// closed on any extra scan path: a second loop over raw text, a nested call,
+// or the function bound to a variable.
+func onlyListedSelectors(root ast.Node, pkg, name string, listed map[*ast.SelectorExpr]bool) bool {
+	only := true
+	ast.Inspect(root, func(n ast.Node) bool {
+		if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == name {
+			if id, ok := sel.X.(*ast.Ident); ok && id.Name == pkg && !listed[sel] {
+				only = false
+			}
+		}
+		return only
+	})
+	return only
 }
 
 // canonicalSites returns the statements of fn where a canonical mask write is
@@ -481,6 +504,14 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 		{"canonical write in nested block under if", head + "\tif mask {\n\t\t{\n" + canon + "\t\t}\n\t}\n" + loop, false},
 		{"scan loop not top-level",
 			head + "\tif mask {\n" + canon + "\t}\n\t{\n\t\tfor range pysem.SplitLines(masked) {\n\t\t}\n\t}\n}\n", false},
+		{"second raw scan loop after the masked loop",
+			head + "\tif mask {\n" + canon + "\t}\n\tfor range pysem.SplitLines(masked) {\n\t}\n\tfor range pysem.SplitLines(text) {\n\t}\n}\n", false},
+		{"raw scan loop before the masked loop",
+			head + "\tfor range pysem.SplitLines(text) {\n\t}\n\tif mask {\n" + canon + "\t}\n" + loop, false},
+		{"raw SplitLines call nested in the masked loop",
+			head + "\tif mask {\n" + canon + "\t}\n\tfor range pysem.SplitLines(masked) {\n\t\t_ = pysem.SplitLines(text)\n\t}\n}\n", false},
+		{"SplitLines bound to a variable",
+			head + "\tif mask {\n" + canon + "\t}\n\tsl := pysem.SplitLines\n\t_ = sl(text)\n" + loop, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

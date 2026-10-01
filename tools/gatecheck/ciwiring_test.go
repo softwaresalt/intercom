@@ -778,6 +778,21 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 		"ci-gate condition removed": func() string {
 			return mustMutate(t, live, "    if: always()\n", "")
 		},
+		"escaped if key on integrity self-test": func() string {
+			return mustMutate(t, live,
+				"        run: bash scripts/check-retired-architecture.sh --self-test-integrity\n",
+				"        \"i\\u0066\": false\n        run: bash scripts/check-retired-architecture.sh --self-test-integrity\n")
+		},
+		"escaped continue-on-error key on merge-strategy self-test": func() string {
+			return mustMutate(t, live,
+				"        run: bash scripts/check-merge-strategy.sh --self-test\n",
+				"        \"continue-on-\\x65rror\": true\n        run: bash scripts/check-merge-strategy.sh --self-test\n")
+		},
+		"escaped if key as first key of integrity self-test": func() string {
+			return mustMutate(t, live,
+				"      - name: Run retired-architecture self-test\n",
+				"      - \"\\u0069f\": false\n        name: Run retired-architecture self-test\n")
+		},
 		"ci-gate condition changed": func() string {
 			return mustMutate(t, live, "    if: always()\n", "    if: success()\n")
 		},

@@ -17,13 +17,15 @@ import (
 // scan loop:
 //
 //   - scanText ranges, in a top-level statement, over pysem.SplitLines of its
-//     second parameter (pysem qualifier bound to pysemImportPath), and never
-//     writes, redeclares, or takes the address of that parameter;
+//     second parameter (pysem qualifier bound to pysemImportPath), never
+//     writes, redeclares, or takes the address of that parameter, and holds
+//     no other pysem.SplitLines selector at any depth;
 //   - scanFile calls scanText at least once, every such call passes a direct
 //     gomask.MaskGoNonCode call (qualifier bound to gomaskImportPath) as the
 //     second argument, and scanFile declares nothing named scanText;
-//   - no function in f other than scanFile calls scanText, so no production
-//     path scans text that skipped the canonical mask.
+//   - no other reference to the identifier scanText exists in f (no call
+//     elsewhere, no alias, no method value, no argument use), so no
+//     production path scans text that skipped the canonical mask.
 //
 // It is the writepath half of the retired single-definition and canonical-
 // consumer assertions; TestScanGoConsumesCanonicalMask is the retiredarch
@@ -72,47 +74,58 @@ func scanTextRangesParam(fn *ast.FuncDecl, ps string) bool {
 	if len(writePositions(fn.Body, p)) > 0 || closureWrites(fn.Body, p) || nestedDecl(fn.Body, p) || declaresInBody(fn.Body, p) {
 		return false
 	}
+	ok := map[*ast.SelectorExpr]bool{}
 	for _, st := range fn.Body.List {
-		rs, ok := st.(*ast.RangeStmt)
-		if !ok || !isSelectorCall(rs.X, ps, "SplitLines") {
+		rs, isRange := st.(*ast.RangeStmt)
+		if !isRange || !isSelectorCall(rs.X, ps, "SplitLines") {
 			continue
 		}
-		if arg, ok := rs.X.(*ast.CallExpr).Args[0].(*ast.Ident); ok && arg.Name == p {
-			return true
+		call := rs.X.(*ast.CallExpr)
+		if arg, isIdent := call.Args[0].(*ast.Ident); isIdent && arg.Name == p {
+			ok[call.Fun.(*ast.SelectorExpr)] = true
 		}
 	}
-	return false
+	return len(ok) > 0 && onlyListedSelectors(fn.Body, ps, "SplitLines", ok)
 }
 
-// scanFileMasks reports whether every call to scanText in f sits inside
-// scanFile and passes a direct pkg.MaskGoNonCode call as its second argument,
-// at least one such call exists, and scanFile declares nothing named
-// scanText that could shadow the package function.
+// scanFileMasks reports whether every reference to the identifier scanText in
+// f is either the scanText declaration's own name or the callee of a call
+// inside scanFile that passes a direct pkg.MaskGoNonCode call as its second
+// argument, at least one such call exists, and scanFile declares nothing
+// named scanText that could shadow the package function. Failing closed on
+// any other reference rejects aliases such as `var rawScan = scanText`, a
+// method value, or scanText passed as an argument, each of which would let
+// unmasked text reach the scan loop.
 func scanFileMasks(f *ast.File, scanFile *ast.FuncDecl, pkg string) bool {
 	if declaresInBody(scanFile.Body, "scanText") || fieldsDeclare(scanFile.Type.Params, "scanText") ||
 		fieldsDeclare(scanFile.Type.Results, "scanText") {
 		return false
 	}
-	inside, ok := 0, true
-	ast.Inspect(f, func(n ast.Node) bool {
+	allowed := map[*ast.Ident]bool{}
+	for _, d := range f.Decls {
+		if fn, isFn := d.(*ast.FuncDecl); isFn && fn.Recv == nil && fn.Name.Name == "scanText" {
+			allowed[fn.Name] = true
+		}
+	}
+	inside := 0
+	ast.Inspect(scanFile.Body, func(n ast.Node) bool {
 		call, isCall := n.(*ast.CallExpr)
 		if !isCall {
 			return true
 		}
 		id, isIdent := ast.Unparen(call.Fun).(*ast.Ident)
-		if !isIdent || id.Name != "scanText" {
-			return true
+		if isIdent && id.Name == "scanText" && len(call.Args) == 2 && isSelectorCall(call.Args[1], pkg, "MaskGoNonCode") {
+			allowed[id] = true
+			inside++
 		}
-		if call.Pos() < scanFile.Body.Pos() || call.End() > scanFile.Body.End() {
-			ok = false
-			return true
-		}
-		if len(call.Args) != 2 || !isSelectorCall(call.Args[1], pkg, "MaskGoNonCode") {
-			ok = false
-			return true
-		}
-		inside++
 		return true
+	})
+	ok := true
+	ast.Inspect(f, func(n ast.Node) bool {
+		if id, isIdent := n.(*ast.Ident); isIdent && id.Name == "scanText" && !allowed[id] {
+			ok = false
+		}
+		return ok
 	})
 	return ok && inside > 0
 }
@@ -277,10 +290,8 @@ func TestWritePathScanFileConsumesCanonicalMask(t *testing.T) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
-			if c, ok := n.(*ast.CallExpr); ok {
-				if id, ok := ast.Unparen(c.Fun).(*ast.Ident); ok && id.Name == "scanText" {
-					t.Errorf("%s: scanText called outside the file that declares scanFile", p)
-				}
+			if id, ok := n.(*ast.Ident); ok && id.Name == "scanText" {
+				t.Errorf("%s: scanText referenced outside the file that declares scanFile", p)
 			}
 			return true
 		})
@@ -335,6 +346,16 @@ func TestWritePathMaskFlow_Mutations(t *testing.T) {
 			head + strings.Replace(st, "{\n\tfor", "{\n\tf := func() { maskedText = raw() }\n\tf()\n\tfor", 1) + sf, false},
 		{"scan loop not top-level",
 			head + strings.Replace(strings.Replace(st, "\tfor range", "\t{\n\tfor range", 1), "\t}\n\treturn", "\t}\n\t}\n\treturn", 1) + sf, false},
+		{"scanText adds a second raw scan loop",
+			head + strings.Replace(st, "\treturn nil", "\tfor range pysem.SplitLines(raw()) {\n\t}\n\treturn nil", 1) + sf, false},
+		{"scanText binds SplitLines to a variable",
+			head + strings.Replace(st, "\treturn nil", "\tsl := pysem.SplitLines\n\t_ = sl(raw())\n\treturn nil", 1) + sf, false},
+		{"scanText bound to a package variable",
+			head + st + sf + "var rawScan = scanText\nfunc raw(s string) []string { return rawScan(\"x\", s) }\n", false},
+		{"scanText used as a value in scanFile",
+			head + st + "func scanFile(root, relPath string) ([]string, error) {\n\ttext := read(root)\n\tf := scanText\n\t_ = f(relPath, text)\n\treturn scanText(relPath, gomask.MaskGoNonCode(text)), nil\n}\n", false},
+		{"scanText passed as an argument",
+			head + st + sf + "func reg() { register(scanText) }\n", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
