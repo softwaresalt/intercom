@@ -15,16 +15,28 @@ import (
 // imported under the name gomask cannot satisfy the guards.
 const gomaskImportPath = "github.com/softwaresalt/intercom-go/tools/gatecheck/internal/gomask"
 
+// pysemImportPath is the canonical Python-semantics package whose SplitLines
+// keeps finding line numbers compatible with the retired engine. Like gomask,
+// its qualifier counts only when bound to this import path.
+const pysemImportPath = "github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
+
 // gomaskName returns the file-local name bound to gomaskImportPath, or "" when
 // the file does not import it under a usable name or a local declaration
 // anywhere in the file reuses that name (which could shadow the import).
 func gomaskName(f *ast.File) string {
+	return importName(f, gomaskImportPath, "gomask")
+}
+
+// importName returns the file-local name bound to import path, whose default
+// package name is def, or "" when the file does not import path under a usable
+// name or a local declaration anywhere in the file reuses that name.
+func importName(f *ast.File, path, def string) string {
 	name := ""
 	for _, imp := range f.Imports {
-		if strings.Trim(imp.Path.Value, "`\"") != gomaskImportPath {
+		if strings.Trim(imp.Path.Value, "`\"") != path {
 			continue
 		}
-		name = "gomask"
+		name = def
 		if imp.Name != nil {
 			name = imp.Name.Name
 		}
@@ -142,7 +154,8 @@ func TestUsesSharedCanonicalMasker(t *testing.T) {
 
 // scanGoMaskFlow reports whether file f declares scanGo and, inside it, the
 // result of gomask.MaskGoNonCode reaches the scan loop: scanGo ranges over
-// pysem.SplitLines(v) in a top-level statement, and the last write to v
+// pysem.SplitLines(v) in a top-level statement (the pysem qualifier bound to
+// pysemImportPath), and the last write to v
 // positioned before that range statement is a single assignment of a
 // gomask.MaskGoNonCode result (qualifier bound to gomaskImportPath). A
 // package-level count of calls cannot prove this, because scanGo could switch
@@ -162,19 +175,20 @@ func TestUsesSharedCanonicalMasker(t *testing.T) {
 // write can run after it.
 func scanGoMaskFlow(f *ast.File) (declared, flows bool) {
 	pkg := gomaskName(f)
+	ps := importName(f, pysemImportPath, "pysem")
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok || fn.Recv != nil || fn.Name.Name != "scanGo" || fn.Body == nil {
 			continue
 		}
 		declared = true
-		if pkg == "" {
+		if pkg == "" || ps == "" {
 			continue
 		}
 		allowed := canonicalSites(fn)
 		for _, st := range fn.Body.List {
 			rs, ok := st.(*ast.RangeStmt)
-			if !ok || !isSelectorCall(rs.X, "pysem", "SplitLines") {
+			if !ok || !isSelectorCall(rs.X, ps, "SplitLines") {
 				continue
 			}
 			if arg, ok := rs.X.(*ast.CallExpr).Args[0].(*ast.Ident); ok && lastWriteIsCanonical(fn.Body, arg.Name, rs.Pos(), pkg, allowed) {
@@ -338,7 +352,8 @@ func TestScanGoConsumesCanonicalMask(t *testing.T) {
 // consuming the canonical mask result, and green on the production shape.
 func TestScanGoMaskFlow_Mutations(t *testing.T) {
 	const imp = "import \"" + gomaskImportPath + "\"\n"
-	const head = "package p\n" + imp + "func scanGo(text string, mask bool) {\n\tmasked := text\n"
+	const pimp = "import \"" + pysemImportPath + "\"\n"
+	const head = "package p\n" + imp + pimp + "func scanGo(text string, mask bool) {\n\tmasked := text\n"
 	const loop = "\tfor range pysem.SplitLines(masked) {\n\t}\n}\n"
 	const canon = "\t\tmasked = gomask.MaskGoNonCode(text)\n"
 	cases := []struct {
@@ -349,8 +364,16 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 		{"production shape", head + "\tif mask {\n" + canon + "\t}\n" + loop, true},
 		{"unconditional top-level canonical write", head + "\tmasked = gomask.MaskGoNonCode(text)\n" + loop, true},
 		{"canonical import under an alias",
-			"package p\nimport gm \"" + gomaskImportPath + "\"\nfunc scanGo(text string, mask bool) {\n\tmasked := text\n" +
+			"package p\nimport gm \"" + gomaskImportPath + "\"\n" + pimp + "func scanGo(text string, mask bool) {\n\tmasked := text\n" +
 				"\tif mask {\n\t\tmasked = gm.MaskGoNonCode(text)\n\t}\n" + loop, true},
+		{"canonical pysem import under an alias",
+			"package p\n" + imp + "import ps \"" + pysemImportPath + "\"\nfunc scanGo(text string, mask bool) {\n\tmasked := text\n" +
+				"\tif mask {\n" + canon + "\t}\n\tfor range ps.SplitLines(masked) {\n\t}\n}\n", true},
+		{"foreign package imported as pysem",
+			"package p\n" + imp + "import pysem \"example.com/other\"\nfunc scanGo(text string, mask bool) {\n\tmasked := text\n" +
+				"\tif mask {\n" + canon + "\t}\n" + loop, false},
+		{"canonical pysem package not imported", strings.Replace(head, pimp, "", 1) + "\tif mask {\n" + canon + "\t}\n" + loop, false},
+		{"local pysem shadows the import", head + "\tpysem := other\n\tif mask {\n" + canon + "\t}\n" + loop, false},
 		{"local clone in scanGo, canonical call in dead helper",
 			head + "\tif mask {\n\t\tmasked = clone(text)\n\t}\n" + loop +
 				"func dead(s string) { _ = gomask.MaskGoNonCode(s) }\n", false},
@@ -374,7 +397,7 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 		{"address taken after canonical write",
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tclobber(&masked)\n" + loop, false},
 		{"foreign package imported as gomask",
-			"package p\nimport gomask \"example.com/other\"\nfunc scanGo(text string, mask bool) {\n\tmasked := text\n" +
+			"package p\nimport gomask \"example.com/other\"\n" + pimp + "func scanGo(text string, mask bool) {\n\tmasked := text\n" +
 				"\tif mask {\n" + canon + "\t}\n" + loop, false},
 		{"canonical package not imported", strings.Replace(head, imp, "", 1) + "\tif mask {\n" + canon + "\t}\n" + loop, false},
 		{"local gomask shadows the import", head + "\tgomask := other\n\tif mask {\n" + canon + "\t}\n" + loop, false},

@@ -19,12 +19,13 @@ import (
 // satisfy (or trip) its own patterns when scanned by the repo-wide greps.
 
 var (
-	// The generic interpreter word (any case, optional Windows GUI `w`,
-	// optional 3, so `python.exe`, `pythonw.exe` and `/usr/bin/python3`
-	// match too), or the Windows `py` launcher with an optional `.exe`. The
-	// launcher must not follow a word character, a dot or a hyphen, so `.py`
-	// file names and `--py` flags stay green.
-	wrapperInterpreterWord = regexp.MustCompile(`(?i)\b` + "py" + "thon" + `w?3?\b|(?:^|[^\w.\-])` + "py" + `(?:\.exe)?\b`)
+	// The generic interpreter word (any case, optional Windows GUI `w`, and
+	// an optional numeric or dotted version such as 2, 311 or 3.12, so
+	// `python.exe`, `pythonw3.12.exe` and `/usr/bin/python311` match too),
+	// or the Windows `py` launcher with an optional `.exe`. The launcher must
+	// not follow a word character, a dot or a hyphen, so `.py` file names and
+	// `--py` flags stay green.
+	wrapperInterpreterWord = regexp.MustCompile(`(?i)\b` + "py" + "thon" + `w?(?:[0-9]+(?:\.[0-9]+)*)?\b|(?:^|[^\w.\-])` + "py" + `(?:\.exe)?\b`)
 	wrapperHeredoc         = regexp.MustCompile(`<` + `<`)
 )
 
@@ -178,6 +179,9 @@ func TestRetiredArchWrapperText_NoEmbeddedEngine(t *testing.T) {
 		"py launcher":     "py" + " -c 'pass'\n",
 		"py.exe launcher": "x=$(py" + ".exe -c 'pass')\n",
 		"gui interpreter": "py" + "thonw.exe engine.py\n",
+		"python2":         "py" + "thon2 -c 'pass'\n",
+		"python311":       "py" + "thon311 -c 'pass'\n",
+		"dotted gui":      "py" + "thonw3.12.exe engine.py\n",
 		"heredoc":         "cat <" + "<'EOF'\nEOF\n",
 		"module":          "echo retired" + "_arch\n",
 		"engine var":      "ENGINE" + "=x\n",
@@ -200,6 +204,8 @@ func TestWrapperInterpreterWord_Forms(t *testing.T) {
 		py + "thon3 x", "/usr/bin/" + py + "thon x", py + "thon.exe x", py + " -c 1",
 		py + ".exe -c 1", "x=$(" + py + " -c 1)", "\"" + py + ".exe\" x", "PY -c 1",
 		py + "thonw.exe x", py + "thonw x",
+		py + "thon2 x", py + "thon311 x", py + "thon3.12 x", py + "thonw3.11.exe x",
+		"/usr/bin/" + py + "thon3.12", "PY" + "THON2 x", py + "thon3. x",
 	} {
 		if !wrapperInterpreterWord.MatchString(l) {
 			t.Errorf("red form %q not matched", l)
@@ -207,6 +213,7 @@ func TestWrapperInterpreterWord_Forms(t *testing.T) {
 	}
 	for _, l := range []string{
 		"echo x." + py, "tool --" + py + " x", "echo " + py + "project.toml", "echo happy",
+		"echo " + py + "thonic", "echo " + py + "thon3x", "echo " + py + "thon_3",
 	} {
 		if wrapperInterpreterWord.MatchString(l) {
 			t.Errorf("green form %q matched", l)
@@ -245,6 +252,9 @@ func TestWritePathWrapperText_PureBashDispatch(t *testing.T) {
 		"py launcher":     {buildAnchor, "py" + " -c 'pass'\n" + buildAnchor},
 		"py.exe launcher": {buildAnchor, "\"py" + ".exe\" -c 'pass'\n" + buildAnchor},
 		"gui interpreter": {buildAnchor, "py" + "thonw.exe engine.py\n" + buildAnchor},
+		"python2":         {buildAnchor, "py" + "thon2 -c 'pass'\n" + buildAnchor},
+		"python311":       {buildAnchor, "py" + "thon311 -c 'pass'\n" + buildAnchor},
+		"dotted gui":      {buildAnchor, "py" + "thonw3.12.exe engine.py\n" + buildAnchor},
 		"heredoc":         {buildAnchor, "cat <" + "<'EOF'\nEOF\n" + buildAnchor},
 		"no invoke":       {`gatecheck_invoke write-path "$@"`, "true"},
 	} {
