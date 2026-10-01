@@ -83,11 +83,14 @@ if ! ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
 fi
 cd "$ROOT"
 
-# MERGE_STRATEGY_TMP_FILES (M3-T12, 150364D2 item 1): every temp file
-# evaluate_response creates is appended here and removed only by the
-# single composed cleanup() trap below -- never by an imperative `rm -f`
-# inside evaluate_response itself, so a file is never leaked if that
-# function exits early.
+# MERGE_STRATEGY_TMP_FILES (M3-T12, 150364D2 item 1): every temp file used
+# for evaluate_response's live-transport payload is appended here (by the
+# CALLER, in the parent shell -- never inside evaluate_response itself,
+# since every call site invokes it via `$(...)`, which forks a subshell
+# whose array mutations are invisible to the parent) and removed only by
+# the single composed cleanup() trap below, never by an imperative `rm -f`
+# inside any function body, so a file is never leaked even if a call
+# exits early.
 MERGE_STRATEGY_TMP_FILES=()
 
 cleanup() {
@@ -123,20 +126,28 @@ evaluate_json() {
   gatecheck_invoke merge-strategy-evaluate "$src"
 }
 
-# evaluate_response <json-string>
+# evaluate_response <tmp-file> <json-string>
 #
-# Live repo-scan transport: writes the in-memory API response to a temp
-# file and evaluates it via evaluate_json. Prints the evaluator's output
-# (possibly empty if the evaluator crashed); never fails by itself. The
-# temp file is tracked in MERGE_STRATEGY_TMP_FILES and removed by the
-# script's single composed cleanup() trap (M3-T12, 150364D2 item 1), not
-# by an imperative rm here -- so it is never leaked if this function exits
-# early.
+# Live repo-scan transport: writes the in-memory API response to the given
+# temp file and evaluates it via evaluate_json. Prints the evaluator's
+# output (possibly empty if the evaluator crashed); never fails by itself.
+#
+# IMPORTANT: every call site invokes this function via `$(evaluate_response
+# ...)`, and command substitution always forks a subshell in bash -- any
+# `mktemp`/array-append performed INSIDE this function's own body would be
+# confined to that subshell and never visible to the parent shell whose
+# cleanup() EXIT trap drains MERGE_STRATEGY_TMP_FILES, silently leaking one
+# temp file per call (this was a real regression in an earlier revision of
+# this script, see m3.md's adversarial-review remediation notes). To keep
+# M3-T12 item 1's tracked-and-trap-cleaned guarantee real, the caller
+# allocates the temp file via `mktemp` and appends it to
+# MERGE_STRATEGY_TMP_FILES itself, in the parent shell, BEFORE calling this
+# function -- this function only ever receives an already-registered path
+# and writes to it.
 evaluate_response() {
-  local tmp
-  tmp="$(mktemp)"
-  MERGE_STRATEGY_TMP_FILES+=("$tmp")
-  printf '%s' "$1" > "$tmp"
+  local tmp="$1"
+  local payload="$2"
+  printf '%s' "$payload" > "$tmp"
   local output
   output="$(evaluate_json "$tmp" || true)"
   printf '%s\n' "$output"
@@ -197,9 +208,14 @@ run_self_test() {
 
     # Same fixture through the live repo-scan transport (in-memory
     # response string), so a transport regression cannot hide behind the
-    # file-path check above.
+    # file-path check above. The temp file is allocated and registered in
+    # THIS (parent) shell scope, not inside evaluate_response's own
+    # subshell -- see evaluate_response's doc comment for why.
+    local transport_tmp
+    transport_tmp="$(mktemp)"
+    MERGE_STRATEGY_TMP_FILES+=("$transport_tmp")
     local transport_output
-    transport_output="$(evaluate_response "$(cat "$path")")"
+    transport_output="$(evaluate_response "$transport_tmp" "$(cat "$path")")"
     local transport_actual="${transport_output%% *}"
     if [ "$transport_actual" = "$expected" ]; then
       echo "PASS $name (repo-scan transport): got $transport_actual as expected"
@@ -252,8 +268,14 @@ run_repo_scan() {
     return 0
   fi
 
+  # The temp file is allocated and registered in THIS (parent) shell
+  # scope, not inside evaluate_response's own subshell -- see
+  # evaluate_response's doc comment for why.
+  local tmp
+  tmp="$(mktemp)"
+  MERGE_STRATEGY_TMP_FILES+=("$tmp")
   local output
-  output="$(evaluate_response "$response")"
+  output="$(evaluate_response "$tmp" "$response")"
   echo "$output"
   verdict_exit_code "$output"
 }

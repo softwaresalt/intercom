@@ -70,7 +70,15 @@ func runDifferentialCheck(git GitRunner, repoDir, scratchRoot, baseRef, headRef 
 	if gitErr != nil {
 		return 0, nil, fmt.Errorf("::error::git ls-files --others failed: %v: %s", gitErr, strings.TrimSpace(string(untrackedErr)))
 	}
-	allUntracked := splitNulTerminated(untrackedOut)
+	allUntracked, splitErr := splitNulTerminated(untrackedOut)
+	if splitErr != nil {
+		// ED-2: invalid UTF-8 from git output is a fail-closed exit 1,
+		// matching the Python engine's own UnicodeDecodeError traceback
+		// exit 1 (only the message text changes). This must NOT collapse
+		// to an empty candidate set -- doing so would silently vacuous-pass
+		// Part 2 of the check instead of failing closed.
+		return 0, nil, fmt.Errorf("::error::git ls-files --others produced invalid UTF-8 output: %v", splitErr)
+	}
 
 	diffOut, diffErrBytes, diffErr := git(repoDir, nil, "diff", "--name-only", "-z", baseRef, headRef)
 	if diffErr != nil {
@@ -79,7 +87,11 @@ func runDifferentialCheck(git GitRunner, repoDir, scratchRoot, baseRef, headRef 
 			baseRef, headRef, diffErr, strings.TrimSpace(string(diffErrBytes)),
 		)
 	}
-	diffPaths := splitNulTerminated(diffOut)
+	diffPaths, splitErr := splitNulTerminated(diffOut)
+	if splitErr != nil {
+		// ED-2, same rationale as the untracked-paths case above.
+		return 0, nil, fmt.Errorf("::error::git diff --name-only produced invalid UTF-8 output: %v", splitErr)
+	}
 
 	seen := make(map[string]bool, len(allUntracked)+len(diffPaths))
 	candidates := make([]string, 0, len(allUntracked)+len(diffPaths))
@@ -151,16 +163,21 @@ func runDifferentialCheck(git GitRunner, repoDir, scratchRoot, baseRef, headRef 
 // terminal NUL produces, and decoding with pysem.GitText's universal-
 // newline rule first (git never embeds a NUL inside a single -z record's
 // own bytes, so translateNewlines is safe here).
-func splitNulTerminated(raw []byte) []string {
+//
+// Invalid UTF-8 is propagated to the caller as an error (ED-2) rather than
+// silently discarded. The Python engine decoded this same git output via
+// `text=True`, which raises UnicodeDecodeError -- an uncaught exception,
+// exit 1 (fail-closed). Returning no candidates in place of an error would
+// NOT be "conservative": it collapses runDifferentialCheck's entire
+// candidate union to empty, which runCheck/runSelfTest cannot distinguish
+// from the legitimate "nothing to evaluate" case, silently downgrading a
+// Part-2 regression-detection failure into a vacuous PASS. ED-2 requires
+// the same exit and verdict as the Python traceback (exit 1); only the
+// message text may change.
+func splitNulTerminated(raw []byte) ([]string, error) {
 	text, err := pysem.GitText(raw)
 	if err != nil {
-		// Invalid UTF-8 from `git ls-files`/`git diff` output is not a
-		// class the Python engine handled specially either (it decoded
-		// via text=True, which would itself raise); returning no
-		// candidates here is strictly more conservative than a crash, and
-		// unignore.Run's own caller surfaces pysem.ErrInvalidUTF8-class
-		// errors from its other call sites regardless.
-		return nil
+		return nil, err
 	}
 	parts := strings.Split(text, "\x00")
 	out := make([]string, 0, len(parts))
@@ -169,7 +186,7 @@ func splitNulTerminated(raw []byte) []string {
 			out = append(out, p)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // runLsFilesCheck reproduces run_ls_files_check: `git ls-files -i -c

@@ -9,7 +9,10 @@ import (
 )
 
 func TestSplitNulTerminated(t *testing.T) {
-	got := splitNulTerminated([]byte("a\x00b\x00c\x00"))
+	got, err := splitNulTerminated([]byte("a\x00b\x00c\x00"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	want := []string{"a", "b", "c"}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -22,12 +25,66 @@ func TestSplitNulTerminated(t *testing.T) {
 }
 
 func TestSplitNulTerminated_Empty(t *testing.T) {
-	if got := splitNulTerminated(nil); len(got) != 0 {
-		t.Fatalf("expected an empty result for nil input, got %v", got)
+	if got, err := splitNulTerminated(nil); len(got) != 0 || err != nil {
+		t.Fatalf("expected an empty result for nil input, got %v, err %v", got, err)
 	}
-	if got := splitNulTerminated([]byte{}); len(got) != 0 {
-		t.Fatalf("expected an empty result for empty input, got %v", got)
+	if got, err := splitNulTerminated([]byte{}); len(got) != 0 || err != nil {
+		t.Fatalf("expected an empty result for empty input, got %v, err %v", got, err)
 	}
+}
+
+// TestSplitNulTerminated_InvalidUTF8Propagates is the ED-2 red test: a
+// single invalid-UTF-8 byte sequence in -z delimited git output must
+// surface as an error, never silently collapse to an empty (nil, no
+// error) result. Collapsing to empty would let runDifferentialCheck treat
+// a decode failure as "nothing to evaluate" -- a vacuous PASS instead of
+// the Python engine's fail-closed UnicodeDecodeError (exit 1).
+func TestSplitNulTerminated_InvalidUTF8Propagates(t *testing.T) {
+	invalid := []byte("valid-path\x00\xff\xfe-invalid-utf8-path\x00")
+	got, err := splitNulTerminated(invalid)
+	if err == nil {
+		t.Fatalf("expected an error for invalid UTF-8 input, got result %v with no error", got)
+	}
+	if got != nil {
+		t.Errorf("expected a nil result alongside the error, got %v", got)
+	}
+}
+
+// TestRunDifferentialCheck_InvalidUTF8FailsClosed is the ED-2 red test at
+// runDifferentialCheck's own boundary: an invalid-UTF-8 path in EITHER
+// `git ls-files --others -z` or `git diff --name-only -z` output must
+// propagate as an error (exit 1 at the Run()/runCheck() layer), never
+// silently reduce the candidate union to empty and report
+// (evaluated=0, failures=nil, err=nil), which runCheck cannot distinguish
+// from a legitimately clean checkout.
+func TestRunDifferentialCheck_InvalidUTF8FailsClosed(t *testing.T) {
+	invalidUTF8Line := []byte("\xff\xfe-not-valid-utf8\x00")
+
+	t.Run("invalid UTF-8 in ls-files --others output", func(t *testing.T) {
+		git := func(dir string, stdin []byte, args ...string) ([]byte, []byte, error) {
+			if len(args) > 0 && args[0] == "ls-files" {
+				return invalidUTF8Line, nil, nil
+			}
+			return nil, nil, nil
+		}
+		evaluated, failures, err := runDifferentialCheck(git, t.TempDir(), t.TempDir(), "base", "head")
+		if err == nil {
+			t.Fatalf("expected an error for invalid UTF-8 ls-files output, got evaluated=%d failures=%v err=nil", evaluated, failures)
+		}
+	})
+
+	t.Run("invalid UTF-8 in diff --name-only output", func(t *testing.T) {
+		git := func(dir string, stdin []byte, args ...string) ([]byte, []byte, error) {
+			if len(args) > 0 && args[0] == "diff" {
+				return invalidUTF8Line, nil, nil
+			}
+			return nil, nil, nil
+		}
+		evaluated, failures, err := runDifferentialCheck(git, t.TempDir(), t.TempDir(), "base", "head")
+		if err == nil {
+			t.Fatalf("expected an error for invalid UTF-8 diff output, got evaluated=%d failures=%v err=nil", evaluated, failures)
+		}
+	})
 }
 
 func TestRunDenylistCheck_AllIgnored(t *testing.T) {
