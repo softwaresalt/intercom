@@ -128,7 +128,8 @@ No data loss or elevated-privilege action was taken.
 * **Reconcile lock not acquired (disclosed)**: the `shipment-reconcile` Single-writer lock was
   not held from pre-mode through post-mode, because the `file-lock` scripts do not exist in this
   workspace. Two facts mitigate the risk: the session was single-agent, and the fresh binding
-  recompute matched before mutation. Captured as deferred stash `9F824B64`.
+  recompute matched before mutation (on every field except location; see the location-defect
+  item below). Captured as deferred stash `9F824B64`.
 * **Task status lapse (disclosed)**: the 9 tasks stayed `active` throughout the build. They were
   moved to `done` only at closure, just before reconciliation, instead of as each task finished.
   The end state is correct. Each task's acceptance criteria were met and are evidenced in m4.md
@@ -139,8 +140,10 @@ No data loss or elevated-privilege action was taken.
   `done`.
 * **Shipment closure: binding revalidation performed, but not tool-enforced (residual
   disclosed)**: `mode: classify-close-path` was run manually, because this workspace has no CLI.
-  It returned `CASCADE` / `FULLY_COVERED_ROOT` with `CLASSIFICATION_BINDING`
-  `0f9be8a39309d70cd01b641871f84de68fc0abe5a80bce03fe394a0c230792d9` at 18:20:09Z.
+  It returned `CASCADE` / `FULLY_COVERED_ROOT` at 18:20:09Z. The as-issued
+  `CLASSIFICATION_BINDING` was `0f9be8a39309d70cd01b641871f84de68fc0abe5a80bce03fe394a0c230792d9`.
+  The corrected value is `77985d03e202c5ff61f1ba431d6d087aa7f2b349395eeceaadd3ca41b263a5b4`;
+  see the location-defect item below.
   The 035-S and 036-S closures delegated to the cascade primitive without the safe-close Step 0
   recompute-and-compare. This closure performed that step: it took a fresh snapshot at
   18:20:12Z, recomputed the binding independently, and found an identical value. The cascade
@@ -153,6 +156,14 @@ No data loss or elevated-privilege action was taken.
     minute later; both postdate the snapshot. One intervening attempt failed during argument
     parsing with `unknown flag: --json` and changed nothing. This was a single-agent session
     with no concurrent backlog writers.
+  * **Location defect (found in closure-PR review).** The helper wrongly recorded every
+    member's `location` as `archive`; the real pre-close location was `queue`. The defect
+    appeared identically in both snapshots, so the Step 0 match attested every field except
+    location. Location was confirmed afterwards from three sources: the pre-mode report, each
+    archived record's `archived_from: .backlogit/queue/…`, and `updated_at` values later than
+    the mutation. The verdict is unchanged, because location only feeds the ambiguity check.
+    The broader lesson is that same-helper recomputation cannot catch systematic encoding
+    errors, which strengthens the case for stash `D10D3AFC`.
 
   `backlogit shipment ship 037-S --sha ec6d1d99…` exited 0:
   * `archived_ids` equals `allowed_ids` and `required_ids`: the 11 items `{037-S, 047-F,

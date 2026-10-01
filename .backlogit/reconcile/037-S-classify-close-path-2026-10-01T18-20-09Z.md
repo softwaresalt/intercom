@@ -18,16 +18,16 @@ Shipment declared status: `active`.
 
 | ID | artifact_type | declared status | parent_id | location |
 |---|---|---|---|---|
-| 047-F | feature | done | - (root; no parent_id) | archive |
-| 047.001-T | task | done | 047-F | archive |
-| 047.002-T | task | done | 047-F | archive |
-| 047.003-T | task | done | 047-F | archive |
-| 047.004-T | task | done | 047-F | archive |
-| 047.005-T | task | done | 047-F | archive |
-| 047.006-T | task | done | 047-F | archive |
-| 047.007-T | task | done | 047-F | archive |
-| 047.008-T | task | done | 047-F | archive |
-| 047.009-T | task | done | 047-F | archive |
+| 047-F | feature | done | - (root; no parent_id) | queue |
+| 047.001-T | task | done | 047-F | queue |
+| 047.002-T | task | done | 047-F | queue |
+| 047.003-T | task | done | 047-F | queue |
+| 047.004-T | task | done | 047-F | queue |
+| 047.005-T | task | done | 047-F | queue |
+| 047.006-T | task | done | 047-F | queue |
+| 047.007-T | task | done | 047-F | queue |
+| 047.008-T | task | done | 047-F | queue |
+| 047.009-T | task | done | 047-F | queue |
 
 No snapshot ambiguity (no ID found in both queue+archive) or missing record.
 
@@ -53,10 +53,37 @@ linked deliberation IDs to extend the snapshot with.**
 
 - `CLOSE_PATH_VERDICT`: **CASCADE**
 - `VERDICT_REASON`: **FULLY_COVERED_ROOT**
-- `CLASSIFICATION_BINDING`: `0f9be8a39309d70cd01b641871f84de68fc0abe5a80bce03fe394a0c230792d9`
+- `CLASSIFICATION_BINDING` (corrected): `77985d03e202c5ff61f1ba431d6d087aa7f2b349395eeceaadd3ca41b263a5b4`
+- `CLASSIFICATION_BINDING` (as issued at 18:20:09Z, defective):
+  `0f9be8a39309d70cd01b641871f84de68fc0abe5a80bce03fe394a0c230792d9`
 - `CLASSIFIED_AT`: 2026-10-01T18:20:09Z
 
-### Binding computation inputs (canonical v1 serialisation)
+### Correction: snapshot location defect (disclosed post-close)
+
+The session-local snapshot helper recorded `location = archive` for all ten members. Their
+actual pre-close location was `.backlogit/queue/`. Three pieces of authoritative evidence show
+this:
+
+1. At 18:19:59Z, the pre-mode reconcile report found all ten members in `.backlogit/queue/` with
+   status `done`.
+2. Every archived record carries `archived_from: .backlogit/queue/<id>.md` and
+   `archived_status: done`. Each record's `updated_at` falls between 18:20:44Z and 18:20:57Z,
+   which is after the 18:20:42Z cascade mutation. The cascade therefore moved them from queue
+   to archive, so they cannot have been in archive at 18:20:09Z.
+3. In merge commit `ec6d1d9`, all ten records and `037-S.md` are under `.backlogit/queue/`.
+
+The snapshot table and binding inputs above now hold the corrected `queue` values. Recomputing
+the canonical v1 serialisation from them gives `77985d03…a5b4`. Running the same serialisation
+with `archive` reproduces the as-issued value `0f9be8a3…92d9`, which confirms that location is
+the only field that differed.
+
+The verdict does not change. The qualification algorithm uses location only to detect snapshot
+ambiguity (an ID present in both queue and archive), and there was none. Root status, full
+coverage at every depth, set-equality with the manifest, and terminal status all hold as
+recorded. For the effect of this defect on the safe-close Step 0 revalidation, see the
+cascade-close report.
+
+### Binding computation inputs (canonical v1 serialisation, corrected locations)
 
 ```
 v1
@@ -68,16 +95,16 @@ engine=backlogit version 1.11.0 (latest: v1.11.0 -- up to date)
 manifest=047-F,047.001-T,047.002-T,047.003-T,047.004-T,047.005-T,047.006-T,047.007-T,047.008-T,047.009-T
 deps=035-S,036-S
 status=active
-047-F<US>feature<US>done<US>-<US>archive
-047.001-T<US>task<US>done<US>047-F<US>archive
-047.002-T<US>task<US>done<US>047-F<US>archive
-047.003-T<US>task<US>done<US>047-F<US>archive
-047.004-T<US>task<US>done<US>047-F<US>archive
-047.005-T<US>task<US>done<US>047-F<US>archive
-047.006-T<US>task<US>done<US>047-F<US>archive
-047.007-T<US>task<US>done<US>047-F<US>archive
-047.008-T<US>task<US>done<US>047-F<US>archive
-047.009-T<US>task<US>done<US>047-F<US>archive
+047-F<US>feature<US>done<US>-<US>queue
+047.001-T<US>task<US>done<US>047-F<US>queue
+047.002-T<US>task<US>done<US>047-F<US>queue
+047.003-T<US>task<US>done<US>047-F<US>queue
+047.004-T<US>task<US>done<US>047-F<US>queue
+047.005-T<US>task<US>done<US>047-F<US>queue
+047.006-T<US>task<US>done<US>047-F<US>queue
+047.007-T<US>task<US>done<US>047-F<US>queue
+047.008-T<US>task<US>done<US>047-F<US>queue
+047.009-T<US>task<US>done<US>047-F<US>queue
 ```
 (`<US>` = ASCII 0x1F Unit Separator; lines joined with `\n`, no trailing newline, SHA-256 of
 UTF-8 bytes.)
