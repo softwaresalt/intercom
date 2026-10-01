@@ -19,11 +19,12 @@ import (
 // satisfy (or trip) its own patterns when scanned by the repo-wide greps.
 
 var (
-	// The generic interpreter word (any case, optional 3, so `python.exe`
-	// and `/usr/bin/python3` match too), or the Windows `py` launcher with
-	// an optional `.exe`. The launcher must not follow a word character, a
-	// dot or a hyphen, so `.py` file names and `--py` flags stay green.
-	wrapperInterpreterWord = regexp.MustCompile(`(?i)\b` + "py" + "thon" + `3?\b|(?:^|[^\w.\-])` + "py" + `(?:\.exe)?\b`)
+	// The generic interpreter word (any case, optional Windows GUI `w`,
+	// optional 3, so `python.exe`, `pythonw.exe` and `/usr/bin/python3`
+	// match too), or the Windows `py` launcher with an optional `.exe`. The
+	// launcher must not follow a word character, a dot or a hyphen, so `.py`
+	// file names and `--py` flags stay green.
+	wrapperInterpreterWord = regexp.MustCompile(`(?i)\b` + "py" + "thon" + `w?3?\b|(?:^|[^\w.\-])` + "py" + `(?:\.exe)?\b`)
 	wrapperHeredoc         = regexp.MustCompile(`<` + `<`)
 )
 
@@ -176,6 +177,7 @@ func TestRetiredArchWrapperText_NoEmbeddedEngine(t *testing.T) {
 		"interpreter":     "py" + "thon3 -c 'pass'\n",
 		"py launcher":     "py" + " -c 'pass'\n",
 		"py.exe launcher": "x=$(py" + ".exe -c 'pass')\n",
+		"gui interpreter": "py" + "thonw.exe engine.py\n",
 		"heredoc":         "cat <" + "<'EOF'\nEOF\n",
 		"module":          "echo retired" + "_arch\n",
 		"engine var":      "ENGINE" + "=x\n",
@@ -197,6 +199,7 @@ func TestWrapperInterpreterWord_Forms(t *testing.T) {
 	for _, l := range []string{
 		py + "thon3 x", "/usr/bin/" + py + "thon x", py + "thon.exe x", py + " -c 1",
 		py + ".exe -c 1", "x=$(" + py + " -c 1)", "\"" + py + ".exe\" x", "PY -c 1",
+		py + "thonw.exe x", py + "thonw x",
 	} {
 		if !wrapperInterpreterWord.MatchString(l) {
 			t.Errorf("red form %q not matched", l)
@@ -241,6 +244,7 @@ func TestWritePathWrapperText_PureBashDispatch(t *testing.T) {
 		"interpreter":     {buildAnchor, "py" + "thon3 -c 'pass'\n" + buildAnchor},
 		"py launcher":     {buildAnchor, "py" + " -c 'pass'\n" + buildAnchor},
 		"py.exe launcher": {buildAnchor, "\"py" + ".exe\" -c 'pass'\n" + buildAnchor},
+		"gui interpreter": {buildAnchor, "py" + "thonw.exe engine.py\n" + buildAnchor},
 		"heredoc":         {buildAnchor, "cat <" + "<'EOF'\nEOF\n" + buildAnchor},
 		"no invoke":       {`gatecheck_invoke write-path "$@"`, "true"},
 	} {
