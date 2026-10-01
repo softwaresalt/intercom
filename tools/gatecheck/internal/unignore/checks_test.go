@@ -101,7 +101,7 @@ func TestRunDifferentialCheck_RejectsExistingFileUnignored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("makeScenarioRepo: %v", err)
 	}
-	scratchRoot := tmpRoot + "-scratch1"
+	scratchRoot := filepath.Join(tmpRoot, "scratch1")
 	evaluated, failures, err := runDifferentialCheck(git, repoDir, scratchRoot, baseRef, "HEAD")
 	if err != nil {
 		t.Fatalf("runDifferentialCheck: %v", err)
@@ -125,7 +125,7 @@ func TestRunDifferentialCheck_AcceptsNonexistentNegation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("makeScenarioRepo: %v", err)
 	}
-	scratchRoot := tmpRoot + "-scratch2"
+	scratchRoot := filepath.Join(tmpRoot, "scratch2")
 	_, failures, err := runDifferentialCheck(git, repoDir, scratchRoot, baseRef, "HEAD")
 	if err != nil {
 		t.Fatalf("runDifferentialCheck: %v", err)
@@ -146,7 +146,7 @@ func TestRunDifferentialCheck_RejectsTrackedUnignoredInSameChange(t *testing.T) 
 	if err != nil {
 		t.Fatalf("makeScenarioRepo: %v", err)
 	}
-	scratchRoot := tmpRoot + "-scratch3"
+	scratchRoot := filepath.Join(tmpRoot, "scratch3")
 	_, failures, err := runDifferentialCheck(git, repoDir, scratchRoot, baseRef, "HEAD")
 	if err != nil {
 		t.Fatalf("runDifferentialCheck: %v", err)
@@ -171,7 +171,7 @@ func TestRunDifferentialCheck_NoCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("makeScenarioRepo: %v", err)
 	}
-	scratchRoot := tmpRoot + "-scratch4"
+	scratchRoot := filepath.Join(tmpRoot, "scratch4")
 	evaluated, failures, err := runDifferentialCheck(git, repoDir, scratchRoot, baseRef, "HEAD")
 	if err != nil {
 		t.Fatalf("runDifferentialCheck: %v", err)

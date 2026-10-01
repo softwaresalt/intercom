@@ -15,6 +15,7 @@ package unignore
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -65,21 +66,10 @@ func exitCode(err error) int {
 		return 0
 	}
 	var exitErr *exec.ExitError
-	if ok := asExitError(err, &exitErr); ok {
+	if errors.As(err, &exitErr) {
 		return exitErr.ExitCode()
 	}
 	return -1
-}
-
-// asExitError is a tiny errors.As wrapper kept in this file (rather than
-// importing "errors" into every caller) purely for exitCode's use.
-func asExitError(err error, target **exec.ExitError) bool {
-	ee, ok := err.(*exec.ExitError)
-	if !ok {
-		return false
-	}
-	*target = ee
-	return true
 }
 
 // rootGitignoreTextAt reproduces root_gitignore_text_at verbatim,

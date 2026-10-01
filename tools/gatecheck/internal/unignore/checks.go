@@ -75,15 +75,22 @@ func runDifferentialCheck(git GitRunner, repoDir, scratchRoot, baseRef, headRef 
 	diffOut, diffErrBytes, diffErr := git(repoDir, nil, "diff", "--name-only", "-z", baseRef, headRef)
 	if diffErr != nil {
 		return 0, nil, fmt.Errorf(
-			"::error::git diff --name-only failed resolving %s..%s: %s",
-			baseRef, headRef, strings.TrimSpace(string(diffErrBytes)),
+			"::error::git diff --name-only failed resolving %s..%s: %v: %s",
+			baseRef, headRef, diffErr, strings.TrimSpace(string(diffErrBytes)),
 		)
 	}
 	diffPaths := splitNulTerminated(diffOut)
 
 	seen := make(map[string]bool, len(allUntracked)+len(diffPaths))
-	var candidates []string
-	for _, p := range append(append([]string{}, allUntracked...), diffPaths...) {
+	candidates := make([]string, 0, len(allUntracked)+len(diffPaths))
+	for _, p := range allUntracked {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		candidates = append(candidates, p)
+	}
+	for _, p := range diffPaths {
 		if p == "" || seen[p] {
 			continue
 		}
