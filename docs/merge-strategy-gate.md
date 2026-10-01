@@ -4,6 +4,49 @@ Tracks the standing verification for Constitution Principle XI / P-009
 (merge-commit-only PR merges), implemented by
 `scripts/check-merge-strategy.sh` (031.001-T, shipment 028-S).
 
+## Go evaluator (M3-T9/M3-T11, shipment 036-S)
+
+The JSON verdict evaluator that used to run as an embedded interpreted
+heredoc inside `scripts/check-merge-strategy.sh` now runs entirely in Go,
+at `tools/gatecheck/internal/mergestrategy` (`gatecheck
+merge-strategy-evaluate <path|->`,
+docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md §6).
+The wrapper builds the `gatecheck` binary once per invocation via
+`scripts/lib/gatecheck-run.sh` and forwards the JSON file path (or `-` for
+stdin) straight through. Verdicts and exit codes are identical
+to the retired engine except the permitted enumerated deltas (ED-1, ED-2,
+ED-3, ED-5, ED-8 — see the plan's §3 delta table); none of them moves a
+verdict toward `PASS`.
+
+The surrounding bash orchestration (`run_self_test`, `run_repo_scan`,
+`evaluate_response`, `verdict_exit_code`) was hardened under M3-T12
+alongside the Go evaluator switch, in addition to the ED-1 guard
+documented below. The two hardening fixes were identified by this unit's
+own adversarial review round (docs/reviews/2026-09-30-m3-unignore-mergestrategy-go-port-adversarial-review.md,
+finding M-1) and fixed before PR #85 was opened:
+
+- **Temp-file lifecycle fix (M-1)**: `evaluate_response` previously
+  allocated and tracked its own `mktemp` temp file from inside its own
+  function body, but every call site invokes it via
+  `$(evaluate_response ...)` bash command substitution — which always
+  forks a subshell, so the tracking-array append never reached the parent
+  shell's `cleanup()` EXIT trap, leaking one temp file per self-test
+  fixture call and per live repo scan. `evaluate_response` now takes an
+  already-allocated temp-file path as an explicit first argument
+  (`evaluate_response <tmp-file> <json-string>`); both call sites allocate
+  the temp file and register it in `MERGE_STRATEGY_TMP_FILES` themselves,
+  in the parent shell, before invoking `evaluate_response`, so the cleanup
+  trap reliably sees every tracked file. (Verified: a full `--self-test`
+  run leaves zero net new files in the OS temp directory.)
+- **Exit-code table**: `verdict_exit_code` implements the full PASS→0,
+  SKIP→0, FAIL→1, unrecognized-verdict→2 table, never silently falling
+  through to success for a malformed or empty verdict string.
+
+**ED-1 (new in M3-T12)**: running the checker from outside a git checkout
+now exits `2` with an `::error::` message, instead of propagating a raw
+`git rev-parse` failure under `set -e`. The guard runs before the
+`gatecheck` binary is built, so no build is attempted outside a checkout.
+
 ## GITHUB_TOKEN feasibility finding (031.002-T)
 
 **Question**: can the workflow's default `GITHUB_TOKEN` read
@@ -26,13 +69,23 @@ $ gh api repos/softwaresalt/intercom --jq "{allow_squash_merge, allow_rebase_mer
 Exit code: `0`. All three merge-strategy fields, plus the `permissions`
 block, are present.
 
-**Command 2 — anonymous, no token**:
+**Command 2 — anonymous, no token** (historical capture, retained verbatim
+as evidence; predates the M3 migration
+(docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md) and
+is not re-run by the current checker, which is a Go binary — see "Go
+evaluator" below):
 
 ```console
 $ curl -s -o response_anon.json -w "HTTP_STATUS:%{http_code}\n" https://api.github.com/repos/softwaresalt/intercom
 HTTP_STATUS:200
 $ python -c "import json; d=json.load(open('response_anon.json')); print({k: d.get(k, '<ABSENT>') for k in ['allow_squash_merge','allow_rebase_merge','allow_merge_commit','permissions']})"
 {'allow_squash_merge': '<ABSENT>', 'allow_rebase_merge': '<ABSENT>', 'allow_merge_commit': '<ABSENT>', 'permissions': '<ABSENT>'}
+```
+
+A present-day equivalent of the second command above uses `jq` instead:
+
+```console
+$ jq '{allow_squash_merge, allow_rebase_merge, allow_merge_commit, permissions}' response_anon.json
 ```
 
 HTTP status: `200` (the read itself succeeds — this is a public
@@ -114,10 +167,11 @@ $ bash scripts/check-merge-strategy.sh
 ```
 
 Prints `PASS`/`FAIL`/`SKIP` plus a reason and exits `0` for `PASS`/`SKIP`,
-`1` for `FAIL`, and `2` if the evaluator produces no recognized verdict
-or on a usage or prerequisite error. In CI, the same command runs in the `merge-strategy` job
-of `.github/workflows/ci.yml` on every push/PR, and is advisory
-(non-blocking) by default (AC-1.2).
+`1` for `FAIL`, and `2` if the evaluator produces no recognized verdict,
+on a usage or prerequisite error, or if the checker is run from outside a
+git checkout (ED-1, M3-T12). In CI, the same command runs in the
+`merge-strategy` job of `.github/workflows/ci.yml` on every push/PR, and
+is advisory (non-blocking) by default (AC-1.2).
 
 To confirm the current live repository state directly:
 

@@ -95,9 +95,17 @@ func TestRun_NonDirectoryRoot(t *testing.T) {
 // with the real internal/writepath dispatch (see TestRun_WritePath_*
 // below). "retired-arch" is excluded: M2-T11 replaced its stub with the
 // real internal/retiredarch dispatch (see TestRun_RetiredArch_* below).
+// "unignore" is excluded: M3-T7 replaced its stub with the real
+// internal/unignore dispatch (see internal/unignore's own test suite).
+// "merge-strategy-evaluate" is excluded: M3-T11 replaced its stub with the
+// real internal/mergestrategy dispatch (see internal/mergestrategy's own
+// test suite). All four originally-registered sub-commands are now real,
+// so `names` is empty; this test is retained as the structural harness for
+// any future sub-command that lands behind a "not yet ported" stub before
+// its own engine is wired in.
 func TestRun_EachStub(t *testing.T) {
 	root := t.TempDir()
-	names := []string{"unignore", "merge-strategy-evaluate"}
+	names := []string{}
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer

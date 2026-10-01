@@ -1,15 +1,21 @@
 package main
 
-import "io"
+import (
+	"io"
 
-// init pre-registers the merge-strategy-evaluate sub-command as a stub.
-// M3-T11 replaces this file's body with the real dispatch to
-// internal/mergestrategy once the engine lands (plan §4, M3-T11); no other
-// register_<name>.go file is touched by that change.
+	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/mergestrategy"
+)
+
+// init pre-registers the merge-strategy-evaluate sub-command, dispatching
+// to internal/mergestrategy.Run (M3-T11; plan §6). No other
+// register_<name>.go file is touched by this change.
 func init() {
-	registerSubcommand("merge-strategy-evaluate", stubMergeStrategyEvaluate)
+	registerSubcommand("merge-strategy-evaluate", runMergeStrategyEvaluate)
 }
 
-func stubMergeStrategyEvaluate(args []string, root string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return writeExitError(stderr, &exitError{code: 1, msg: "merge-strategy-evaluate: not yet ported"})
+// runMergeStrategyEvaluate is a thin forward: mergestrategy.Run already
+// matches the subcommandFunc signature exactly (args, root, stdin,
+// stdout, stderr), so no argument adaptation is needed here.
+func runMergeStrategyEvaluate(args []string, root string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return mergestrategy.Run(args, root, stdin, stdout, stderr)
 }
