@@ -49,7 +49,7 @@ follows M3 (036-S / 046-F, PR #85). With M4 merged, every blocking CI gate runs 
 * All 9 tasks (`047.001-T`..`047.009-T`) have passing acceptance criteria. Evidence is in
   `docs/plans/evidence/2026-09-28-gate-engine-go-migration/m4.md`.
 
-The diff covers 69 files, with 5,941 insertions and 1,822 deletions. `cmd/` is untouched.
+The diff covers 44 files, with 4,785 insertions and 1,792 deletions. `cmd/` is untouched.
 
 | Commit | Description |
 |---|---|
