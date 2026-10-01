@@ -107,19 +107,36 @@ wraps the skill:
    classification-only and explicitly excludes the binding/cascade
    sequencing from the "manual substitute is fine" umbrella.
 
-## Applied successfully in 036-S
+## Recurred in 036-S (same category of gap, not successfully applied — corrected 2026-10-01)
 
-036-S's post-merge closure (feature 046-F, M3 unignore-regression/merge-strategy
-Go port) followed this entry's fix/prevention steps in full: the canonical
-`CLASSIFICATION_BINDING` was computed per the skill's documented `v1` format
-*before* the cascade primitive was invoked (not merely alongside it), and was
-implicitly revalidated at the `mode: safe-close` boundary (no state changed
-between classification and invocation within the same uninterrupted session,
-so recomputation would be identical). No process-compliance gap was disclosed
-in that closure's releasability evidence. See
+036-S's post-merge closure (feature 046-F, M3 unignore-regression/merge-strategy Go port)
+**reproduced this exact gap**, not applied this entry's fix/prevention steps successfully. The
+canonical `CLASSIFICATION_BINDING` was computed per the skill's documented `v1` format during
+the manually-executed `classify-close-path` step, but the subsequent `backlogit shipment ship`
+call was a **direct** invocation of the cascade primitive, with no intervening `mode: safe-close`
+call to freshly recompute and compare that binding. This is exactly the pattern item 2 above
+warns against: "a manually-computed binding that is merely recorded alongside a direct cascade
+call reproduces the exact same bypass this entry exists to prevent... it does not perform the
+mandated live revalidation and must not be treated as equivalent to it." An earlier draft of
+this entry incorrectly claimed this closure "followed this entry's fix/prevention steps in full"
+and that "no process-compliance gap was disclosed" — both claims were inaccurate and were
+corrected (via Copilot review on PR #86) in `docs/closure/036-S-046-F-post-merge-closure.md`'s
+Risky Action Record and Releasability evidence, which now accurately disclose the gap.
+
+**Net assessment across both occurrences**: 035-S computed no binding at all; 036-S computed and
+recorded a binding but never used it to gate or revalidate the subsequent mutation. Both are the
+same root-cause category — no conforming `mode: safe-close` call ever actually ran — and the
+difference between them is cosmetic (a binding value present in the record) rather than
+substantive (the live revalidation step was absent both times). This confirms the entry's
+prevention guidance was *correctly written* (item 2 predicted exactly this failure mode) but was
+not *followed* a second time, reinforcing that a narrative claim of compliance is not a substitute
+for literally invoking the mandated step. A stash entry (`D10D3AFC`, captured during 036-S's own
+closure review) proposes a structural remediation: make `mode: safe-close` actually invokable (a
+real CLI/gate subcommand) so the live recompute-and-compare step cannot be silently approximated
+away by an agent reasoning about "no state changed, so recomputation would be identical" — that
+reasoning is precisely the failure mode to guard against, since it is unverifiable from inside the
+same session that is making the claim. See
 `docs/closure/036-S-046-F-post-merge-closure.md` and
 `.backlogit/reconcile/036-S-classify-close-path-2026-09-30T19-21-40Z.md` /
-`036-S-cascade-close-2026-10-01T02-25-49Z.md` for the full binding computation
-and verification trail. This confirms the entry's guidance is actionable and
-sufficient when followed literally — no further update to the guidance itself
-is needed.
+`036-S-cascade-close-2026-10-01T02-25-49Z.md` for the full binding computation and the corrected
+disclosure.

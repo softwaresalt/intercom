@@ -43,8 +43,23 @@ the merge-strategy port, fixed `docs/merge-strategy-gate.md` staleness.
 
 ## Post-merge closure sequence (this session's key procedural contribution)
 
+> **Correction (added post-Copilot-review on PR #86, before this archived record's own PR merged;
+> the body below is preserved as the original in-session record, uncorrected, for traceability —
+> see this note for the accurate characterization)**: the sequence below is **not** a conforming
+> bound `mode: safe-close` execution. A `CLASSIFICATION_BINDING` was computed during
+> `classify-close-path`, but step 3's `backlogit shipment ship` call was a **direct** invocation,
+> not a genuine `mode: safe-close` call that freshly recomputes and compares the binding before
+> delegating to the Cascade Close Sub-Procedure. This reproduces the same category of gap
+> disclosed for 035-S, with the partial mitigation that a binding was at least computed (035-S
+> computed none at all). See
+> `docs/closure/036-S-046-F-post-merge-closure.md` (Risky Action Record) and
+> `.backlogit/reconcile/036-S-cascade-close-2026-10-01T02-25-49Z.md` for the corrected,
+> authoritative disclosure.
+
 Unlike the 035-S closure (which disclosed a process-compliance gap — cascade invoked directly
-without a computed `CLASSIFICATION_BINDING`), this closure followed the full bound sequence:
+without a computed `CLASSIFICATION_BINDING`), this closure computed a `CLASSIFICATION_BINDING`
+before invoking the cascade primitive — ~~this closure followed the full bound sequence~~ **(see
+correction above: computing the binding beside a direct cascade call is not a bound sequence)**:
 
 1. **a1 covering-feature completion gate**: all 5 conditions held; `046-F` moved `active ->
    done` via `backlogit move` before classification ran.

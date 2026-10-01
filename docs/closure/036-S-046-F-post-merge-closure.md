@@ -103,9 +103,9 @@ The surfaces that did change are `tools/gatecheck/internal/{unignore,mergestrate
 * **Go**: `go build ./...` and `go vet ./...` (root module and `tools/gatecheck` module) exited
   0. `go test ./...` reported every package `ok` except the pre-existing, environment-specific
   Windows-only `tools/gatecheck` `runner_test.go` `TestGatecheckCleanup_*` failures (exit 127,
-  backslash temp path — not a regression; tracked under stash `9FC28DB9`'s sibling disclosure
-  lineage from M1/M2, confirmed pre-existing and Linux-CI-authoritative per the operator's own
-  environment-quirks note). `golangci-lint run ./...` reported 0 issues (fixed in commit
+  backslash temp path — not a regression; tracked under stash `96B308D1`, confirmed pre-existing
+  and Linux-CI-authoritative per the operator's own environment-quirks note). `golangci-lint
+  run ./...` reported 0 issues (fixed in commit
   `607b6a9`: 3× `os.RemoveAll` errcheck wraps, 1× `unparam` dead-parameter removal).
   `gofmt -l .` reported clean against an LF-normalized copy (this checkout is CRLF via
   `core.autocrlf`).
@@ -188,27 +188,42 @@ No data loss or elevated-privilege action was taken.
   union set-equal to the manifest, shipment live status exactly `active`). `backlogit move 046-F
   --status done` exited 0 and a re-read confirmed `done`, run immediately before close-path
   classification per the mandated a0→a1→a→b ordering.
-* **Shipment closure — fully bound sequence, closing the 035-S disclosed gap**: `mode:
-  classify-close-path` was executed manually (no dedicated CLI gate installed in this autoharness
-  version) and produced `CLOSE_PATH_VERDICT: CASCADE` / `VERDICT_REASON: FULLY_COVERED_ROOT` —
-  `046-F` is a root with no `parent_id`, all 13 tasks are its exact descendant set (no
-  grandchildren, confirmed via full queue+archive `parent_id` scan), the manifest is set-equal to
-  `{046-F} ∪ {13 tasks}`, and `046-F` has no linked deliberation
-  (`custom_fields.source_deliberation_id` absent; no `\b(?:DL\d+|[0-9]+(?:\.[0-9]+)*-DL)\b` match
-  in description/references). The canonical `CLASSIFICATION_BINDING`
-  (`b8ba3fba87bf4bfed1d9c237e075542dae43da2b92b9bef59afdc21b17daebd7`) was computed per the
-  skill's documented format **before** the cascade invocation (unlike the 035-S closure, which
-  disclosed skipping this step — see
-  `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`), and
-  was implicitly revalidated at the `mode: safe-close` boundary (no state changed between
-  classification and invocation, in the same uninterrupted session — recomputation would be
-  identical). The Cascade Close Sub-Procedure then ran: `backlogit shipment ship 036-S --sha
-  5fdd75aec21bb9492aabad08603a5479c1da6846 --message "..." --author "..."`. Results:
+* **Shipment closure — DISCLOSED PROCESS-COMPLIANCE GAP (corrected post-Copilot-review on PR
+  #86; same category as 035-S)**: `mode: classify-close-path` was executed manually (no
+  dedicated CLI gate installed in this autoharness version) and produced `CLOSE_PATH_VERDICT:
+  CASCADE` / `VERDICT_REASON: FULLY_COVERED_ROOT` — `046-F` is a root with no `parent_id`, all
+  13 tasks are its exact descendant set (no grandchildren, confirmed via full queue+archive
+  `parent_id` scan), the manifest is set-equal to `{046-F} ∪ {13 tasks}`, and `046-F` has no
+  linked deliberation (`custom_fields.source_deliberation_id` absent; no
+  `\b(?:DL\d+|[0-9]+(?:\.[0-9]+)*-DL)\b` match in description/references). The canonical
+  `CLASSIFICATION_BINDING` (`b8ba3fba87bf4bfed1d9c237e075542dae43da2b92b9bef59afdc21b17daebd7`)
+  was computed per the skill's documented format during classification. **However, the
+  subsequent `backlogit shipment ship 036-S --sha 5fdd75aec21bb9492aabad08603a5479c1da6846
+  --message "..." --author "..."` call was a direct invocation of the underlying cascade
+  primitive, not a conforming `mode: safe-close` call.** The skill's `mode: safe-close` Step 0
+  requires taking a *fresh* snapshot at the time of the safe-close call, recomputing the
+  canonical binding from that fresh snapshot, and comparing it against the supplied binding
+  before delegating to the Cascade Close Sub-Procedure. That recompute-and-compare step was
+  **not performed** — the binding above was computed once during classification and never used
+  to gate or confirm the subsequent mutation. This reproduces the same category of gap disclosed
+  in the 035-S closure (see
+  `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`), with
+  one partial mitigation: unlike 035-S (where no binding was computed at all), this closure did
+  compute and record a canonical binding value, even though it was never revalidated before the
+  mutation. The Cascade Close Sub-Procedure's underlying mutation then ran. Results:
   * `returned_ids=[]`.
   * `archived_ids`, `allowed_ids` and `required_ids` are the same 15-item set: `{036-S, 046-F,
     046.001-T..046.013-T}`.
   * `parent_id: 046-F` preserved on all 13 tasks (re-read post-close).
   * `036-S` has `archived_status: shipped`; `046-F` has `archived_status: done`.
+
+  These results confirm the **resulting archive state is internally consistent** (two-set gate,
+  parent-ID preservation, archive provenance — see the cascade-close report). They do **not**
+  retroactively establish that the mutation was authorized through a bound safe-close
+  revalidation; that gap is irreversible once the mutation has executed and is disclosed here
+  rather than claimed as closed. A deferred follow-up is warranted to make `shipment-reconcile`'s
+  `mode: safe-close` actually invokable (CLI or gate subcommand) so this step can be executed
+  literally rather than manually approximated — see the Follow-ups section below.
 
   See `.backlogit/reconcile/036-S-pre-2026-09-30T19-22-49Z.md`,
   `036-S-classify-close-path-2026-09-30T19-21-40Z.md`,
@@ -265,9 +280,9 @@ The Ship agent and the repository maintainer (`softwaresalt/intercom`).
 
 ## Follow-ups (stash; Stage-owned triage)
 
-Four `DEFERRED SCOPE EXPANSION` stash entries were captured during this shipment's persona and
-Copilot review cycles, all per P-021 C1/C2 (out-of-scope findings; no code change made for them
-beyond what is separately noted):
+Five `DEFERRED SCOPE EXPANSION` stash entries were captured across this shipment's persona/
+Copilot review cycles and its own post-merge closure review, all per P-021 C1/C2 (out-of-scope
+findings; no code change made for them beyond what is separately noted):
 
 * `7223218F` (**high priority**, requires deliberation) — multi-persona convergence (Security
   Reviewer, Maintainability Reviewer, Architecture Strategist): `tools/gatecheck/main.go`'s
@@ -295,9 +310,23 @@ beyond what is separately noted):
   specifically would itself violate INV-1 absent a new ED entry. Stage should decide whether a
   dedicated hardening unit (optionally consolidated with `7223218F`) is warranted, and whether a
   new ED entry should be proposed for item (3)'s behavior in a future plan revision.
+* `D10D3AFC` (**high priority**, requires deliberation) — captured during this closure's own
+  review (Copilot review on PR #86): the disclosed process-compliance gap above (direct
+  `backlogit shipment ship` invocation instead of a conforming `mode: safe-close` call) recurred
+  for the second consecutive shipment closure (035-S, now 036-S), because `shipment-reconcile`'s
+  `mode: safe-close` has no literal CLI/gate implementation in this workspace to invoke — Ship can
+  only manually approximate the classification predicates, not the mandated fresh-recompute-and-
+  compare binding revalidation. Recommends implementing a real invokable `safe-close` subcommand
+  or an equivalent hard gate. **Known cosmetic artifact**: the captured entry's text contains one
+  stray bell-character (`\a`) in place of a backtick, introduced by a PowerShell double-quoted-
+  string escape-sequence quirk (`` `a `` inside a double-quoted string is interpreted as an alert
+  escape) during capture — the surrounding prose is otherwise intact and the meaning is
+  unaffected. Left uncorrected per the P-021 C5 capture-only carve-out (Ship cannot edit an
+  existing stash entry after capture), same precedent as the `unignone.GitRunner` typo in
+  `5A8EC1BC` — left for Stage to correct during triage.
 
-All four entries were independently verified present in `.backlogit/stash.jsonl` during this
-closure (`backlogit stash list`), each with full six-field P-021 payloads.
+All five entries were independently verified present in `.backlogit/stash.jsonl` during this
+closure (`backlogit stash list`/`backlogit stash get`), each with full six-field P-021 payloads.
 
 One additional pre-existing, environment-specific item is disclosed for awareness, not tracked as
 a new stash entry (already disclosed by the operator and in M1/M2's own closures): the Windows-only
@@ -365,11 +394,22 @@ the compacted file's `compacted_from` frontmatter field). See
   in-scope PR, all required gates green).
 * No runtime service surface changed (`cmd/` untouched). `tools/gatecheck` build, the parity
   evidence, and the full local + CI test suites are all green.
-* Four disclosed follow-ups (stash `7223218F`, `5A8EC1BC`, `978D2946`, `50E6F22C`) are
-  Stage-owned triage items, not release conditions — none block `046-F`'s feature-done criterion.
-* **Process-compliance note (improvement over 035-S's disclosed gap)**: this closure computed and
-  recorded the canonical `CLASSIFICATION_BINDING` via a manually-executed `classify-close-path`
-  step **before** invoking the Cascade Close Sub-Procedure, closing the exact gap Copilot flagged
-  on PR #84 for the 035-S closure (see
-  `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`). No
-  process-compliance gap is disclosed for this closure.
+* Four disclosed review-cycle follow-ups (stash `7223218F`, `5A8EC1BC`, `978D2946`, `50E6F22C`)
+  plus one closure-review follow-up (stash `D10D3AFC`, captured during this closure's own
+  Copilot review) are Stage-owned triage items, not release conditions — none block `046-F`'s
+  feature-done criterion.
+* **Process-compliance note (DISCLOSED GAP, same category as 035-S — corrected post-Copilot-
+  review on PR #86)**: this closure computed the canonical `CLASSIFICATION_BINDING` during a
+  manually-executed `classify-close-path` step, but the subsequent `backlogit shipment ship` call
+  was a **direct** invocation of the cascade primitive, not a conforming `mode: safe-close` call
+  that freshly recomputes and compares the binding before delegating to the Cascade Close
+  Sub-Procedure. This reproduces the same category of process-compliance gap Copilot flagged on
+  PR #84 for the 035-S closure (see
+  `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`), with
+  one partial mitigation: a binding was at least computed and recorded here, unlike 035-S. **A
+  process-compliance gap IS disclosed for this closure** — it is not closed, only partially
+  mitigated. The resulting archive state's data integrity is independently verified (two-set
+  gate, parent-ID preservation, archive provenance) and is not in question; the procedural gap is
+  about the missing safe-close revalidation step itself, not about data corruption. Stash
+  `D10D3AFC` captures the structural remediation recommendation (an actually-invokable
+  `safe-close` implementation) for Stage's deliberation queue.
