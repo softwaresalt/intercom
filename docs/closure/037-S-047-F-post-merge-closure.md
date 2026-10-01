@@ -117,10 +117,18 @@ No data loss or elevated-privilege action was taken.
   reviews. Rounds 1–22 raised findings, either as one of the 18 inline threads or in the review
   overview text; round 23 was clean. That exceeds the circuit breaker's 3-cycle review-fix
   limit. Each finding passed the P-021 C1 same-contract-surface test, being
-  a gap in M4's own new guards or evidence. The operator's activation instruction explicitly
-  required waiting for Copilot and resolving every comment before merging, so continuing was the
-  disposition the operator had already chosen. All 18 review threads were replied to after the
-  fix was pushed, then resolved through GraphQL. None remain unresolved.
+  a gap in M4's own new guards or evidence. The circuit breaker requires an explicit operator
+  decision once the limit is reached: either extend the cycle count or accept residual risk. The
+  operator's 037-S activation instruction made that decision in advance, by extending the
+  cycle count. It said: "You must be patient and wait for copilot reviews to complete, then
+  resolve all comments before merging the PR; you may have multiple copilot review comment
+  iterations depending on comments produced." Every round stayed inside 037-S scope. All 18
+  review threads were replied to after the fix was pushed, then resolved through GraphQL. None
+  remain unresolved.
+* **Reconcile lock not acquired (disclosed)**: the `shipment-reconcile` Single-writer lock was
+  not held from pre-mode through post-mode, because the `file-lock` scripts do not exist in this
+  workspace. Two facts mitigate the risk: the session was single-agent, and the fresh binding
+  recompute matched before mutation. Captured as deferred stash `9F824B64`.
 * **Task status lapse (disclosed)**: the 9 tasks stayed `active` throughout the build. They were
   moved to `done` only at closure, just before reconciliation, instead of as each task finished.
   The end state is correct. Each task's acceptance criteria were met and are evidenced in m4.md
@@ -209,6 +217,8 @@ The Ship agent and the repository maintainer (`softwaresalt/intercom`).
   alongside the 034-F re-plan". That decision is now unblocked.
 * Earlier follow-ups are unchanged and still with Stage: `7223218F`, `5A8EC1BC`, `978D2946`,
   `50E6F22C` and `D10D3AFC` (the invokable `safe-close`).
+* New in this closure PR: `9F824B64`, which covers making the reconcile Single-writer lock
+  satisfiable in this workspace.
 
 The Windows-only `tools/gatecheck` `runner_test.go` `TestGatecheckCleanup_*` failures are a
 known, environment-specific issue and not a regression. Linux CI is authoritative.
