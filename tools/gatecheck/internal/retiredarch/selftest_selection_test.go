@@ -42,7 +42,7 @@ func TestRunRepoSelectionSelfTest_AssertionNamesAndOrder_MatchGolden(t *testing.
 }
 
 // TestRunRepoSelectionSelfTest_NoToolsPathSelected is a NEW, test-only
-// assertion (M2-T9's AC): it does not appear in retired_arch.py's own
+// assertion (M2-T9's AC): it does not appear in the M4-deleted retired_arch module's own
 // self-test stdout at all -- it lives purely here, guarding the invariant
 // that the ported Go package's own home (tools/) is never itself
 // accidentally swept into the selection set select_repo_paths() returns

@@ -1,6 +1,6 @@
 // Package retiredarch reimplements the repository's retired-architecture
 // regression gate (scripts/check-retired-architecture.sh /
-// scripts/lib/retired_arch.py) on top of
+// the M4-deleted retired_arch module) on top of
 // tools/gatecheck/internal/{pysem,gomask}, so the invariant -- no retired
 // component name (Slack/socketmode/channel_id/team_id/acp/host_cli/
 // ipc_name) survives as a live Go identifier or TOML key under the tracked
@@ -8,7 +8,7 @@
 //
 // This file (ident.go) ports split_camel_acronym, split_identifier,
 // _VOCAB_WORDS, segment_whole and _segment_whole_exact from
-// scripts/lib/retired_arch.py, using tools/gatecheck/internal/pysem for
+// the M4-deleted retired_arch module, using tools/gatecheck/internal/pysem for
 // every Python-str-semantics decision (isdigit/isupper/islower/lower)
 // rather than Go's ASCII-biased unicode helpers directly (plan C-4).
 package retiredarch
@@ -24,7 +24,7 @@ import (
 // camelCase/acronym components. Ported verbatim (including the
 // acronym-then-plural-suffix disambiguation and the inert-separator
 // fallback for stray non-cased runes such as '.' encountered via a quoted
-// TOML key) from split_camel_acronym in scripts/lib/retired_arch.py.
+// TOML key) from split_camel_acronym in the M4-deleted retired_arch module.
 //
 // Operates on runes (not bytes): Python indexes chunk by codepoint, and a
 // byte-indexed walk would misclassify multi-byte UTF-8 continuation bytes.

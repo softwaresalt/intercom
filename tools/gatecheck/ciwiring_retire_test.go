@@ -164,7 +164,7 @@ func runIsolatedGit(t *testing.T, dir string, args ...string) string {
 //
 // The pathspecs deliberately carry no `:(glob)` magic. Without it git's `*`
 // also matches `/`, so `scripts/*.py` covers both scripts/x.py and
-// scripts/lib/tests/y.py. The form `scripts/**/*.py` would miss the
+// scripts/a/b/y.py. The form `scripts/**/*.py` would miss the
 // top-level file.
 func trackedPythonProblems(t *testing.T, dir string) []string {
 	t.Helper()
