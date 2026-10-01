@@ -157,6 +157,12 @@ var ciWiringExpectations = []ciJobExpectation{
 // topology-check job (and only that job) keeps after M4.
 const ciTopologyPythonPin = "uses: actions/setup-" + "python@a309ff8b426b58ec0e2a45f0f869d46889d02405"
 
+// ciTopologyPinLine matches ciTopologyPythonPin only as an active step-level
+// key (a step's first key or a sibling key), optionally followed by a trailing
+// comment. A commented-out or otherwise inert occurrence does not match.
+var ciTopologyPinLine = regexp.MustCompile(`(?m)^(?:        |      - )` +
+	regexp.QuoteMeta(ciTopologyPythonPin) + `(?:[ \t]+#.*)?[ \t]*$`)
+
 // ciGoWiringProblems checks the Set-up-Go ordering and the gate steps of the
 // lint, gitignore-append-only and merge-strategy jobs.
 func ciGoWiringProblems(text string) []string {
@@ -212,7 +218,7 @@ func ciTopologyProblems(text string) []string {
 		return []string{`job "topology-check" not found`}
 	}
 	var problems []string
-	if !strings.Contains(block, ciTopologyPythonPin) {
+	if !ciTopologyPinLine.MatchString(block) {
 		problems = append(problems, "topology-check: SHA-pinned setup-python missing")
 	}
 	hashed := 0
@@ -348,6 +354,9 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 		},
 		"topology pin changed": func() string {
 			return strings.ReplaceAll(live, ciTopologyPythonPin, ciTopologyPythonPin[:len(ciTopologyPythonPin)-1]+"0")
+		},
+		"topology pin commented out": func() string {
+			return strings.ReplaceAll(live, "        "+ciTopologyPythonPin, "        # "+ciTopologyPythonPin)
 		},
 		"topology hash-pinned pip step removed": func() string {
 			return ciRemoveStep(t, live, "topology-check", "Install autoharness (hash-pinned, --require-hashes)")

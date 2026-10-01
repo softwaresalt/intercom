@@ -68,6 +68,114 @@ func TestUsesSharedCanonicalMasker(t *testing.T) {
 	}
 }
 
+// scanGoMaskFlow reports whether file f declares scanGo and, inside it, the
+// result of gomask.MaskGoNonCode reaches the scan loop: the call's result is
+// assigned to a variable v, and scanGo ranges over pysem.SplitLines(v). A
+// package-level count of calls cannot prove this, because scanGo could switch
+// to a local clone while a dead helper keeps a canonical call.
+func scanGoMaskFlow(f *ast.File) (declared, flows bool) {
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Name.Name != "scanGo" || fn.Body == nil {
+			continue
+		}
+		declared = true
+		maskedVars := map[string]bool{}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			as, ok := n.(*ast.AssignStmt)
+			if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+				return true
+			}
+			if id, ok := as.Lhs[0].(*ast.Ident); ok && id.Name != "_" && isSelectorCall(as.Rhs[0], "gomask", "MaskGoNonCode") {
+				maskedVars[id.Name] = true
+			}
+			return true
+		})
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			rs, ok := n.(*ast.RangeStmt)
+			if !ok || !isSelectorCall(rs.X, "pysem", "SplitLines") {
+				return true
+			}
+			if arg, ok := rs.X.(*ast.CallExpr).Args[0].(*ast.Ident); ok && maskedVars[arg.Name] {
+				flows = true
+			}
+			return true
+		})
+	}
+	return declared, flows
+}
+
+// isSelectorCall reports whether e is a call to pkg.name with one argument.
+func isSelectorCall(e ast.Expr, pkg, name string) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	id, ok := sel.X.(*ast.Ident)
+	return ok && id.Name == pkg && sel.Sel.Name == name
+}
+
+// TestScanGoConsumesCanonicalMask pins the canonical masker to scanGo's own
+// masking branch, the data-flow half of the retired identity assertion.
+func TestScanGoConsumesCanonicalMask(t *testing.T) {
+	src, err := os.ReadFile("scango.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), "scango.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared, flows := scanGoMaskFlow(f)
+	if !declared {
+		t.Fatal("scango.go declares no scanGo")
+	}
+	if !flows {
+		t.Error("scanGo does not range over pysem.SplitLines of a gomask.MaskGoNonCode result")
+	}
+}
+
+// TestScanGoMaskFlow_Mutations proves scanGoMaskFlow is red when scanGo stops
+// consuming the canonical mask result, and green on the production shape.
+func TestScanGoMaskFlow_Mutations(t *testing.T) {
+	const head = "package p\nfunc scanGo(text string, mask bool) {\n\tmasked := text\n"
+	const loop = "\tfor range pysem.SplitLines(masked) {\n\t}\n}\n"
+	cases := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{"production shape", head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n" + loop, true},
+		{"local clone in scanGo, canonical call in dead helper",
+			head + "\tif mask {\n\t\tmasked = clone(text)\n\t}\n" + loop +
+				"func dead(s string) { _ = gomask.MaskGoNonCode(s) }\n", false},
+		{"result discarded", head + "\tif mask {\n\t\t_ = gomask.MaskGoNonCode(text)\n\t}\n" + loop, false},
+		{"loop scans the unmasked text",
+			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n" +
+				"\tfor range pysem.SplitLines(text) {\n\t}\n}\n", false},
+		{"other package masker", head + "\tif mask {\n\t\tmasked = other.MaskGoNonCode(text)\n\t}\n" + loop, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := parser.ParseFile(token.NewFileSet(), "x.go", tc.src, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			declared, flows := scanGoMaskFlow(f)
+			if !declared {
+				t.Fatal("scanGo not found")
+			}
+			if flows != tc.want {
+				t.Errorf("scanGoMaskFlow flows = %v, want %v", flows, tc.want)
+			}
+		})
+	}
+}
+
 // TestMaskerUse_Mutations proves maskerUse is red on the regressions it
 // guards against and green on a genuine call.
 func TestMaskerUse_Mutations(t *testing.T) {

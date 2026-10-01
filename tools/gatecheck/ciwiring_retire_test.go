@@ -30,8 +30,11 @@ const ciTopologyJob = "topology-check"
 var (
 	pyWord = "py" + "thon"
 
-	// (i) `^\s*(-\s*)?uses:\s*actions/setup-python@`
-	ciSetupPythonUse = regexp.MustCompile(`(?m)^\s*(-\s*)?uses:\s*actions/setup-` + pyWord + `@`)
+	// (i) `(?im)^\s*(-\s*)?uses:\s*["']?actions/setup-python@`
+	//
+	// A superset of the plan's M4-T3 form: YAML may quote the action value,
+	// and GitHub resolves action owner and repository names case-insensitively.
+	ciSetupPythonUse = regexp.MustCompile(`(?im)^\s*(-\s*)?uses:\s*["']?actions/setup-` + pyWord + `@`)
 
 	// (ii) `(?i)(^|[\s;&|("'/\\`])(python[0-9.]*|py|pytest)(\.exe)?(\s|$|[;&|)"'`])`
 	//
@@ -279,6 +282,16 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			name:  "setup-python as first key of a list item",
 			check: ciSetupPythonProblems,
 			repl:  "      - uses: actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "setup-python single-quoted",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        uses: 'actions/setup-" + pyWord + "@0000000000000000000000000000000000000000'\n",
+		},
+		{
+			name:  "setup-python double-quoted mixed case",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        uses: \"Actions/Setup-" + strings.ToUpper(pyWord[:1]) + pyWord[1:] + "@0000000000000000000000000000000000000000\"\n",
 		},
 		{
 			name:  "inline run invokes python3",

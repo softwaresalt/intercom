@@ -19,7 +19,11 @@ import (
 // satisfy (or trip) its own patterns when scanned by the repo-wide greps.
 
 var (
-	wrapperInterpreterWord = regexp.MustCompile(`(?i)\b` + "py" + "thon" + `3?\b`)
+	// The generic interpreter word (any case, optional 3, so `python.exe`
+	// and `/usr/bin/python3` match too), or the Windows `py` launcher with
+	// an optional `.exe`. The launcher must not follow a word character, a
+	// dot or a hyphen, so `.py` file names and `--py` flags stay green.
+	wrapperInterpreterWord = regexp.MustCompile(`(?i)\b` + "py" + "thon" + `3?\b|(?:^|[^\w.\-])` + "py" + `(?:\.exe)?\b`)
 	wrapperHeredoc         = regexp.MustCompile(`<` + `<`)
 )
 
@@ -169,10 +173,12 @@ func TestRetiredArchWrapperText_NoEmbeddedEngine(t *testing.T) {
 		t.Fatalf("live wrapper: %v", p)
 	}
 	for name, inject := range map[string]string{
-		"interpreter": "py" + "thon3 -c 'pass'\n",
-		"heredoc":     "cat <" + "<'EOF'\nEOF\n",
-		"module":      "echo retired" + "_arch\n",
-		"engine var":  "ENGINE" + "=x\n",
+		"interpreter":     "py" + "thon3 -c 'pass'\n",
+		"py launcher":     "py" + " -c 'pass'\n",
+		"py.exe launcher": "x=$(py" + ".exe -c 'pass')\n",
+		"heredoc":         "cat <" + "<'EOF'\nEOF\n",
+		"module":          "echo retired" + "_arch\n",
+		"engine var":      "ENGINE" + "=x\n",
 	} {
 		mutated := mustMutate(t, live, buildAnchor, inject+buildAnchor)
 		if p := retiredArchNoEngineProblems(mutated); len(p) == 0 {
@@ -183,6 +189,25 @@ func TestRetiredArchWrapperText_NoEmbeddedEngine(t *testing.T) {
 	commented := mustMutate(t, live, buildAnchor, "# py"+"thon3 retired"+"_arch\n"+buildAnchor)
 	if p := retiredArchNoEngineProblems(commented); len(p) != 0 {
 		t.Errorf("comment-only mention flagged: %v", p)
+	}
+}
+
+func TestWrapperInterpreterWord_Forms(t *testing.T) {
+	py := "py"
+	for _, l := range []string{
+		py + "thon3 x", "/usr/bin/" + py + "thon x", py + "thon.exe x", py + " -c 1",
+		py + ".exe -c 1", "x=$(" + py + " -c 1)", "\"" + py + ".exe\" x", "PY -c 1",
+	} {
+		if !wrapperInterpreterWord.MatchString(l) {
+			t.Errorf("red form %q not matched", l)
+		}
+	}
+	for _, l := range []string{
+		"echo x." + py, "tool --" + py + " x", "echo " + py + "project.toml", "echo happy",
+	} {
+		if wrapperInterpreterWord.MatchString(l) {
+			t.Errorf("green form %q matched", l)
+		}
 	}
 }
 
@@ -212,10 +237,12 @@ func TestWritePathWrapperText_PureBashDispatch(t *testing.T) {
 		t.Fatalf("live wrapper: %v", p)
 	}
 	for name, m := range map[string][2]string{
-		"masker":      {buildAnchor, "# from go" + "mask import x\n" + buildAnchor},
-		"interpreter": {buildAnchor, "py" + "thon3 -c 'pass'\n" + buildAnchor},
-		"heredoc":     {buildAnchor, "cat <" + "<'EOF'\nEOF\n" + buildAnchor},
-		"no invoke":   {`gatecheck_invoke write-path "$@"`, "true"},
+		"masker":          {buildAnchor, "# from go" + "mask import x\n" + buildAnchor},
+		"interpreter":     {buildAnchor, "py" + "thon3 -c 'pass'\n" + buildAnchor},
+		"py launcher":     {buildAnchor, "py" + " -c 'pass'\n" + buildAnchor},
+		"py.exe launcher": {buildAnchor, "\"py" + ".exe\" -c 'pass'\n" + buildAnchor},
+		"heredoc":         {buildAnchor, "cat <" + "<'EOF'\nEOF\n" + buildAnchor},
+		"no invoke":       {`gatecheck_invoke write-path "$@"`, "true"},
 	} {
 		mutated := mustMutate(t, live, m[0], m[1])
 		if p := writePathPureBashProblems(mutated); len(p) == 0 {
