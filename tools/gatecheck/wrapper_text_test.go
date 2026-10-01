@@ -40,12 +40,14 @@ func readWrapperText(t *testing.T, rel string) string {
 }
 
 // wrapperCodeLines returns the non-blank lines whose trimmed form does not
-// start with '#' (shell comments, including the shebang).
+// start with '#' (shell comments). A '#!' line is kept: a shebang is
+// executable metadata naming the interpreter that direct execution runs, so
+// the interpreter checks must see it.
 func wrapperCodeLines(text string) []string {
 	var out []string
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		if trimmed == "" || (strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "#!")) {
 			continue
 		}
 		out = append(out, line)
@@ -148,6 +150,9 @@ func writePathPureBashProblems(text string) []string {
 // buildAnchor is a unique code-line anchor present in both wrappers.
 const buildAnchor = "gatecheck_build\nbuild_rc=$?"
 
+// wrapperShebang is the live first line of both wrappers.
+const wrapperShebang = "#!/usr/bin/env bash\n"
+
 // mustMutate applies a replacement and fails the test if it was a no-op, so a
 // mutation case can never silently pass against unchanged text.
 func mustMutate(t *testing.T, text, old, repl string) string {
@@ -187,6 +192,15 @@ func TestRetiredArchWrapperText_NoEmbeddedEngine(t *testing.T) {
 		"engine var":      "ENGINE" + "=x\n",
 	} {
 		mutated := mustMutate(t, live, buildAnchor, inject+buildAnchor)
+		if p := retiredArchNoEngineProblems(mutated); len(p) == 0 {
+			t.Errorf("mutation %q unexpectedly passed", name)
+		}
+	}
+	for name, shebang := range map[string]string{
+		"interpreter shebang":     "#!/usr/bin/" + "py" + "thon3\n",
+		"env interpreter shebang": "#!/usr/bin/env " + "py" + "thon3\n",
+	} {
+		mutated := mustMutate(t, live, wrapperShebang, shebang)
 		if p := retiredArchNoEngineProblems(mutated); len(p) == 0 {
 			t.Errorf("mutation %q unexpectedly passed", name)
 		}
@@ -257,6 +271,7 @@ func TestWritePathWrapperText_PureBashDispatch(t *testing.T) {
 		"dotted gui":      {buildAnchor, "py" + "thonw3.12.exe engine.py\n" + buildAnchor},
 		"heredoc":         {buildAnchor, "cat <" + "<'EOF'\nEOF\n" + buildAnchor},
 		"no invoke":       {`gatecheck_invoke write-path "$@"`, "true"},
+		"shebang":         {wrapperShebang, "#!/usr/bin/" + "py" + "thon3\n"},
 	} {
 		mutated := mustMutate(t, live, m[0], m[1])
 		if p := writePathPureBashProblems(mutated); len(p) == 0 {
