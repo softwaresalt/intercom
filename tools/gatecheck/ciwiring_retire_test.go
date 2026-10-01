@@ -23,9 +23,10 @@ import (
 // autoharness Python package, not a gate engine.
 //
 // (i) and (ii) are line-based scans of block-style YAML. To fail closed, both
-// also reject any YAML flow-style mapping outside topology-check (see
-// ciFlowMappingProblems), because a flow-style step would hide its keys from
-// the line-anchored patterns.
+// also reject any YAML flow-style mapping or alias outside topology-check (see
+// ciYAMLShapeProblems), because a flow-style step would hide its keys from
+// the line-anchored patterns and an alias could reuse a Python node anchored
+// inside the exempt job.
 //
 // Every pattern is assembled from string fragments so this file never
 // matches its own patterns (compound 2026-09-06).
@@ -69,21 +70,38 @@ var (
 	// Text a flow-mapping scan must ignore: workflow expressions, quoted
 	// scalars, and comments (a `#` at line start or after whitespace).
 	ciFlowNoise = regexp.MustCompile(`\$\{\{.*?\}\}|"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|(?:^|\s)#.*$`)
+
+	// A YAML alias (`*name`) where a node starts: at line start, after list
+	// (`- `) or complex-key (`? `) indicators, or as the value of a plain or
+	// quoted key, including the merge key `<<`. A `*` inside a plain scalar
+	// (`run: ls *.go`), a quoted scalar, or a comment does not start a node.
+	ciAliasNode = regexp.MustCompile(`^\s*(?:[-?]\s+)*(?:(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s"'#*&!](?:[^:#"']|:\S)*?)[ \t]*:[ \t]+(?:[-?][ \t]+)*)?\*[^\s,\[\]{}]`)
 )
 
-// ciFlowMappingProblems rejects YAML flow-style mappings (`{...}`) outside
-// job topology-check. The other checks are line-anchored on block-style keys,
-// so a step such as `- {name: Gate, run: <interpreter> -V}` would otherwise
-// bypass them. Rejecting every flow mapping fails closed for `run:`, `uses:`,
-// `shell:`, and any key added later. Block scalar bodies are skipped, so shell
-// braces inside a `run: |` script are not flagged.
-func ciFlowMappingProblems(text string) []string {
+// ciYAMLShapeProblems rejects two YAML forms outside job topology-check that
+// the line-anchored checks cannot see through, so both fail closed:
+//
+//   - Flow-style mappings (`{...}`). A step such as
+//     `- {name: Gate, run: <interpreter> -V}` hides its block-style keys.
+//     Rejecting every flow mapping covers `run:`, `uses:`, `shell:`, and any
+//     key added later.
+//   - Aliases (`*name`, including merge keys `<<: *name`). An alias can reuse
+//     a step, `run:` value, or `defaults:` node anchored inside the exempt
+//     topology-check job, which the scans never look at once that job is
+//     removed.
+//
+// Block scalar bodies are skipped, so shell braces and globs inside a
+// `run: |` script are not flagged.
+func ciYAMLShapeProblems(text string) []string {
 	lines := strings.Split(ciWithoutJob(text, ciTopologyJob), "\n")
 	var probs []string
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
 		if strings.ContainsAny(ciFlowNoise.ReplaceAllString(l, ""), "{}") {
 			probs = append(probs, "flow-style YAML mapping outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+		if ciAliasNode.MatchString(l) {
+			probs = append(probs, "YAML alias outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 		m := ciBlockScalarKey.FindStringSubmatch(l)
 		if m == nil {
@@ -145,7 +163,7 @@ func ciRunLines(text string) []string {
 
 // ciSetupPythonProblems implements assertion (i).
 func ciSetupPythonProblems(text string) []string {
-	probs := ciFlowMappingProblems(text)
+	probs := ciYAMLShapeProblems(text)
 	for _, l := range strings.Split(ciWithoutJob(text, ciTopologyJob), "\n") {
 		if ciSetupPythonUse.MatchString(l) {
 			probs = append(probs, "setup-"+pyWord+" outside "+ciTopologyJob+": "+strings.TrimSpace(l))
@@ -156,7 +174,7 @@ func ciSetupPythonProblems(text string) []string {
 
 // ciPythonInvokeProblems implements assertion (ii).
 func ciPythonInvokeProblems(text string) []string {
-	probs := ciFlowMappingProblems(text)
+	probs := ciYAMLShapeProblems(text)
 	scoped := ciWithoutJob(text, ciTopologyJob)
 	for _, l := range ciRunLines(scoped) {
 		if ciPythonInvoke.MatchString(l) {
@@ -523,6 +541,65 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 		mutated := mustMutate(t, base, anchor, g+anchor)
 		if p := append(ciSetupPythonProblems(mutated), ciPythonInvokeProblems(mutated)...); len(p) != 0 {
 			t.Errorf("green case %d flagged: %q", i, p)
+		}
+	}
+}
+
+// TestCIWiringRetire_AliasOutsideTopologyIsRed proves both assertions are red
+// when a YAML alias outside topology-check could reuse a Python node anchored
+// inside the exempt job, where the line scans never look. Aliases inside
+// topology-check and `*` that does not start a YAML node stay green.
+func TestCIWiringRetire_AliasOutsideTopologyIsRed(t *testing.T) {
+	base := "jobs:\n" +
+		"  " + ciTopologyJob + ":\n" +
+		"    runs-on: ubuntu-latest\n" +
+		"    env: &py_env\n" +
+		"      X: \"1\"\n" +
+		"    defaults: &py_defaults\n" +
+		"      run:\n" +
+		"        shell: " + pyWord + "\n" +
+		"    steps: &py_steps\n" +
+		"      - &py_step\n" +
+		"        name: Install\n" +
+		"        run: &py_cmd " + pyWord + " -m pip install --require-hashes -r req.txt\n" +
+		"      - *py_step\n" +
+		"  lint:\n" +
+		"    runs-on: ubuntu-latest\n" +
+		"    steps:\n" +
+		"      - name: Gate\n" +
+		"        run: bash scripts/check-x.sh\n"
+	if p := append(ciSetupPythonProblems(base), ciPythonInvokeProblems(base)...); len(p) != 0 {
+		t.Fatalf("anchors and aliases inside %s must stay green, got %q", ciTopologyJob, p)
+	}
+	anchor := "      - name: Gate\n"
+	for name, repl := range map[string]string{
+		"step alias":            "      - *py_step\n",
+		"scalar run alias":      "      - name: Injected\n        run: *py_cmd\n",
+		"quoted run key alias":  "      - name: Injected\n        \"run\": *py_cmd\n",
+		"merge key alias":       "      - <<: *py_step\n        name: Injected\n",
+		"defaults alias":        "    defaults: *py_defaults\n",
+		"env alias":             "    env: *py_env\n",
+		"steps list alias":      "    steps: *py_steps\n",
+		"alias as mapping key":  "      - name: Injected\n        *py_cmd : x\n",
+		"alias after list dash": "      -   *py_step\n",
+	} {
+		mutated := mustMutate(t, base, anchor, repl+anchor)
+		for check, f := range map[string]func(string) []string{"(i)": ciSetupPythonProblems, "(ii)": ciPythonInvokeProblems} {
+			if len(f(mutated)) == 0 {
+				t.Errorf("%s: alias %q not detected", check, name)
+			}
+		}
+	}
+	for i, g := range []string{
+		"      - name: Injected\n        run: ls *.go\n",
+		"      - name: Injected\n        run: |\n          *glob\n          echo *\n",
+		"      - name: \"*Injected\"\n        run: echo '*x'\n",
+		"      - name: Injected # *py_step\n        run: echo ok\n",
+		"      - name: Build *nix\n        run: echo \"a: *b\"\n",
+	} {
+		mutated := mustMutate(t, base, anchor, g+anchor)
+		if p := append(ciSetupPythonProblems(mutated), ciPythonInvokeProblems(mutated)...); len(p) != 0 {
+			t.Errorf("green alias case %d flagged: %q", i, p)
 		}
 	}
 }
