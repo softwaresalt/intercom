@@ -1,0 +1,49 @@
+{
+  "python_version": "3.14.3",
+  "denylist": [
+    ".env",
+    ".env.local",
+    "config.toml",
+    ".claude/instructions.md",
+    ".github/copilot/settings.local.json",
+    ".autoharness/gates/pipeline-topology-force-audit.log",
+    ".backlogit/hooks_queue.jsonl",
+    "internal/depguardfixture/marker",
+    "internal/copilotprobe2/marker"
+  ],
+  "self_test": {
+    "stdout": "PASS landing-precondition: all 9 denylist entries are ignored at HEAD\nPASS reject-existing-file-unignored: rejected as expected (regressed paths: ['foo/bar.secret'])\nPASS accept-nonexistent-negation: clean as expected (evaluated=0)\nPASS reject-tracked-file-unignored-in-same-change: rejected as expected (regressed paths: ['foo/bar.secret'])\nPASS real-repo denylist check: 9 entries all ignored\nPASS: git ls-files -i -c --exclude-standard is empty\ncheck-unignore-regression --self-test: PASS\n",
+    "stderr": "",
+    "exit_code": 0
+  },
+  "scenarios": [
+    {
+      "name": "landing-precondition",
+      "verdict": "PASS"
+    },
+    {
+      "name": "reject-existing-file-unignored",
+      "verdict": "PASS"
+    },
+    {
+      "name": "accept-nonexistent-negation",
+      "verdict": "PASS"
+    },
+    {
+      "name": "reject-tracked-file-unignored-in-same-change",
+      "verdict": "PASS"
+    },
+    {
+      "name": "real-repo denylist check",
+      "verdict": "PASS"
+    }
+  ],
+  "unknown_flag": {
+    "args": [
+      "--bogus"
+    ],
+    "stdout": "",
+    "stderr": "::error::unrecognized argument: --bogus\n",
+    "exit_code": 2
+  }
+}

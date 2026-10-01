@@ -1,15 +1,23 @@
 package main
 
-import "io"
+import (
+	"io"
 
-// init pre-registers the unignore sub-command as a stub. M3-T7 replaces this
-// file's body with the real dispatch to internal/unignore once the engine
-// lands (plan §4, M3-T7); no other register_<name>.go file is touched by
-// that change.
+	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/unignore"
+)
+
+// init pre-registers the unignore sub-command, dispatching to
+// internal/unignore.Run (M3-T7; plan §6). No other register_<name>.go file
+// is touched by this change.
 func init() {
-	registerSubcommand("unignore", stubUnignore)
+	registerSubcommand("unignore", runUnignore)
 }
 
-func stubUnignore(args []string, root string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return writeExitError(stderr, &exitError{code: 1, msg: "unignore: not yet ported"})
+// runUnignore forwards every remaining positional argument straight to
+// unignore.Run, which absorbs its own bash wrapper's argument parsing
+// (--self-test, --base-ref, --head-ref, -h/--help) directly -- unlike
+// retiredarch's single-flag adaptation, unignore's real CLI surface needs
+// multiple flags forwarded, mirroring write-path's pattern instead.
+func runUnignore(args []string, root string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return unignore.Run(args, root, unignore.DefaultGitRunner, stdout, stderr)
 }
