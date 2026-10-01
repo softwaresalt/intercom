@@ -13,7 +13,7 @@ shipment: 036-S
 feature: 046-F
 pr: 85
 merge_commit_sha: 5fdd75aec21bb9492aabad08603a5479c1da6846
-compaction_status: pending
+compaction_status: done
 closure_status: READY
 releasability: READY
 conditions: []
@@ -331,9 +331,24 @@ path) are not regressions; Linux CI is authoritative, the Windows CI job is advi
 
 ## Compaction status (P-020)
 
-`pending` at the time this closure artifact was first written; finalized to `done`/`degraded`
-below once the `compact-context` invocation (Step 6 item 8) completes. See the "Compaction
-status (P-020)" section update at the end of this document for the final outcome.
+**`done`.** The mandatory post-merge `compact-context` invocation (Step 6 item 8) ran against
+this release unit's memory group (`target: all`). Candidates identified: the 2 memory files
+produced during this session for 036-S/046-F (`036-s-pr85-opened-checkpoint.md` and the final
+session-memory checkpoint) — both qualified under the completed-work rule (046-F reached
+`done`/archived). No plans required consolidation (the M3 plan unit is embedded in the shared
+multi-milestone plan `docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md`, which
+remains active for M4 and was correctly left untouched). No closure records exceeded the
+age threshold for compaction (036-S's own closure artifact is fresh).
+
+Output: a single dense compacted summary,
+`docs/memory/compacted/2026-10-01-036-s-046-f-compacted.md`, capturing what shipped, the review
+summary, the full post-merge closure procedure (including the binding-before-cascade ordering
+lesson), and durable learnings. Verbose originals were moved to
+`docs/archive/memory/2026-09-30/036-s-pr85-opened-checkpoint.md` and
+`docs/archive/memory/2026-10-01/036-s-046-f-post-merge-closure-session-memory.md` (traceable via
+the compacted file's `compacted_from` frontmatter field). See
+`docs/closure/2026-10-01-036-s-compound-refresh.md` for the accompanying compound-refresh report
+(1 entry updated with a success confirmation, 5 entries reviewed and classified `keep`).
 
 ## Releasability evidence
 
