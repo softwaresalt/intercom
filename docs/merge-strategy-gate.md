@@ -13,12 +13,34 @@ merge-strategy-evaluate <path|->`,
 docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md §6).
 The wrapper builds the `gatecheck` binary once per invocation via
 `scripts/lib/gatecheck-run.sh` and forwards the JSON file path (or `-` for
-stdin) straight through; the surrounding bash orchestration
-(`run_self_test`, `run_repo_scan`, `evaluate_response`,
-`verdict_exit_code`) is unchanged. Verdicts and exit codes are identical
+stdin) straight through. Verdicts and exit codes are identical
 to the retired engine except the permitted enumerated deltas (ED-1, ED-2,
 ED-3, ED-5, ED-8 — see the plan's §3 delta table); none of them moves a
 verdict toward `PASS`.
+
+The surrounding bash orchestration (`run_self_test`, `run_repo_scan`,
+`evaluate_response`, `verdict_exit_code`) was hardened under M3-T12
+alongside the Go evaluator switch, in addition to the ED-1 guard
+documented below. The two hardening fixes were identified by this unit's
+own adversarial review round (docs/reviews/2026-09-30-m3-unignore-mergestrategy-go-port-adversarial-review.md,
+finding M-1) and fixed before PR #85 was opened:
+
+- **Temp-file lifecycle fix (M-1)**: `evaluate_response` previously
+  allocated and tracked its own `mktemp` temp file from inside its own
+  function body, but every call site invokes it via
+  `$(evaluate_response ...)` bash command substitution — which always
+  forks a subshell, so the tracking-array append never reached the parent
+  shell's `cleanup()` EXIT trap, leaking one temp file per self-test
+  fixture call and per live repo scan. `evaluate_response` now takes an
+  already-allocated temp-file path as an explicit first argument
+  (`evaluate_response <tmp-file> <json-string>`); both call sites allocate
+  the temp file and register it in `MERGE_STRATEGY_TMP_FILES` themselves,
+  in the parent shell, before invoking `evaluate_response`, so the cleanup
+  trap reliably sees every tracked file. (Verified: a full `--self-test`
+  run leaves zero net new files in the OS temp directory.)
+- **Exit-code table**: `verdict_exit_code` implements the full PASS→0,
+  SKIP→0, FAIL→1, unrecognized-verdict→2 table, never silently falling
+  through to success for a malformed or empty verdict string.
 
 **ED-1 (new in M3-T12)**: running the checker from outside a git checkout
 now exits `2` with an `::error::` message, instead of propagating a raw
