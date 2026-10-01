@@ -230,11 +230,12 @@ func canonicalSites(fn *ast.FuncDecl) map[ast.Stmt]bool {
 
 // writePositions returns the positions of every write to name in body: an
 // assignment LHS, a range-clause assignment (`for k, v = range`), a var
-// declaration, an inc/dec, or the address being taken.
+// declaration, an inc/dec, or the address being taken. Parentheses around
+// the operand are unwrapped, so `(name) = x` and `&(name)` count as writes.
 func writePositions(body *ast.BlockStmt, name string) []token.Pos {
 	var pos []token.Pos
 	is := func(e ast.Expr) bool {
-		id, ok := e.(*ast.Ident)
+		id, ok := ast.Unparen(e).(*ast.Ident)
 		return ok && id.Name == name
 	}
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -356,7 +357,7 @@ func lastWriteIsCanonical(body *ast.BlockStmt, name string, limit token.Pos, pkg
 		if !ok || !allowed[s] || len(s.Lhs) != 1 || len(s.Rhs) != 1 {
 			return true
 		}
-		if id, ok := s.Lhs[0].(*ast.Ident); ok && id.Name == name && s.Pos() == last && isSelectorCall(s.Rhs[0], pkg, "MaskGoNonCode") {
+		if id, ok := ast.Unparen(s.Lhs[0]).(*ast.Ident); ok && id.Name == name && s.Pos() == last && isSelectorCall(s.Rhs[0], pkg, "MaskGoNonCode") {
 			canonical = true
 		}
 		return true
@@ -446,6 +447,13 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tvar masked = text\n" + loop, false},
 		{"address taken after canonical write",
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tclobber(&masked)\n" + loop, false},
+		{"parenthesized overwrite after canonical write", head + "\tif mask {\n" + canon + "\t}\n\t(masked) = text\n" + loop, false},
+		{"doubly parenthesized overwrite after canonical write", head + "\tif mask {\n" + canon + "\t}\n\t((masked)) = text\n" + loop, false},
+		{"parenthesized address taken after canonical write", head + "\tif mask {\n" + canon + "\t}\n\tclobber(&(masked))\n" + loop, false},
+		{"parenthesized inc after canonical write", head + "\tif mask {\n" + canon + "\t}\n\t(masked)++\n" + loop, false},
+		{"closure writes a parenthesized mask",
+			head + "\tclobber := func() { (masked) = text }\n\tif mask {\n" + canon + "\t}\n\tclobber()\n" + loop, false},
+		{"parenthesized canonical write", head + "\tif mask {\n\t\t(masked) = gomask.MaskGoNonCode(text)\n\t}\n" + loop, true},
 		{"foreign package imported as gomask",
 			"package p\nimport gomask \"example.com/other\"\n" + pimp + "func scanGo(text string, mask bool) {\n\tmasked := text\n" +
 				"\tif mask {\n" + canon + "\t}\n" + loop, false},

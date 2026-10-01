@@ -43,15 +43,17 @@ var (
 	// case-insensitively.
 	ciSetupPythonUse = regexp.MustCompile(`(?im)^\s*(-\s*)?["']?uses["']?:\s*["']?actions/setup-` + pyWord + `@`)
 
-	// (ii) `(?i)(^|[\s;&|("'/\\`])(pythonw?[0-9.]*|py|pytest)(\.exe)?(\s|$|[;&|)"'`])`
+	// (ii) `(?i)(^|[\s;&|("'/\\`=])(pythonw?[0-9.]*|py|pytest)(\.exe)?(\s|$|[;&|)"'`])`
 	//
 	// This is a strict superset of the plan's M4-T3 form
 	// `(^|[\s;&|(])python3?(\s|$)`. It also catches versioned interpreters
 	// (python3.12), absolute POSIX and Windows paths (/usr/bin/python3,
 	// C:\Python\Python314\python.exe), the Windows `.exe` suffix, the
 	// Windows GUI interpreter (pythonw.exe), quoted invocations
-	// (sh -c "python ..."), the `py` launcher, pytest, and any letter case.
-	ciPythonInvoke = regexp.MustCompile(`(?i)(^|[\s;&|("'/\\` + "`" + `])(` +
+	// (sh -c "python ..."), the `py` launcher, pytest, shell assignments
+	// that stage an interpreter for later indirect use (interp=python3 then
+	// "$interp" x.py), and any letter case.
+	ciPythonInvoke = regexp.MustCompile(`(?i)(^|[\s;&|("'/\\=` + "`" + `])(` +
 		pyWord + `w?[0-9.]*|` + pyWord[:2] + `|` + pyWord[:2] + `test)(\.exe)?(\s|$|[;&|)"'` + "`" + `])`)
 
 	// A `run:` key at any indent, optionally as a list item and optionally
@@ -436,6 +438,16 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			name:  "list-item run invokes python",
 			check: ciPythonInvokeProblems,
 			repl:  "      - run: " + pyWord + " -V\n",
+		},
+		{
+			name:  "block run stages python in a shell variable",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run: |\n          interp=" + pyWord + "3\n          \"$interp\" x.py\n",
+		},
+		{
+			name:  "inline run assigns python to an env prefix",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run: PY=" + pyWord + "3 ./x\n",
 		},
 		{
 			name:  "single-quoted run key invokes python",

@@ -254,6 +254,11 @@ func ciGoWiringProblems(text string) []string {
 			problems = append(problems, fmt.Sprintf("job %q: no step named %q", je.job, "Set up Go"))
 		} else {
 			problems = append(problems, ciStepIfProblems(je.job, steps[goIdx])...)
+			// A tolerated setup failure would let the gates fall through to
+			// whatever Go the runner image happens to carry.
+			if coes := ciStepCOEValues(steps[goIdx]); len(coes) > 0 {
+				problems = append(problems, fmt.Sprintf("job %q step %q: must not carry continue-on-error (has %q)", je.job, "Set up Go", coes))
+			}
 		}
 		for _, g := range je.gates {
 			idx := ciStepIndex(steps, g.name)
@@ -302,7 +307,8 @@ var ciTopologyInstallSteps = []ciGateExpectation{
 }
 
 // ciTopologyProblems checks that topology-check keeps its SHA-pinned
-// setup-python inside the step named "Set up Python" and, after that step, its
+// setup-python inside the step named "Set up Python" (with no step-level
+// condition or continue-on-error) and, after that step, its
 // two named hash-pinned install steps in order, each running its own lock file.
 func ciTopologyProblems(text string) []string {
 	block, ok := ciJobBlock(text, "topology-check")
@@ -322,6 +328,11 @@ func ciTopologyProblems(text string) []string {
 	}
 	if prev >= 0 {
 		problems = append(problems, ciStepIfProblems("topology-check", steps[prev])...)
+		// A tolerated setup failure would let the pinned installs run on an
+		// ambient interpreter instead of the pinned one.
+		if coes := ciStepCOEValues(steps[prev]); len(coes) > 0 {
+			problems = append(problems, fmt.Sprintf("topology-check step %q: must not carry continue-on-error (has %q)", "Set up Python", coes))
+		}
 	}
 	for _, g := range ciTopologyInstallSteps {
 		idx := ciStepIndex(steps, g.name)
@@ -703,6 +714,23 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 			}
 			at := s + i + len("      - name: Set up Go\n")
 			return live[:at] + "        if: false\n" + live[at:]
+		},
+		"continue-on-error on lint Set up Go": func() string {
+			_, e, ok := ciJobSpan(live, "lint")
+			if !ok {
+				t.Fatal("lint not found")
+			}
+			s := strings.Index(live, "\n  lint:\n")
+			i := strings.Index(live[s:e], "      - name: Set up Go\n")
+			if i < 0 {
+				t.Fatal("lint Set up Go not found")
+			}
+			at := s + i + len("      - name: Set up Go\n")
+			return live[:at] + "        continue-on-error: true\n" + live[at:]
+		},
+		"continue-on-error on topology Set up Python": func() string {
+			return mustMutate(t, live, "- name: Set up Python\n        "+ciTopologyPythonPin,
+				"- name: Set up Python\n        continue-on-error: true\n        "+ciTopologyPythonPin)
 		},
 		"ci-gate condition removed": func() string {
 			return mustMutate(t, live, "    if: always()\n", "")
