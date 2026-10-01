@@ -69,10 +69,16 @@ func TestUsesSharedCanonicalMasker(t *testing.T) {
 }
 
 // scanGoMaskFlow reports whether file f declares scanGo and, inside it, the
-// result of gomask.MaskGoNonCode reaches the scan loop: the call's result is
-// assigned to a variable v, and scanGo ranges over pysem.SplitLines(v). A
+// result of gomask.MaskGoNonCode reaches the scan loop: scanGo ranges over
+// pysem.SplitLines(v), and the last write to v positioned before that range
+// statement is a single assignment of a gomask.MaskGoNonCode result. A
 // package-level count of calls cannot prove this, because scanGo could switch
 // to a local clone while a dead helper keeps a canonical call.
+//
+// "Last write by source position" is a conservative stand-in for reaching-
+// definition analysis: any later write to v on any branch (a noncanonical
+// reassignment, a multi-assign, a var redeclaration, or v's address being
+// taken) makes the guard red, so it fails closed rather than open.
 func scanGoMaskFlow(f *ast.File) (declared, flows bool) {
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
@@ -80,29 +86,53 @@ func scanGoMaskFlow(f *ast.File) (declared, flows bool) {
 			continue
 		}
 		declared = true
-		maskedVars := map[string]bool{}
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-				return true
-			}
-			if id, ok := as.Lhs[0].(*ast.Ident); ok && id.Name != "_" && isSelectorCall(as.Rhs[0], "gomask", "MaskGoNonCode") {
-				maskedVars[id.Name] = true
-			}
-			return true
-		})
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			rs, ok := n.(*ast.RangeStmt)
 			if !ok || !isSelectorCall(rs.X, "pysem", "SplitLines") {
 				return true
 			}
-			if arg, ok := rs.X.(*ast.CallExpr).Args[0].(*ast.Ident); ok && maskedVars[arg.Name] {
+			if arg, ok := rs.X.(*ast.CallExpr).Args[0].(*ast.Ident); ok && lastWriteIsCanonical(fn.Body, arg.Name, rs.Pos()) {
 				flows = true
 			}
 			return true
 		})
 	}
 	return declared, flows
+}
+
+// lastWriteIsCanonical reports whether, among all writes to name in body that
+// start before limit, the last one is `name = gomask.MaskGoNonCode(x)` (or :=).
+func lastWriteIsCanonical(body *ast.BlockStmt, name string, limit token.Pos) bool {
+	var last token.Pos
+	canonical := false
+	record := func(pos token.Pos, isCanonical bool) {
+		if pos < limit && pos > last {
+			last, canonical = pos, isCanonical
+		}
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			for i, l := range s.Lhs {
+				if id, ok := l.(*ast.Ident); ok && id.Name == name {
+					record(s.Pos(), len(s.Lhs) == 1 && len(s.Rhs) == 1 && i == 0 &&
+						isSelectorCall(s.Rhs[0], "gomask", "MaskGoNonCode"))
+				}
+			}
+		case *ast.ValueSpec:
+			for _, id := range s.Names {
+				if id.Name == name {
+					record(s.Pos(), false)
+				}
+			}
+		case *ast.UnaryExpr:
+			if id, ok := s.X.(*ast.Ident); ok && s.Op == token.AND && id.Name == name {
+				record(s.Pos(), false)
+			}
+		}
+		return true
+	})
+	return canonical
 }
 
 // isSelectorCall reports whether e is a call to pkg.name with one argument.
@@ -158,6 +188,16 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n" +
 				"\tfor range pysem.SplitLines(text) {\n\t}\n}\n", false},
 		{"other package masker", head + "\tif mask {\n\t\tmasked = other.MaskGoNonCode(text)\n\t}\n" + loop, false},
+		{"canonical result overwritten by clone",
+			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t\tmasked = clone(text)\n\t}\n" + loop, false},
+		{"canonical result overwritten after the branch",
+			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tmasked = text\n" + loop, false},
+		{"canonical result overwritten by multi-assign",
+			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tmasked, _ = text, 0\n" + loop, false},
+		{"canonical result shadowed by var",
+			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tvar masked = text\n" + loop, false},
+		{"address taken after canonical write",
+			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tclobber(&masked)\n" + loop, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
