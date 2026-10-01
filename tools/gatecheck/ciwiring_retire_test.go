@@ -36,12 +36,12 @@ const ciTopologyJob = "topology-check"
 var (
 	pyWord = "py" + "thon"
 
-	// (i) `(?im)^\s*(-\s*)?["']?uses["']?:\s*["']?actions/setup-python@`
+	// (i) `(?im)^\s*(-\s*)?["']?uses["']?[ \t]*:\s*["']?actions/setup-python@`
 	//
 	// A superset of the plan's M4-T3 form: YAML may quote the key or the
 	// action value, and GitHub resolves action owner and repository names
 	// case-insensitively.
-	ciSetupPythonUse = regexp.MustCompile(`(?im)^\s*(-\s*)?["']?uses["']?:\s*["']?actions/setup-` + pyWord + `@`)
+	ciSetupPythonUse = regexp.MustCompile(`(?im)^\s*(-\s*)?["']?uses["']?[ \t]*:\s*["']?actions/setup-` + pyWord + `@`)
 
 	// (ii) `(?i)(^|[\s;&|("'/\\`=])(pythonw?[0-9.]*|py|pytest)(\.exe)?(\s|$|[;&|)"'`])`
 	//
@@ -57,19 +57,20 @@ var (
 		pyWord + `w?[0-9.]*|` + pyWord[:2] + `|` + pyWord[:2] + `test)(\.exe)?(\s|$|[;&|)"'` + "`" + `])`)
 
 	// A `run:` key at any indent, optionally as a list item and optionally
-	// quoted ('run': / "run":), which YAML parses identically. Groups: line
+	// quoted ('run': / "run":) or with spaces or tabs before the colon
+	// (run :), all of which YAML parses identically. Groups: line
 	// indent, list indicator, inline value.
-	ciAnyRunKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?run["']?:[ \t]*(.*?)[ \t]*$`)
+	ciAnyRunKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?run["']?[ \t]*:[ \t]*(.*?)[ \t]*$`)
 
 	// A `shell:` key at any indent, optionally as a list item and optionally
 	// quoted. Actions runs the step body with this program, so `shell: python`
 	// executes Python even when the `run:` body names no interpreter. Groups
 	// as ciAnyRunKey.
-	ciAnyShellKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?shell["']?:[ \t]*(.*?)[ \t]*$`)
+	ciAnyShellKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?shell["']?[ \t]*:[ \t]*(.*?)[ \t]*$`)
 
 	// A `uses:` key at any indent, optionally as a list item and optionally
 	// quoted. Groups as ciAnyRunKey.
-	ciAnyUsesKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?uses["']?:[ \t]*(.*?)[ \t]*$`)
+	ciAnyUsesKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?uses["']?[ \t]*:[ \t]*(.*?)[ \t]*$`)
 
 	// A `uses:` value line (inline, continuation, or block scalar body) that
 	// names the setup action, optionally quoted, in any letter case.
@@ -528,6 +529,31 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			name:  "step shell selects python",
 			check: ciPythonInvokeProblems,
 			repl:  "      - name: Injected\n        shell: " + pyWord + "\n        run: print('x')\n",
+		},
+		{
+			name:  "setup-python with space before uses colon",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        uses : actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "setup-python with tab before quoted uses colon as first list key",
+			check: ciSetupPythonProblems,
+			repl:  "      - 'uses'\t: actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "inline run with space before colon invokes python",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run : " + pyWord + " -V\n",
+		},
+		{
+			name:  "block run with spaces before colon invokes python3",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run  : |\n          " + pyWord + "3 x.py\n",
+		},
+		{
+			name:  "shell with space before colon selects python",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        shell : " + pyWord + "\n        run: print('x')\n",
 		},
 		{
 			name:  "custom shell template selects python3",
