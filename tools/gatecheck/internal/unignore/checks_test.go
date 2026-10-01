@@ -101,7 +101,7 @@ func TestRunDenylistCheck_AllIgnored(t *testing.T) {
 		t.Fatalf("write .gitignore: %v", err)
 	}
 
-	evaluated, failures, err := runDenylistCheck(git, repoDir, scratchRoot, "HEAD")
+	evaluated, failures, err := runDenylistCheck(git, repoDir, scratchRoot)
 	if err != nil {
 		t.Fatalf("runDenylistCheck: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestRunDenylistCheck_SomeMissing(t *testing.T) {
 		t.Fatalf("write .gitignore: %v", err)
 	}
 
-	evaluated, failures, err := runDenylistCheck(git, repoDir, scratchRoot, "HEAD")
+	evaluated, failures, err := runDenylistCheck(git, repoDir, scratchRoot)
 	if err != nil {
 		t.Fatalf("runDenylistCheck: %v", err)
 	}

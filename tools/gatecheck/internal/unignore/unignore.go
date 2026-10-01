@@ -35,7 +35,7 @@ func pyListRepr(items []string) string {
 // the landing-precondition guard that every denylist entry is ignored at
 // HEAD. A failure prints to stderr; a pass prints to stdout.
 func doSelfTestLandingPrecondition(git GitRunner, repoDir, scratchRoot string, stdout, stderr io.Writer) bool {
-	evaluated, failures, err := runDenylistCheck(git, repoDir, scratchRoot, "HEAD")
+	evaluated, failures, err := runDenylistCheck(git, repoDir, scratchRoot)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "%v\n", err)
 		return false
@@ -160,7 +160,7 @@ func doSelfTestScenarios(git GitRunner, stdout, stderr io.Writer) bool {
 		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
 		return false
 	}
-	defer os.RemoveAll(tmpRoot)
+	defer func() { _ = os.RemoveAll(tmpRoot) }()
 
 	ok := true
 
@@ -256,13 +256,13 @@ func runSelfTest(root string, git GitRunner, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
 		return 1
 	}
-	defer os.RemoveAll(scratchRoot)
+	defer func() { _ = os.RemoveAll(scratchRoot) }()
 
 	overallOK := true
 	overallOK = doSelfTestLandingPrecondition(git, root, scratchRoot, stdout, stderr) && overallOK
 	overallOK = doSelfTestScenarios(git, stdout, stderr) && overallOK
 
-	denylistEvaluated, denylistFailures, err := runDenylistCheck(git, root, scratchRoot, "HEAD")
+	denylistEvaluated, denylistFailures, err := runDenylistCheck(git, root, scratchRoot)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "%v\n", err)
 		overallOK = false
@@ -335,9 +335,9 @@ func runCheck(root, baseRef, headRef string, git GitRunner, stdout, stderr io.Wr
 		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
 		return 1
 	}
-	defer os.RemoveAll(scratchRoot)
+	defer func() { _ = os.RemoveAll(scratchRoot) }()
 
-	denylistEvaluated, denylistFailures, err := runDenylistCheck(git, root, scratchRoot, "HEAD")
+	denylistEvaluated, denylistFailures, err := runDenylistCheck(git, root, scratchRoot)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "%v\n", err)
 		return 1

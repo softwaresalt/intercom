@@ -29,10 +29,17 @@ var Denylist = []string{
 
 // runDenylistCheck reproduces run_denylist_check (Part 1): it evaluates
 // every Denylist entry against the root .gitignore content resolved at
-// ref, isolated inside a scratch git repository. Returns the evaluated
+// HEAD, isolated inside a scratch git repository. Returns the evaluated
 // count (always len(Denylist)) and the subset of entries that are NOT
 // ignored (a regression).
-func runDenylistCheck(git GitRunner, repoDir, scratchRoot, ref string) (evaluated int, failures []string, err error) {
+//
+// The ref is always "HEAD" at every call site (the Python engine never
+// varied it either), so it is hardcoded here rather than threaded through
+// as a parameter -- golangci-lint's unparam check flagged the prior
+// always-"HEAD" parameter as dead variation; removing it is a
+// behavior-preserving simplification, not a parity change.
+func runDenylistCheck(git GitRunner, repoDir, scratchRoot string) (evaluated int, failures []string, err error) {
+	const ref = "HEAD"
 	content, err := rootGitignoreTextAt(repoDir, ref, git)
 	if err != nil {
 		return 0, nil, err
