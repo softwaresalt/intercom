@@ -143,7 +143,7 @@ disclosure.
 
 ## Partially applied in 037-S (revalidation performed; tool enforcement still absent)
 
-037-S's closure (2026-10-01, PR #87) applied item 2 of the fix and prevention guidance.
+037-S's post-merge closure (2026-10-01, closure PR #88; implementation PR #87) applied item 2 of the fix and prevention guidance.
 
 * `classify-close-path` produced `CLASSIFICATION_BINDING`
   `0f9be8a39309d70cd01b641871f84de68fc0abe5a80bce03fe394a0c230792d9` from a snapshot at
