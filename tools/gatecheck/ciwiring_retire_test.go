@@ -16,7 +16,7 @@ import (
 //	(i)   outside job topology-check, no line installs Python via
 //	      actions/setup-python;
 //	(ii)  outside job topology-check, no `run:` line invokes a Python
-//	      interpreter;
+//	      interpreter and no `shell:` key (step or defaults) selects one;
 //	(iii) no Python file is tracked under scripts/ or tools/.
 //
 // topology-check is exempt because its setup-python step installs the
@@ -44,6 +44,11 @@ var (
 
 	// A `run:` key at any indent, optionally as a list item.
 	ciAnyRunKey = regexp.MustCompile(`^(\s*)(?:-\s+)?run:[ \t]*(.*?)[ \t]*$`)
+
+	// A `shell:` key at any indent, optionally as a list item. Actions runs
+	// the step body with this program, so `shell: python` executes Python
+	// even when the `run:` body names no interpreter.
+	ciAnyShellKey = regexp.MustCompile(`^\s*(?:-\s+)?shell:[ \t]*(.*?)[ \t]*$`)
 )
 
 // ciWithoutJob returns text with the span of job `job` removed. A missing job
@@ -102,9 +107,15 @@ func ciSetupPythonProblems(text string) []string {
 // ciPythonInvokeProblems implements assertion (ii).
 func ciPythonInvokeProblems(text string) []string {
 	var probs []string
-	for _, l := range ciRunLines(ciWithoutJob(text, ciTopologyJob)) {
+	scoped := ciWithoutJob(text, ciTopologyJob)
+	for _, l := range ciRunLines(scoped) {
 		if ciPythonInvoke.MatchString(l) {
 			probs = append(probs, pyWord+" invocation in run outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+	}
+	for _, l := range strings.Split(scoped, "\n") {
+		if m := ciAnyShellKey.FindStringSubmatch(l); m != nil && ciPythonInvoke.MatchString(m[1]) {
+			probs = append(probs, pyWord+" shell outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 	}
 	return probs
@@ -317,6 +328,21 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			check: ciPythonInvokeProblems,
 			repl:  "      - run: " + strings.ToUpper(pyWord) + " x\n",
 		},
+		{
+			name:  "step shell selects python",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        shell: " + pyWord + "\n        run: print('x')\n",
+		},
+		{
+			name:  "custom shell template selects python3",
+			check: ciPythonInvokeProblems,
+			repl:  "      - shell: '" + pyWord + "3 {0}'\n        run: print('x')\n",
+		},
+		{
+			name:  "defaults run shell selects python",
+			check: ciPythonInvokeProblems,
+			repl:  "    defaults:\n      run:\n        shell: " + pyWord + "\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -335,6 +361,7 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 		"      - name: Injected\n        run: echo " + pyWord[:2] + "project.toml copy\n",
 		"      - name: Injected\n        run: ls x." + pyWord[:2] + "\n",
 		"      - name: Uses no " + pyWord + " at all\n        run: echo ok\n",
+		"      - name: Injected\n        shell: bash\n        run: echo ok\n",
 	}
 	for i, g := range greens {
 		mutated := mustMutate(t, base, anchor, g+anchor)
