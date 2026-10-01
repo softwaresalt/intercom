@@ -33,8 +33,14 @@ var (
 	// (i) `^\s*(-\s*)?uses:\s*actions/setup-python@`
 	ciSetupPythonUse = regexp.MustCompile(`(?m)^\s*(-\s*)?uses:\s*actions/setup-` + pyWord + `@`)
 
-	// (ii) `(^|[\s;&|(])python3?(\s|$)`
-	ciPythonInvoke = regexp.MustCompile(`(^|[\s;&|(])` + pyWord + `3?(\s|$)`)
+	// (ii) `(?i)(^|[\s;&|("'/`])(python[0-9.]*|py|pytest)(\s|$|[;&|)"'`])`
+	//
+	// This is a strict superset of the plan's M4-T3 form
+	// `(^|[\s;&|(])python3?(\s|$)`. It also catches versioned interpreters
+	// (python3.12), absolute paths (/usr/bin/python3), quoted invocations
+	// (sh -c "python ..."), the `py` launcher, pytest, and any letter case.
+	ciPythonInvoke = regexp.MustCompile(`(?i)(^|[\s;&|("'/` + "`" + `])(` +
+		pyWord + `[0-9.]*|` + pyWord[:2] + `|` + pyWord[:2] + `test)(\s|$|[;&|)"'` + "`" + `])`)
 
 	// A `run:` key at any indent, optionally as a list item.
 	ciAnyRunKey = regexp.MustCompile(`^(\s*)(?:-\s+)?run:[ \t]*(.*?)[ \t]*$`)
@@ -181,13 +187,23 @@ func trackedPythonProblems(t *testing.T, dir string) []string {
 
 func TestCIWiringRetire_Live(t *testing.T) {
 	text := readCIWorkflow(t)
-	var probs []string
-	probs = append(probs, ciSetupPythonProblems(text)...)
-	probs = append(probs, ciPythonInvokeProblems(text)...)
-	probs = append(probs, trackedPythonProblems(t, gatecheckRepoRoot(t))...)
-	for _, p := range probs {
-		t.Error(p)
-	}
+	// Separate subtests so a missing git (which skips (iii)) cannot hide a
+	// failure in (i) or (ii).
+	t.Run("setup-"+pyWord, func(t *testing.T) {
+		for _, p := range ciSetupPythonProblems(text) {
+			t.Error(p)
+		}
+	})
+	t.Run(pyWord+"-invocation", func(t *testing.T) {
+		for _, p := range ciPythonInvokeProblems(text) {
+			t.Error(p)
+		}
+	})
+	t.Run("tracked-"+pyWord+"-files", func(t *testing.T) {
+		for _, p := range trackedPythonProblems(t, gatecheckRepoRoot(t)) {
+			t.Error(p)
+		}
+	})
 }
 
 // TestCIWiringRetire_TopologyExemptionIsReal checks that the exemption covers
@@ -271,6 +287,36 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			check: ciPythonInvokeProblems,
 			repl:  "      - name: Injected\n        run: >\n          (" + pyWord + "3 -c 1)\n",
 		},
+		{
+			name:  "versioned interpreter",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: " + pyWord + "3.12 -m unittest\n",
+		},
+		{
+			name:  "absolute interpreter path",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: /usr/bin/" + pyWord + "3 x\n",
+		},
+		{
+			name:  "quoted invocation",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: sh -c \"" + pyWord + " x\"\n",
+		},
+		{
+			name:  "py launcher",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: " + pyWord[:2] + " -m unittest\n",
+		},
+		{
+			name:  "pytest",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: " + pyWord[:2] + "test -q\n",
+		},
+		{
+			name:  "uppercase interpreter",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: " + strings.ToUpper(pyWord) + " x\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -281,11 +327,13 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 		})
 	}
 
-	// Non-invocations must stay green: a hyphenated flag, a longer word, and
-	// a step name (not a run line) that mentions Python.
+	// Non-invocations must stay green: a hyphenated flag, longer words, a
+	// file extension, and a step name (not a run line) that mentions Python.
 	greens := []string{
 		"      - name: Injected\n        run: tool --" + pyWord + "-version 3\n",
 		"      - name: Injected\n        run: echo " + pyWord + "ic\n",
+		"      - name: Injected\n        run: echo " + pyWord[:2] + "project.toml copy\n",
+		"      - name: Injected\n        run: ls x." + pyWord[:2] + "\n",
 		"      - name: Uses no " + pyWord + " at all\n        run: echo ok\n",
 	}
 	for i, g := range greens {
