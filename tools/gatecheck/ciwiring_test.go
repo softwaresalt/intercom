@@ -25,7 +25,11 @@ var (
 	// whether it is a step's first key (`- continue-on-error:`), a sibling
 	// key, a quoted key or an explicit `? ` key. Group 1 is the line prefix and
 	// group 2 the inline value. Comment lines never match.
-	ciCOEKey      = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?(?:\?[ \t]+)?)["']?continue-on-error["']?[ \t]*(?::[ \t]*(.*?))?[ \t]*$`)
+	ciCOEKey = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?(?:\?[ \t]+)?)["']?continue-on-error["']?[ \t]*(?::[ \t]*(.*?))?[ \t]*$`)
+	// ciIfKey matches an `if` mapping key in the same forms as ciCOEKey. A
+	// shell `if [ ... ]` line in a run body never matches.
+	ciIfKey       = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?(?:\?[ \t]+)?)["']?if["']?[ \t]*(?::[ \t]*(.*?))?[ \t]*$`)
+	ciNeedsKey    = regexp.MustCompile(`(?m)^[ \t]*(?:-[ \t]+)?(?:\?[ \t]+)?["']?needs["']?[ \t]*(?::[ \t]*(.*?))?[ \t]*$`)
 	ciStepRunLine = regexp.MustCompile(`(?m)^        run:[ \t]*(.*?)[ \t]*$`)
 	ciStepName    = regexp.MustCompile(`^(?:        )?name:[ \t]*(.*?)[ \t]*$`)
 )
@@ -140,6 +144,49 @@ func ciJobCOEProblems(text, job string) []string {
 	return problems
 }
 
+// ciJobIfProblems pins the job-level `if` of job `job`: with want "" the job
+// must have none, otherwise exactly one whose inline value is want. Job-level
+// keys are classified as in ciJobCOEProblems. A skipped job reports
+// `skipped`, which ci-gate accepts, so a job-level `if: false` would turn a
+// gate off without failing CI.
+func ciJobIfProblems(text, job, want string) []string {
+	block, ok := ciJobBlock(text, job)
+	if !ok {
+		return nil
+	}
+	first := ciStepSplit.FindStringIndex(block)
+	var vals []string
+	for _, loc := range ciIfKey.FindAllStringSubmatchIndex(block, -1) {
+		prefix := strings.TrimSuffix(block[loc[2]:loc[3]], "? ")
+		inSteps := first != nil && loc[0] >= first[0]
+		if inSteps && (prefix == "      - " || prefix == "        ") {
+			continue
+		}
+		val := ""
+		if loc[4] >= 0 {
+			val = block[loc[4]:loc[5]]
+		}
+		vals = append(vals, val)
+	}
+	switch {
+	case want == "" && len(vals) > 0:
+		return []string{fmt.Sprintf("job %q: must not carry a job-level if (has %q)", job, vals)}
+	case want != "" && (len(vals) != 1 || vals[0] != want):
+		return []string{fmt.Sprintf("job %q: job-level if %q, want exactly %q", job, vals, want)}
+	}
+	return nil
+}
+
+// ciStepIfProblems rejects any `if` key in a protected step: a step-level
+// condition can skip a gate or self-test while the job still succeeds.
+func ciStepIfProblems(job string, st ciStep) []string {
+	var problems []string
+	for _, m := range ciIfKey.FindAllStringSubmatch(st.body, -1) {
+		problems = append(problems, fmt.Sprintf("job %q step %q: must not carry if (has %q)", job, st.name, strings.TrimSpace(m[0])))
+	}
+	return problems
+}
+
 func ciStepIndex(steps []ciStep, name string) int {
 	for i, st := range steps {
 		if st.name == name {
@@ -160,17 +207,18 @@ type ciGateExpectation struct {
 // ciJobExpectation describes the Go-wiring of one job.
 type ciJobExpectation struct {
 	job   string
+	jobIf string // required job-level if expression; "" means none allowed
 	gates []ciGateExpectation
 }
 
 var ciWiringExpectations = []ciJobExpectation{
-	{job: "lint", gates: []ciGateExpectation{
+	{job: "lint", jobIf: "needs.changes.outputs.code == 'true'", gates: []ciGateExpectation{
 		{name: "Run retired-architecture gate", runExact: "bash scripts/check-retired-architecture.sh", coe: "${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}"},
 		{name: "Run retired-architecture self-test", runExact: "bash scripts/check-retired-architecture.sh --self-test-integrity"},
 		{name: "Run write-path-precondition gate", runExact: "bash scripts/check-write-path-precondition.sh", coe: "${{ vars.WRITE_PATH_GATE_ADVISORY == 'true' }}"},
 		{name: "Run write-path-precondition self-test", runExact: "bash scripts/check-write-path-precondition.sh --self-test-integrity"},
 	}},
-	{job: "gitignore-append-only", gates: []ciGateExpectation{
+	{job: "gitignore-append-only", jobIf: "github.event_name == 'pull_request'", gates: []ciGateExpectation{
 		{name: "Self-test the un-ignore regression checker's own logic", runExact: "bash scripts/check-unignore-regression.sh --self-test"},
 		{name: "Check un-ignore regression (behavioural differential)", runContains: "bash scripts/check-unignore-regression.sh \\"},
 	}},
@@ -204,6 +252,8 @@ func ciGoWiringProblems(text string) []string {
 		goIdx := ciStepIndex(steps, "Set up Go")
 		if goIdx < 0 {
 			problems = append(problems, fmt.Sprintf("job %q: no step named %q", je.job, "Set up Go"))
+		} else {
+			problems = append(problems, ciStepIfProblems(je.job, steps[goIdx])...)
 		}
 		for _, g := range je.gates {
 			idx := ciStepIndex(steps, g.name)
@@ -224,6 +274,7 @@ func ciGoWiringProblems(text string) []string {
 				problems = append(problems, fmt.Sprintf("job %q step %q: run lacks %q", je.job, g.name, g.runContains))
 			}
 			coes := ciStepCOEValues(steps[idx])
+			problems = append(problems, ciStepIfProblems(je.job, steps[idx])...)
 			switch {
 			case g.coe == "" && len(coes) > 0:
 				problems = append(problems, fmt.Sprintf("job %q step %q: must not carry continue-on-error (has %q)", je.job, g.name, coes))
@@ -234,6 +285,7 @@ func ciGoWiringProblems(text string) []string {
 			}
 		}
 		problems = append(problems, ciJobCOEProblems(text, je.job)...)
+		problems = append(problems, ciJobIfProblems(text, je.job, je.jobIf)...)
 	}
 	return problems
 }
@@ -268,6 +320,9 @@ func ciTopologyProblems(text string) []string {
 		// step would leave the ordering anchor a no-op.
 		problems = append(problems, `topology-check: SHA-pinned setup-python missing from step "Set up Python"`)
 	}
+	if prev >= 0 {
+		problems = append(problems, ciStepIfProblems("topology-check", steps[prev])...)
+	}
 	for _, g := range ciTopologyInstallSteps {
 		idx := ciStepIndex(steps, g.name)
 		if idx < 0 {
@@ -284,12 +339,94 @@ func ciTopologyProblems(text string) []string {
 		if coes := ciStepCOEValues(steps[idx]); len(coes) > 0 {
 			problems = append(problems, fmt.Sprintf("topology-check step %q: must not carry continue-on-error (has %q)", g.name, coes))
 		}
+		problems = append(problems, ciStepIfProblems("topology-check", steps[idx])...)
 	}
+	problems = append(problems, ciJobIfProblems(text, "topology-check", "")...)
 	return append(problems, ciJobCOEProblems(text, "topology-check")...)
 }
 
+// ciGateJob is the aggregate required check. It must run even when an upstream
+// job fails, depend on every protected job, and fail on any failed or
+// cancelled result.
+const ciGateJob = "ci-gate"
+
+var ciGateNeeds = []string{"lint", "topology-check", "gitignore-append-only", "merge-strategy"}
+
+// ciGateRun is the exact run body of ci-gate's only step, as ciStepRun
+// returns it (each line trimmed).
+var ciGateRun = strings.Join([]string{
+	`results="${{ needs.changes.result }} ${{ needs.expensive.result }} ${{ needs.windows.result }} ${{ needs.lint.result }} ${{ needs.security.result }} ${{ needs['cross-compile-targets'].result }} ${{ needs['cross-compile'].result }} ${{ needs['topology-check'].result }} ${{ needs['gitignore-append-only'].result }} ${{ needs['merge-strategy'].result }}"`,
+	`echo "job results: $results"`,
+	`for r in $results; do`,
+	`if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then`,
+	`echo "::error::A required job did not succeed: $r"`,
+	`exit 1`,
+	`fi`,
+	`done`,
+	`echo "All required jobs passed or were intentionally skipped."`,
+}, "\n")
+
+// ciGateProblems pins ci-gate: `if: always()`, a single flow-sequence `needs`
+// naming every protected job, and the exact result check in its one step,
+// with no step condition or continue-on-error.
+func ciGateProblems(text string) []string {
+	block, ok := ciJobBlock(text, ciGateJob)
+	if !ok {
+		return []string{fmt.Sprintf("job %q not found", ciGateJob)}
+	}
+	problems := ciJobIfProblems(text, ciGateJob, "always()")
+	problems = append(problems, ciJobCOEProblems(text, ciGateJob)...)
+	needs := ciNeedsKey.FindAllStringSubmatch(block, -1)
+	if len(needs) != 1 || !strings.HasPrefix(needs[0][1], "[") || !strings.HasSuffix(needs[0][1], "]") {
+		problems = append(problems, fmt.Sprintf("job %q: want exactly one flow-sequence needs, got %q", ciGateJob, needs))
+	} else {
+		have := map[string]bool{}
+		for _, n := range strings.Split(strings.Trim(needs[0][1], "[]"), ",") {
+			have[strings.TrimSpace(n)] = true
+		}
+		for _, n := range ciGateNeeds {
+			if !have[n] {
+				problems = append(problems, fmt.Sprintf("job %q: needs lacks %q", ciGateJob, n))
+			}
+		}
+	}
+	steps := ciSteps(block)
+	if len(steps) != 1 {
+		return append(problems, fmt.Sprintf("job %q: want exactly one step, got %d", ciGateJob, len(steps)))
+	}
+	if run, ok := ciStepRun(steps[0]); !ok || run != ciGateRun {
+		problems = append(problems, fmt.Sprintf("job %q: result check run changed: %q", ciGateJob, run))
+	}
+	if coes := ciStepCOEValues(steps[0]); len(coes) > 0 {
+		problems = append(problems, fmt.Sprintf("job %q: step must not carry continue-on-error (has %q)", ciGateJob, coes))
+	}
+	return append(problems, ciStepIfProblems(ciGateJob, steps[0])...)
+}
+
+// ciProtectedJobShapeProblems applies ciYAMLShapeProblems to every protected
+// job, topology-check included: an anchor, tag, alias, explicit key or flow
+// mapping (`&a if: false`, `? if`) would hide a key from the text scans.
+func ciProtectedJobShapeProblems(text string) []string {
+	var problems []string
+	for _, job := range []string{"lint", "gitignore-append-only", "merge-strategy", "topology-check", ciGateJob} {
+		block, ok := ciJobBlock(text, job)
+		if !ok {
+			continue
+		}
+		// Drop the job key line so ciYAMLShapeProblems does not exempt
+		// topology-check's body.
+		_, body, _ := strings.Cut(block, "\n")
+		for _, p := range ciYAMLShapeProblems(body) {
+			problems = append(problems, fmt.Sprintf("job %q: %s", job, p))
+		}
+	}
+	return problems
+}
+
 func ciWiringProblems(text string) []string {
-	return append(ciGoWiringProblems(text), ciTopologyProblems(text)...)
+	problems := append(ciGoWiringProblems(text), ciTopologyProblems(text)...)
+	problems = append(problems, ciGateProblems(text)...)
+	return append(problems, ciProtectedJobShapeProblems(text)...)
 }
 
 // ciMoveSetUpGoAfter returns text with job `job`'s `Set up Go` step moved to
@@ -510,6 +647,74 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 		},
 		"job removed": func() string {
 			return mustMutate(t, live, "\n  merge-strategy:\n", "\n  merge-strategy-renamed:\n")
+		},
+		"lint job condition set to false": func() string {
+			return mustMutate(t, live,
+				"\n  lint:\n    name: lint\n    needs: changes\n    if: needs.changes.outputs.code == 'true'\n",
+				"\n  lint:\n    name: lint\n    needs: changes\n    if: false\n")
+		},
+		"job-level if added to topology-check": func() string {
+			return mustMutate(t, live, "\n  topology-check:\n", "\n  topology-check:\n    if: false\n")
+		},
+		"job-level if added to merge-strategy": func() string {
+			return mustMutate(t, live, "\n  merge-strategy:\n", "\n  merge-strategy:\n    if: false\n")
+		},
+		"quoted second job-level if on gitignore-append-only": func() string {
+			return mustMutate(t, live, "\n  gitignore-append-only:\n", "\n  gitignore-append-only:\n    'if': false\n")
+		},
+		"job-level if after merge-strategy steps": func() string {
+			_, e, ok := ciJobSpan(live, "merge-strategy")
+			if !ok {
+				t.Fatal("merge-strategy not found")
+			}
+			pre := live[:e]
+			if !strings.HasSuffix(pre, "\n") {
+				pre += "\n"
+			}
+			return pre + "    if: false\n" + live[e:]
+		},
+		"anchored job-level if on topology-check": func() string {
+			return mustMutate(t, live, "\n  topology-check:\n", "\n  topology-check:\n    &skip if: false\n")
+		},
+		"step if on integrity self-test": func() string {
+			return mustMutate(t, live,
+				"        run: bash scripts/check-retired-architecture.sh --self-test-integrity\n",
+				"        if: false\n        run: bash scripts/check-retired-architecture.sh --self-test-integrity\n")
+		},
+		"step if as first key of merge-strategy gate": func() string {
+			return mustMutate(t, live,
+				"      - name: Run merge-strategy gate\n",
+				"      - if: false\n        name: Run merge-strategy gate\n")
+		},
+		"explicit-key step if on topology install": func() string {
+			return mustMutate(t, live,
+				"        run: |\n          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n",
+				"        ? if\n        : false\n        run: |\n          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n")
+		},
+		"step if on lint Set up Go": func() string {
+			_, e, ok := ciJobSpan(live, "lint")
+			if !ok {
+				t.Fatal("lint not found")
+			}
+			s := strings.Index(live, "\n  lint:\n")
+			i := strings.Index(live[s:e], "      - name: Set up Go\n")
+			if i < 0 {
+				t.Fatal("lint Set up Go not found")
+			}
+			at := s + i + len("      - name: Set up Go\n")
+			return live[:at] + "        if: false\n" + live[at:]
+		},
+		"ci-gate condition removed": func() string {
+			return mustMutate(t, live, "    if: always()\n", "")
+		},
+		"ci-gate condition changed": func() string {
+			return mustMutate(t, live, "    if: always()\n", "    if: success()\n")
+		},
+		"lint dropped from ci-gate needs": func() string {
+			return mustMutate(t, live, " windows, lint, security,", " windows, security,")
+		},
+		"ci-gate accepts cancelled": func() string {
+			return mustMutate(t, live, ` || [ "$r" = "cancelled" ]`, "")
 		},
 	}
 	for name, mutate := range cases {

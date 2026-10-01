@@ -91,10 +91,25 @@ var (
 	// matched after ciFlowNoise strips quoted scalars and comments. A plain
 	// scalar such as `run: ls [*.go]` also matches; that fails closed.
 	ciFlowSeqAlias = regexp.MustCompile(`[\[,][ \t]*\*[^\s,\[\]{}]`)
+
+	// A YAML explicit key indicator (`? key` / `: value`) at line start or
+	// after list indicators. The value line starts with `:`, so no key scan
+	// sees it.
+	ciExplicitKey = regexp.MustCompile(`^\s*(?:-\s+)*\?(?:\s|$)`)
+
+	// A YAML node property (anchor `&name` or tag `!tag`) where a node starts,
+	// in the same positions as ciAliasNode. A property in front of a key
+	// (`&a run: ...`) or a value (`uses: !!str ...`) shifts the text the line
+	// scans anchor on.
+	ciNodeProperty = regexp.MustCompile(`^\s*(?:[-?]\s+)*(?:(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s"'#*&!](?:[^:#"']|:\S)*?)[ \t]*:[ \t]+(?:[-?][ \t]+)*)?[!&]`)
+
+	// A node property as an entry of a flow sequence, matched after
+	// ciFlowNoise strips quoted scalars and comments.
+	ciFlowSeqProperty = regexp.MustCompile(`[\[,][ \t]*[!&]`)
 )
 
-// ciYAMLShapeProblems rejects two YAML forms outside job topology-check that
-// the line-anchored checks cannot see through, so both fail closed:
+// ciYAMLShapeProblems rejects YAML forms outside job topology-check that the
+// line-anchored checks cannot see through, so they fail closed:
 //
 //   - Flow-style mappings (`{...}`). A step such as
 //     `- {name: Gate, run: <interpreter> -V}` hides its block-style keys.
@@ -104,6 +119,11 @@ var (
 //     a step, `run:` value, or `defaults:` node anchored inside the exempt
 //     topology-check job, which the scans never look at once that job is
 //     removed.
+//   - Explicit keys (`? run` followed by `: <value>`). The value line starts
+//     with `:`, so no `run:`, `uses:`, or `shell:` scan matches it.
+//   - Node properties (anchors `&name` and tags such as `!!str`) at node
+//     start. `&a run: ...` or `uses: !!str actions/...` moves the key or value
+//     off the position the scans anchor on.
 //
 // Block scalar bodies are skipped, so shell braces and globs inside a
 // `run: |` script are not flagged.
@@ -118,6 +138,12 @@ func ciYAMLShapeProblems(text string) []string {
 		}
 		if ciAliasNode.MatchString(l) || ciFlowSeqAlias.MatchString(bare) {
 			probs = append(probs, "YAML alias outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+		if ciExplicitKey.MatchString(l) {
+			probs = append(probs, "YAML explicit key outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+		if ciNodeProperty.MatchString(l) || ciFlowSeqProperty.MatchString(bare) {
+			probs = append(probs, "YAML anchor or tag outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 		m := ciBlockScalarKey.FindStringSubmatch(l)
 		if m == nil {
@@ -581,6 +607,46 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			check: ciSetupPythonProblems,
 			repl:  "      - name: Injected\n        uses: >-\n          actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
 		},
+		{
+			name:  "explicit run key",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        ? run\n        : " + pyWord + "3 -V\n",
+		},
+		{
+			name:  "explicit run key as first list key",
+			check: ciPythonInvokeProblems,
+			repl:  "      - ? run\n        : " + pyWord + " -V\n",
+		},
+		{
+			name:  "explicit uses key",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        ? uses\n        : actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "explicit shell key",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        ? shell\n        : " + pyWord + "\n        run: print('x')\n",
+		},
+		{
+			name:  "anchored run key",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        &k run: " + pyWord + " -V\n",
+		},
+		{
+			name:  "tagged uses value",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        uses: !!str actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "anchored uses value",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        uses: &a actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "tagged run value",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run: !!str " + pyWord + " -V\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -606,6 +672,9 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 		"      - name: \"Injected {x}\"\n        run: echo 'a {b}'\n",
 		"      - name: Injected # {run: " + pyWord + "}\n        run: echo ok\n",
 		"      - name: Injected\n        run: |\n          if [ -n \"${X:-}\" ]; then { echo ok; }; fi\n",
+		// `&` and `!` that do not start a YAML node.
+		"      - name: Injected!\n        run: test ! -f x && sleep 1 & wait\n",
+		"      - name: Injected\n        run: |\n          ! false\n          &>/dev/null true\n",
 	}
 	for i, g := range greens {
 		mutated := mustMutate(t, base, anchor, g+anchor)
