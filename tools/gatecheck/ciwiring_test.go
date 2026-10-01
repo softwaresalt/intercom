@@ -238,8 +238,17 @@ const ciTopologyPythonPin = "uses: actions/setup-" + "python@a309ff8b426b58ec0e2
 var ciTopologyPinLine = regexp.MustCompile(`(?m)^(?:        |      - )` +
 	regexp.QuoteMeta(ciTopologyPythonPin) + `(?:[ \t]+#.*)?[ \t]*$`)
 
-// ciGoWiringProblems checks the Set-up-Go ordering and the gate steps of the
-// lint, gitignore-append-only and merge-strategy jobs.
+// ciGoSetupPin is the SHA-pinned setup-go action that each Go-gate job's
+// "Set up Go" step must carry.
+const ciGoSetupPin = "uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5"
+
+// ciGoPinLine matches ciGoSetupPin only as an active step-level key, with the
+// same shape rules as ciTopologyPinLine.
+var ciGoPinLine = regexp.MustCompile(`(?m)^(?:        |      - )` +
+	regexp.QuoteMeta(ciGoSetupPin) + `(?:[ \t]+#.*)?[ \t]*$`)
+
+// ciGoWiringProblems checks the Set-up-Go step (pinned action, ordering) and
+// the gate steps of the lint, gitignore-append-only and merge-strategy jobs.
 func ciGoWiringProblems(text string) []string {
 	var problems []string
 	for _, je := range ciWiringExpectations {
@@ -258,6 +267,11 @@ func ciGoWiringProblems(text string) []string {
 			// whatever Go the runner image happens to carry.
 			if coes := ciStepCOEValues(steps[goIdx]); len(coes) > 0 {
 				problems = append(problems, fmt.Sprintf("job %q step %q: must not carry continue-on-error (has %q)", je.job, "Set up Go", coes))
+			}
+			// The name alone proves nothing: the step must install the
+			// pinned toolchain action.
+			if !ciGoPinLine.MatchString("      - " + steps[goIdx].body) {
+				problems = append(problems, fmt.Sprintf("job %q: SHA-pinned setup-go missing from step %q", je.job, "Set up Go"))
 			}
 		}
 		for _, g := range je.gates {
@@ -481,6 +495,21 @@ func ciMoveStepAfter(t *testing.T, text, job, name, after string) string {
 }
 
 // ciRemoveStep returns text with the named step of job `job` removed.
+// ciReplaceInJob replaces the first occurrence of old inside job `job` only,
+// failing the test when the job or old is absent.
+func ciReplaceInJob(t *testing.T, text, job, old, new string) string {
+	t.Helper()
+	s, e, ok := ciJobSpan(text, job)
+	if !ok {
+		t.Fatalf("job %q not found", job)
+	}
+	i := strings.Index(text[s:e], old)
+	if i < 0 {
+		t.Fatalf("job %q: %q not found", job, old)
+	}
+	return text[:s+i] + new + text[s+i+len(old):]
+}
+
 func ciRemoveStep(t *testing.T, text, job, name string) string {
 	t.Helper()
 	s, e, ok := ciJobSpan(text, job)
@@ -731,6 +760,20 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 		"continue-on-error on topology Set up Python": func() string {
 			return mustMutate(t, live, "- name: Set up Python\n        "+ciTopologyPythonPin,
 				"- name: Set up Python\n        continue-on-error: true\n        "+ciTopologyPythonPin)
+		},
+		"lint Set up Go uses replaced by a no-op run": func() string {
+			return ciReplaceInJob(t, live, "lint", "        "+ciGoSetupPin, "        run: echo no-op #")
+		},
+		"gitignore Set up Go pin SHA changed": func() string {
+			return ciReplaceInJob(t, live, "gitignore-append-only", ciGoSetupPin, "uses: actions/setup-go@0000000000000000000000000000000000000000")
+		},
+		"merge-strategy Set up Go pin commented out": func() string {
+			return ciReplaceInJob(t, live, "merge-strategy", "        "+ciGoSetupPin, "        # "+ciGoSetupPin)
+		},
+		"lint Set up Go pin relocated to an earlier step": func() string {
+			moved := ciReplaceInJob(t, live, "lint", "        "+ciGoSetupPin, "        run: echo no-op #")
+			return ciReplaceInJob(t, moved, "lint", "      - name: Set up Go\n",
+				"      - name: Relocated setup\n        "+ciGoSetupPin+"\n      - name: Set up Go\n")
 		},
 		"ci-gate condition removed": func() string {
 			return mustMutate(t, live, "    if: always()\n", "")
