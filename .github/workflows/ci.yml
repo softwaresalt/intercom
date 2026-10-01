@@ -60,7 +60,16 @@
 # `python-version: '3.12'`) and "Python gate-engine lint and unit tests"
 # (unconditionally blocking, runs
 # `python -m unittest discover -s scripts/lib/tests -v` against the
-# extracted scripts/lib/ modules).
+# extracted scripts/lib/ modules). Also added (046.008-T/046.010-T,
+# shipment 036-S, plan docs/plans/2026-09-28-intercom-go-gate-engine-go-
+# migration-plan.md M3-T8/M3-T10): a `Set up Go` step in job
+# `gitignore-append-only` (before "Self-test the un-ignore regression
+# checker's own logic") and in job `merge-strategy` (before "Self-test the
+# checker's own logic (regression guard)"), since both checkers' wrappers
+# now build and invoke the Go gatecheck tool (M3-T7/M3-T11) instead of an
+# embedded Python heredoc. A future `autoharness install`/`tune`
+# regeneration must re-apply these two steps as well, not only the six
+# above.
 #
 # Regular PR/push CI was Linux-only (ubuntu-latest) prior to 010-S; an
 # advisory `windows-latest` job (`windows`, see the LOCAL DIVERGENCE note
@@ -472,6 +481,16 @@ jobs:
           bash scripts/check-gitignore-append-only.sh \
             --base-ref "${{ github.event.pull_request.base.sha }}" \
             --head-ref "${{ github.sha }}"
+      - name: Set up Go
+        # M3-T8 (046.008-T, shipment 036-S): the un-ignore engine now runs
+        # entirely in Go (tools/gatecheck/internal/unignore, M3-T6/M3-T7)
+        # instead of an embedded Python heredoc -- this step must land
+        # before the self-test step below, which now builds and invokes
+        # the Go tool via scripts/lib/gatecheck-run.sh.
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
+          cache: true
       - name: Self-test the un-ignore regression checker's own logic
         # 011.012-T (resolves 11ECB954): same regression-guard rationale as
         # the append-only self-test above -- runs the landing precondition
@@ -681,6 +700,17 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Set up Go
+        # M3-T10 (046.010-T, shipment 036-S): the merge-strategy evaluator
+        # now runs entirely in Go
+        # (tools/gatecheck/internal/mergestrategy, M3-T9/M3-T11) instead
+        # of an embedded Python heredoc -- this step must land before the
+        # self-test step below, which now builds and invokes the Go tool
+        # via scripts/lib/gatecheck-run.sh.
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
+          cache: true
       - name: Self-test the checker's own logic (regression guard)
         # Deliberately carries NO continue-on-error -- stays
         # unconditionally blocking, same rationale as the self-test steps
