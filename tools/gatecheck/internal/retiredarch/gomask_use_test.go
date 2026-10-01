@@ -157,7 +157,9 @@ func TestUsesSharedCanonicalMasker(t *testing.T) {
 // uncalled func literal) can never be canonical, and any later write to v on
 // any branch (a noncanonical reassignment, a multi-assign, a var
 // redeclaration, or v's address being taken) makes the guard red, so it
-// fails closed rather than open.
+// fails closed rather than open. A write to v inside any func literal is also
+// red wherever the literal sits, since a closure declared before the canonical
+// write can run after it.
 func scanGoMaskFlow(f *ast.File) (declared, flows bool) {
 	pkg := gomaskName(f)
 	for _, d := range f.Decls {
@@ -253,10 +255,28 @@ func writePositions(body *ast.BlockStmt, name string) []token.Pos {
 	return pos
 }
 
+// closureWrites reports whether any func literal in body writes name. Source
+// position says nothing about when a closure runs, so a captured write must
+// fail the guard closed wherever the literal is declared.
+func closureWrites(body *ast.BlockStmt, name string) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if fl, ok := n.(*ast.FuncLit); ok && len(writePositions(fl.Body, name)) > 0 {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
 // lastWriteIsCanonical reports whether, among all writes to name in body that
 // start before limit, the last one is `name = <pkg>.MaskGoNonCode(x)` (or :=)
-// located at one of the allowed canonical sites.
+// located at one of the allowed canonical sites. Any write to name inside a
+// func literal makes it false, because execution order is not source order.
 func lastWriteIsCanonical(body *ast.BlockStmt, name string, limit token.Pos, pkg string, allowed map[ast.Stmt]bool) bool {
+	if closureWrites(body, name) {
+		return false
+	}
 	var last token.Pos
 	canonical := false
 	record := func(pos token.Pos, isCanonical bool) {
@@ -364,6 +384,10 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 		{"canonical write under if with init", head + "\tif _ = 0; mask {\n" + canon + "\t}\n" + loop, false},
 		{"canonical write under if with else", head + "\tif mask {\n" + canon + "\t} else {\n\t}\n" + loop, false},
 		{"canonical write in uncalled func literal", head + "\t_ = func() {\n" + canon + "\t}\n" + loop, false},
+		{"closure declared before canonical write, called after",
+			head + "\tclobber := func() { masked = text }\n\tif mask {\n" + canon + "\t}\n\tclobber()\n" + loop, false},
+		{"closure compound-assigns a captured mask",
+			head + "\tclobber := func() { masked += text }\n\tif mask {\n" + canon + "\t}\n\tclobber()\n" + loop, false},
 		{"canonical write in nested loop", head + "\tfor range []int{} {\n" + canon + "\t}\n" + loop, false},
 		{"canonical write in nested block under if", head + "\tif mask {\n\t\t{\n" + canon + "\t\t}\n\t}\n" + loop, false},
 		{"scan loop not top-level",
