@@ -33,14 +33,16 @@ var (
 	// (i) `^\s*(-\s*)?uses:\s*actions/setup-python@`
 	ciSetupPythonUse = regexp.MustCompile(`(?m)^\s*(-\s*)?uses:\s*actions/setup-` + pyWord + `@`)
 
-	// (ii) `(?i)(^|[\s;&|("'/`])(python[0-9.]*|py|pytest)(\s|$|[;&|)"'`])`
+	// (ii) `(?i)(^|[\s;&|("'/\\`])(python[0-9.]*|py|pytest)(\.exe)?(\s|$|[;&|)"'`])`
 	//
 	// This is a strict superset of the plan's M4-T3 form
 	// `(^|[\s;&|(])python3?(\s|$)`. It also catches versioned interpreters
-	// (python3.12), absolute paths (/usr/bin/python3), quoted invocations
-	// (sh -c "python ..."), the `py` launcher, pytest, and any letter case.
-	ciPythonInvoke = regexp.MustCompile(`(?i)(^|[\s;&|("'/` + "`" + `])(` +
-		pyWord + `[0-9.]*|` + pyWord[:2] + `|` + pyWord[:2] + `test)(\s|$|[;&|)"'` + "`" + `])`)
+	// (python3.12), absolute POSIX and Windows paths (/usr/bin/python3,
+	// C:\Python\Python314\python.exe), the Windows `.exe` suffix, quoted
+	// invocations (sh -c "python ..."), the `py` launcher, pytest, and any
+	// letter case.
+	ciPythonInvoke = regexp.MustCompile(`(?i)(^|[\s;&|("'/\\` + "`" + `])(` +
+		pyWord + `[0-9.]*|` + pyWord[:2] + `|` + pyWord[:2] + `test)(\.exe)?(\s|$|[;&|)"'` + "`" + `])`)
 
 	// A `run:` key at any indent, optionally as a list item.
 	ciAnyRunKey = regexp.MustCompile(`^(\s*)(?:-\s+)?run:[ \t]*(.*?)[ \t]*$`)
@@ -327,6 +329,21 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			name:  "uppercase interpreter",
 			check: ciPythonInvokeProblems,
 			repl:  "      - run: " + strings.ToUpper(pyWord) + " x\n",
+		},
+		{
+			name:  "windows exe interpreter",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: " + pyWord + ".exe -V\n",
+		},
+		{
+			name:  "windows path-qualified interpreter",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: C:\\Python\\Python314\\" + pyWord + ".exe x\n",
+		},
+		{
+			name:  "windows py launcher exe",
+			check: ciPythonInvokeProblems,
+			repl:  "      - shell: " + pyWord[:2] + ".exe {0}\n        run: print('x')\n",
 		},
 		{
 			name:  "step shell selects python",
