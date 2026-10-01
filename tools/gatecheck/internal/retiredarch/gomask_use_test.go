@@ -283,12 +283,62 @@ func closureWrites(body *ast.BlockStmt, name string) bool {
 	return found
 }
 
+// nestedDecl reports whether name is declared (`:=`, var, or a range/type-
+// switch/if-init short declaration) anywhere other than a top-level statement
+// of body. Such a declaration can shadow the outer variable, so a "canonical"
+// write inside its scope may never reach the scan loop; fail closed.
+func nestedDecl(body *ast.BlockStmt, name string) bool {
+	top := map[ast.Node]bool{}
+	for _, st := range body.List {
+		top[st] = true
+	}
+	is := func(e ast.Expr) bool {
+		id, ok := e.(*ast.Ident)
+		return ok && id.Name == name
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			if s.Tok == token.DEFINE && !top[s] {
+				for _, l := range s.Lhs {
+					if is(l) {
+						found = true
+					}
+				}
+			}
+		case *ast.RangeStmt:
+			if s.Tok == token.DEFINE && ((s.Key != nil && is(s.Key)) || (s.Value != nil && is(s.Value))) {
+				found = true
+			}
+		case *ast.DeclStmt:
+			if top[s] {
+				return true
+			}
+			if gd, ok := s.Decl.(*ast.GenDecl); ok {
+				for _, sp := range gd.Specs {
+					if vs, ok := sp.(*ast.ValueSpec); ok {
+						for _, id := range vs.Names {
+							if id.Name == name {
+								found = true
+							}
+						}
+					}
+				}
+			}
+		}
+		return !found
+	})
+	return found
+}
+
 // lastWriteIsCanonical reports whether, among all writes to name in body that
-// start before limit, the last one is `name = <pkg>.MaskGoNonCode(x)` (or :=)
-// located at one of the allowed canonical sites. Any write to name inside a
-// func literal makes it false, because execution order is not source order.
+// start before limit, the last one is `name = <pkg>.MaskGoNonCode(x)` (or a
+// top-level `:=`) located at one of the allowed canonical sites. Any write to
+// name inside a func literal, or any declaration of name outside the top
+// level of body (a possible shadow), makes it false.
 func lastWriteIsCanonical(body *ast.BlockStmt, name string, limit token.Pos, pkg string, allowed map[ast.Stmt]bool) bool {
-	if closureWrites(body, name) {
+	if closureWrites(body, name) || nestedDecl(body, name) {
 		return false
 	}
 	var last token.Pos
@@ -401,6 +451,14 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 				"\tif mask {\n" + canon + "\t}\n" + loop, false},
 		{"canonical package not imported", strings.Replace(head, imp, "", 1) + "\tif mask {\n" + canon + "\t}\n" + loop, false},
 		{"local gomask shadows the import", head + "\tgomask := other\n\tif mask {\n" + canon + "\t}\n" + loop, false},
+		{"top-level short declaration of canonical mask",
+			"package p\n" + imp + pimp + "func scanGo(text string) {\n\tmasked := gomask.MaskGoNonCode(text)\n" + loop, true},
+		{"branch short declaration shadows the mask",
+			head + "\tif mask {\n\t\tmasked := gomask.MaskGoNonCode(text)\n\t\t_ = masked\n\t}\n" + loop, false},
+		{"branch var shadows the mask before canonical write",
+			head + "\tif mask {\n\t\tvar masked string\n" + canon + "\t\t_ = masked\n\t}\n" + loop, false},
+		{"branch multi-assign declaration shadows the mask",
+			head + "\tif mask {\n\t\tmasked, n := text, 0\n\t\t_ = n\n" + canon + "\t\t_ = masked\n\t}\n" + loop, false},
 		{"canonical write under if false", head + "\tif false {\n" + canon + "\t}\n" + loop, false},
 		{"canonical write under constant condition", head + "\tconst on = true\n\tif on {\n" + canon + "\t}\n" + loop, false},
 		{"condition parameter reassigned", head + "\tmask = false\n\tif mask {\n" + canon + "\t}\n" + loop, false},

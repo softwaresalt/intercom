@@ -55,13 +55,23 @@ var (
 		pyWord + `w?[0-9.]*|` + pyWord[:2] + `|` + pyWord[:2] + `test)(\.exe)?(\s|$|[;&|)"'` + "`" + `])`)
 
 	// A `run:` key at any indent, optionally as a list item and optionally
-	// quoted ('run': / "run":), which YAML parses identically.
-	ciAnyRunKey = regexp.MustCompile(`^(\s*)(?:-\s+)?["']?run["']?:[ \t]*(.*?)[ \t]*$`)
+	// quoted ('run': / "run":), which YAML parses identically. Groups: line
+	// indent, list indicator, inline value.
+	ciAnyRunKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?run["']?:[ \t]*(.*?)[ \t]*$`)
 
 	// A `shell:` key at any indent, optionally as a list item and optionally
 	// quoted. Actions runs the step body with this program, so `shell: python`
-	// executes Python even when the `run:` body names no interpreter.
-	ciAnyShellKey = regexp.MustCompile(`^\s*(?:-\s+)?["']?shell["']?:[ \t]*(.*?)[ \t]*$`)
+	// executes Python even when the `run:` body names no interpreter. Groups
+	// as ciAnyRunKey.
+	ciAnyShellKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?shell["']?:[ \t]*(.*?)[ \t]*$`)
+
+	// A `uses:` key at any indent, optionally as a list item and optionally
+	// quoted. Groups as ciAnyRunKey.
+	ciAnyUsesKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?uses["']?:[ \t]*(.*?)[ \t]*$`)
+
+	// A `uses:` value line (inline, continuation, or block scalar body) that
+	// names the setup action, optionally quoted, in any letter case.
+	ciSetupPythonValue = regexp.MustCompile(`(?i)^\s*["']?actions/setup-` + pyWord + `@`)
 
 	// Any mapping key, optionally as a list item and optionally quoted, whose
 	// value opens a block scalar (`|` / `>` with optional indicators).
@@ -76,6 +86,11 @@ var (
 	// quoted key, including the merge key `<<`. A `*` inside a plain scalar
 	// (`run: ls *.go`), a quoted scalar, or a comment does not start a node.
 	ciAliasNode = regexp.MustCompile(`^\s*(?:[-?]\s+)*(?:(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s"'#*&!](?:[^:#"']|:\S)*?)[ \t]*:[ \t]+(?:[-?][ \t]+)*)?\*[^\s,\[\]{}]`)
+
+	// A YAML alias as an entry of a flow sequence (`[*name]`, `[a, *name]`),
+	// matched after ciFlowNoise strips quoted scalars and comments. A plain
+	// scalar such as `run: ls [*.go]` also matches; that fails closed.
+	ciFlowSeqAlias = regexp.MustCompile(`[\[,][ \t]*\*[^\s,\[\]{}]`)
 )
 
 // ciYAMLShapeProblems rejects two YAML forms outside job topology-check that
@@ -97,10 +112,11 @@ func ciYAMLShapeProblems(text string) []string {
 	var probs []string
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
-		if strings.ContainsAny(ciFlowNoise.ReplaceAllString(l, ""), "{}") {
+		bare := ciFlowNoise.ReplaceAllString(l, "")
+		if strings.ContainsAny(bare, "{}") {
 			probs = append(probs, "flow-style YAML mapping outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
-		if ciAliasNode.MatchString(l) {
+		if ciAliasNode.MatchString(l) || ciFlowSeqAlias.MatchString(bare) {
 			probs = append(probs, "YAML alias outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 		m := ciBlockScalarKey.FindStringSubmatch(l)
@@ -129,29 +145,36 @@ func ciWithoutJob(text, job string) string {
 	return text[:s] + text[e:]
 }
 
-// ciRunLines returns every line of every `run:` value in text: the inline
-// value, or each line of a block scalar (`|` / `>`). A block scalar continues
-// while lines are blank or more indented than the `run:` key.
-func ciRunLines(text string) []string {
+// ciKeyValueLines returns every line of every value of the key matched by
+// keyRe in text. keyRe captures the line indent (1), an optional list
+// indicator (2), and the inline value (3). The result holds the inline value
+// unless it opens a block scalar (`|` / `>`), plus every following non-blank
+// line more indented than the key: the body of a block scalar, or the
+// continuation lines of a plain or quoted multi-line scalar (YAML folds those
+// into the same value). A continuation must be indented past the key column
+// (indent plus list indicator); a block scalar body only past the line
+// indent, which is the more inclusive bound and so fails closed.
+func ciKeyValueLines(text string, keyRe *regexp.Regexp) []string {
 	lines := strings.Split(text, "\n")
 	var out []string
 	for i := 0; i < len(lines); i++ {
-		m := ciAnyRunKey.FindStringSubmatch(lines[i])
+		m := keyRe.FindStringSubmatch(lines[i])
 		if m == nil {
 			continue
 		}
-		keyIndent := len(m[1])
-		val := m[2]
-		if !strings.HasPrefix(val, "|") && !strings.HasPrefix(val, ">") {
+		val := m[3]
+		limit := len(m[1]) + len(m[2])
+		if strings.HasPrefix(val, "|") || strings.HasPrefix(val, ">") {
+			limit = len(m[1])
+		} else if val != "" {
 			out = append(out, val)
-			continue
 		}
 		for j := i + 1; j < len(lines); j++ {
 			l := lines[j]
 			if strings.TrimSpace(l) == "" {
 				continue
 			}
-			if len(l)-len(strings.TrimLeft(l, " \t")) <= keyIndent {
+			if len(l)-len(strings.TrimLeft(l, " \t")) <= limit {
 				break
 			}
 			out = append(out, l)
@@ -161,12 +184,24 @@ func ciRunLines(text string) []string {
 	return out
 }
 
+// ciRunLines returns every line of every `run:` value in text (see
+// ciKeyValueLines).
+func ciRunLines(text string) []string {
+	return ciKeyValueLines(text, ciAnyRunKey)
+}
+
 // ciSetupPythonProblems implements assertion (i).
 func ciSetupPythonProblems(text string) []string {
 	probs := ciYAMLShapeProblems(text)
-	for _, l := range strings.Split(ciWithoutJob(text, ciTopologyJob), "\n") {
+	scoped := ciWithoutJob(text, ciTopologyJob)
+	for _, l := range strings.Split(scoped, "\n") {
 		if ciSetupPythonUse.MatchString(l) {
 			probs = append(probs, "setup-"+pyWord+" outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+	}
+	for _, l := range ciKeyValueLines(scoped, ciAnyUsesKey) {
+		if ciSetupPythonValue.MatchString(l) {
+			probs = append(probs, "setup-"+pyWord+" in uses value outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 	}
 	return probs
@@ -181,8 +216,8 @@ func ciPythonInvokeProblems(text string) []string {
 			probs = append(probs, pyWord+" invocation in run outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 	}
-	for _, l := range strings.Split(scoped, "\n") {
-		if m := ciAnyShellKey.FindStringSubmatch(l); m != nil && ciPythonInvoke.MatchString(m[1]) {
+	for _, l := range ciKeyValueLines(scoped, ciAnyShellKey) {
+		if ciPythonInvoke.MatchString(l) {
 			probs = append(probs, pyWord+" shell outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 	}
@@ -511,6 +546,41 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			check: ciPythonInvokeProblems,
 			repl:  "    defaults: {run: {shell: " + pyWord + "}}\n",
 		},
+		{
+			name:  "plain run value on a continuation line",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run:\n          " + pyWord + " -V\n",
+		},
+		{
+			name:  "plain run value continued after inline text",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run: echo\n          " + pyWord + " -V\n",
+		},
+		{
+			name:  "list-item run value continued",
+			check: ciPythonInvokeProblems,
+			repl:  "      - run: echo\n          " + pyWord + " -V\n",
+		},
+		{
+			name:  "double-quoted run value continued",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        run: \"echo\n          " + pyWord + " -V\"\n",
+		},
+		{
+			name:  "shell value on a continuation line",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        shell:\n          " + pyWord + "\n        run: print('x')\n",
+		},
+		{
+			name:  "uses value on a continuation line",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        uses:\n          actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "uses value as a folded block scalar",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        uses: >-\n          actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -573,15 +643,18 @@ func TestCIWiringRetire_AliasOutsideTopologyIsRed(t *testing.T) {
 	}
 	anchor := "      - name: Gate\n"
 	for name, repl := range map[string]string{
-		"step alias":            "      - *py_step\n",
-		"scalar run alias":      "      - name: Injected\n        run: *py_cmd\n",
-		"quoted run key alias":  "      - name: Injected\n        \"run\": *py_cmd\n",
-		"merge key alias":       "      - <<: *py_step\n        name: Injected\n",
-		"defaults alias":        "    defaults: *py_defaults\n",
-		"env alias":             "    env: *py_env\n",
-		"steps list alias":      "    steps: *py_steps\n",
-		"alias as mapping key":  "      - name: Injected\n        *py_cmd : x\n",
-		"alias after list dash": "      -   *py_step\n",
+		"step alias":                        "      - *py_step\n",
+		"scalar run alias":                  "      - name: Injected\n        run: *py_cmd\n",
+		"quoted run key alias":              "      - name: Injected\n        \"run\": *py_cmd\n",
+		"merge key alias":                   "      - <<: *py_step\n        name: Injected\n",
+		"defaults alias":                    "    defaults: *py_defaults\n",
+		"env alias":                         "    env: *py_env\n",
+		"steps list alias":                  "    steps: *py_steps\n",
+		"alias as mapping key":              "      - name: Injected\n        *py_cmd : x\n",
+		"alias after list dash":             "      -   *py_step\n",
+		"flow sequence alias":               "    steps: [*py_step]\n",
+		"flow sequence alias after an item": "    steps: [a, *py_step]\n",
+		"spaced flow sequence alias":        "    steps: [ *py_step ]\n",
 	} {
 		mutated := mustMutate(t, base, anchor, repl+anchor)
 		for check, f := range map[string]func(string) []string{"(i)": ciSetupPythonProblems, "(ii)": ciPythonInvokeProblems} {
@@ -596,6 +669,8 @@ func TestCIWiringRetire_AliasOutsideTopologyIsRed(t *testing.T) {
 		"      - name: \"*Injected\"\n        run: echo '*x'\n",
 		"      - name: Injected # *py_step\n        run: echo ok\n",
 		"      - name: Build *nix\n        run: echo \"a: *b\"\n",
+		"      - name: Injected\n        run: echo '[*x]'\n",
+		"      - name: Injected\n        run: |\n          ls [*.go]\n",
 	} {
 		mutated := mustMutate(t, base, anchor, g+anchor)
 		if p := append(ciSetupPythonProblems(mutated), ciPythonInvokeProblems(mutated)...); len(p) != 0 {
