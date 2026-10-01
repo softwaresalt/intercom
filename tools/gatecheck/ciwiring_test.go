@@ -19,9 +19,13 @@ import (
 const ciWorkflowRel = ".github/workflows/ci.yml"
 
 var (
-	ciJobKeyLine  = regexp.MustCompile(`(?m)^  [A-Za-z0-9_-]+:[ \t]*$`)
-	ciStepSplit   = regexp.MustCompile(`(?m)^      - `)
-	ciStepCOE     = regexp.MustCompile(`(?m)^        continue-on-error:[ \t]*(.*?)[ \t]*$`)
+	ciJobKeyLine = regexp.MustCompile(`(?m)^  [A-Za-z0-9_-]+:[ \t]*$`)
+	ciStepSplit  = regexp.MustCompile(`(?m)^      - `)
+	// ciCOEKey matches a continue-on-error mapping key at any indentation,
+	// whether it is a step's first key (`- continue-on-error:`), a sibling
+	// key, a quoted key or an explicit `? ` key. Group 1 is the line prefix and
+	// group 2 the inline value. Comment lines never match.
+	ciCOEKey      = regexp.MustCompile(`(?m)^([ \t]*(?:-[ \t]+)?(?:\?[ \t]+)?)["']?continue-on-error["']?[ \t]*(?::[ \t]*(.*?))?[ \t]*$`)
 	ciStepRunLine = regexp.MustCompile(`(?m)^        run:[ \t]*(.*?)[ \t]*$`)
 	ciStepName    = regexp.MustCompile(`^(?:        )?name:[ \t]*(.*?)[ \t]*$`)
 )
@@ -104,13 +108,36 @@ func ciStepRun(st ciStep) (string, bool) {
 	return strings.TrimSpace(strings.Join(lines, "\n")), true
 }
 
-// ciStepCOEValue returns a step's continue-on-error value, if any.
-func ciStepCOEValue(st ciStep) (string, bool) {
-	m := ciStepCOE.FindStringSubmatch(st.body)
-	if m == nil {
-		return "", false
+// ciStepCOEValues returns every continue-on-error value in a step, so a
+// duplicated or reformatted key cannot hide behind the first match.
+func ciStepCOEValues(st ciStep) []string {
+	var vals []string
+	for _, m := range ciCOEKey.FindAllStringSubmatch(st.body, -1) {
+		vals = append(vals, m[2])
 	}
-	return m[1], true
+	return vals
+}
+
+// ciJobCOEProblems rejects a continue-on-error key in job `job` that is not a
+// step-level key: anything before the first step, or a later key that is
+// neither a step's first key nor an eight-space step sibling.
+func ciJobCOEProblems(text, job string) []string {
+	block, ok := ciJobBlock(text, job)
+	if !ok {
+		return nil
+	}
+	first := ciStepSplit.FindStringIndex(block)
+	var problems []string
+	for _, loc := range ciCOEKey.FindAllStringSubmatchIndex(block, -1) {
+		prefix := strings.TrimSuffix(block[loc[2]:loc[3]], "? ")
+		inSteps := first != nil && loc[0] >= first[0]
+		if inSteps && (prefix == "      - " || prefix == "        ") {
+			continue
+		}
+		line := strings.TrimSpace(block[loc[0]:loc[1]])
+		problems = append(problems, fmt.Sprintf("job %q: job-level continue-on-error %q", job, line))
+	}
+	return problems
 }
 
 func ciStepIndex(steps []ciStep, name string) int {
@@ -196,16 +223,17 @@ func ciGoWiringProblems(text string) []string {
 			case g.runContains != "" && !strings.Contains(run, g.runContains):
 				problems = append(problems, fmt.Sprintf("job %q step %q: run lacks %q", je.job, g.name, g.runContains))
 			}
-			coe, has := ciStepCOEValue(steps[idx])
+			coes := ciStepCOEValues(steps[idx])
 			switch {
-			case g.coe == "" && has:
-				problems = append(problems, fmt.Sprintf("job %q step %q: must not carry continue-on-error (has %q)", je.job, g.name, coe))
-			case g.coe != "" && !has:
+			case g.coe == "" && len(coes) > 0:
+				problems = append(problems, fmt.Sprintf("job %q step %q: must not carry continue-on-error (has %q)", je.job, g.name, coes))
+			case g.coe != "" && len(coes) == 0:
 				problems = append(problems, fmt.Sprintf("job %q step %q: missing continue-on-error %q", je.job, g.name, g.coe))
-			case g.coe != "" && coe != g.coe:
-				problems = append(problems, fmt.Sprintf("job %q step %q: continue-on-error %q, want %q", je.job, g.name, coe, g.coe))
+			case g.coe != "" && (len(coes) != 1 || coes[0] != g.coe):
+				problems = append(problems, fmt.Sprintf("job %q step %q: continue-on-error %q, want exactly %q", je.job, g.name, coes, g.coe))
 			}
 		}
+		problems = append(problems, ciJobCOEProblems(text, je.job)...)
 	}
 	return problems
 }
@@ -253,11 +281,11 @@ func ciTopologyProblems(text string) []string {
 		if run, ok := ciStepRun(steps[idx]); !ok || run != g.runExact {
 			problems = append(problems, fmt.Sprintf("topology-check step %q: run %q, want %q", g.name, run, g.runExact))
 		}
-		if coe, has := ciStepCOEValue(steps[idx]); has {
-			problems = append(problems, fmt.Sprintf("topology-check step %q: must not carry continue-on-error (has %q)", g.name, coe))
+		if coes := ciStepCOEValues(steps[idx]); len(coes) > 0 {
+			problems = append(problems, fmt.Sprintf("topology-check step %q: must not carry continue-on-error (has %q)", g.name, coes))
 		}
 	}
-	return problems
+	return append(problems, ciJobCOEProblems(text, "topology-check")...)
 }
 
 func ciWiringProblems(text string) []string {
@@ -435,6 +463,51 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 				"        run: |\n          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n",
 				"        continue-on-error: true\n        run: |\n          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n")
 		},
+		"continue-on-error as first key of integrity self-test": func() string {
+			return mustMutate(t, live,
+				"      - name: Run retired-architecture self-test\n",
+				"      - continue-on-error: true\n        name: Run retired-architecture self-test\n")
+		},
+		"double-quoted continue-on-error on merge-strategy self-test": func() string {
+			return mustMutate(t, live,
+				"        run: bash scripts/check-merge-strategy.sh --self-test\n",
+				"        \"continue-on-error\": true\n        run: bash scripts/check-merge-strategy.sh --self-test\n")
+		},
+		"single-quoted continue-on-error on topology install": func() string {
+			return mustMutate(t, live,
+				"        run: |\n          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n",
+				"        'continue-on-error' : true\n        run: |\n          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n")
+		},
+		"explicit-key continue-on-error on write-path self-test": func() string {
+			return mustMutate(t, live,
+				"        run: bash scripts/check-write-path-precondition.sh --self-test-integrity\n",
+				"        ? continue-on-error\n        : true\n        run: bash scripts/check-write-path-precondition.sh --self-test-integrity\n")
+		},
+		"duplicate continue-on-error on advisory gate": func() string {
+			return mustMutate(t, live,
+				"        continue-on-error: ${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}\n",
+				"        continue-on-error: ${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}\n        continue-on-error: true\n")
+		},
+		"job-level continue-on-error in lint": func() string {
+			return mustMutate(t, live, "\n  lint:\n", "\n  lint:\n    continue-on-error: true\n")
+		},
+		"quoted job-level continue-on-error in gitignore-append-only": func() string {
+			return mustMutate(t, live, "\n  gitignore-append-only:\n", "\n  gitignore-append-only:\n    'continue-on-error': true\n")
+		},
+		"job-level continue-on-error in topology-check": func() string {
+			return mustMutate(t, live, "\n  topology-check:\n", "\n  topology-check:\n    \"continue-on-error\": true\n")
+		},
+		"job-level continue-on-error after merge-strategy steps": func() string {
+			_, e, ok := ciJobSpan(live, "merge-strategy")
+			if !ok {
+				t.Fatal("merge-strategy not found")
+			}
+			pre := live[:e]
+			if !strings.HasSuffix(pre, "\n") {
+				pre += "\n"
+			}
+			return pre + "    continue-on-error: true\n" + live[e:]
+		},
 		"job removed": func() string {
 			return mustMutate(t, live, "\n  merge-strategy:\n", "\n  merge-strategy-renamed:\n")
 		},
@@ -447,6 +520,32 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 			}
 			if p := ciWiringProblems(mutated); len(p) == 0 {
 				t.Fatal("mutated ci.yml unexpectedly passed")
+			}
+		})
+	}
+}
+
+// TestCIWiring_EquivalentCOEFormsAreGreen checks that a required
+// continue-on-error written as the step's first key, or a step-level key in
+// an unprotected step, is still accepted.
+func TestCIWiring_EquivalentCOEFormsAreGreen(t *testing.T) {
+	live := readCIWorkflow(t)
+	coe := "        continue-on-error: ${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}\n"
+	cases := map[string]string{
+		"advisory gate continue-on-error as first key": mustMutate(t, mustMutate(t, live, coe, ""),
+			"      - name: Run retired-architecture gate\n",
+			"      - continue-on-error: ${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}\n        name: Run retired-architecture gate\n"),
+		"step-level continue-on-error on lint Checkout": mustMutate(t, live,
+			"      - name: Checkout\n        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3\n        with:\n          persist-credentials: false\n      - name: Set up Go\n        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0\n        with:\n          go-version: '1.26.x'\n          cache: true\n      - name: Run retired-architecture gate\n",
+			"      - continue-on-error: false\n        name: Checkout\n        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3\n        with:\n          persist-credentials: false\n      - name: Set up Go\n        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0\n        with:\n          go-version: '1.26.x'\n          cache: true\n      - name: Run retired-architecture gate\n"),
+	}
+	for name, mutated := range cases {
+		t.Run(name, func(t *testing.T) {
+			if mutated == live {
+				t.Fatal("mutation was a no-op")
+			}
+			if p := ciWiringProblems(mutated); len(p) != 0 {
+				t.Fatalf("equivalent form flagged:\n  %s", strings.Join(p, "\n  "))
 			}
 		})
 	}
