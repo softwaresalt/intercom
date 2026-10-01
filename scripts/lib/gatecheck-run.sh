@@ -26,9 +26,9 @@
 #   trap 'exit 130' INT
 #   trap 'exit 143' TERM
 
-# Anchored on this file's location, not $PWD (matches how the Python engines
-# anchor on __file__/SCRIPT_DIR). $(dirname "${BASH_SOURCE[0]}") is
-# scripts/lib; ../.. is the repo root.
+# Anchored on this file's location, not $PWD (the same convention the
+# retired Python engines followed with __file__/SCRIPT_DIR).
+# $(dirname "${BASH_SOURCE[0]}") is scripts/lib; ../.. is the repo root.
 GATECHECK_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # gatecheck_build builds the gatecheck binary into a fresh mktemp -d

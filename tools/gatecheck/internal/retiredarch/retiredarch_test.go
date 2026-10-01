@@ -107,6 +107,31 @@ func TestRun_SelfTestIntegrity_MatchesGolden(t *testing.T) {
 	}
 }
 
+// TestRun_SelfTestIntegrity_ForeignCWD_MatchesGolden ports the retired
+// test_integrity_mode_is_cwd_independent: with the process working directory
+// set to an unrelated temp dir, integrity mode must still resolve everything
+// from the explicit root and produce the golden green stream.
+func TestRun_SelfTestIntegrity_ForeignCWD_MatchesGolden(t *testing.T) {
+	g := loadGolden(t)
+	root := repoRoot(t)
+	t.Chdir(t.TempDir())
+	var stdout, stderr strings.Builder
+	code := Run("--self-test-integrity", root, DefaultGitRunner, &stdout, &stderr)
+	want := g.StreamCaptures["self_test_integrity"]
+	assertStreamMatchesGolden(t, "--self-test-integrity (foreign cwd)", stdout.String(), code, want)
+	for _, line := range []string{"PASS selection pathspec pin (AC-6/AG-1)", "PASS selection cmd/ coverage (AG-5/D4)"} {
+		if !strings.Contains(stdout.String(), line) {
+			t.Errorf("foreign cwd: stdout missing %q", line)
+		}
+	}
+	if strings.Contains(stdout.String(), "FAIL") {
+		t.Errorf("foreign cwd: stdout contains FAIL: %q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("foreign cwd: unexpected stderr: %q", stderr.String())
+	}
+}
+
 func TestRun_UnknownMode_MatchesGolden(t *testing.T) {
 	g := loadGolden(t)
 	root := repoRoot(t)

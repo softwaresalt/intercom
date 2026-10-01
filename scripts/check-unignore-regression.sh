@@ -6,7 +6,7 @@ set -euo pipefail
 # Un-ignore regression gate (011.012-T, resolves 11ECB954). Detects when a
 # path that was actually ignored moves to un-ignored across a change,
 # using git's OWN ignore matcher (never a gitignore engine reimplemented in
-# bash/Python) via `git check-ignore`.
+# bash or any other language) via `git check-ignore`.
 #
 # RULE (old-vs-new behavioural differential, NOT a textual "no negations"
 # ban -- that would forbid every functional gitignore negation, since git
@@ -53,14 +53,14 @@ set -euo pipefail
 #
 # M3-T7 (docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md,
 # plan section C-3/M3-T7): the engine that used to run under an embedded
-# Python interpreter now runs entirely in Go, at
+# interpreter now runs entirely in Go, at
 # tools/gatecheck/internal/unignore (M3-T6). This wrapper is reduced to a
 # caller-argument guard plus the shared build/invoke/cleanup runner
 # (scripts/lib/gatecheck-run.sh, C-3): it builds the gatecheck binary once
 # per invocation and forwards this script's own arguments straight through
 # to `gatecheck unignore`, which absorbs the --self-test/--base-ref/
-# --head-ref/-h/--help parsing itself. The python3/python interpreter
-# probe is dropped along with the heredoc it used to guard. Exit codes and
+# --head-ref/-h/--help parsing itself. The interpreter
+# prerequisite probe is dropped along with the embedded engine it guarded. Exit codes and
 # ordered stdout/stderr bytes are preserved (ED-3 is the only permitted
 # delta; see m3.md for the parent-vs-head parity evidence).
 #

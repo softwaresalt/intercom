@@ -1,5 +1,5 @@
 // Package gomask reimplements the repository's canonical Go non-code masker
-// (scripts/lib/gomask.py: mask_go_non_code / struct_tag_re) on top of
+// (the M4-deleted gomask module: mask_go_non_code / struct_tag_re) on top of
 // tools/gatecheck/internal/pysem, so the write-path and retired-architecture
 // gates can run without a Python interpreter.
 //
@@ -36,7 +36,7 @@ const (
 // raw-string literal contents (except a raw-string literal whose entire
 // content is a Go struct tag), preserving rune count and line structure.
 // This is a byte-identical (rune-identical) port of Python's
-// mask_go_non_code(); see scripts/lib/gomask.py for the reference
+// mask_go_non_code(); see the M4-deleted gomask module (git history) for the reference
 // implementation and rationale.
 func MaskGoNonCode(text string) string {
 	runes := []rune(text)
@@ -201,7 +201,7 @@ func MaskGoNonCode(text string) string {
 //
 // where \s and \w are CPython's Unicode-aware classes (pysem.IsSpace /
 // pysem.IsWord), not RE2's ASCII-only defaults. See struct_tag_re in
-// scripts/lib/gomask.py for the reference pattern and its review history.
+// the M4-deleted gomask module (git history) for the reference pattern and its review history.
 func isStructTag(content []rune) bool {
 	n := len(content)
 	i := 0

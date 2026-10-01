@@ -1,6 +1,6 @@
 // This file (tomlprimary.go) ports decompose_toml_key, compose_toml_parts,
 // report_toml_key, walk_toml_value and scan_toml_with_tomllib from
-// scripts/lib/retired_arch.py, using github.com/BurntSushi/toml as the
+// the M4-deleted retired_arch module, using github.com/BurntSushi/toml as the
 // primary TOML engine (the Go equivalent of CPython's stdlib tomllib).
 //
 // THE ORDERING PROBLEM (plan C-6): Python's tomllib.loads() returns an

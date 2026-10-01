@@ -27,7 +27,7 @@ func repoRoot(t *testing.T) string {
 }
 
 // retiredarchGolden mirrors tools/gatecheck/internal/retiredarch/testdata/
-// retiredarch_golden.json, captured from scripts/lib/retired_arch.py at
+// retiredarch_golden.json, captured from the M4-deleted retired_arch module at
 // the M2 parent commit (see docs/plans/evidence/2026-09-28-gate-engine-go-
 // migration/m2.md).
 type retiredarchGolden struct {
@@ -115,7 +115,7 @@ func loadGolden(t *testing.T) retiredarchGolden {
 
 // derootify replaces every occurrence of the golden's root placeholder
 // token with root (posix-formatted), reversing the substitution the M2-T1
-// generator applied so absolute-path-embedding findings (retired_arch.py's
+// generator applied so absolute-path-embedding findings (the M4-deleted retired_arch module's
 // finding-format functions all embed path.as_posix() where path = root /
 // rel_path, root ABSOLUTE) can be compared against a portable golden.
 // derootify replaces every occurrence of placeholder (already including

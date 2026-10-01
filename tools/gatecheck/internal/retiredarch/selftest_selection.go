@@ -1,5 +1,5 @@
 // This file (selftest_selection.go) ports expected_internal_repo_paths and
-// run_repo_selection_self_test from scripts/lib/retired_arch.py: every
+// run_repo_selection_self_test from the M4-deleted retired_arch module: every
 // assertion, in the SAME order, with the SAME name, so
 // retiredarch_test.go's stream comparison against the M2-T1 goldens can
 // verify assertion identity even though the exact corpus-count numbers

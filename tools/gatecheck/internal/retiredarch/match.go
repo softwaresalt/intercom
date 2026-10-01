@@ -1,6 +1,6 @@
 // This file (match.go) ports forbidden_parts, window_matches,
 // matches_forbidden_sequence, matches_forbidden_concat and
-// matches_forbidden_parts from scripts/lib/retired_arch.py.
+// matches_forbidden_parts from the M4-deleted retired_arch module.
 package retiredarch
 
 import "strings"

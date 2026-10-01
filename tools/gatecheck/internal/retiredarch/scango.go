@@ -1,4 +1,4 @@
-// This file (scango.go) ports scan_go from scripts/lib/retired_arch.py.
+// This file (scango.go) ports scan_go from the M4-deleted retired_arch module.
 package retiredarch
 
 import (
@@ -13,7 +13,7 @@ import (
 // goIdentifierRe matches an ASCII Go-identifier-shaped token
 // ([A-Za-z_][A-Za-z0-9_]*), WITHOUT Python's `\b` boundary assertions
 // built into the pattern itself (go_identifier_re =
-// re.compile(r'\b[A-Za-z_][A-Za-z0-9_]*\b') in scripts/lib/retired_arch.py
+// re.compile(r'\b[A-Za-z_][A-Za-z0-9_]*\b') in the M4-deleted retired_arch module
 // -- RE2/Go's regexp package has no zero-width-lookaround primitive for
 // this). Every candidate match found by this pattern is instead
 // re-validated by checking pysem.WordBoundary (Unicode-\w-aware, matching

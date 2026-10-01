@@ -1,5 +1,5 @@
 // This file (select.go) ports should_scan_repo_path, engine_for_path,
-// scan_path and select_repo_paths from scripts/lib/retired_arch.py.
+// scan_path and select_repo_paths from the M4-deleted retired_arch module.
 //
 // The pathspec/prefix literals inside shouldScanRepoPath and
 // selectRepoPaths are pinned by pin.go (M2-T8), which parses THIS file's

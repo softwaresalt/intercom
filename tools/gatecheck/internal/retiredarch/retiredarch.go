@@ -1,6 +1,6 @@
 // This file (retiredarch.go) ports load_fixture_manifest, run_fixture_self_test,
 // run_repo_scan, report_assertion and main's mode dispatch from
-// scripts/lib/retired_arch.py, and additionally absorbs the notice-line
+// the M4-deleted retired_arch module, and additionally absorbs the notice-line
 // and success-banner text that scripts/check-retired-architecture.sh's
 // bash case statement used to print around each Python invocation
 // (M2-T11): Run is the single entry point the reduced bash wrapper now
