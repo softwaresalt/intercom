@@ -68,6 +68,13 @@ var (
 	// as ciAnyRunKey.
 	ciAnyShellKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?shell["']?[ \t]*:[ \t]*(.*?)[ \t]*$`)
 
+	// An `env:` key at any indent (workflow, job, or step), optionally as a
+	// list item and optionally quoted. A variable such as INTERP: python3
+	// stages an interpreter that a `run:` body then invokes indirectly
+	// ("$INTERP" x.py), so every env value line is scanned like a run line.
+	// Groups as ciAnyRunKey.
+	ciAnyEnvKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?env["']?[ \t]*:[ \t]*(.*?)[ \t]*$`)
+
 	// A `uses:` key at any indent, optionally as a list item and optionally
 	// quoted. Groups as ciAnyRunKey.
 	ciAnyUsesKey = regexp.MustCompile(`^(\s*)((?:-\s+)?)["']?uses["']?[ \t]*:[ \t]*(.*?)[ \t]*$`)
@@ -250,6 +257,11 @@ func ciPythonInvokeProblems(text string) []string {
 			probs = append(probs, pyWord+" shell outside "+ciTopologyJob+": "+strings.TrimSpace(l))
 		}
 	}
+	for _, l := range ciKeyValueLines(scoped, ciAnyEnvKey) {
+		if ciPythonInvoke.MatchString(l) {
+			probs = append(probs, pyWord+" in env value outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+	}
 	return probs
 }
 
@@ -399,6 +411,7 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 		name  string
 		check func(string) []string
 		repl  string
+		at    string // anchor override; "" means anchor
 	}{
 		{
 			name:  "setup-python step in lint",
@@ -685,10 +698,46 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			check: ciPythonInvokeProblems,
 			repl:  "      - name: Injected\n        run: !!str " + pyWord + " -V\n",
 		},
+		{
+			name:  "interpreter staged in step env",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        env:\n          INTERP: " + pyWord + "3\n        run: \"$INTERP\" x.py\n",
+		},
+		{
+			name:  "interpreter staged in quoted step env value",
+			check: ciPythonInvokeProblems,
+			repl:  "      - env:\n          'INTERP' : '" + pyWord + "3'\n        run: \"$INTERP\" x.py\n",
+		},
+		{
+			name:  "interpreter staged in job env",
+			check: ciPythonInvokeProblems,
+			at:    "    runs-on: ubuntu-latest\n",
+			repl:  "    env:\n      INTERP: " + pyWord + "\n",
+		},
+		{
+			name:  "interpreter staged in workflow env",
+			check: ciPythonInvokeProblems,
+			at:    "jobs:\n",
+			repl:  "env:\n  INTERP: /usr/bin/" + pyWord + "3\n",
+		},
+		{
+			name:  "interpreter staged in quoted env key with space before colon",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        \"env\" :\n          INTERP: " + pyWord + ".exe\n        run: \"$INTERP\" x.py\n",
+		},
+		{
+			name:  "interpreter staged in flow env",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        env: {INTERP: " + pyWord + "3}\n        run: \"$INTERP\" x.py\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			mutated := mustMutate(t, base, anchor, tc.repl+anchor)
+			at := anchor
+			if tc.at != "" {
+				at = tc.at
+			}
+			mutated := mustMutate(t, base, at, tc.repl+at)
 			if len(tc.check(mutated)) == 0 {
 				t.Errorf("mutation %q not detected", tc.name)
 			}
@@ -704,6 +753,8 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 		"      - name: Injected\n        run: ls x." + pyWord[:2] + "\n",
 		"      - name: Uses no " + pyWord + " at all\n        run: echo ok\n",
 		"      - name: Injected\n        shell: bash\n        run: echo ok\n",
+		// Env keys that merely contain the word, and a value naming a file.
+		"      - name: Injected\n        env:\n          " + strings.ToUpper(pyWord) + "PATH: src\n          " + strings.ToUpper(pyWord) + "_VERSION: '3.12'\n          CFG: x." + pyWord[:2] + "\n        run: echo ok\n",
 		// Braces that are not YAML flow mappings: a workflow expression, a
 		// quoted scalar, a comment, and shell braces in a block scalar body.
 		"      - name: Injected\n        if: ${{ github.event_name == 'push' }}\n        run: echo ok\n",
