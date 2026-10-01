@@ -222,21 +222,23 @@ var ciTopologyInstallSteps = []ciGateExpectation{
 }
 
 // ciTopologyProblems checks that topology-check keeps its SHA-pinned
-// setup-python and, after it, its two named hash-pinned install steps in
-// order, each running its own lock file.
+// setup-python inside the step named "Set up Python" and, after that step, its
+// two named hash-pinned install steps in order, each running its own lock file.
 func ciTopologyProblems(text string) []string {
 	block, ok := ciJobBlock(text, "topology-check")
 	if !ok {
 		return []string{`job "topology-check" not found`}
 	}
 	var problems []string
-	if !ciTopologyPinLine.MatchString(block) {
-		problems = append(problems, "topology-check: SHA-pinned setup-python missing")
-	}
 	steps := ciSteps(block)
 	prev, prevName := ciStepIndex(steps, "Set up Python"), "Set up Python"
-	if prev < 0 {
+	switch {
+	case prev < 0:
 		problems = append(problems, `topology-check: no step named "Set up Python"`)
+	case !ciTopologyPinLine.MatchString("      - " + steps[prev].body):
+		// The pin must sit in the named step itself: a pin moved to another
+		// step would leave the ordering anchor a no-op.
+		problems = append(problems, `topology-check: SHA-pinned setup-python missing from step "Set up Python"`)
 	}
 	for _, g := range ciTopologyInstallSteps {
 		idx := ciStepIndex(steps, g.name)
@@ -389,6 +391,19 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 		},
 		"topology pin commented out": func() string {
 			return strings.ReplaceAll(live, "        "+ciTopologyPythonPin, "        # "+ciTopologyPythonPin)
+		},
+		"topology pin relocated out of Set up Python": func() string {
+			m := mustMutate(t, live, "- name: Set up Python\n        "+ciTopologyPythonPin,
+				"- name: Set up Python\n        run: echo no-op\n        #")
+			_, e, ok := ciJobSpan(m, "topology-check")
+			if !ok {
+				t.Fatal("topology-check not found")
+			}
+			pre := m[:e]
+			if !strings.HasSuffix(pre, "\n") {
+				pre += "\n"
+			}
+			return pre + "      - name: Relocated setup\n        " + ciTopologyPythonPin + "\n" + m[e:]
 		},
 		"topology hash-pinned pip step removed": func() string {
 			return ciRemoveStep(t, live, "topology-check", "Install autoharness (hash-pinned, --require-hashes)")

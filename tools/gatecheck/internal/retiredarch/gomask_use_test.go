@@ -213,7 +213,8 @@ func canonicalSites(fn *ast.FuncDecl) map[ast.Stmt]bool {
 }
 
 // writePositions returns the positions of every write to name in body: an
-// assignment LHS, a var declaration, an inc/dec, or the address being taken.
+// assignment LHS, a range-clause assignment (`for k, v = range`), a var
+// declaration, an inc/dec, or the address being taken.
 func writePositions(body *ast.BlockStmt, name string) []token.Pos {
 	var pos []token.Pos
 	is := func(e ast.Expr) bool {
@@ -230,6 +231,10 @@ func writePositions(body *ast.BlockStmt, name string) []token.Pos {
 			}
 		case *ast.IncDecStmt:
 			if is(s.X) {
+				pos = append(pos, s.Pos())
+			}
+		case *ast.RangeStmt:
+			if s.Tok == token.ASSIGN && ((s.Key != nil && is(s.Key)) || (s.Value != nil && is(s.Value))) {
 				pos = append(pos, s.Pos())
 			}
 		case *ast.ValueSpec:
@@ -340,6 +345,10 @@ func TestScanGoMaskFlow_Mutations(t *testing.T) {
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tmasked = text\n" + loop, false},
 		{"canonical result overwritten by multi-assign",
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tmasked, _ = text, 0\n" + loop, false},
+		{"canonical result overwritten by range value assign",
+			head + "\tif mask {\n" + canon + "\t}\n\tfor _, masked = range []string{text} {\n\t}\n" + loop, false},
+		{"canonical result overwritten by range key assign",
+			head + "\tif mask {\n" + canon + "\t}\n\tfor masked = range map[string]int{text: 0} {\n\t}\n" + loop, false},
 		{"canonical result shadowed by var",
 			head + "\tif mask {\n\t\tmasked = gomask.MaskGoNonCode(text)\n\t}\n\tvar masked = text\n" + loop, false},
 		{"address taken after canonical write",

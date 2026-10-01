@@ -30,11 +30,12 @@ const ciTopologyJob = "topology-check"
 var (
 	pyWord = "py" + "thon"
 
-	// (i) `(?im)^\s*(-\s*)?uses:\s*["']?actions/setup-python@`
+	// (i) `(?im)^\s*(-\s*)?["']?uses["']?:\s*["']?actions/setup-python@`
 	//
-	// A superset of the plan's M4-T3 form: YAML may quote the action value,
-	// and GitHub resolves action owner and repository names case-insensitively.
-	ciSetupPythonUse = regexp.MustCompile(`(?im)^\s*(-\s*)?uses:\s*["']?actions/setup-` + pyWord + `@`)
+	// A superset of the plan's M4-T3 form: YAML may quote the key or the
+	// action value, and GitHub resolves action owner and repository names
+	// case-insensitively.
+	ciSetupPythonUse = regexp.MustCompile(`(?im)^\s*(-\s*)?["']?uses["']?:\s*["']?actions/setup-` + pyWord + `@`)
 
 	// (ii) `(?i)(^|[\s;&|("'/\\`])(pythonw?[0-9.]*|py|pytest)(\.exe)?(\s|$|[;&|)"'`])`
 	//
@@ -47,13 +48,14 @@ var (
 	ciPythonInvoke = regexp.MustCompile(`(?i)(^|[\s;&|("'/\\` + "`" + `])(` +
 		pyWord + `w?[0-9.]*|` + pyWord[:2] + `|` + pyWord[:2] + `test)(\.exe)?(\s|$|[;&|)"'` + "`" + `])`)
 
-	// A `run:` key at any indent, optionally as a list item.
-	ciAnyRunKey = regexp.MustCompile(`^(\s*)(?:-\s+)?run:[ \t]*(.*?)[ \t]*$`)
+	// A `run:` key at any indent, optionally as a list item and optionally
+	// quoted ('run': / "run":), which YAML parses identically.
+	ciAnyRunKey = regexp.MustCompile(`^(\s*)(?:-\s+)?["']?run["']?:[ \t]*(.*?)[ \t]*$`)
 
-	// A `shell:` key at any indent, optionally as a list item. Actions runs
-	// the step body with this program, so `shell: python` executes Python
-	// even when the `run:` body names no interpreter.
-	ciAnyShellKey = regexp.MustCompile(`^\s*(?:-\s+)?shell:[ \t]*(.*?)[ \t]*$`)
+	// A `shell:` key at any indent, optionally as a list item and optionally
+	// quoted. Actions runs the step body with this program, so `shell: python`
+	// executes Python even when the `run:` body names no interpreter.
+	ciAnyShellKey = regexp.MustCompile(`^\s*(?:-\s+)?["']?shell["']?:[ \t]*(.*?)[ \t]*$`)
 )
 
 // ciWithoutJob returns text with the span of job `job` removed. A missing job
@@ -294,6 +296,16 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			repl:  "      - name: Injected\n        uses: \"Actions/Setup-" + strings.ToUpper(pyWord[:1]) + pyWord[1:] + "@0000000000000000000000000000000000000000\"\n",
 		},
 		{
+			name:  "setup-python with single-quoted uses key",
+			check: ciSetupPythonProblems,
+			repl:  "      - name: Injected\n        'uses': actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
+			name:  "setup-python with double-quoted uses key as first list key",
+			check: ciSetupPythonProblems,
+			repl:  "      - \"uses\": actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\n",
+		},
+		{
 			name:  "inline run invokes python3",
 			check: ciPythonInvokeProblems,
 			repl:  "      - name: Injected\n        run: " + pyWord + "3 x\n",
@@ -302,6 +314,16 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			name:  "list-item run invokes python",
 			check: ciPythonInvokeProblems,
 			repl:  "      - run: " + pyWord + " -V\n",
+		},
+		{
+			name:  "single-quoted run key invokes python",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        'run': " + pyWord + " -V\n",
+		},
+		{
+			name:  "double-quoted run key with block scalar",
+			check: ciPythonInvokeProblems,
+			repl:  "      - \"run\": |\n          " + pyWord + " -V\n",
 		},
 		{
 			name:  "block run invokes python after a command separator",
@@ -377,6 +399,16 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			name:  "custom shell template selects python3",
 			check: ciPythonInvokeProblems,
 			repl:  "      - shell: '" + pyWord + "3 {0}'\n        run: print('x')\n",
+		},
+		{
+			name:  "double-quoted shell key selects python",
+			check: ciPythonInvokeProblems,
+			repl:  "      - name: Injected\n        \"shell\": " + pyWord + "\n        run: print('x')\n",
+		},
+		{
+			name:  "single-quoted shell key as first list key",
+			check: ciPythonInvokeProblems,
+			repl:  "      - 'shell': " + pyWord + "\n        run: print('x')\n",
 		},
 		{
 			name:  "defaults run shell selects python",
