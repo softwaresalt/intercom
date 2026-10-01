@@ -22,6 +22,11 @@ import (
 // topology-check is exempt because its setup-python step installs the
 // autoharness Python package, not a gate engine.
 //
+// (i) and (ii) are line-based scans of block-style YAML. To fail closed, both
+// also reject any YAML flow-style mapping outside topology-check (see
+// ciFlowMappingProblems), because a flow-style step would hide its keys from
+// the line-anchored patterns.
+//
 // Every pattern is assembled from string fragments so this file never
 // matches its own patterns (compound 2026-09-06).
 
@@ -56,7 +61,45 @@ var (
 	// quoted. Actions runs the step body with this program, so `shell: python`
 	// executes Python even when the `run:` body names no interpreter.
 	ciAnyShellKey = regexp.MustCompile(`^\s*(?:-\s+)?["']?shell["']?:[ \t]*(.*?)[ \t]*$`)
+
+	// Any mapping key, optionally as a list item and optionally quoted, whose
+	// value opens a block scalar (`|` / `>` with optional indicators).
+	ciBlockScalarKey = regexp.MustCompile(`^(\s*)(?:-\s+)?(?:"[^"]*"|'[^']*'|[^\s"'#][^:#]*?):[ \t]*[|>][-+0-9]*[ \t]*(?:#.*)?$`)
+
+	// Text a flow-mapping scan must ignore: workflow expressions, quoted
+	// scalars, and comments (a `#` at line start or after whitespace).
+	ciFlowNoise = regexp.MustCompile(`\$\{\{.*?\}\}|"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|(?:^|\s)#.*$`)
 )
+
+// ciFlowMappingProblems rejects YAML flow-style mappings (`{...}`) outside
+// job topology-check. The other checks are line-anchored on block-style keys,
+// so a step such as `- {name: Gate, run: <interpreter> -V}` would otherwise
+// bypass them. Rejecting every flow mapping fails closed for `run:`, `uses:`,
+// `shell:`, and any key added later. Block scalar bodies are skipped, so shell
+// braces inside a `run: |` script are not flagged.
+func ciFlowMappingProblems(text string) []string {
+	lines := strings.Split(ciWithoutJob(text, ciTopologyJob), "\n")
+	var probs []string
+	for i := 0; i < len(lines); i++ {
+		l := lines[i]
+		if strings.ContainsAny(ciFlowNoise.ReplaceAllString(l, ""), "{}") {
+			probs = append(probs, "flow-style YAML mapping outside "+ciTopologyJob+": "+strings.TrimSpace(l))
+		}
+		m := ciBlockScalarKey.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		keyIndent := len(m[1])
+		for j := i + 1; j < len(lines); j++ {
+			b := lines[j]
+			if strings.TrimSpace(b) != "" && len(b)-len(strings.TrimLeft(b, " \t")) <= keyIndent {
+				break
+			}
+			i = j
+		}
+	}
+	return probs
+}
 
 // ciWithoutJob returns text with the span of job `job` removed. A missing job
 // leaves text unchanged.
@@ -102,7 +145,7 @@ func ciRunLines(text string) []string {
 
 // ciSetupPythonProblems implements assertion (i).
 func ciSetupPythonProblems(text string) []string {
-	var probs []string
+	probs := ciFlowMappingProblems(text)
 	for _, l := range strings.Split(ciWithoutJob(text, ciTopologyJob), "\n") {
 		if ciSetupPythonUse.MatchString(l) {
 			probs = append(probs, "setup-"+pyWord+" outside "+ciTopologyJob+": "+strings.TrimSpace(l))
@@ -113,7 +156,7 @@ func ciSetupPythonProblems(text string) []string {
 
 // ciPythonInvokeProblems implements assertion (ii).
 func ciPythonInvokeProblems(text string) []string {
-	var probs []string
+	probs := ciFlowMappingProblems(text)
 	scoped := ciWithoutJob(text, ciTopologyJob)
 	for _, l := range ciRunLines(scoped) {
 		if ciPythonInvoke.MatchString(l) {
@@ -415,6 +458,41 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 			check: ciPythonInvokeProblems,
 			repl:  "    defaults:\n      run:\n        shell: " + pyWord + "\n",
 		},
+		{
+			name:  "flow-style step runs python",
+			check: ciPythonInvokeProblems,
+			repl:  "      - {name: Injected, run: " + pyWord + " -V}\n",
+		},
+		{
+			name:  "flow-style step uses setup-python",
+			check: ciSetupPythonProblems,
+			repl:  "      - {uses: actions/setup-" + pyWord + "@0000000000000000000000000000000000000000}\n",
+		},
+		{
+			name:  "flow-style step shell selects python",
+			check: ciPythonInvokeProblems,
+			repl:  "      - {name: Injected, shell: " + pyWord + ", run: echo}\n",
+		},
+		{
+			name:  "flow-style step with quoted keys",
+			check: ciPythonInvokeProblems,
+			repl:  "      - {\"name\": Injected, 'run': " + pyWord + " -V}\n",
+		},
+		{
+			name:  "flow-style uses with quoted key",
+			check: ciSetupPythonProblems,
+			repl:  "      - {'uses': \"actions/setup-" + pyWord + "@0000000000000000000000000000000000000000\"}\n",
+		},
+		{
+			name:  "multi-line flow-style step",
+			check: ciPythonInvokeProblems,
+			repl:  "      - {\n          name: Injected,\n          run: " + pyWord + " -V\n        }\n",
+		},
+		{
+			name:  "flow-style defaults shell",
+			check: ciPythonInvokeProblems,
+			repl:  "    defaults: {run: {shell: " + pyWord + "}}\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -434,10 +512,16 @@ func TestCIWiringRetire_MutatedInputsAreRed(t *testing.T) {
 		"      - name: Injected\n        run: ls x." + pyWord[:2] + "\n",
 		"      - name: Uses no " + pyWord + " at all\n        run: echo ok\n",
 		"      - name: Injected\n        shell: bash\n        run: echo ok\n",
+		// Braces that are not YAML flow mappings: a workflow expression, a
+		// quoted scalar, a comment, and shell braces in a block scalar body.
+		"      - name: Injected\n        if: ${{ github.event_name == 'push' }}\n        run: echo ok\n",
+		"      - name: \"Injected {x}\"\n        run: echo 'a {b}'\n",
+		"      - name: Injected # {run: " + pyWord + "}\n        run: echo ok\n",
+		"      - name: Injected\n        run: |\n          if [ -n \"${X:-}\" ]; then { echo ok; }; fi\n",
 	}
 	for i, g := range greens {
 		mutated := mustMutate(t, base, anchor, g+anchor)
-		if p := ciPythonInvokeProblems(mutated); len(p) != 0 {
+		if p := append(ciSetupPythonProblems(mutated), ciPythonInvokeProblems(mutated)...); len(p) != 0 {
 			t.Errorf("green case %d flagged: %q", i, p)
 		}
 	}
