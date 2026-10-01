@@ -111,8 +111,10 @@ set -euo pipefail
 # retiredgo*/ fixture whose verdict changes under the clone; the
 # go-differential suite scans unmasked and is unaffected), so only the
 # superset can be canonical. The masker
-# moves to scripts/lib/gomask.py (032.002-T) and both gates import it
-# (032.003-T / 032.005-T).
+# was extracted into one shared module (032.002-T) that both gates
+# imported (032.003-T / 032.005-T); since the gate-engine Go migration it
+# lives at tools/gatecheck/internal/gomask (the interpreted original was
+# deleted in M4, shipment 037-S).
 #
 # EXPECTED WRITE-PATH VERDICT DELTAS (enumerated in advance, AC-2.4):
 #   Masker output differs from the write-path clone ONLY for a raw-string
@@ -162,7 +164,7 @@ set -euo pipefail
 #
 # Root anchoring (C-3 exception): retired-arch anchors its root on ITS OWN
 # ENGINE LOCATION, not the caller's working directory -- this MATCHES the
-# pre-switch Python engine's own resolve_repo_root(), which anchored on
+# pre-switch interpreted engine's own resolve_repo_root(), which anchored on
 # __file__ rather than cwd. This is why ROOT below is derived from
 # GATECHECK_SRC (the gatecheck tool source location, set by
 # gatecheck-run.sh) via `git -C`, unlike write-path/unignore/
@@ -172,11 +174,12 @@ set -euo pipefail
 # Caller-cwd precondition guard (Copilot round 13, PR #83): the
 # pre-switch wrapper's OWN `ROOT="$(git rev-parse --show-toplevel)"` call
 # ran in the CALLER's cwd, so under `set -e` the whole invocation failed
-# before the Python engine ever ran when invoked from outside any Git work
-# tree -- independent of, and prior to, Python's own module-anchored
+# before the interpreted engine ever ran when invoked from outside any Git
+# work tree -- independent of, and prior to, that engine's own module-anchored
 # resolve_repo_root() call. Collapsing straight to the GATECHECK_SRC-
 # anchored `-C` call above preserves the ENGINE's root-COMPUTATION
-# mechanism (still module-anchored, matching Python exactly) but silently
+# mechanism (still module-anchored, matching the retired engine exactly)
+# but silently
 # dropped this separate caller-cwd PRECONDITION: GATECHECK_SRC is always
 # inside a git work tree (it is this repo's own checkout), so the `-C`
 # call can never itself fail for this reason, and the wrapper began
