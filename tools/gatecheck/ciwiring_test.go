@@ -210,8 +210,20 @@ func ciGoWiringProblems(text string) []string {
 	return problems
 }
 
+// ciTopologyInstallSteps are topology-check's two hash-pinned install steps,
+// in their load-bearing order: the bootstrap step pins the installer toolchain
+// that then performs the autoharness install. Each is resolved by name and
+// must run exactly its own lock-file command with no continue-on-error.
+var ciTopologyInstallSteps = []ciGateExpectation{
+	{name: "Bootstrap pip/setuptools/wheel (hash-pinned, --require-hashes)",
+		runExact: "pip install --require-hashes --only-binary=:all: --no-deps -r .github/constraints/pip-bootstrap-lock.txt"},
+	{name: "Install autoharness (hash-pinned, --require-hashes)",
+		runExact: "pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt"},
+}
+
 // ciTopologyProblems checks that topology-check keeps its SHA-pinned
-// setup-python and its two hash-pinned pip install steps.
+// setup-python and, after it, its two named hash-pinned install steps in
+// order, each running its own lock file.
 func ciTopologyProblems(text string) []string {
 	block, ok := ciJobBlock(text, "topology-check")
 	if !ok {
@@ -221,14 +233,27 @@ func ciTopologyProblems(text string) []string {
 	if !ciTopologyPinLine.MatchString(block) {
 		problems = append(problems, "topology-check: SHA-pinned setup-python missing")
 	}
-	hashed := 0
-	for _, st := range ciSteps(block) {
-		if run, ok := ciStepRun(st); ok && strings.Contains(run, "pip install --require-hashes") {
-			hashed++
-		}
+	steps := ciSteps(block)
+	prev, prevName := ciStepIndex(steps, "Set up Python"), "Set up Python"
+	if prev < 0 {
+		problems = append(problems, `topology-check: no step named "Set up Python"`)
 	}
-	if hashed < 2 {
-		problems = append(problems, fmt.Sprintf("topology-check: %d --require-hashes pip steps, want >= 2", hashed))
+	for _, g := range ciTopologyInstallSteps {
+		idx := ciStepIndex(steps, g.name)
+		if idx < 0 {
+			problems = append(problems, fmt.Sprintf("topology-check: missing step %q", g.name))
+			continue
+		}
+		if prev >= 0 && idx < prev {
+			problems = append(problems, fmt.Sprintf("topology-check: %q precedes %q", g.name, prevName))
+		}
+		prev, prevName = idx, g.name
+		if run, ok := ciStepRun(steps[idx]); !ok || run != g.runExact {
+			problems = append(problems, fmt.Sprintf("topology-check step %q: run %q, want %q", g.name, run, g.runExact))
+		}
+		if coe, has := ciStepCOEValue(steps[idx]); has {
+			problems = append(problems, fmt.Sprintf("topology-check step %q: must not carry continue-on-error (has %q)", g.name, coe))
+		}
 	}
 	return problems
 }
@@ -241,6 +266,13 @@ func ciWiringProblems(text string) []string {
 // just after step `after`, to model a reordering mutation.
 func ciMoveSetUpGoAfter(t *testing.T, text, job, after string) string {
 	t.Helper()
+	return ciMoveStepAfter(t, text, job, "Set up Go", after)
+}
+
+// ciMoveStepAfter returns text with job `job`'s step `name` moved to just
+// after the later step `after`, to model a reordering mutation.
+func ciMoveStepAfter(t *testing.T, text, job, name, after string) string {
+	t.Helper()
 	s, e, ok := ciJobSpan(text, job)
 	if !ok {
 		t.Fatalf("job %q not found", job)
@@ -248,9 +280,9 @@ func ciMoveSetUpGoAfter(t *testing.T, text, job, after string) string {
 	block := text[s:e]
 	head := ciStepSplit.Split(block, -1)[0]
 	steps := ciSteps(block)
-	goIdx, afterIdx := ciStepIndex(steps, "Set up Go"), ciStepIndex(steps, after)
+	goIdx, afterIdx := ciStepIndex(steps, name), ciStepIndex(steps, after)
 	if goIdx < 0 || afterIdx < 0 || goIdx > afterIdx {
-		t.Fatalf("job %q: cannot move Set up Go after %q", job, after)
+		t.Fatalf("job %q: cannot move %q after %q", job, name, after)
 	}
 	var order []ciStep
 	for i, st := range steps {
@@ -360,6 +392,33 @@ func TestCIWiring_MutatedInputsAreRed(t *testing.T) {
 		},
 		"topology hash-pinned pip step removed": func() string {
 			return ciRemoveStep(t, live, "topology-check", "Install autoharness (hash-pinned, --require-hashes)")
+		},
+		"topology bootstrap step removed": func() string {
+			return ciRemoveStep(t, live, "topology-check", "Bootstrap pip/setuptools/wheel (hash-pinned, --require-hashes)")
+		},
+		"topology bootstrap runs the autoharness lock": func() string {
+			return mustMutate(t, live,
+				"--no-deps -r .github/constraints/pip-bootstrap-lock.txt\n",
+				"--no-deps -r .github/constraints/autoharness-lock.txt\n")
+		},
+		"topology install drops --only-binary": func() string {
+			return mustMutate(t, live,
+				"pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n",
+				"pip install --require-hashes -r .github/constraints/autoharness-lock.txt\n")
+		},
+		"topology bootstrap after autoharness install": func() string {
+			return ciMoveStepAfter(t, live, "topology-check",
+				"Bootstrap pip/setuptools/wheel (hash-pinned, --require-hashes)",
+				"Install autoharness (hash-pinned, --require-hashes)")
+		},
+		"topology bootstrap before setup-python": func() string {
+			return ciMoveStepAfter(t, live, "topology-check", "Set up Python",
+				"Bootstrap pip/setuptools/wheel (hash-pinned, --require-hashes)")
+		},
+		"continue-on-error added to topology install": func() string {
+			return mustMutate(t, live,
+				"        run: |\n          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n",
+				"        continue-on-error: true\n        run: |\n          pip install --require-hashes --only-binary=:all: -r .github/constraints/autoharness-lock.txt\n")
 		},
 		"job removed": func() string {
 			return mustMutate(t, live, "\n  merge-strategy:\n", "\n  merge-strategy-renamed:\n")

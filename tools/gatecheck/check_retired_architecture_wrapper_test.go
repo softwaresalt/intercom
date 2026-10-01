@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -211,6 +212,45 @@ func TestCheckRetiredArchitectureWrapper_AllowlistedModesPassValidation(t *testi
 				t.Fatalf("trace never reached gatecheck_build, guard may not have been cleared: %q", out)
 			}
 		})
+	}
+}
+
+// TestCheckRetiredArchitectureWrapper_FailsOutsideAGitWorkTree covers the
+// shell-level half of the retired test_resolve_repo_root_outside_a_repo_fails:
+// the wrapper's caller-cwd `git rev-parse --show-toplevel` precondition. Run
+// from an existing directory that is not inside any Git work tree, the
+// wrapper must stop at that precondition with git's own exit 128 and fatal
+// message, before sourcing the runner or building the engine.
+func TestCheckRetiredArchitectureWrapper_FailsOutsideAGitWorkTree(t *testing.T) {
+	bash := requireBash(t)
+	script := retiredArchWrapperPath(t)
+
+	dir := t.TempDir()
+	env := append(os.Environ(), "GIT_CEILING_DIRECTORIES="+filepath.Dir(dir))
+	probe := exec.Command("git", "rev-parse", "--show-toplevel")
+	probe.Dir, probe.Env = dir, env
+	if out, err := probe.CombinedOutput(); err == nil {
+		t.Fatalf("setup: %s unexpectedly resolves to a Git work tree: %q", dir, out)
+	}
+
+	cmd := exec.Command(bash, script)
+	cmd.Dir, cmd.Env = dir, env
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+
+	runErr := cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(runErr, &exitErr) {
+		t.Fatalf("wrapper succeeded or failed to start outside a Git work tree: %v (stderr=%q)", runErr, stderr.String())
+	}
+	if got := exitErr.ExitCode(); got != 128 {
+		t.Fatalf("exit code = %d, want 128 (stderr=%q)", got, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "not a git repository") {
+		t.Fatalf("stderr missing git's precondition failure: %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 }
 
