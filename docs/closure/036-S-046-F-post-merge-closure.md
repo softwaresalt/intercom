@@ -377,7 +377,8 @@ lesson), and durable learnings. Verbose originals were moved to
 `docs/archive/memory/2026-10-01/036-s-046-f-post-merge-closure-session-memory.md` (traceable via
 the compacted file's `compacted_from` frontmatter field). See
 `docs/closure/2026-10-01-036-s-compound-refresh.md` for the accompanying compound-refresh report
-(1 entry updated with a success confirmation, 5 entries reviewed and classified `keep`).
+(1 entry updated to disclose that the safe-close revalidation gap recurred rather than closed,
+5 entries reviewed and classified `keep`).
 
 ## Releasability evidence
 

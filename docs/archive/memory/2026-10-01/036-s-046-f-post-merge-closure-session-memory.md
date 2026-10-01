@@ -16,7 +16,7 @@ phase: post-merge-closure-complete
 
 - Feature PR #85: **MERGED**. Merge commit `5fdd75aec21bb9492aabad08603a5479c1da6846`
   at `2026-10-01T02:17:08Z`. Final reviewed HEAD `d9f7506837bfd3f7ccd8e7e13da9a2ce0080a063`.
-- Shipment `036-S`: `status: shipped`, `archived_status: shipped`.
+- Shipment `036-S`: `status: archived`, `archived_status: shipped`.
 - Feature `046-F`: `status: archived`, `archived_status: done`.
 - All 13 tasks (`046.001-T`..`046.013-T`): `status: archived` (via cascade), `parent_id:
   046-F` preserved.
