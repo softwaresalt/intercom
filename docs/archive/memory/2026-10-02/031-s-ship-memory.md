@@ -18,11 +18,11 @@ Build is complete. All nine manifest tasks are `done` on branch
 | Task | Unit D id | Commit | Notes |
 |---|---|---|---|
 | 034.001-T | D-T0 | `7863eae` | Authorized no-op closure (D-000-2, P-002 skip D-000-3); `pre_task_completion_gate_passed` @ `8a517bb`; `.backlogit/hooks.yaml` untouched |
-| 034.010-T | D-T1 | `c1bebe5` | Frozen differential oracle |
-| 034.002-T | D-T2 | `fbf03f0` | Occurrence cursor + call-extent extractor |
-| 034.003-T | D-T3 | `14dbe67` | Access-mode allowance predicate |
-| 034.004-T | D-T4 | `758a11c` | Six decidable selectors (26 total) |
-| 034.007-T | D-T5 docs | `0862525` | Residual evasion surface doc |
+| 034.010-T | D-T1a | `c1bebe5` | Frozen differential oracle |
+| 034.002-T | D-T1 | `fbf03f0` | Occurrence cursor + call-extent extractor |
+| 034.003-T | D-T2 | `14dbe67` | Access-mode allowance predicate |
+| 034.004-T | D-T3 | `758a11c` | Six decidable selectors (26 total) |
+| 034.007-T | D-T4 | `0862525` | Residual evasion surface doc |
 | 034.008-T | D-T5a | `358e470` | Verdict-boundary fixtures; mutation-tested (`occurrenceAllowed` forced false fails the accept fixture) |
 | 034.011-T | D-T5b | `fdf0de6` | Presence fixtures (B72E9715) |
 | 034.009-T | D-T6 | `fe8c284` | Regression fixtures incl. `os.Chtimes` (D-031-6, 8E9F8E55) |

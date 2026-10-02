@@ -187,7 +187,7 @@ location from an actual filesystem probe (`Test-Path` on the queue and archive p
 from an assumption in helper code. See `docs/closure/030-S-033-F-post-merge-closure.md`.
 
 **Probe-based location in 031-S (2026-10-02).** The 031-S close applied that rule. One
-helper (`logs/bind031.py`, uncommitted) resolved each member's location from file presence,
+session-local helper (uncommitted) resolved each member's location from file presence,
 and failed closed with `RECONCILE_FAIL_SNAPSHOT_AMBIGUOUS` (both roots) or
 `RECONCILE_FAIL_SNAPSHOT_MISSING` (neither root).
 The probe mattered: with backlogit 1.11.0, the Step 6 a1 `move 034-F --status done` also

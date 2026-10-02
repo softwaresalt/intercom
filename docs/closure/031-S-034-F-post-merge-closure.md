@@ -29,14 +29,14 @@ Shipment `031-S` delivered feature `034-F`, "Harden write-path gate, masked-text
 
 The merge hardens the write-path precondition gate in `tools/gatecheck`:
 
-* **034.010-T (`c1bebe5`, D-T1):** a frozen differential oracle for write-path detection
+* **034.010-T (`c1bebe5`, D-T1a):** a frozen differential oracle for write-path detection
   parity.
-* **034.002-T (`fbf03f0`, D-T2):** an occurrence cursor plus a call-extent extractor over
+* **034.002-T (`fbf03f0`, D-T1):** an occurrence cursor plus a call-extent extractor over
   the masked text.
-* **034.003-T (`14dbe67`, D-T3):** an access-mode allowance predicate for metadata-only
+* **034.003-T (`14dbe67`, D-T2):** an access-mode allowance predicate for metadata-only
   `syscall.CreateFile` calls.
-* **034.004-T (`758a11c`, D-T4):** six new decidable write-primitive selectors (26 in total).
-* **034.007-T (`0862525`, D-T5 docs):** documents the residual evasion surface.
+* **034.004-T (`758a11c`, D-T3):** six new decidable write-primitive selectors (26 in total).
+* **034.007-T (`0862525`, D-T4):** documents the residual evasion surface.
 * **034.008-T (`358e470`, D-T5a):** verdict-boundary fixtures. Mutation-tested: forcing
   `occurrenceAllowed` to false fails the accept fixture.
 * **034.011-T (`fdf0de6`, D-T5b):** presence fixtures for the new selectors (B72E9715).
@@ -151,6 +151,11 @@ gate jobs.
 `CLASSIFICATION_BINDING: d3fe146612514f1fb4e3547c714530936dc3b228f508e0f6b9167542620c95bb`.
 
 * The binding engine line is `backlogit version 1.11.0`.
+* The serialization follows the skill's canonical binding exactly: `skill=` is the SHA-256 of the
+  LF `SKILL.md` bytes (`1c7d523d…3ff2`), and `deps=` is the sorted shipment `dependencies`
+  field (`027-S,029-S,037-S`). The shipment status is `active`. Recomputing with those inputs
+  reproduces `d3fe1466…95bb`. A `deps=` line carrying only `037-S` yields a different digest
+  (`14d62f24…`). That was the source of a closure-review P1, declined on this evidence.
 * **Location came from a filesystem probe, not an assumption.** This applies the D10D3AFC
   lesson from 030-S. The helper checked queue and archive file presence for each member, and
   fails closed if a member is in both roots or in neither.
