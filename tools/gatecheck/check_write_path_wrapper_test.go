@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +84,23 @@ func TestCheckWritePathWrapper_LegitimateModesReachBuild(t *testing.T) {
 				!strings.HasSuffix(calls[1], " ./tools/gatecheck") {
 				t.Errorf("second go shim invocation did not receive the expected build command: %q", calls[1])
 			}
+			expectedGoExe := platformGoExe()
+			buildOutputPath, err := os.ReadFile(filepath.Join(filepath.Dir(goShimLog), "build-output-path.log"))
+			if err != nil {
+				t.Fatalf("read generated binary output path: %v", err)
+			}
+			if got, want := path.Base(strings.TrimSpace(string(buildOutputPath))), "gatecheck"+expectedGoExe; got != want {
+				t.Errorf("generated binary output name = %q, want %q", got, want)
+			}
+
+			sentinelLog := filepath.Join(filepath.Dir(goShimLog), "generated-binary-calls.log")
+			sentinel, err := os.ReadFile(sentinelLog)
+			if err != nil {
+				t.Fatalf("read generated binary sentinel: %v", err)
+			}
+			if got, want := strings.TrimSpace(string(sentinel)), "invoked"; got != want {
+				t.Errorf("generated binary sentinel = %q, want %q", got, want)
+			}
 		})
 	}
 }
@@ -92,16 +110,33 @@ func TestInstallGoShim_UnexpectedInvocationFailsClearly(t *testing.T) {
 	installGoShim(t, bash)
 
 	cmd := exec.Command(bash, "-c", "go unexpected-argument")
-	output, err := cmd.CombinedOutput()
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start go shim invocation: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(20 * time.Second):
+		killErr := cmd.Process.Kill()
+		waitErr := <-done
+		t.Fatalf("go shim invocation timed out after 20s (kill err=%v, wait err=%v; output=%q)", killErr, waitErr, output.String())
+	}
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
-		t.Fatalf("unexpected go shim invocation error = %v, want exit code 97 (output: %q)", err, output)
+		t.Fatalf("unexpected go shim invocation error = %v, want exit code 97 (output: %q)", err, output.String())
 	}
 	if got, want := exitErr.ExitCode(), 97; got != want {
-		t.Errorf("unexpected go shim exit code = %d, want %d (output: %q)", got, want, output)
+		t.Errorf("unexpected go shim exit code = %d, want %d (output: %q)", got, want, output.String())
 	}
-	if !strings.Contains(string(output), "unexpected go shim invocation") {
-		t.Errorf("unexpected go shim invocation output lacks diagnostic: %q", output)
+	if !strings.Contains(output.String(), "unexpected go shim invocation") {
+		t.Errorf("unexpected go shim invocation output lacks diagnostic: %q", output.String())
 	}
 }
 
@@ -134,6 +169,9 @@ func workspaceTempDir(t *testing.T) string {
 		strings.HasPrefix(relativeDir, ".."+string(filepath.Separator)) {
 		t.Fatalf("temporary directory is outside workspace")
 	}
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, absoluteDir)
+	}
 	return dir
 }
 
@@ -144,6 +182,8 @@ func installGoShim(t *testing.T, bash string) string {
 	bashDir := resolveBashPath(t, bash, dir)
 	shimPath := filepath.Join(dir, "go")
 	logPath := filepath.Join(dir, "go-calls.log")
+	t.Setenv("GATECHECK_GOEXE", platformGoExe())
+	t.Setenv("GATECHECK_SENTINEL_LOG", path.Join(bashDir, "generated-binary-calls.log"))
 	shim := `#!/usr/bin/env bash
 set -eu
 shim_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -155,7 +195,7 @@ unexpected() {
 case "${1-}" in
 env)
   if [ "$#" -eq 2 ] && [ "$2" = "GOEXE" ]; then
-    printf '\n'
+    printf '%s\n' "${GATECHECK_GOEXE}"
     exit 0
   fi
   ;;
@@ -167,7 +207,13 @@ env)
     [ "$7" != "./tools/gatecheck" ]; then
     unexpected "$*"
   fi
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$6"
+  managed_tmpdir="${TMPDIR%/}"
+  case "$6" in
+    "${managed_tmpdir}"/*) ;;
+    *) unexpected "gatecheck output is outside managed TMPDIR: $6 (TMPDIR=$TMPDIR)" ;;
+  esac
+  printf '%s\n' "$6" > "${shim_dir}/build-output-path.log"
+  printf '#!/usr/bin/env bash\nset -eu\nprintf "invoked\\n" >> "${GATECHECK_SENTINEL_LOG:?}"\nexit 0\n' > "$6"
   chmod +x "$6"
   exit 0
   ;;
@@ -192,6 +238,13 @@ unexpected "$*"
 		t.Fatalf("go resolves to %q, want test shim %q", got, want)
 	}
 	return logPath
+}
+
+func platformGoExe() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
 }
 
 func resolveBashPath(t *testing.T, bash, windowsOrNativePath string) string {
