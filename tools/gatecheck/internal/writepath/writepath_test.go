@@ -479,8 +479,8 @@ func TestOccurrenceAllowed_RejectionTable(t *testing.T) {
 
 // TestLineReportsSelector_AllowedCallCannotHideWritingCall is AC-D2.3: an
 // allowed call and a writing call on one line, in both orders, still yield
-// the finding; the selector is passed as a parameter because
-// syscall.CreateFile is not yet in Selectors.
+// the finding; the selector is passed as a parameter to exercise the
+// per-selector evaluator directly.
 func TestLineReportsSelector_AllowedCallCannotHideWritingCall(t *testing.T) {
 	const sel = "syscall.CreateFile"
 	allowed := "syscall.CreateFile(" + allowedCreateFileArgs + ")"
