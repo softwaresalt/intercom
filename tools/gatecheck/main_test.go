@@ -9,6 +9,92 @@ import (
 	"testing"
 )
 
+func TestRun_RootOccurrences(t *testing.T) {
+	trustedRoot := t.TempDir()
+	overrideRoot := t.TempDir()
+
+	const subcommand = "test-root-occurrences"
+	var dispatched bool
+	var gotRoot string
+	registerSubcommand(subcommand, func(_ []string, root string, _ io.Reader, _ io.Writer, _ io.Writer) int {
+		dispatched = true
+		gotRoot = root
+		return 0
+	})
+	t.Cleanup(func() { delete(subcommands, subcommand) })
+
+	tests := []struct {
+		name           string
+		rootArgs       []string
+		wantCode       int
+		wantRoot       string
+		wantDiagnostic string
+	}{
+		{
+			name:     "trusted only",
+			rootArgs: []string{"--root", trustedRoot},
+			wantCode: 0,
+			wantRoot: trustedRoot,
+		},
+		{
+			name:           "trusted plus trailing --root",
+			rootArgs:       []string{"--root", trustedRoot, "--root", overrideRoot},
+			wantCode:       1,
+			wantDiagnostic: "--root specified more than once",
+		},
+		{
+			name:           "trusted plus trailing --root=",
+			rootArgs:       []string{"--root", trustedRoot, "--root=" + overrideRoot},
+			wantCode:       1,
+			wantDiagnostic: "--root specified more than once",
+		},
+		{
+			name:           "trusted --root= plus trailing --root",
+			rootArgs:       []string{"--root=" + trustedRoot, "--root", overrideRoot},
+			wantCode:       1,
+			wantDiagnostic: "--root specified more than once",
+		},
+		{
+			name:           "empty --root= plus trailing --root",
+			rootArgs:       []string{"--root=", "--root", overrideRoot},
+			wantCode:       1,
+			wantDiagnostic: "--root specified more than once",
+		},
+		{
+			name:           "--root without a value",
+			rootArgs:       []string{"--root"},
+			wantCode:       1,
+			wantDiagnostic: "--root requires a value",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dispatched = false
+			gotRoot = ""
+			args := append([]string{subcommand}, tc.rootArgs...)
+			var stdout, stderr bytes.Buffer
+			code := run(args, strings.NewReader(""), &stdout, &stderr)
+			if code != tc.wantCode {
+				t.Fatalf("code = %d, want %d (stderr: %q)", code, tc.wantCode, stderr.String())
+			}
+			if tc.wantDiagnostic != "" && !strings.Contains(stderr.String(), tc.wantDiagnostic) {
+				t.Fatalf("stderr = %q, want diagnostic containing %q", stderr.String(), tc.wantDiagnostic)
+			}
+			if tc.wantRoot != "" {
+				if !dispatched {
+					t.Fatal("subcommand was not dispatched")
+				}
+				if gotRoot != tc.wantRoot {
+					t.Fatalf("dispatched root = %q, want trusted root %q", gotRoot, tc.wantRoot)
+				}
+			} else if dispatched {
+				t.Fatalf("subcommand was dispatched with root %q after an invalid --root occurrence", gotRoot)
+			}
+		})
+	}
+}
+
 // TestRun_NoArgs verifies that invoking run() with no arguments prints usage
 // to stderr and returns 2 (C-2: the gatecheck tool's own usage errors return
 // 2; no gate observes this because the wrappers never call it that way).

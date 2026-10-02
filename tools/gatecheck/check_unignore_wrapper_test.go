@@ -11,13 +11,13 @@ import (
 )
 
 // TestCheckUnignoreWrapper_RejectsRootInjectionAnywhere covers the same
-// root cause the retired-arch wrapper's own allowlist fix addresses (see
-// check_retired_architecture_wrapper_test.go): gatecheck_invoke appends
+// root containment as the retired-arch wrapper's allowlist (see
+// check_retired_architecture_wrapper_test.go): gatecheck_invoke prepends
 // the trusted "--root <ROOT>" ahead of any args
-// scripts/check-unignore-regression.sh forwards, but main.go's parseRoot
-// scans the WHOLE arg list for "--root"/"--root=" and the LAST occurrence
-// wins, so a caller-supplied --root anywhere in "$@" would silently
-// override the trusted root unless rejected first.
+// scripts/check-unignore-regression.sh forwards, and main.go's parseRoot
+// now treats that first "--root"/"--root=" option as authoritative and
+// rejects any later root option. The trusted root is therefore
+// authoritative; this wrapper's denylist is retained as defense-in-depth.
 //
 // Unlike retired-arch (which forwards only a single validated mode
 // string), unignore's real CLI surface needs multiple flags forwarded

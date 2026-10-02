@@ -69,12 +69,18 @@ func printUsage(stderr io.Writer) {
 
 // parseRoot scans args for a "--root <dir>" pair, removes it, and returns the
 // validated directory path plus the remaining args (in their original
-// relative order). It returns an error if --root is missing, has no value,
-// or does not name an existing directory.
+// relative order). The first --root occurrence is authoritative; a subsequent
+// occurrence is an error. It returns an error if --root is missing, has no
+// value, is repeated, or does not name an existing directory.
 func parseRoot(args []string) (root string, rest []string, err error) {
 	rest = make([]string, 0, len(args))
+	rootSeen := false
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--root" {
+			if rootSeen {
+				return "", nil, fmt.Errorf("--root specified more than once")
+			}
+			rootSeen = true
 			if i+1 >= len(args) {
 				return "", nil, fmt.Errorf("--root requires a value")
 			}
@@ -83,6 +89,10 @@ func parseRoot(args []string) (root string, rest []string, err error) {
 			continue
 		}
 		if v, ok := strings.CutPrefix(args[i], "--root="); ok {
+			if rootSeen {
+				return "", nil, fmt.Errorf("--root specified more than once")
+			}
+			rootSeen = true
 			root = v
 			continue
 		}

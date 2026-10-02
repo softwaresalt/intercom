@@ -5,6 +5,16 @@
 // response (or a committed test fixture) can be evaluated for
 // allow_squash_merge / allow_rebase_merge without a Python interpreter
 // (plan §6, M3-T9).
+//
+// This package documents two accepted, scoped Principle III exceptions;
+// neither is an undiscovered hole. Run accepts root to satisfy the shared
+// subcommand signature, then discards it (_ = root) and reads the supplied
+// payload path with os.ReadFile without checking containment. This is required
+// because live-transport wrapper temp payloads are created outside the repo
+// root, and matches the retired Python evaluate_json opening sys.argv[1].
+// Run also evaluates only args[0] and ignores extra positional arguments,
+// matching the retired Python's unconditional sys.argv[1]. That behavior is
+// intentionally unchanged.
 package mergestrategy
 
 import (

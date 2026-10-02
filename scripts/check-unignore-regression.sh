@@ -65,16 +65,15 @@ set -euo pipefail
 # delta; see m3.md for the parent-vs-head parity evidence).
 #
 # Caller-argument allowlist (same root cause as
-# check-retired-architecture.sh's own root-injection guard):
-# gatecheck_invoke appends the trusted "--root ${ROOT}" ahead of any args
-# this wrapper forwards, but main.go's parseRoot scans the WHOLE arg list
-# for "--root"/"--root=" and the LAST occurrence wins -- so a caller-
-# supplied "--root" anywhere in "$@" would silently override the trusted
-# root. Unlike retired-arch (which forwards only a single validated mode
-# string), unignore's real CLI surface needs multiple flags forwarded
-# (--self-test, --base-ref <ref>, --head-ref <ref>), so instead of
-# collapsing to one argument, every forwarded argument is checked against
-# a literal "--root"/"--root=*" denylist before being passed through.
+# check-retired-architecture.sh's own root-injection guard), retained as
+# defense-in-depth: gatecheck_invoke prepends the trusted "--root ${ROOT}",
+# and main.go's parseRoot treats that first root option as authoritative and
+# rejects any later "--root"/"--root=" option. The trusted root therefore
+# cannot be overridden. Unlike retired-arch (which forwards only a single
+# validated mode string), unignore's real CLI surface needs multiple flags
+# forwarded (--self-test, --base-ref <ref>, --head-ref <ref>), so instead of
+# collapsing to one argument, every forwarded argument is checked against a
+# literal "--root"/"--root=*" denylist before being passed through.
 #
 # Usage:
 #   scripts/check-unignore-regression.sh --self-test
