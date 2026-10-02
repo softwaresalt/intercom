@@ -20,6 +20,10 @@ source_stash:
   - 9F824B64
   - 8E9F8E55  # D-031-2 fold-in (034.009-T)
   - B72E9715  # D-031-2 fold-in (034.004-T)
+  - DD0BB60F  # D-030-4 harvest (033.004-T + 033.005-T + 033.006-T), 2026-10-01 follow-up session
+captured_stash:
+  - 458F9385  # D-S-5 item-6 selector widening (task, low)
+  - 1EEBECA5  # D-049-1 spike-schedule trigger (spike, high)
 related_shipments:
   - 030-S (033-F)
   - 031-S (034-F)
@@ -222,8 +226,80 @@ against is therefore **still real** in Go.
   deliberately pinned. That reduces C312BD4C from "semantic change to a
   merge-blocking gate masker" to "correct a stale comment" — a very different
   risk profile. Recorded as a recommended re-scope for a future session.
+* **D-030-4 — Harvest DD0BB60F as A-T3, split into A-T3a (033.004-T),
+  A-T3b (033.005-T) and A-T3c (033.006-T). This is a deliberate
+  design change to D-6 / INV-6 (operator decision, 2026-10-01 follow-up).**
+  * **Amended source.** D-6 / INV-6 of
+    `docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md`
+    (INV-6 at :969, "pathspec pin stays source-text-anchored"; M2-T8 at :516;
+    R-6 at :55) defined the pin as **presence**. Each pin literal had to
+    appear as a `*ast.BasicLit` somewhere inside the
+    `selectRepoPaths`/`shouldScanRepoPath` body. That plan is not edited; this
+    record and plan rev 5 carry the amendment.
+  * **What is preserved.**
+    * Source-text anchoring: the pin parses the on-disk `select.go`.
+    * H-11 independence: `pathspecPinLiterals`/`prefixPinLiterals` are never
+      derived from `select.go`, and `pin.go:9-15` is unchanged.
+    * No `go/types`, no execution of `select.go`.
+    * Containment semantics: expected ⊆ resolved, so widening the scope is
+      still allowed (INV-2).
+  * **What changes.** A literal counts **only when it is bound to the
+    consuming call**:
+    * The pathspec half resolves from the arguments of the single `GitRunner`
+      call in `selectRepoPaths`.
+    * The prefix half resolves from the prefix arguments of `strings.HasPrefix`
+      in `shouldScanRepoPath`.
+    * Each argument must be reached through **one documented canonical
+      syntactic path** to the corresponding `scanScope` field, enforced as a
+      file-wide **use-whitelist** (plan A-T3). Direct literal arguments are
+      not accepted, because AC-A1.2 forbids restating them (rev-5 review
+      round 2).
+    * Dead literals never count.
+    * Zero or several git calls, an unrecognised form, an empty resolved set,
+      or an empty expected set each **fail closed**.
+  * **Rationale.**
+    1. **It closes a real fail-open.** A narrowed call plus a retained dead
+       literal keeps today's pin green, and this weakens D-030-2's "pin
+       supersedes 033.003-T" reasoning (§4.4).
+    2. **ALP-1 widens the gap.** Once the literals sit in a package-level
+       `scanScope`, "the literal exists" says even less about "the literal
+       reaches git".
+    3. **Python parity is no longer binding.** M4 retired the Python engine, so
+       the presence definition was only a parity artefact.
+    4. **The change is fail-closed only** (INV-2). It can only reject more.
+  * **Sequencing.** The chain is `033.004-T → 033.002-T`,
+    `033.005-T → 033.004-T` and `033.006-T → 033.005-T` (all `blocks`). Each
+    task lands as its own commit after ALP-1. ALP-1 is **not** split, and
+    INV-5 still declares exactly one pair. Each task's red is a newly authored
+    assertion inside that task, so INV-5's test-first exclusion applies.
+  * **Why it is split.**
+    * Rev-5 plan-review round 1 found that a single A-T3 implied 7 test
+      scenarios and about 5 functions, which breaches the 2-hour rule.
+    * Round 2 found that a two-way split still left the pathspec task at 5
+      production functions once the shared use-whitelist checker was counted.
 
-### 2.3 Re-planned task set (2 tasks, was 3)
+    The operator's "a new task" is therefore delivered as **three** serial
+    tasks:
+    * A-T3a (033.004-T) covers `containsAll`'s non-vacuous empty-input
+      contract;
+    * A-T3b (033.005-T) binds the pathspec half;
+    * A-T3c (033.006-T) binds the prefix half.
+
+    A-T1 gains AC-A1.8, which pins a bindable canonical shape.
+  * **Acceptance criteria.**
+    * The `containsAll(_, [])` vacuously-green hazard (`pin.go:127`) is
+      AC-A3a.1, a test-first pure-predicate test.
+    * Committed reject tables have a "narrowed call plus a retained dead
+      literal" row: AC-A3b.1 row (a) for the pathspec half, and AC-A3c.1
+      row (b) for the prefix analogue. Each row is RED against the prior pin,
+      or is declared green on arrival under the plan's red-phase rule.
+  * **Stop condition.** If binding is not syntactically establishable for
+    ALP-1's landed shape, or a task exceeds its budget, the task HALTs to
+    Stage. It never falls back to presence.
+  * **Re-gate.** Unit A goes through plan-review again (plan rev 5, "Plan
+    Review — Revision 5 (Unit A)").
+
+### 2.3 Re-planned task set (2 live tasks, was 3; rev 5 adds 3)
 
 * **033.001-T (rewritten)** — Introduce a single `scanScope` declaration in
   `select.go` describing, per arm, its pathspec form and its test/testdata
@@ -233,7 +309,16 @@ against is therefore **still real** in Go.
   neither restates a literal. Update `pin.go`'s literal targets in lockstep.
   Size M, complexity medium.
 * **033.003-T — DROPPED** (satisfied by `pin.go`; its intent survives as ACs on
-  033.002-T).
+  033.002-T). **Rev 5:** closure as a verified no-op inside 030-S is authorised
+  (D-000-2, §4.7).
+* **033.004-T — NEW (rev 5, D-030-4)** — A-T3a: make `containsAll`
+  non-vacuous on empty input. Size XS, complexity low, test-first. Depends on
+  033.002-T.
+* **033.005-T — NEW (rev 5, D-030-4)** — A-T3b: bind the pathspec half to the
+  git call. Size M, complexity medium, test-first. Depends on 033.004-T.
+* **033.006-T — NEW (rev 5, D-030-4)** — A-T3c: bind the prefix half to the
+  `strings.HasPrefix` call. Size S, complexity medium, test-first. Depends on
+  033.005-T.
 
 ---
 
@@ -422,6 +507,8 @@ outside the eight entries this session was scoped to:
   * Or give it, and 033.003-T, a terminal state.
 * **DD0BB60F was NOT approved** in this decision and is left untouched in the
   stash (still a 030-S fold-in candidate awaiting a separate operator call).
+  *Update (2026-10-01 follow-up): the operator approved it. It is harvested as
+  033.004-T, 033.005-T and 033.006-T under D-030-4 (§2.2) and archived.*
 
 **Why this is sound.** It lands every Option-A unit whose work survives the
 `go/ast` migration. D-1/D-2 become the migration's behavioural spec, the new
@@ -533,10 +620,123 @@ narrowings:
 * **Residual item 7.** A selector split by a newline or comment is now recorded
   as a known-open fail-open surface.
 
-**Operator acknowledgment of D-031-3: PENDING.** D-031-3 is a Stage amendment
-made under planning authority and gated by the operator's D-031-2 hold-lift
-condition. The operator should acknowledge or overrule it before 031-S is
-claimed.
+**Operator acknowledgment of D-031-3: ACKNOWLEDGED (2026-10-01, D-031-4, §4.7).**
+D-031-3 is a Stage amendment made under planning authority and gated by the
+operator's D-031-2 hold-lift condition. The operator has now explicitly
+acknowledged it as the Go-engine adaptation of the call-extent (D-1) and
+access-mode (D-2) rules.
+
+### 4.7 Operator decisions on the rev-4 open items (2026-10-01 follow-up, explicit, final)
+
+These were recorded by Stage in the follow-up session on branch
+`chore/stage-post-m4-followups-and-go-replan`, as routed by the Orchestrator
+under P-013.5.
+
+* **D-031-4 — D-031-3 ACKNOWLEDGED.** The operator acknowledges D-1′/D-2′ as
+  the adaptation of the call-extent (D-1) and access-mode (D-2) rules to the Go
+  engine. Nothing is left pending on 031-S's D-031-3 dependency.
+* **D-031-5 — H-5 re-measure is POLICY.** It replaces a CI tripwire. Every
+  Stage session re-measures the known residuals until 039-S ships: aliased or
+  dot write-capable imports, production `Root.Resolve`/`pathsafe.NewRoot`
+  callers, and item-6 primitives. The three plan H-5 commands are used, and
+  their verbatim output goes in the session memory. Any new hit promotes 039-S
+  to the head of the queue. This closes R4b-P2-5: declining the CI tripwire
+  now rests on an approved control. The first run under the policy is recorded
+  in plan H-5 (rev 5) and in the session memory: no new trigger.
+* **D-031-6 — `os.Chtimes` CONFIRMED in 034.009-T.** All four D-T6 fixtures
+  stay in scope.
+* **D-000-2 — Verified no-op closure AUTHORISED for 034.001-T (031-S) and
+  033.003-T (030-S).** Ship closes each **inside its own shipment** through the
+  normal path `queued → active → done`. Evidence at the pre-task-completion gate
+  (`evidence_required: true`) shows the work is already satisfied:
+  * for 034.001-T, the spike document
+    `docs/decisions/2026-09-19-intercom-go-call-extent-extraction-and-allowance-predicate-spike.md`
+    plus D-031-3, acknowledged as D-031-4;
+  * for 033.003-T, `pin.go` supersedes it. Cite the symbols
+    `checkPathspecPin` and `SelectionPathspecPin` plus the SHA at closure.
+    Close it after 033.006-T lands, or, if any A-T3 task halts to Stage, cite the
+    post-ALP-1 pin instead.
+
+  For both items, Ship records the `harness-ready` precondition (P-002/P-004)
+  at claim as a disclosed `skip_policy: P-002`, scoped to that item and citing
+  this decision. Stage's reading needs operator confirmation, which is
+  recorded as an open item.
+
+  Each closure artifact counts the item as **satisfied-by-prior-work**, not as
+  delivered scope, and discloses that. `.backlogit/hooks.yaml` is **not**
+  changed. This resolves the D-031-2 "named prerequisite" for both 030-S and
+  031-S closure.
+* **D-049-1 — Go-era `go/ast` spike SCHEDULED.** E-T1 / 049.001-T's spike
+  (G-1..G-7) runs **after 031-S merges and before 039-S is claimed**, because
+  G-3 parity needs the Unit D corpus, ending at 034.009-T, on `main`.
+  * **Execution:** Stage runs it under the P-016 time-boxed spike-worktree
+    exception.
+  * **Trigger:** stash entry **1EEBECA5** (kind spike, priority high), which the
+    next Stage triage after 031-S closes picks up. If triaged earlier, it is
+    deferred with the reason "trigger not fired" and archived only once the
+    spike document exists.
+  * **Backstop:** the `blocked_stale` hook on blocked 049-F (7 days,
+    Stage-subscribed).
+  * **Why this mechanism:** a stash entry is backlogit's native Stage-intake
+    surface and survives across sessions. It is the only Stage-owned queue the
+    next cycle is required to read (Step 1). A checkpoint was rejected because
+    resolving it is session-scoped and recovery-oriented, not scheduling.
+  * **Where recorded:** 049-F, 049.001-T and plan E-T1.
+  * **Operator rationale (accepted Q&A on why `go/ast`).** The write-path gate
+    is CI tooling that guards intercom-go's own source, not runtime code.
+    `go/ast` gives:
+    * exact call boundaries;
+    * import-alias resolution;
+    * `NewRoot`/`Root.Resolve` receiver tracking;
+    * immunity to split selectors.
+
+    None of those gaps is exploited today. Their value grows as the Copilot
+    SDK client gains real workspace write paths. 039-S therefore stays behind
+    the spike and is sequenced after 031-S.
+* **D-S-5 — Item-6 selector widening CAPTURED** as stash entry **458F9385**
+  (kind task, priority low). It covers:
+  * `ioutil.WriteFile/TempFile/TempDir`;
+  * `syscall.WriteFile/Open/Unlink/Rename/Mkdir/CreateHardLink/DeleteFile`;
+  * the `x/sys/windows` and `x/sys/unix` equivalents.
+
+  It cites plan D-T4 residual item 6 and R4-P2-g. **Stage recommends folding it
+  into 039-S / 049-F at the post-spike re-plan**, because `go/ast` import-path
+  resolution makes detection exact. Plan residual item 6 now cites 458F9385
+  instead of "stash candidate".
+* **D-030-4 — DD0BB60F harvested into 030-S as 033.004-T, 033.005-T and 033.006-T.** This is a
+  deliberate design change to D-6 / INV-6; see §2.2 for the full record.
+* **D-030-5 — Gate outcome (2026-10-01): FAIL, so 030-S goes back on STAGE
+  HOLD.**
+  * **The review.** The rev-5 Unit A plan-review round 3 was the final allowed
+    re-entry. It returned **FAIL**: the Security Lens raised five P1 findings,
+    SEC-1..SEC-5. Each is a fail-open narrowing that the canonical binding
+    contract still accepts:
+    * exclude/magic pathspecs, and prefix shadowing, defeat expected ⊆
+      resolved;
+    * the self-test has no probe for non-test `cmd/**/*.go`;
+    * the `selectRepoPaths` shape is unpinned;
+    * the `DefaultGitRunner` body is unpinned;
+    * prefix control flow outside the loop is not analysed.
+  * **The hold.** Decision 7 lets the hold stay lifted only at ADVISORY or
+    better with no P0/P1, so **033-F stays `blocked`**. Both 033-F and 030-S
+    now carry a STAGE HOLD section.
+  * **The harvest.** The tasks were still harvested, because decision 7 directs
+    it, but under the held feature. Each is marked STAGE HOLD, and its
+    acceptance criteria are expected to change at remediation.
+  * **Escalation.** The protocol resolved to `ESCALATION_DEGRADED`, so this
+    goes to operator review.
+  * **Options.** (a) Stage remediates in rev 6, then one operator-authorised
+    re-review (recommended). (b) LR-6 narrowing: ALP-1 + A-T3a now, with
+    A-T3b/A-T3c held. (c) Risk acceptance of SEC-1..SEC-5.
+  * **Where recorded.** Plan, `## Plan Review — Revision 5 (Unit A)`.
+
+**P-021 obligations for this follow-up.**
+* **(A) Duplicate scan, unconditional.** It ran over the stash for the two new
+  captures and for DD0BB60F. It found no duplicate (the `ioutil`, `go/ast`
+  spike and 049.001 keyword scan matched only the new entries), so the scan is
+  CLEAN. DD0BB60F carries no `DEFERRED SCOPE EXPANSION` marker.
+* **(B) Late-identifier reconciliation.** Not triggered for these entries: none
+  carries an `N/A` source ref.
 
 ---
 
@@ -545,12 +745,20 @@ claimed.
 | ID | Decision |
 |---|---|
 | D-000-1 | All three held shipments' `blocks` edges are satisfied (025-S/027-S/029-S/037-S all archived). Edges **retained** as historical record. |
-| D-030-1 | 030-S re-planned onto Go; 2 tasks retargeted. **HOLD LIFTED** on plan-review ADVISORY (round 3, no P1/P2). A-T1/A-T2 declared atomic landing pair ALP-1. |
+| D-030-1 | 030-S re-planned onto Go; 2 tasks retargeted. **HOLD LIFTED** on plan-review ADVISORY (round 3, no P1/P2). A-T1/A-T2 declared atomic landing pair ALP-1. *Hold re-imposed by D-030-5 (rev 5).* |
 | D-030-2 | 033.003-T dropped — `pin.go` already supersedes it. Intent carried as ACs. Hazard narrative corrected at plan-review round 1: the pin fails **loudly**, the real risk is a **vacuously green** pin from emptied literal lists. |
 | D-030-3 | C312BD4C stays deferred, but **re-scoped**: fix the stale comment, not the regex. |
 | D-031-1 | 031-S **BLOCKED** — operator must choose Option A (masked-text port, recommended) or Option B (`go/ast` rewrite, needs a fresh spike). **HOLD NOT LIFTED.** *Superseded by D-031-2.* |
 | D-031-2 | Operator **SPLIT** 031-S (§4.5). 031-S keeps the Option A increment (034.002/003/004/007/008-T + new 034.009-T; B72E9715 and 8E9F8E55 folded in); 034.001-T SATISFIED. 034.005-T/034.006-T re-parented to new **049-F / 039-S** (`go/ast` spike + migration), gated by `blocks` 039-S → 031-S and a STAGE HOLD on 049-F. Hold lift conditional on rev-4 plan-review — outcome: **round 3 ADVISORY, no P0/P1 → 031-S HOLD LIFTED** (rounds 1–2 FAIL, remediated via D-031-3). 049-F hold retained pending spike re-plan. |
-| D-031-3 | Go-era amendments **D-1′/D-2′** from rev-4 plan-review rounds 1–2 (§4.6): `SplitLines` loop retained + fail-closed byte cursor; `()[]{}` depth; per-occurrence predicate; bare-operand rule + rule 3b (non-empty segments); exact `syscall.OPEN_EXISTING`; flags exactly `syscall.FILE_FLAG_BACKUP_SEMANTICS`; frozen oracle with single authorised E-T2 adaptation; residual item 7. Oracle and presence fixtures split into new 034.010-T / 034.011-T. Narrows only; never widens. **Operator acknowledgment: PENDING.** |
+| D-031-3 | Go-era amendments **D-1′/D-2′** from rev-4 plan-review rounds 1–2 (§4.6): `SplitLines` loop retained + fail-closed byte cursor; `()[]{}` depth; per-occurrence predicate; bare-operand rule + rule 3b (non-empty segments); exact `syscall.OPEN_EXISTING`; flags exactly `syscall.FILE_FLAG_BACKUP_SEMANTICS`; frozen oracle with single authorised E-T2 adaptation; residual item 7. Oracle and presence fixtures split into new 034.010-T / 034.011-T. Narrows only; never widens. **Operator acknowledgment: ACKNOWLEDGED (D-031-4).** |
+| D-030-4 | DD0BB60F harvested as **033.004-T** (A-T3a, `containsAll` empty-input contract), **033.005-T** (A-T3b, pathspec half) and **033.006-T** (A-T3c, prefix half). The task was split at rev-5 review rounds 1 and 2 to meet the 2-hour rule. The pin binds to its consuming calls through one canonical path per half, enforced as a use-whitelist: a deliberate design change to D-6/INV-6 that keeps source-text anchoring and replaces presence with call binding. A-T1 gains AC-A1.8 (bindable shape). All three tasks are sequenced after ALP-1 and are not part of it. Unit A is re-gated in plan rev 5. |
+| D-031-4 | Operator **acknowledged** D-031-3. |
+| D-031-5 | H-5 per-session re-measure is **policy**, replacing a CI tripwire. Closes R4b-P2-5. |
+| D-031-6 | `os.Chtimes` **confirmed** in 034.009-T. |
+| D-000-2 | Verified no-op closure **authorised** for 034.001-T (031-S) and 033.003-T (030-S): `queued → active → done` with gate evidence. `hooks.yaml` unchanged. |
+| D-049-1 | Go-era `go/ast` spike **scheduled** after 031-S merges and before 039-S is claimed. Stage-executed (P-016). Trigger is stash 1EEBECA5; backstop is `blocked_stale`. |
+| D-030-5 | Rev-5 Unit A plan-review round 3 (final re-entry) returned **FAIL** (Security Lens SEC-1..SEC-5, P1). **030-S back on STAGE HOLD** (033-F `blocked`). A-T3 tasks harvested under the hold per decision 7. Escalation is `ESCALATION_DEGRADED`, so this goes to operator review. Remediation options (a)/(b)/(c) are open. |
+| D-S-5 | Item-6 selector widening captured as stash **458F9385** (task, low). Recommended for 039-S / 049-F. |
 | D-032-1 | 032-S re-planned onto Go; all 3 tasks retargeted. **HOLD LIFTED** on plan-review ADVISORY (round 3, no P1/P2). |
 | D-032-2 | Valid-ref/absent-file must stay `("", nil)`; invalid-ref must become a distinct error. |
 | D-032-3 | `git_test.go:103-121` must be **inverted**, not merely supplemented. |

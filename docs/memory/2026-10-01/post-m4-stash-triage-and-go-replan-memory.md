@@ -200,4 +200,123 @@ edited to carry `PR=#71` (C6 reconciliation) and the harvest target, then were
 * 039-S is hard-gated: it `blocks`-depends on 031-S and is held by the 049-F
   STAGE HOLD until the spike re-plan passes plan-review.
 
+## Follow-up session — operator decisions on the rev-4 open items (2026-10-01)
+
+**Route and startup.**
+* Route: Stage, via the Orchestrator under P-013.5. Model: claude-opus-5.5 /
+  anthropic / high. Not dark mode.
+* Tools: `TOOL_OK` for backlogit CLI v1.11.0.
+* Index sync: `INDEX_SYNC_OK` (391 artifacts at start, 393 at end).
+* Checkpoint scan: 36 checkpoints, all resolved, none quarantined. That is a
+  zero-candidate normal startup.
+
+**Recovery of an interrupted pass.** An earlier Stage pass on this same request
+left uncommitted work:
+* stash entries 458F9385 and 1EEBECA5;
+* the deliberation's §4.7 operator-decision records;
+* the rev-5 plan draft.
+
+It mutated no queue items and wrote no memory. Its plan-review transcripts
+(rev-5 rounds 1–2) were lost. This session:
+* adopted and verified the draft;
+* reconciled the deliberation from a 2-way to the plan's 3-way A-T3 split;
+* recorded rounds 1–2 as reconstructed FAILs.
+
+**Branch gate (Step 1.9) deviation, operator-reconciled.** The tree has one
+worktree, `base_ref=main`, and the symbolic HEAD is correct. Two discriminator
+conditions fail:
+* **Condition 2** fails on `.autoharness/config.yaml`.
+* **Condition 3** fails because the tip is the operator's 52f15d4.
+
+Both come from the operator's own config commit. Stage proceeded under the
+operator's explicit instruction to commit on this branch, and did not touch
+52f15d4.
+
+**Operator decisions recorded** (deliberation §4.7 and §5; plan rev 5):
+* **D-031-4.** D-031-3 is acknowledged.
+* **D-031-5.** The H-5 re-measure is policy.
+* **D-031-6.** `os.Chtimes` stays in 034.009-T.
+* **D-000-2.** No-op closure is authorised for 034.001-T and 033.003-T.
+* **D-049-1.** The spike is scheduled after 031-S merges and before 039-S is
+  claimed. Trigger: stash 1EEBECA5. Backstop: 049-F `blocked_stale`. The
+  operator's `go/ast` rationale is recorded.
+* **D-S-5.** Residual item 6 is captured as stash 458F9385.
+* **D-030-4.** DD0BB60F is harvested.
+* **D-030-5.** The gate outcome (below).
+
+**H-5 re-measure (policy D-031-5) at HEAD 52f15d4. All results match the plan,
+so there is no new trigger.**
+* **cmd1** (aliased or dot write-capable imports): empty (exit 1).
+* **cmd2** (`.Resolve(` / `pathsafe.NewRoot(`):
+  * `internal/config/validate.go:32` (comment)
+  * `internal/config/validate.go:42` `root, err := pathsafe.NewRoot(c.DefaultWorkspaceRoot)`
+  * `internal/config/validate.go:67` `wsRoot, err := pathsafe.NewRoot(m.Path)`
+* **cmd3** (item-6 primitives): only `internal/pathsafe/reparse_windows.go:15`
+  (comment).
+
+**Rev-5 Unit A plan-review round 3 (final re-entry; multi-agent): FAIL.**
+
+| Persona | Verdict | Findings |
+|---|---|---|
+| Go | ADVISORY | P2 ×4 |
+| Scope | ADVISORY | P2 ×4 |
+| Constitution | ADVISORY | P2 ×3 |
+| Learnings | ADVISORY | P3 only |
+| Architecture (anchor `gpt-6.1-sol` / xhigh) | PASS-level | P3 ×2 |
+| Security Lens | **FAIL** | **P1 ×5 (SEC-1..SEC-5)**, P2 ×2 |
+
+The Escalation Protocol resolved to `ESCALATION_DEGRADED`, so the outcome goes
+to operator halt. **030-S is back on STAGE HOLD**: 033-F is `blocked`, and both
+033-F and 030-S carry a STAGE HOLD section.
+
+**Backlog mutations (all read back).**
+* **New tasks under 033-F, added to 030-S.** Each has structured `size` and
+  prose complexity, and each carries the STAGE HOLD:
+  * 033.004-T (XS/low)
+  * 033.005-T (M/medium)
+  * 033.006-T (S/medium)
+* **Edges added (`blocks`):**
+  * 033.004-T → 033.002-T
+  * 033.005-T → 033.004-T
+  * 033.006-T → 033.005-T
+* **Updated sections:**
+  * 034.001-T and 033.003-T: `description` and `acceptance-criteria` (D-000-2,
+    fail-closed on the P-002 confirmation).
+  * 049-F: `description`.
+  * 049.001-T: `description` and `acceptance-criteria` (D-049-1, rationale,
+    rev 5).
+* **Stash:**
+  * DD0BB60F: text edited with the harvest targets, then **archived**.
+  * 458F9385 (task, low) and 1EEBECA5 (spike, high): active.
+* `backlogit doctor`: no issues.
+
+**Latent defect found.** 035-F (032-S) has frontmatter `status: blocked`, even
+though D-032-1 and its description say "HOLD LIFTED". Commit 2e87aaa lifted the
+hold in prose only. 033-F had the same mismatch, which is now moot under the
+re-imposed hold.
+* 035-F was **not** changed: it is outside this session's operator scope, and
+  `hooks.yaml` lists no blocked→queued transition.
+* Ship cannot claim 032-S until this is reconciled. This is an OPEN operator
+  item.
+
+**Open operator decisions (this session):**
+1. Choose a 030-S remediation path:
+   * (a) Stage rev 6, then one more authorised review round (recommended);
+   * (b) LR-6 narrowing;
+   * (c) risk-accept SEC-1..SEC-5.
+2. Confirm Stage's reading of the P-002 skip, which records an item-scoped
+   `skip_policy: P-002` for the no-op closures. This is a hard precondition of
+   the 034.001-T and 033.003-T claims.
+3. Reconcile 035-F `blocked` against the D-032-1 HOLD LIFTED. The candidate fix
+   is a Stage `move` to queued, as was done for 034-F.
+4. Acknowledge the branch-gate deviation (52f15d4 sits on the Stage artifact
+   branch).
+
+**Degraded tooling.** `--complexity` is unsupported (no header field), so
+complexity is recorded as prose.
+
+**Next Stage cycle.**
+* 1EEBECA5 fires once 031-S merges.
+* 030-S remediation follows the operator's choice.
+
 *Generated by Copilot*

@@ -6,7 +6,7 @@ agent: Stage
 date: 2026-10-01
 stage_branch: chore/stage-post-m4-followups-and-go-replan
 bound_snapshot: 9b299c8 (origin/main)
-revision: 4
+revision: 5
 requires_plan_hardening: yes
 ---
 
@@ -24,8 +24,9 @@ B72E9715 and 8E9F8E55. Unit E is the **new, deferred `go/ast` follow-up**
 that are hard as text scanning and that a `go/ast` engine would replace.
 
 **Out of scope.** Stash groups G2, G3, G5 — deferred with recorded rationale
-(deliberation §1.5). Stash entry **DD0BB60F** (fold into 030-S) — **not
-approved** by the D-031-2 operator decision and left untouched.
+(deliberation §1.5). Stash entry **DD0BB60F** was out of scope through
+revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
+(033.004-T, 033.005-T, 033.006-T)** by operator direction (decision D-030-4).
 
 **Requires plan hardening: yes.** See `## Plan Hardening`.
 
@@ -65,6 +66,51 @@ approved** by the D-031-2 operator decision and left untouched.
 > ADVISORY, no P0/P1 → 031-S STAGE HOLD LIFTED**); the revision-3 verdict above
 > covers Units A–C only.
 
+> **Revision 5 — changelog (2026-10-01, operator decisions on the rev-4 open
+> items; deliberation §4.7).** Units B and C are **unchanged**. Unit D's
+> execution content is unchanged except as noted below.
+>
+> 1. **D-031-3 acknowledged** by the operator (D-031-4). D-1′/D-2′ are now
+>    operator-ratified, not pending.
+> 2. **H-5 re-measure is POLICY** (D-031-5), replacing a CI tripwire. It is no
+>    longer a recommendation. This session's run is recorded in H-5 and in the
+>    session memory.
+> 3. **`os.Chtimes` confirmed** in 034.009-T (D-031-6). D-T6 is no longer
+>    flagged.
+> 4. **No-op closure authorised** for 034.001-T (031-S) and 033.003-T (030-S)
+>    (D-000-2). Ship closes each inside its own shipment, `queued → active →
+>    done`, with pre-task-completion gate evidence. See D-T0 and "Dropped from
+>    Unit A". `.backlogit/hooks.yaml` is not changed.
+> 5. **Spike scheduled** (D-049-1). E-T1's Stage-executed `go/ast` spike runs
+>    **after 031-S merges and before 039-S is claimed**. Stash entry
+>    **1EEBECA5** is the trigger for the next Stage cycle. See E-T1.
+> 6. **Residual item 6 captured** as stash entry **458F9385** (D-S-5).
+>    Stage recommends folding it into 039-S / 049-F. See D-T4 item 6 and H-5.
+> 7. **DD0BB60F harvested** into 030-S as **A-T3** (D-030-4), a deliberate
+>    design change to D-6 / INV-6 of the gate-engine migration plan: the pin
+>    keeps source-text anchoring and replaces presence with **call binding**.
+>    Plan review split the work for the 2-hour rule (rounds 1 and 2) into
+>    **A-T3a (033.004-T)** for the empty-input contract, **A-T3b (033.005-T)**
+>    for the pathspec half, and **A-T3c (033.006-T)** for the prefix half.
+>    Binding is enforced as a **use-whitelist** over one canonical syntactic
+>    path per half (round 2). A-T1 gains **AC-A1.8**, which requires that
+>    shape, and A-T2's sibling collector definition is pinned. All three tasks
+>    are sequenced after ALP-1 and are **not** part of it; INV-5 still declares
+>    exactly one pair. Unit A is re-gated under
+>    `## Plan Review — Revision 5 (Unit A)`.
+>
+> **Revision 5 gate outcome: FAIL → 030-S back on STAGE HOLD.** Round 3, the
+> final re-entry allowed, returned **FAIL**. Five personas returned ADVISORY or
+> PASS-level verdicts. The Security Lens returned **five P1 findings**
+> (SEC-1..SEC-5): fail-open narrowings that the canonical binding contract still
+> accepts. The operator made lifting the hold conditional on ADVISORY or better
+> with no P0/P1, so **033-F stays `blocked` and 030-S is on hold**. The A-T3
+> tasks were still harvested by operator direction (decision 7). They are
+> marked STAGE HOLD, and their acceptance criteria are expected to change at
+> remediation. The Escalation Protocol resolved to `ESCALATION_DEGRADED`, so the
+> next step is operator review. See the review section and the Harvest Record —
+> Revision 5.
+
 ---
 
 ## Invariants (all units)
@@ -102,7 +148,10 @@ approved** by the D-031-2 operator decision and left untouched.
   > is **"was this assertion green on the tracked tree at `9b299c8`?"** — for
   > ALP-1 it was; for B-T1 and C-T2 it did not exist. (B-T1 inverts an existing
   > assertion at `git_test.go:103-121`, which is an authored change to a test
-  > this plan explicitly owns, not a collateral gate break.)
+  > this plan explicitly owns, not a collateral gate break.) **A-T3a, A-T3b and
+  > A-T3c (rev 5)** fall under the same exclusion. Their red tests are new
+  > assertions authored inside each task, and land in the same commit as the
+  > code that greens them. None of them is a pair or a carve-out.
 
 ---
 
@@ -112,8 +161,10 @@ approved** by the D-031-2 operator decision and left untouched.
 
 **Premise correction carried forward (still true in Go):** there is **no live
 scan-scope drift**. `selectRepoPaths` *does* enumerate `cmd/**`
-(`select.go:126`). This unit removes a maintenance hazard; it does **not** fix a
-live defect. Any report claiming a fixed defect here is wrong.
+(`select.go:126`). ALP-1 removes a maintenance hazard; it does **not** fix a
+live defect. Any report claiming that ALP-1 fixed a defect is wrong. **A-T3
+(rev 5)** closes a *latent fail-open in the guard itself* (DD0BB60F), not a
+defect in the selected path set.
 
 **The guarded decision (D4/AG-5) that survived the port:** `shouldScanRepoPath`
 (`select.go:50-63`) is **not** a flat prefix disjunction. `cmd/` intentionally
@@ -205,6 +256,23 @@ Neither may restate a scope literal.
   state the post-`scanScope` contract and name `scanScope` as the single
   permitted home for the literals. Leaving any of them in place is a false
   instruction to the next reader.
+* AC-A1.8 — **Bindable shape (rev 5, for A-T3).** `scanScope` and both
+  consumers use the **canonical binding shapes** defined under A-T3:
+  * a single package-level `var scanScope = []T{…}` with keyed elements, where
+    the pathspec field (and the prefix field where present) is a string
+    literal;
+  * `selectRepoPaths` builds its pathspec slice `S` with a sole-statement
+    `append` loop, `for _, a := range scanScope`, and calls `git(root, S...)`
+    exactly once;
+  * `shouldScanRepoPath` evaluates prefixes with exactly one non-negated
+    `strings.HasPrefix(path, a.<prefixField>)` in an `if` condition, whose
+    nearest enclosing loop is a canonical `range scanScope` loop;
+  * nothing in `select.go` violates the A-T3 **use-whitelist**: `scanScope`
+    and `S` are never mutated, resliced or passed on, and `append`,
+    `strings`, `a` and the `git` parameter are never shadowed.
+
+  The rewritten comments (AC-A1.7) must stay true once binding lands. If the
+  three arms cannot be expressed in this shape, HALT to Stage (H-2 A).
 
 ### A-T2 — Re-anchor the pathspec pin and add a negative control
 
@@ -231,6 +299,10 @@ is what this task must prevent.
 Re-anchor `checkPathspecPin` onto whichever declaration now holds the literals.
 Note `findFuncBody` resolves only `*ast.FuncDecl`, so anchoring on a
 package-level `scanScope` (`*ast.GenDecl`) requires a sibling collector.
+**Collector definition (rev 5, pinned for A-T3's red phase):** the sibling
+collector gathers **every string `*ast.BasicLit` within the `scanScope`
+declaration**, whatever field it sits in. A-T3c deletes it once binding
+replaces presence.
 
 > **Not a self-comparison.** `pin.go:9-15` records that `pathspecPinLiterals` and
 > `prefixPinLiterals` are **this file's own independent expectation, never derived
@@ -268,18 +340,301 @@ package-level `scanScope` (`*ast.GenDecl`) requires a sibling collector.
   rewritten to describe the `scanScope` anchor. (`pin.go:9-15`, the H-11
   self-comparison note, stays true and is **not** modified.)
 
+### A-T3 — Bind the pathspec pin to its consuming calls (rev 5; split into A-T3a / A-T3b / A-T3c)
+
+Harvested from stash **DD0BB60F** under decision **D-030-4** (deliberation
+§2.2). Files: `pin.go` and `pin_test.go` only. `select.go` is **read-only**
+for every A-T3 task.
+
+> **Split at plan review (rev 5).**
+> * **Round 1.** A single A-T3 implied 7 test scenarios and about 5 functions,
+>   which breaches the 2-hour rule (Go Reviewer P1-3, Scope Auditor F1).
+> * **Round 2.** A two-way split still left the pathspec task at 5 production
+>   functions once the shared use-whitelist checker was counted (Go N5,
+>   Scope N3).
+>
+> The final split is three serial, independently landable, test-first tasks:
+> * **A-T3a (033.004-T)** — `containsAll`'s non-vacuous empty-input contract;
+> * **A-T3b (033.005-T)** — binds the pathspec half;
+> * **A-T3c (033.006-T)** — binds the prefix half.
+>
+> Between A-T3b and A-T3c the prefix half is still a presence check (H-5).
+
+**Sequencing.** The chain is `A-T3a → A-T2`, `A-T3b → A-T3a` and
+`A-T3c → A-T3b`, all `blocks` edges. Each task lands as **its own commit after
+ALP-1**. None is part of ALP-1, and ALP-1 is not split: A-T1 and A-T2 still land
+as one commit. INV-5 is unchanged and still declares exactly one pair. Each
+task's red phase is a **newly authored assertion inside that task**. It did not
+exist on the tracked tree, so INV-5's test-first exclusion applies. Red and green
+land together in that task's single commit, and no previously passing gate
+changes verdict at any boundary.
+
+**Why this is a design change (D-030-4).** The gate-engine migration plan
+(`docs/plans/2026-09-28-intercom-go-gate-engine-go-migration-plan.md`, D-6 /
+INV-6 at :969, M2-T8 at :516) defined the pin as **presence**: each literal is
+a `*ast.BasicLit` somewhere inside the function body (`collectStringLits`). A-T3
+keeps **source-text anchoring** and replaces presence with **call binding**.
+
+**Latent fail-open being closed.** This is not a live escape: the tracked tree
+is correct. The gap is in the guard. `checkPathspecPin` accepts a `select.go`
+whose consumer has been narrowed, for example by dropping `cmd/**` from what
+reaches git, as long as the literal survives where the presence collector
+counts it. The prefix half has the same gap. ALP-1 widens the gap: once the
+literals sit in a package-level `scanScope`, "the literal exists in
+`scanScope`" no longer proves "the literal reaches the call". AC-A2.3's
+narrowed-scope negative control removes the literal outright, so it cannot
+catch this.
+
+**Canonical binding contract (normative; A-T1 produces it per AC-A1.8).** This
+is one documented syntactic path per half, enforced as a **use-whitelist**, not
+a blacklist. Anything not explicitly permitted **fails closed**. All checks are
+syntactic, over `select.go` only, and use name-based resolution. They never use
+the deprecated `ast.Object` / `Ident.Obj` (staticcheck SA1019); the pin may
+parse with `parser.SkipObjectResolution`.
+
+* **Declaration.** `select.go` has exactly one package-level
+  `var scanScope = []T{…}`. Each element is a **keyed** composite literal.
+  * The **pathspec field**, and the **prefix field** where present, are
+    string `*ast.BasicLit`s.
+  * Other fields, such as a test-policy `bool` or an exact-match string, are
+    unconstrained by the binder.
+  * A-T1 chooses the field names, and the pin header doc records them.
+  * A `scanScope` that is missing, duplicated, or has a non-keyed element
+    fails closed.
+* **Canonical loop.** `for _, a := range scanScope { … }`. The key is `_`, the
+  value is a single identifier, `Tok` is `:=`, and the range expression is the
+  **bare identifier** `scanScope`.
+* **Pathspec path (A-T3b), in `selectRepoPaths`:**
+  * `S` is declared exactly once, as `var S []string` or
+    `S := make([]string, 0)` / `make([]string, 0, n)`.
+  * One canonical loop whose body is **exactly one** statement:
+    `S = append(S, a.<pathspecField>)`, where `a` is that loop's value
+    identifier.
+  * **Exactly one** call `git(root, S...)`: `Fun` is the identifier of the
+    function's single `GitRunner`-typed parameter, there are two `Args`, and
+    `Ellipsis` is set.
+  * The resolved set is the pathspec-field values of `scanScope`'s elements.
+  * Direct literal arguments are **not** accepted, because AC-A1.2 forbids
+    restating them.
+* **Prefix path (A-T3c), in `shouldScanRepoPath`:**
+  * **Exactly one** `strings.HasPrefix` call in the function.
+  * The call's **nearest enclosing loop** is a canonical loop, and the call is
+    not inside a function literal.
+  * The call is the `Cond` of an `if`, or a direct operand of a top-level
+    `&&` chain in that `Cond`. It is never negated.
+  * Argument 0 is the function's first parameter identifier. Argument 1 is
+    `a.<prefixField>`, where `a` is that loop's value identifier.
+  * The loop body may otherwise hold the arm logic, for example the
+    `config.toml.example` exact-match arm, which has an empty prefix:
+    `if a.<prefixField> == "" { … continue }`.
+  * The resolved set is the **non-empty** prefix-field values of `scanScope`'s
+    elements.
+* **Use-whitelist (file-wide in `select.go`).** Each of the following fails
+  closed:
+  * **`scanScope`** appears anywhere other than its declaration and the range
+    expressions of the canonical loops. This includes assignment, element or
+    field mutation, slicing, `&`, being passed as an argument, and use in an
+    `init()`.
+  * **`S`** appears anywhere other than its declaration, the single `append`
+    statement, and the `git` call. This includes `copy`, index assignment,
+    reslicing and `IncDec`.
+  * **The loop value identifier `a`** is rebound or assigned inside its loop,
+    for example by an inner `range` or `:=` that redeclares `a`, or by
+    `a = …`.
+  * **The `GitRunner` parameter** is used other than as the `Fun` of the single
+    call.
+  * **The path parameter** of `shouldScanRepoPath` is assigned anywhere in the
+    function.
+  * **Any declaration**, at package or local scope, of `append`, `make`,
+    `strings`, or `scanScope` (other than the canonical one).
+  * **The `strings` import** is missing or aliased.
+* **Dead literals never count.** Only values reached through the path above
+  contribute. A literal anywhere else does not: in a function body, in another
+  field of the `scanScope` declaration, or in a package-level var.
+* **Containment and non-vacuity.** The expected set must be ⊆ the resolved set,
+  so widening is still allowed (INV-2). An empty resolved set or an empty
+  expected set is **rejected**, by A-T3a's contract.
+* **No type checker, no execution.** There is no `go/types`, no cross-function
+  data flow, and `select.go` is never run.
+* **Residuals (recorded, not closed).** These are not analysed:
+  * per-arm control flow inside the prefix loop, such as a `continue` keyed on
+    a field value;
+  * mutation of `scanScope` from **another file** in the package.
+
+  The compensating control is the behavioural self-test assertions
+  (`selftest_selection.go:185-196`, `:256-276`; AC-A1.5), which exercise
+  `shouldScanRepoPath` and the selected set at run time.
+
+**Function budget convention.** Budgets count production functions in `pin.go`
+that are authored or materially edited. A call-site-only rewire of
+`checkPathspecPin` counts. Test helpers count against the test-scenario budget.
+Under the plan's fixture-counting convention (D-T6), a table-driven test counts
+as **one** scenario, and multi-pair support in `writeMutatedCopy` belongs to the
+scenario that needs it.
+
+**Red-phase rule for the reject tables.** Each table must contain at least one
+row that is **RED against the prior pin**. Rows that keep `scanScope` intact
+while breaking the consumer satisfy this whatever shape A-T2's collector takes,
+because a `scanScope`-anchored presence pin accepts them. Examples are: zero
+git calls; a direct-literal git call; a shadowed `append`; a discarded
+`HasPrefix`. A dead-literal row is red only if A-T2's collector counts the
+location it uses. Otherwise it is declared **green on arrival** as a regression
+row, and the harness manifest records which rows were red.
+
+#### A-T3a — 033.004-T: Make `containsAll` non-vacuous on empty input
+
+Size **XS**, complexity **low**. Posture **test-first**. Depends on A-T2. Budget:
+1 production function (`containsAll`) and 1 scenario.
+
+This closes the vacuously-green hazard: `containsAll` (`pin.go:117-128` at
+`9b299c8`) reaches `return true` at `:127` when `wanted` is empty.
+
+**Acceptance criteria**
+* AC-A3a.1 — **Test-first pure-predicate test, committed.** The test asserts
+  that `containsAll` returns **false** when `wanted` is empty, and when
+  `haystack` is empty. It is red against today's `containsAll`, and its red
+  output is recorded (P-004). No package-level variable is mutated.
+* AC-A3a.2 — `containsAll`'s doc comment states the empty-input contract.
+  AC-A2.2's non-emptiness test stays in place and is **not weakened**.
+* AC-A3a.3 — Regression gate:
+  * `go test ./tools/gatecheck/... -count=1` passes in full;
+  * the three `check-retired-architecture.sh` entry points PASS;
+  * `golangci-lint run ./...` and `staticcheck ./...` are clean (INV-4);
+  * the live tree's verdict is unchanged (INV-1).
+
+#### A-T3b — 033.005-T: Bind the pathspec half to the git call
+
+Size **M**, complexity **medium**. Posture **test-first**. Depends on A-T3a.
+Budget: at most 4 production functions:
+* a `scanScope` declaration locator and field-value collector, parameterised
+  by field name and reused by A-T3c;
+* the use-whitelist checker, reused by A-T3c;
+* the pathspec binding resolver;
+* the `checkPathspecPin` rewire.
+
+Test budget: at most 2 scenarios.
+
+**Acceptance criteria**
+* AC-A3b.1 — **Test-first reject table (one scenario), committed.** It is
+  authored **before** the binding code. The red-phase rule applies, and the red
+  output is recorded in the harness manifest (P-004) or the commit body. The
+  rows are:
+  * **(a)** a narrowed consumer with a retained dead literal: the `cmd/**`
+    arm's pathspec no longer reaches git, and a dead `"cmd/**"` literal is kept
+    in another field of the `scanScope` declaration;
+  * zero `git` calls;
+  * two `git` calls;
+  * a direct-literal `git` call;
+  * a spread of a helper-returned slice;
+  * `range scanScope[1:]`;
+  * an extra statement in the append loop;
+  * a missing `Ellipsis`;
+  * a shadowed or locally declared `append`;
+  * a redeclared `a` in the append loop;
+  * `scanScope` mutated in `selectRepoPaths`, and in a same-file `init()`;
+  * `S` resliced or `copy`'d before the call;
+  * a shadowed `git` parameter.
+
+  Each row asserts `SelectFound == true` **and** `PathspecOK == false`, not
+  merely `!OK()`, so a parse error cannot satisfy it.
+* AC-A3b.2 — The pathspec half implements the canonical contract and the
+  use-whitelist exactly. Presence is no longer consulted for this half.
+  Positive control: the post-ALP-1 live `select.go` is accepted.
+* AC-A3b.3 — **Source-text anchoring and H-11 preserved.**
+  * The pin still parses the on-disk `select.go`.
+  * `pathspecPinLiterals` and `prefixPinLiterals` stay independent.
+  * `pin.go:9-15` is **not modified**.
+  * `SelectionPathspecPin` keeps its signature.
+* AC-A3b.4 — **Regression gate.** AC-A3a.3 holds, plus every pre-existing pin
+  test passes, including AC-A2.3 and AC-A2.7. Lint stays clean: there is no
+  SA1019, and no helper is left without a caller.
+
+#### A-T3c — 033.006-T: Bind the prefix half to the `strings.HasPrefix` call
+
+Size **S**, complexity **medium**. Posture **test-first**. Depends on A-T3b.
+Budget: at most 3 production functions:
+* the prefix binding resolver;
+* the `checkPathspecPin` rewire;
+* deletion of any presence collector now left without a caller (INV-4), which
+  includes A-T2's sibling collector and `collectStringLits` if unused.
+
+Test budget: at most 2 scenarios.
+
+**Acceptance criteria**
+* AC-A3c.1 — **Test-first prefix reject table (one scenario), committed.** The
+  red-phase rule applies, and the red output is recorded. The rows are:
+  * **(b)** the prefix analogue: the `cmd/` arm's prefix no longer reaches
+    `HasPrefix`, and a dead `"cmd/"` literal is kept in another field of the
+    `scanScope` declaration;
+  * a discarded call (`_ = strings.HasPrefix(path, "cmd/")`);
+  * swapped arguments;
+  * a negated call;
+  * `HasPrefix` outside the canonical loop, outside an `if` condition, or
+    inside a function literal;
+  * two `HasPrefix` calls;
+  * an inner loop that rebinds `a`;
+  * `a := scanScope[1]` before the `if`;
+  * `path` reassigned;
+  * a shadowed `strings` or `scanScope`;
+  * an aliased `strings` import.
+
+  Each row asserts `GuardFound == true` **and** `PrefixOK == false`.
+* AC-A3c.2 — The prefix half implements the canonical contract and the
+  use-whitelist exactly. After this task **no presence check remains**, and
+  every presence helper left without a caller is deleted (INV-4). Positive
+  control: the live `select.go` is accepted.
+* AC-A3c.3 — AC-A3b.3 and AC-A3b.4 hold again at this task's boundary.
+* AC-A3c.4 — **Docs.** The header doc in `pin.go` (`:1-7` as A-T2 rewrites it):
+  * cites **D-030-4**;
+  * describes both canonical binding paths, the use-whitelist and the
+    `scanScope` field names;
+  * states both recorded residuals.
+
+**Stop conditions (H-2 A).**
+* If ALP-1's landed `scanScope` shape does not match the canonical contract
+  (AC-A1.8), and binding therefore cannot be established **syntactically**
+  (without `go/types` or cross-function flow), **HALT and return to Stage**.
+  Do **not** fall back to presence, and do **not** edit `select.go`. That is a
+  re-plan of A-T1, owned by Stage.
+* If any A-T3 task would exceed its declared function or test budget, **HALT
+  and return to Stage** for a re-split.
+
 ### Dropped from Unit A
 
-* **033.003-T — DROPPED.** The Python `inspect.getsource()` pin became a stronger
-  `go/parser` AST pin during the port (`pin.go:56`, `:156-162`), and the asymmetry
-  assertions already exist (`selftest_selection.go:185-197`, `:256-276`).
-  Re-implementing it would be green-on-arrival. Its surviving intent is carried as
-  AC-A2.1 through AC-A2.3.
+* **033.003-T — DROPPED, closed as a verified no-op (D-000-2).** The Python
+  `inspect.getsource()` pin became a stronger `go/parser` AST pin during the
+  port (`pin.go:56`, `:156-162`), and the asymmetry assertions already exist
+  (`selftest_selection.go:185-197`, `:256-276`). Re-implementing it would be
+  green-on-arrival. Its surviving intent is carried as AC-A2.1 through AC-A2.3,
+  and A-T3a, A-T3b and A-T3c strengthen it.
 
-**Known residual (not closed here).** Stash `DD0BB60F` records that
-`checkPathspecPin` only verifies pin literals occur *somewhere* in the target
-body (`pin.go:76`), not that they are the actual arguments of the `git` call.
-AC-A2.3 narrows but does not close this.
+  > **Operator authorisation (rev 5, D-000-2).** Ship may close 033.003-T
+  > **inside 030-S** as a **verified no-op**. The path is `queued → active →
+  > done`, and Ship reads back the status after each transition. The
+  > pre-task-completion gate evidence is that the work is already satisfied:
+  > `pin.go` supersedes it. Cite it **by symbol** (`checkPathspecPin`,
+  > `SelectionPathspecPin`) **and the commit SHA at closure**, not by line
+  > number.
+  > * **Timing.** Close it after A-T3c lands, so the evidence cites the
+  >   strongest pin. If any A-T3 task halts to Stage, close it citing the
+  >   post-ALP-1 pin instead. Either is valid evidence, so no dependency edge
+  >   is added, and the item can never be stranded.
+  > * **Disclosure.** The closure artifact must state that the task was
+  >   **satisfied by prior work**, with no new code.
+  > * **P-002/P-004.** A no-op adds no code and so has no red phase. Stage
+  >   reads D-000-2 as covering the `harness-ready` precondition for this item.
+  >   Ship records that at claim as a disclosed, item-scoped
+  >   `skip_policy: P-002` citing D-000-2. Operator confirmation is listed as
+  >   open.
+  > * `.backlogit/hooks.yaml` is **not** changed.
+
+**Known residual — to be closed by A-T3a/A-T3b/A-T3c (rev 5).** Stash
+`DD0BB60F` recorded that `checkPathspecPin` only verified that pin literals
+occur *somewhere* in the target body (`pin.go:76`), not that they are the
+actual arguments of the `git` call. Through rev 4 this stayed open. In rev 5 it
+is harvested as A-T3a (033.004-T), A-T3b (033.005-T) and A-T3c (033.006-T), and
+DD0BB60F is archived with pointers to all three. The per-arm control-flow and
+cross-file mutation residuals stay open after A-T3c (A-T3, "Residuals").
 
 ---
 
@@ -665,6 +1020,26 @@ its 031-S membership, and is **removed from the live dependency chain** (edge
 > `2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`).
 > A narrative compliance claim does not satisfy this.
 
+> **Rev 5 — operator decision D-000-2 (authorised).** The operator took the
+> first option. **Ship may close 034.001-T inside 031-S as a verified no-op**
+> by the normal path `queued → active → done`. No `hooks.yaml` change is
+> needed or made. The pre-task-completion gate (`evidence_required: true`)
+> evidence is that the work is already satisfied:
+> * the spike document
+>   `docs/decisions/2026-09-19-intercom-go-call-extent-extraction-and-allowance-predicate-spike.md`
+>   (D-1..D-4);
+> * D-031-3, the operator-acknowledged (D-031-4) adaptation of D-1/D-2 to the
+>   Go engine as D-1′/D-2′.
+>
+> The task adds no code. The closure artifact counts it as
+> **satisfied-by-prior-work**, not as delivered scope, and discloses it as such.
+> A no-op has no red phase, so Ship records the `harness-ready` precondition
+> (P-002/P-004) at claim as a disclosed `skip_policy: P-002`, scoped to this
+> item and citing D-000-2. Operator confirmation of that reading is listed as
+> open.
+> 033.003-T in 030-S is authorised on the same terms (Unit A, "Dropped from
+> Unit A").
+
 ### D-T1a — 034.010-T (NEW): Commit a frozen differential oracle for detection parity
 
 Size **S**, complexity **low**. Posture: characterization-first (declared
@@ -964,7 +1339,10 @@ never silently leave unhandled — the residual surface (AC-4.7):
    * `golang.org/x/sys/windows` and `golang.org/x/sys/unix` equivalents.
 
    None occurs in `internal/**` or `cmd/**` at `9b299c8`. Widening the selector
-   set is **out of D-031-2's scope** and is tracked as a stash candidate.
+   set is **out of D-031-2's scope** and is tracked as stash entry
+   **458F9385** (rev 5, D-S-5; kind task, priority low). Stage recommends
+   folding it into 039-S / 049-F, because `go/ast` import-path resolution makes
+   detection exact.
 7. **Selector split by a newline or comment — KNOWN OPEN, closed by Unit E's
    AST engine.** Go inserts no semicolon after `.`, so both of these are valid
    Go that gofmt preserves:
@@ -1077,8 +1455,8 @@ Add `reject-os-mkdirtemp.go`, `reject-os-chown.go`, `reject-os-lchown.go` and
 only three, but directed that the stash entry be folded in. `os.Chtimes` is
 included because the entry's own text lists it and it shares the gap.
 
-It is flagged for operator confirmation. If the operator declines, Ship drops
-the fourth fixture; no other task is affected.
+It was flagged for operator confirmation in rev 4. **Rev 5: CONFIRMED by the
+operator (D-031-6).** All four fixtures stay in scope.
 
 *Fixture counting (2-hour rule; applies to D-T5a, D-T5b and D-T6):* a fixture
 data file plus its golden row and stream-capture lines count as **one**
@@ -1128,6 +1506,36 @@ verifies it, mirroring the original 034.001-T.
 Size **XS** (Ship's verification half), complexity **trivial**. Read-only.
 Depends on 034.009-T (the last task of the Unit D corpus chain; the full
 corpus must exist on `main`).
+
+> **Spike timing — SCHEDULED (rev 5, operator decision D-049-1).** The
+> Stage-executed spike runs **after 031-S merges to `main` and before Ship
+> claims 039-S**. G-3 verdict parity needs the whole Unit D corpus, up to
+> and including 034.009-T, on `main`.
+> * **Execution.** Stage runs it under the P-016 explicit, time-boxed
+>   spike/research worktree exception. Stage records the spike context, and
+>   cleans up the worktree or hands off findings before Ship claims 039-S.
+> * **Trigger mechanism.** Stash entry **1EEBECA5** (kind spike, priority
+>   high, "STAGE-SCHEDULED SPIKE") brings it up in the first Stage triage after
+>   031-S closes. If it is triaged before then, Stage defers it with the
+>   reason "trigger not fired", and archives it only once the spike document
+>   exists.
+> * **Backstop.** 049-F's `blocked` status feeds the `blocked_stale` hook
+>   signal (7 days), to which Stage is subscribed.
+> * **After the spike.** Stage re-plans E-T2..E-T6, folds in stash 458F9385
+>   (residual item 6), re-runs plan-review, and only then lifts the 049-F
+>   STAGE HOLD.
+> * **Why `go/ast` at all (operator rationale, accepted Q&A, D-049-1).** The
+>   write-path gate is **CI tooling that guards intercom-go's own source**,
+>   not runtime code. `go/ast` gives:
+>   * exact call boundaries;
+>   * import-alias resolution;
+>   * `NewRoot` / `Root.Resolve` receiver tracking;
+>   * immunity to split selectors.
+>
+>   None of those gaps is exploited today (H-5 re-measure). Their value grows
+>   as the Copilot SDK client gains real workspace write paths. That is why
+>   039-S stays **behind the spike** and **sequenced after 031-S**, rather
+>   than being cancelled or pulled forward.
 
 Stage produces `docs/decisions/{date}-intercom-go-writepath-go-ast-spike.md`
 answering, with evidence against the live corpus:
@@ -1341,7 +1749,11 @@ Units A–C were checked in revisions 1–3.
 ## Dependency graph and execution order
 
 ```
-Unit A (030-S):  A-T1 → A-T2               (ALP-1: one atomic landing, one commit)
+Unit A (030-S):  A-T1 → A-T2 → A-T3a → A-T3b → A-T3c
+                 (ALP-1 = {A-T1, A-T2}: one atomic commit;
+                  A-T3a, A-T3b, A-T3c: separate later commits — rev 5)
+                 (033.001 → 033.002 → 033.004 → 033.005 → 033.006;
+                  033.003 verified no-op, D-000-2, no edge)
 
 Unit B (032-S):  B-T1 → B-T2 → B-T3        (B-T1 is the test-first red)
 
@@ -1354,9 +1766,11 @@ Unit D (031-S):  D-T1a → D-T1 → D-T2 → D-T3 ─┬→ D-T4                
                                              └→ D-T5a → D-T5b → D-T6 (golden-serialised)
                  (034.010 → 034.002 → 034.003 → 034.004 → {034.007, 034.008};
                   034.008 → 034.011 → 034.009)
-                 D-T0 (034.001-T) SATISFIED — detached from the chain
+                 D-T0 (034.001-T) SATISFIED — detached from the chain; verified
+                 no-op closure authorised (D-000-2)
 
 Unit E (039-S):  [039-S blocks-on 031-S]   [049-F depends-on 034-F]
+                 [spike runs after 031-S merges, before 039-S claim — D-049-1, stash 1EEBECA5]
                  D-T6 → E-T1 → E-T2 → E-T3 ─┐
                                 E-T2 → E-T4 → E-T5 ─┴→ E-T6
                  (034.009 → 049.001 → 049.002 → 049.003;
@@ -1395,7 +1809,7 @@ predated both Unit C's discovery and the 031-S option fork.
 
 | Unit | Surface | Worst case |
 |---|---|---|
-| A | `retiredarch` scope declaration + its own pin | **Vacuously green pin.** Emptying `pathspecPinLiterals`/`prefixPinLiterals` to make the refactor land yields `containsAll(_, []) == true` (`pin.go:127`) — the pin passes while asserting nothing. Guarded by AC-A2.2. Secondary: ALP-1 split across two commits, leaving the pin gate red on `main`. Guarded by INV-5 + AC-A2.6. |
+| A | `retiredarch` scope declaration + its own pin | **Vacuously green pin.** Emptying `pathspecPinLiterals`/`prefixPinLiterals` to make the refactor land yields `containsAll(_, []) == true` (`pin.go:127`) — the pin passes while asserting nothing. Guarded by AC-A2.2. Secondary: ALP-1 split across two commits, leaving the pin gate red on `main`. Guarded by INV-5 + AC-A2.6. **Rev 5 (A-T3a/b/c):** *fail-open* if binding accepts a narrowed call because a dead literal survives, accepts a discarded, negated or mis-argued `HasPrefix`, misses a shadowed name or a mutation of `scanScope`/`S`, or resolves to an empty set and passes vacuously. Guarded by AC-A3a.1, AC-A3b.1, AC-A3c.1 and the use-whitelist. *Fail-closed:* if binding rejects ALP-1's legitimate shape, the pin gate goes red loudly. Guarded by AC-A1.8, the AC-A3b.2/AC-A3c.2 positive controls and the H-2 A stop. |
 | B | One function + its tests | Over-strict error converts a legitimately absent `.gitignore` into a merge-blocking failure. Bounded to one gate; guarded by AC-B2.2. |
 | C | `parseRoot`, shared by **all four** engines | A regression breaks every gate at once. Guarded by AC-C1.3's four real self-test entry points. |
 | D | `writepath` scanner — the **only** mechanical enforcement of the write-path precondition (merge-blocking at `ci.yml:333-347` unless the operator sets `WRITE_PATH_GATE_ADVISORY`) plus its fixtures/golden. No product code. | **Fail-open:** D-T1's per-occurrence enumeration drops or mis-lines a hit, or D-T2's predicate allows a writing or file-creating `syscall.CreateFile` (non-zero access, non-`OPEN_EXISTING` disposition, `DELETE_ON_CLOSE`, smuggled composite/raw-string arguments, or a same-line pairing) — a silent hole in a security gate. Guarded by AC-D1a.1 (frozen differential oracle over corpus and live tree), AC-D2.2/AC-D2.3 (rejection table and same-line test), AC-D5.1 (fixture-level positive control and evasion corpus), and the golden. **Fail-closed:** line/order drift reddens golden or the repo scan — loud, blocks merges until fixed. **Collateral:** `retiredarch`'s writepath scan-loop pin — kept unmodified by D-1′ (AC-D1.4). |
@@ -1409,7 +1823,13 @@ Halt and return to Stage rather than deciding:
   negative control cannot be made to fail; or if re-anchoring the pin would
   require deriving the expected literals **from `select.go`'s own text** (which
   *would* make it a true self-comparison). Do **not** empty the pin literal lists
-  and do **not** weaken the pin to make the refactor land.
+  and do **not** weaken the pin to make the refactor land. **A-T3a/A-T3b/A-T3c
+  (rev 5):** HALT if ALP-1's landed `scanScope` shape misses the canonical
+  binding contract (AC-A1.8), so that binding cannot be established
+  syntactically without `go/types` or cross-function flow. Also HALT if any of
+  them would
+  exceed its declared function or test budget. Do **not** fall back to
+  presence, and do **not** edit `select.go`.
 * **B** — if `git show`'s exit/stderr shape cannot distinguish invalid-ref from
   absent-file portably. Do **not** satisfy AC-B2.1 by making absent-file an error.
 * **C** — if first-wins `parseRoot` changes any existing engine's verdict or exit
@@ -1435,7 +1855,10 @@ Halt and return to Stage rather than deciding:
 
 * **AC-A2.2** (pin literals non-empty) and **AC-A2.3** (committed negative
   control) exist specifically because the refactor's easiest failure mode is a
-  green pin that pins nothing. Neither may be relaxed.
+  green pin that pins nothing. Neither may be relaxed. **AC-A3a.1, AC-A3b.1
+  and AC-A3c.1** (rev 5) extend this to the binding layer. The A-T3 tasks may not
+  satisfy their reject tables by weakening AC-A2.2 or AC-A2.3, by deriving the
+  expected sets from `select.go`, or by asserting only `!OK()`.
 * **AC-B1.2** (inverted assertion must fail pre-change) exists because the unit
   could otherwise be reported complete while `git_test.go:103-121` still pins
   fail-open behaviour.
@@ -1483,6 +1906,15 @@ Halt and return to Stage rather than deciding:
 * **A-T2's re-anchoring half is red** (the pin breaks the moment A-T1 moves the
   literals, by design — `select.go:5-9`); its non-vacuity guard (AC-A2.2) is
   green-on-arrival today and exists to stay green.
+* **A-T3a, A-T3b and A-T3c (rev 5) each have a genuine red phase.**
+  * A-T3a's pure-predicate test is red against today's `containsAll`, which
+    returns `true` on an empty `wanted`.
+  * A-T3b's and A-T3c's reject tables follow the A-T3 red-phase rule. Rows (a)
+    and (b) place the dead literal inside the `scanScope` declaration, which
+    the pinned A-T2 collector counts, so they **fail against the prior pin**.
+    So do the rows that keep `scanScope` intact while breaking the consumer.
+  * The red output is recorded (P-004), and the binding code turns it green in
+    the same commit. Any row that is green on arrival is declared as such.
 * **B-T1 is the red phase** for Unit B; B-T2 turns it green.
 * **B-T3, C-T4, C-T5 and C-T6 are documentation-only** and claim no red phase.
 * **C-T1 has a genuine red phase** (test-first on `main_test.go`).
@@ -1502,8 +1934,16 @@ Halt and return to Stage rather than deciding:
 
 ### H-5 — Residuals carried, not closed
 
-* `DD0BB60F` — `pin.go:76` checks literal *presence in body*, not *argument
-  position*. AC-A2.3 narrows but does not close it.
+* ~~`DD0BB60F`~~ — **harvested in rev 5 as A-T3a (033.004-T), A-T3b
+  (033.005-T) and A-T3c (033.006-T)** (D-030-4); the stash entry is archived.
+  * Until A-T3b lands, the pathspec check is literal *presence*, not *argument
+    position*.
+  * **Between A-T3b and A-T3c the prefix half is still presence-only.** That
+    interval is bounded by the `A-T3c → A-T3b` edge and kept short by landing
+    the tasks back to back.
+  * After A-T3c, the per-arm control-flow and cross-file `scanScope` mutation
+    residuals stay open. They are compensated by the behavioural self-test
+    assertions (A-T3, "Residuals").
 * `C312BD4C` — the `gomask` multiline-tag contradiction (`gomask.go:138-141`
   comment vs `gomask_test.go:57` pinned behaviour) stays open; deliberation
   D-030-3 re-scopes it to a comment fix.
@@ -1537,13 +1977,13 @@ Halt and return to Stage rather than deciding:
   `ioutil.*` write helpers, `syscall` write/namespace calls beyond the two
   selected, and `golang.org/x/sys` equivalents are undetected. *Likelihood:*
   low (none at `9b299c8`; `ioutil` is deprecated). *Impact:* high. Widening the
-  selector set is outside D-031-2's operator-approved scope; it is recorded as a
-  stash candidate for a later operator decision.
-* **Interval bound and re-measurement (recommendation — requires operator
-  approval before it becomes policy).** Neither deferred residual has a time
-  bound if 039-S stalls. Stage recommends re-measuring at each Stage session
-  until 039-S ships, recording command and verbatim output in the session
-  memory:
+  selector set is outside D-031-2's operator-approved scope. It is captured as
+  stash entry **458F9385** (rev 5, D-S-5), and Stage recommends folding it into
+  039-S / 049-F at the post-spike re-plan.
+* **Interval bound and re-measurement — POLICY (rev 5, operator decision
+  D-031-5).** This replaces a CI tripwire. Neither deferred residual has a time
+  bound if 039-S stalls. **Every Stage session re-measures until 039-S ships**,
+  and records the command and verbatim output in that session's memory:
   `git grep -nE '^[[:space:]]*(import[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*|\.)[[:space:]]+"(os|io|syscall|database/sql|go\.etcd\.io/bbolt)"' -- 'internal/**' 'cmd/**' ':!*_test.go' | grep -v 'return "'`
   (package set derived from the `Selectors` qualifiers; trailing comments
   tolerated; the `grep -v` drops `return "io"`-style string literals such as
@@ -1559,12 +1999,21 @@ Halt and return to Stage rather than deciding:
   (`pathsafe.NewRoot` calls at `:42`/`:67` and a comment at `:32`); any new hit is a
   trigger to promote 039-S to the head of the queue. A blocking CI tripwire was
   considered and **not** adopted: it would re-implement the deferred 034.006-T /
-  034.005-T scope in text form, contrary to D-031-2.
+  034.005-T scope in text form, contrary to D-031-2. With D-031-5 the operator
+  makes the per-session re-measure the compensating control, which closes
+  R4b-P2-5. **Rev-5 run (2026-10-01, HEAD `52f15d4`):** the first command is
+  empty; the second lists only `internal/config/validate.go:32/:42/:67`; the
+  third lists only the comment at `internal/pathsafe/reparse_windows.go:15`.
+  There is no new trigger. The verbatim output is in the session memory.
 
 ### H-6 — Rollback
 
 * **Units A–C** — revert the task commit (ALP-1 as its single commit). No data
-  or schema state is involved.
+  or schema state is involved. **Unit A (rev 5):** revert in reverse order:
+  A-T3c, then A-T3b, then A-T3a, then ALP-1. Reverting ALP-1 while the A-T3
+  tasks remain
+  would leave a binding pin with no `scanScope`, which fails closed (loud, and
+  merge-blocking).
 * **Unit D** — every task is its own commit; **revert in reverse dependency
   order** (D-T6 → D-T5b → D-T5a → D-T4 → D-T3 → D-T2 → D-T1 → D-T1a). The one
   unsafe partial revert is **reverting D-T2 while D-T3 remains**:
@@ -1693,7 +2142,7 @@ Merged counts after deduplication: **1 P0, 6 P1**, about 12 P2, and P3s.
 | R4-P2-d | P2 | Architecture, Go | `scanTextWith` is not an engine-swap boundary; masked text cannot parse | Seam dropped from Unit D; G-1 defines a source-level boundary |
 | R4-P2-e | P2 | Architecture | E-T3 AST port could widen the allowance | G-4 / AC-E3.2: representation-only; widening HALTs |
 | R4-P2-f | P2 | Architecture, Constitution | Unit E rollback by single revert is wrong once E-T3+ land | H-6 rollback by landed dependency closure |
-| R4-P2-g | P2 | Security, Constitution | Uncovered write primitives (`ioutil.*`, other `syscall`, `x/sys`) unrecorded | D-T4 residual item 6; H-5 entry; stash candidate |
+| R4-P2-g | P2 | Security, Constitution | Uncovered write primitives (`ioutil.*`, other `syscall`, `x/sys`) unrecorded | D-T4 residual item 6; H-5 entry; stash candidate (rev 5: captured as stash **458F9385**, D-S-5) |
 | R4-P2-h | P2 | Security | `WRITE_PATH_GATE_ADVISORY` could be used to land D/E work | H-3 control: unset while D/E in flight; logged; re-scan |
 | R4-P2-i | P2 | Learnings, Security | Re-measure grep too narrow, unrecorded | Broadened grep; recorded output; marked as a recommendation pending operator approval |
 | R4-P2-j | P2 | Learnings | D-T0 queued no-op affects closure | Named prerequisite for 031-S closure |
@@ -1819,6 +2268,12 @@ The remaining open items are operator decisions, not plan defects:
 * the terminal state for 034.001-T and 033.003-T;
 * the selector-set widening (item 6).
 
+> **Rev 5 — all five resolved by the operator (2026-10-01):** D-031-4
+> (D-031-3 acknowledged), D-031-5 (H-5 re-measure is policy; closes
+> R4b-P2-5), D-031-6 (`os.Chtimes` confirmed), D-000-2 (verified no-op
+> closure authorised for both items), and D-S-5 (item 6 captured as stash
+> 458F9385).
+
 The 049-F STAGE HOLD stays in place until the Go-era spike re-plan, as designed.
 
 ---
@@ -1890,5 +2345,186 @@ were then **archived** (`backlogit stash archive`, non-destructive).
 complexity field"). Complexity is recorded as prose
 (`Size: X | Complexity: y`) in every task description. Size is set as a
 structured field (`size_source: agent`, `size_ruleset_version: 2h-rule-v1`).
+
+---
+
+## Plan Review — Revision 5 (Unit A)
+
+<!-- plan-review-attempt-rev5: 3 -->
+
+* `dispatch_mode: multi-agent`
+* `scope: Unit A only` (A-T1, A-T2, A-T3a, A-T3b, A-T3c, AC-A1.8, "Dropped from
+  Unit A"). Units B–E are not re-gated by this round.
+* `decision: FAIL`
+
+**Rounds 1 and 2 (reconstructed).** An earlier Stage pass on this same request
+was interrupted before it committed anything or wrote memory. Its review
+transcripts were lost. Both rounds are reconstructed from the rev-5 plan text
+and counted as **FAIL**, which is the conservative reading:
+* **Round 1.** One A-T3 task breached the 2-hour rule (Go P1-3, Scope F1).
+  This led to the first split.
+* **Round 2.** The pathspec task was still over budget once the shared
+  whitelist checker was counted (Go N5, Scope N3). This led to the 3-way split,
+  the use-whitelist and AC-A1.8.
+
+Round 3 is therefore re-entry 2 of 2, the **final** allowed cycle.
+
+**Round 3 personas (2026-10-01).**
+
+| Persona | Route | Verdict | P1 | P2 | P3 |
+|---|---|---|---|---|---|
+| Go Reviewer | caller | ADVISORY | 0 | 4 (GO-1..GO-4) | 7 |
+| Scope Boundary Auditor | caller | ADVISORY | 0 | 4 (SC-1..SC-4) | 4 |
+| Constitution Reviewer | caller | ADVISORY | 0 | 3 (CN-1..CN-3) | 5 |
+| Learnings Researcher | caller | ADVISORY | 0 | 0 | 6 (LR-1..LR-6) |
+| Architecture Strategist | anchor `gpt-6.1-sol` / openai / xhigh | PASS-level | 0 | 0 | 2 (AR-1, AR-2) |
+| Security Lens | caller | **FAIL** | **5 (SEC-1..SEC-5)** | 2 (SEC-6, SEC-7) | 1 |
+
+**P1 findings (all from the Security Lens).** Each is a fail-open narrowing of
+the scan scope that the rev-5 contract would still **accept**.
+* **SEC-1 — the containment rule is unsound.** The rule is expected ⊆
+  resolved. Two cases defeat it:
+  * a git exclude pathspec (`:(exclude)cmd/**`, `:!`, `:^`) **subtracts**
+    from the selection while adding an element;
+  * `shouldScanRepoPath` takes the first matching prefix, so an earlier,
+    broader or duplicate arm can shadow a later one.
+
+  Fix: reject magic pathspecs and duplicate or overlapping prefixes, or
+  require exact set equality.
+* **SEC-2 — the compensating control has a gap.** The behavioural self-test
+  (`selftest_selection.go`) does not probe non-test `cmd/**/*.go`, yet the
+  "per-arm control flow" residual relies on it. Fix: add a
+  `shouldScanRepoPath("cmd/x/main.go")` probe whose expectation is independent
+  of `scanScope`, or correct the residual text.
+* **SEC-3 — the `selectRepoPaths` shape is unpinned.** The contract binds the
+  arguments of `git(root, S...)` but not the rest of the function. It still
+  accepts:
+  * the call placed in dead code;
+  * `root` reassigned;
+  * the output discarded;
+  * a second, alternate runner or `exec` call that produces the output;
+  * extra filtering beyond `shouldScanRepoPath`.
+
+  Fix: pin `out, err := git(root, S...)` at the top level, with `root` never
+  assigned, `out` consumed only via `pysem.GitText`, and `shouldScanRepoPath`
+  as the only filter.
+* **SEC-4 — the `DefaultGitRunner` body is unpinned** (`select.go:31-46`).
+  It can drop or rewrite its pathspec arguments without tripping the pin.
+* **SEC-5 — prefix-function control flow outside the loop is unanalysed.**
+  None of the following trips the pin:
+  * an early `return` before the loop;
+  * `goto`;
+  * a second loop;
+  * `defer`;
+  * a falsifying operand allowed by the `&&` chain;
+  * an `if` body that returns `false`.
+
+**P2 findings.**
+* **GO-1 / SC-2.** The file-wide `S` name rule collides with the `args` and
+  `pathspecs` locals in `DefaultGitRunner`. Scope it to the `selectRepoPaths`
+  body.
+* **GO-2.** `make(..., len(scanScope))` is a natural spelling, but the
+  whitelist forbids it. Decide explicitly.
+* **GO-3 / SC-1 / CN-4.** Ownership of the use-whitelist rules between A-T3b
+  and A-T3c is ambiguous, and so is which `OK` flag a violation clears.
+* **GO-4.** A discarded `git` call (`_, _ = git(...)`) has no reject row. This
+  overlaps SEC-3.
+* **SC-3.** The reject-table row count strains the one-scenario convention.
+  Trim it or justify it.
+* **SC-4 / CN-6.** The AC-A1.8 checklist should be recorded in the ALP-1
+  commit body.
+* **CN-1.** The Constitution Check has no rev-5 Unit A rows, and the
+  item-scoped P-002 skip has no deviation-format entry. The persona also
+  proposed archiving 033.003-T as an alternative.
+* **CN-2.** The P-002 skip reading for the no-op closures needs a hard
+  precondition and a fallback. *Applied* to 034.001-T and 033.003-T as
+  fail-closed ACs (AC-D0.4, AC-X3.4).
+* **CN-3.** ALP-1 opens an interval in which the `scanScope` presence pin
+  accepts mutations that today's pin rejects. That interval needs:
+  * a bounded INV-2 declaration;
+  * a 030-S merge precondition: A-T3b/A-T3c are done, or the residual is
+    re-captured (DD0BB60F is now archived).
+* **SEC-6, SEC-7.** Hardening of the reject tables. These are subsumed by the
+  SEC-1/SEC-3 remediations.
+
+**P3 findings** (GO-5..GO-11, SC-5..SC-8, CN-4..CN-8, LR-1..LR-6, AR-1, AR-2,
+SEC-8) are editorial or advisory. **LR-6** proposes landing ALP-1 + A-T3a
+alone and deferring A-T3b/A-T3c. They are recorded for the remediation pass and
+are not applied in this revision, except as noted.
+
+**Gate outcome — FAIL, final re-entry, 030-S back on hold.** The merged
+verdict is the most severe persona verdict: **FAIL**.
+* The operator's decision-7 condition is ADVISORY or better with no P0/P1.
+  That condition is **not met**.
+* **033-F stays `blocked`.** That was also its actual frontmatter status
+  before this session: the rev-4 lift was recorded in prose only.
+* 033-F and 030-S carry a **STAGE HOLD RE-IMPOSED** description section.
+* No fourth review round was run. The plan-review cycle limit is reached.
+
+**Escalation Protocol (consecutive planning failures).**
+* **Payload:**
+  * threshold: rev-5 plan-review attempt 3, consecutive FAIL;
+  * summary: SEC-1..SEC-5;
+  * artifacts: this plan, deliberation D-030-4, 033.004-T..033.006-T;
+  * resumption: the session memory, "Follow-up session".
+* **Route.** No Stage-specific escalation override is declared, so the route
+  falls back per field to `claude-opus-5`.
+* **Degraded mode.** No engram handoff surface is configured for this session.
+  The protocol therefore resolves to **`ESCALATION_DEGRADED`** and falls back
+  to operator halt.
+
+**Remediation options for the operator** (Stage recommends **(a)**):
+* **(a)** Stage remediates SEC-1..SEC-5 and the P2s in A-T3's contract
+  (rev 6). The operator then authorises **one further** plan-review round.
+* **(b)** Narrow the scope per LR-6. Land ALP-1 + A-T3a + the 033.003-T no-op
+  now, and hold A-T3b/A-T3c behind (a). This still requires a re-gate of the
+  narrowed Unit A and a CN-3 interval declaration.
+* **(c)** Accept SEC-1..SEC-5 as recorded residuals (an operator risk
+  acceptance), then re-gate.
+
+---
+
+## Harvest Record — Revision 5 (2026-10-01)
+
+Every mutation used `C:\Tools\backlogit.exe` v1.11.0 with exit codes checked,
+followed by a read-back (`shipment get 030-S`, `dep list`, the item files).
+Body edits used `--section name=value` only. Afterwards, `backlogit sync`
+indexed 393 artifacts and `backlogit doctor` reported "No issues found".
+
+**Harvest under a FAIL verdict.** Stage does not normally harvest a plan that
+failed review. Decision 7 explicitly directs the harvest, and it makes only the
+**hold** conditional on the verdict. Stage therefore created the tasks **under
+the held feature**: 033-F is `blocked`, and each task carries a STAGE HOLD
+paragraph and a HOLD acceptance criterion. Ship cannot claim them, and their
+acceptance criteria are marked "expected to change" at remediation.
+
+| Plan unit | Backlog ID | Disposition |
+|---|---|---|
+| A (feature) | 033-F | Status stays `blocked`, re-confirmed as the STAGE HOLD. A `description` section is prepended with **STAGE HOLD RE-IMPOSED**, and the rev-4 "HOLD LIFTED" text is marked historical. |
+| A (shipment) | 030-S | A `description` section records the STAGE HOLD. Manifest read back: `033-F, 033.001-T, 033.002-T, 033.003-T, 033.004-T, 033.005-T, 033.006-T`. |
+| A-T3a | 033.004-T | NEW, XS, low, test-first. Includes the `containsAll(_, [])` vacuous-pass hazard at `pin.go:127`. |
+| A-T3b | 033.005-T | NEW, M, medium, test-first. Reject row (a) is "narrowed call plus retained dead literal". |
+| A-T3c | 033.006-T | NEW, S, medium, test-first. Reject row (b) is the prefix analogue. |
+| Dropped | 033.003-T | The D-000-2 no-op closure authorisation is added to `description`, and `acceptance-criteria` AC-X3.1..AC-X3.5 are set. |
+| D-T0 | 034.001-T | The D-000-2 authorisation is added to `description`, and `acceptance-criteria` AC-D0.1..AC-D0.5 are set (fail-closed on the P-002 confirmation). |
+| E (feature) | 049-F | A `description` section records the D-049-1 spike timing, the 1EEBECA5 trigger, the blocked_stale backstop, the 458F9385 fold-in recommendation and the operator's `go/ast` rationale. |
+| E-T1 | 049.001-T | The same timing and rationale are added, with `acceptance-criteria` AC-E1.1..AC-E1.4. The plan reference is updated from rev 4 to rev 5. |
+
+**Edges added** (`A → B` means A depends on B, type `blocks`):
+* 033.004-T → 033.002-T
+* 033.005-T → 033.004-T
+* 033.006-T → 033.005-T
+
+None was removed. None is added for 033.003-T, by design.
+
+**Stash.**
+* **DD0BB60F**: its text was edited to carry the harvest targets
+  (033.004-T/005-T/006-T, D-030-4, the 030-S hold). It was then **archived**
+  (non-destructive).
+* **458F9385** (task, low; residual item 6): NEW and active.
+* **1EEBECA5** (spike, high; the post-031-S spike trigger): NEW and active.
+
+**Degraded tooling.** `--complexity` is still unsupported, so complexity is
+recorded as prose.
 
 *Generated by Copilot*
