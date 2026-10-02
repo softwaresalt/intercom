@@ -133,8 +133,10 @@ by `f67fc3d` and by the 033.005-T through 033.008-T feature commits. `033-F` was
 
 **Location-defect disclosure (found in post-close review).** The helper that encoded the
 classification and safe-close snapshots recorded the `033-F` location as `archive`. The
-real pre-close location was `queue`. Both snapshots came from the same helper, so the
-Step 0 match held on every field except location. The binding recomputed with the correct
+real pre-close location was `queue`. Both snapshots came from the same helper and carried the
+same wrong location, so the Step 0 match attested every field except location. This repeats the
+same-helper blind spot that 037-S first disclosed, governed by the open Stage-owned stash
+`D10D3AFC` (an invokable `safe-close` CLI or gate). The binding recomputed with the correct
 `033-F` encoding (`done` / `queue`) is
 `72ce320618fa8abce9525e3b66928b9f41111a56bea4390f7013173cd7bf0deb`.
 
@@ -245,6 +247,9 @@ Owner: Ship and the repository maintainer (`softwaresalt/intercom`).
   (`1cbedc9`).
 * `DC921AF6` (R-A1) and `D7BF9F74` (R-A2) were already captured before this shipment.
   They were deliberately not implemented.
+* `D10D3AFC` (existing, still active): an invokable `safe-close` CLI or gate. This closure
+  repeats the same-helper location blind spot, which adds evidence for it. No new entry was
+  created.
 * No other follow-up was identified by local review, Copilot or this closure.
 
 ## Knowledge graduation
@@ -253,8 +258,10 @@ No architecture or product-spec change is required.
 
 * **New learning:** captured in
   `docs/compound/2026-10-02-backlogit-stale-binary-on-path-breaks-index.md`.
-* **Compound refresh:** no existing `docs/compound/` entry covers the retiredarch scan-scope
-  pin or backlogit binary drift, so none became stale.
+* **Compound refresh:** refreshed
+  `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md` with
+  the 030-S recurrence of the same-helper location blind spot. No other entry covers the
+  retiredarch scan-scope pin or backlogit binary drift, so none became stale.
 
 ## Compaction status (P-020)
 
