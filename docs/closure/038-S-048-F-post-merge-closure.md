@@ -221,8 +221,9 @@ were summarized in
 not deleted, under `docs/archive/memory/2026-10-02/`. The compacted summary
 preserves the checkpoint recovery result, reviewed HEAD and merge SHA,
 reconciliation evidence, `D10E82EC`, and the remaining closure-PR work. No
-active checkpoint was compacted; all four October 2 Ship checkpoints were
-resolved. The completed-plan candidate check skipped the multi-shipment
+active checkpoint was compacted. At compaction time, all four October 2 Ship
+checkpoints were resolved. The halt checkpoint described below was created
+later. The completed-plan candidate check skipped the multi-shipment
 re-plan document because the entire plan is not complete.
 
 ## Closure PR gate status
@@ -277,7 +278,10 @@ The backlog index resync succeeded after archival and knowledge maintenance
 (`backlogit sync`, 398 artifacts indexed). Ship created checkpoint
 `.backlogit/checkpoints/checkpoint-20261002-161423.json` at the halt. Resuming
 from the ambient gate did not resolve it. The checkpoint stays active until
-the closure PR merges, and Ship resolves it then.
+the closure PR merges, and Ship resolves it then. For the resumed closure-PR
+phase, Ship created a second active checkpoint,
+`.backlogit/checkpoints/checkpoint-20261002-163308.json`, which supersedes the
+halt checkpoint's stale resume hint. Ship resolves both checkpoints together.
 
 ## Releasability evidence
 

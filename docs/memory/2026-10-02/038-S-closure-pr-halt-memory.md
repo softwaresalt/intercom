@@ -30,8 +30,8 @@ closure_pr: null
 * After the topology-gate halt, Ship created one active, official backlog
   checkpoint for resumption:
   `.backlogit/checkpoints/checkpoint-20261002-161423.json`. It is Ship-owned.
-    Resuming the closure-PR work does not resolve it. It stays active until the
-    closure PR merges (see Resolution below).
+  Resuming the closure-PR work does not resolve it. It stays active until the
+  closure PR merges (see Resolution below).
 
 ## Halt condition
 
