@@ -125,6 +125,7 @@ internal/copilotprobe2/
 
 # Python bytecode caches written when the extracted gate engines under
 # scripts/lib/ are imported or executed (032-F, shipment 029-S).
+# The scripts/lib/ gate engines were retired in M4 (037-S); these rules are now defensive/historical.
 __pycache__/
 *.pyc
 
