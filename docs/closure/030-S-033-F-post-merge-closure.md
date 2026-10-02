@@ -14,8 +14,13 @@ feature: 033-F
 pr: 95
 merge_commit_sha: e1d61a7bb60c89f503622a88c0ae0f437631e7e6
 compaction_status: done
-closure_status: READY
+closure_status: READY_WITH_CONDITIONS
 releasability: READY
+conditions:
+  - id: "reconcile-binding-location-deviation"
+    description: "The classification and safe-close snapshot helper encoded the 033-F pre-close location as archive instead of queue, so the reported CLASSIFICATION_BINDING 6464e6ed... did not hash the real snapshot (corrected binding 72ce3206...). Location is not a coverage input and topology was unchanged, so the CASCADE / FULLY_COVERED_ROOT verdict and CLOSED outcome stand. Dispositioned as a procedural reconciliation deviation; the same-helper blind spot is Stage-owned under D10D3AFC."
+    satisfied: true
+    evidence: "This document, 'Location-defect disclosure'; .backlogit/reconcile/030-S-pre-2026-10-02T20-16-29Z.md and .backlogit/reconcile/030-S-safe-close-2026-10-02T20-18-49Z.md disclosure sections; stash D10D3AFC"
 ---
 
 # Post-merge closure: 030-S / 033-F — Unify retired-architecture scan scope declaration
@@ -142,8 +147,9 @@ same-helper blind spot that 037-S first disclosed, governed by the open Stage-ow
 
 Location is not a coverage input, and the root and descendant topology are unchanged. So
 the `CASCADE` / `FULLY_COVERED_ROOT` verdict and the `CLOSED` outcome stay valid. A review
-claim that `033-F` was still `active` at pre-mode is refuted by `.backlogit/logs/033-F.jsonl`:
-the a1 transition to `done` was recorded at 20:14:52Z, and pre-mode ran at 20:16:29Z.
+claim that `033-F` was still `active` at pre-mode is refuted by the committed pre-mode report
+`.backlogit/reconcile/030-S-pre-2026-10-02T20-16-29Z.md`, which records `033-F` as `done` in
+`.backlogit/queue/` at pre-mode (20:16:29Z), after the a1 gate's `active -> done` transition.
 
 **Classification.** Classify-close-path returned `CASCADE` / `FULLY_COVERED_ROOT` with
 `CLASSIFICATION_BINDING: 6464e6ed004517c40fae3b1b4ed393f061b36fcd786089b53bb3013c83b37f8f`.
@@ -295,7 +301,8 @@ The closure PR is opened from branch
 
 ## Releasability evidence
 
-**READY.** This is internal CI and developer tooling, with no change to the product runtime or
+**READY** (closure status `READY_WITH_CONDITIONS`: the one satisfied condition is the
+reconciliation binding-location deviation disclosed above). This is internal CI and developer tooling, with no change to the product runtime or
 deployment surface.
 
 * The multi-model adversarial review ran at pinned `ac22deb` and returned
