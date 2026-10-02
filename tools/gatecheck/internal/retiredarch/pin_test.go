@@ -179,3 +179,30 @@ func TestSelectionPathspecPin_LiveTree(t *testing.T) {
 		t.Fatalf("SelectionPathspecPin against the live tree must be accepted, got %+v", pin)
 	}
 }
+
+// TestContainsAll_EmptyInput_False is the AC-A3a.1 pure-predicate test:
+// containsAll must not be vacuously true. An empty wanted list or an empty
+// haystack both yield false, so a pin whose literal list or collected
+// literal set was emptied fails closed.
+func TestContainsAll_EmptyInput_False(t *testing.T) {
+	cases := []struct {
+		name     string
+		haystack []string
+		wanted   []string
+	}{
+		{name: "empty_wanted", haystack: []string{"cmd/**"}, wanted: nil},
+		{name: "empty_wanted_non_nil", haystack: []string{"cmd/**"}, wanted: []string{}},
+		{name: "empty_haystack", haystack: nil, wanted: []string{"cmd/**"}},
+		{name: "both_empty", haystack: nil, wanted: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if containsAll(tc.haystack, tc.wanted) {
+				t.Fatalf("containsAll(%q, %q) = true, want false", tc.haystack, tc.wanted)
+			}
+		})
+	}
+	if !containsAll([]string{"a", "b"}, []string{"b"}) {
+		t.Fatalf("containsAll must still accept a non-empty subset")
+	}
+}

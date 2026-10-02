@@ -147,7 +147,16 @@ func collectStringLits(node ast.Node) []string {
 	return out
 }
 
+// containsAll reports whether every entry of wanted is present in haystack.
+// It is deliberately NOT vacuous (033.004-T): an empty wanted list or an
+// empty haystack yields false, so an emptied pin literal list or an empty
+// collected literal set fails closed instead of passing. scopeDataOK
+// (033.006-T) relies on this contract when it checks set equality by
+// calling containsAll in both directions.
 func containsAll(haystack []string, wanted []string) bool {
+	if len(haystack) == 0 || len(wanted) == 0 {
+		return false
+	}
 	set := make(map[string]bool, len(haystack))
 	for _, s := range haystack {
 		set[s] = true
