@@ -72,15 +72,18 @@ func exitCode(err error) int {
 	return -1
 }
 
-// rootGitignoreTextAt reproduces root_gitignore_text_at verbatim,
-// including its 035-F degradation (035-F: fixed after M4): at ref ==
-// "HEAD" it reads the root .gitignore directly off disk (an absent file
-// is treated as empty content, not an error); at any other ref it reads
-// `git show <ref>:.gitignore` via git, and ANY non-zero exit from that
-// command -- whether the ref itself is invalid, or the file is simply
-// absent at that ref -- degrades to an empty baseline rather than
-// surfacing an error. This degradation is faithfully preserved, not
-// fixed, by this port (035-F re-plans the fix for after M4).
+// rootGitignoreTextAt resolves the root .gitignore baseline at ref. At
+// ref == "HEAD" it reads the root .gitignore directly off disk (an absent
+// file is treated as empty content, not an error). At any other ref it
+// reads `git show <ref>:.gitignore`, the ref-qualified path. When that
+// command fails, classifyShowFailure separates the two failure modes that
+// root_gitignore_text_at used to conflate (035-F): a ref that resolves
+// but whose tree has no root .gitignore returns ("", nil), a legitimate
+// empty baseline, while an unresolvable ref -- or any other failure --
+// returns a distinct non-nil error. Failing closed at this point of use
+// keeps the merge-blocking regression check from passing vacuously on an
+// empty baseline, independent of the upstream `git diff` guard in
+// runDifferentialCheck.
 func rootGitignoreTextAt(repoDir, ref string, git GitRunner) (string, error) {
 	if ref == "HEAD" {
 		data, err := os.ReadFile(filepath.Join(repoDir, ".gitignore"))
@@ -98,9 +101,8 @@ func rootGitignoreTextAt(repoDir, ref string, git GitRunner) (string, error) {
 	}
 	stdout, showStderr, err := git(repoDir, nil, "show", fmt.Sprintf("%s:.gitignore", ref))
 	if err != nil {
-		// 035-F: an invalid ref, or a ref that simply lacks a root
-		// .gitignore, both degrade to an empty baseline. Faithfully
-		// ported, not fixed, here.
+		// 035-F: an unresolvable ref is an error; only a resolvable ref
+		// with a positively absent root .gitignore is an empty baseline.
 		return "", classifyShowFailure(repoDir, ref, git, err, showStderr)
 	}
 	text, convErr := pysem.GitText(stdout)
