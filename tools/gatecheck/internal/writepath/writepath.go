@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/gomask"
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
@@ -79,26 +80,160 @@ func shouldScan(relPath string) bool {
 	return strings.HasPrefix(relPath, "internal/") || strings.HasPrefix(relPath, "cmd/")
 }
 
-// findSelector reports whether line contains sel as a qualified selector:
-// not preceded by a word rune or '.', and not followed by a word rune. It
-// is the explicit replacement for Python's
-// re.compile(r'(?<![\w.])' + re.escape(sel) + r'(?![\w])').search(line):
-// only whether at least one satisfying occurrence exists matters (a
-// boolean hit), not an enumeration of every occurrence, matching
-// pattern.search's truthiness semantics.
-func findSelector(line, sel string) bool {
-	start := 0
+// nextOccurrence returns the byte offset of the first occurrence of sel in
+// line at or after start that is a qualified selector -- not preceded by a
+// word rune or '.', and not followed by a word rune -- or -1 if there is
+// none. It is the explicit replacement for one step of Python's
+// re.compile(r'(?<![\w.])' + re.escape(sel) + r'(?![\w])').finditer(line).
+func nextOccurrence(line, sel string, start int) int {
 	for start <= len(line) {
 		idx := strings.Index(line[start:], sel)
 		if idx < 0 {
-			return false
+			return -1
 		}
 		pos := start + idx
-		end := pos + len(sel)
-		if !pysem.PrecededByWordOrDot(line, pos) && !pysem.FollowedByWord(line, end) {
-			return true
+		if !pysem.PrecededByWordOrDot(line, pos) && !pysem.FollowedByWord(line, pos+len(sel)) {
+			return pos
 		}
 		start = pos + 1
+	}
+	return -1
+}
+
+// findSelector reports whether line contains sel as a qualified selector,
+// i.e. whether the first enumerated occurrence exists. It matches
+// pattern.search's truthiness semantics and serves as the per-line fast
+// path ahead of full enumeration.
+func findSelector(line, sel string) bool {
+	return nextOccurrence(line, sel, 0) >= 0
+}
+
+// selectorOccurrences returns the byte offset of every qualified-selector
+// occurrence of sel in line, in order, or nil if there is none.
+func selectorOccurrences(line, sel string) []int {
+	var offsets []int
+	for pos := nextOccurrence(line, sel, 0); pos >= 0; pos = nextOccurrence(line, sel, pos+1) {
+		offsets = append(offsets, pos)
+	}
+	return offsets
+}
+
+// advanceCursor checks that line is exactly text[cur:cur+len(line)] and
+// returns the offset just past the single line boundary that follows it
+// ("\r\n" as two bytes, otherwise the boundary rune's UTF-8 width, or
+// nothing at the end of text). It reports false, failing closed, when the
+// line does not match the text at cur or the boundary cannot be decoded.
+func advanceCursor(text string, cur int, line string) (int, bool) {
+	end := cur + len(line)
+	if end > len(text) || text[cur:end] != line {
+		return 0, false
+	}
+	if end == len(text) {
+		return end, true
+	}
+	if strings.HasPrefix(text[end:], "\r\n") {
+		return end + 2, true
+	}
+	r, width := utf8.DecodeRuneInString(text[end:])
+	if r == utf8.RuneError && width <= 1 {
+		return 0, false
+	}
+	return end + width, true
+}
+
+// extentKind classifies the masked text that follows a selector occurrence.
+type extentKind int
+
+const (
+	// extentNonCall: the selector is not followed (after whitespace) by '('.
+	extentNonCall extentKind = iota
+	// extentBalanced: the call's parentheses close with every bracket matched.
+	extentBalanced
+	// extentUnbalanced: the text ends before the call closes (undecidable).
+	extentUnbalanced
+	// extentMismatched: a closer does not match the innermost opener
+	// (undecidable).
+	extentMismatched
+)
+
+// extent is the call extent of one selector occurrence. segments holds the
+// raw interior text split at commas at bracket depth exactly 1 (the call's
+// own parentheses); it is nil unless kind is extentBalanced.
+type extent struct {
+	kind     extentKind
+	segments []string
+}
+
+// extractExtent extracts the call extent starting at offset after (just
+// past a selector occurrence) in the whole masked text: it skips Go
+// whitespace, newlines included, requires '(', and walks to the balanced
+// ')' while tracking a bracket stack over (), [] and {}. Byte-wise scanning
+// is safe because ASCII bytes never occur inside a multi-byte UTF-8
+// sequence.
+func extractExtent(text string, after int) extent {
+	i := after
+	for i < len(text) && (text[i] == ' ' || text[i] == '\t' || text[i] == '\r' || text[i] == '\n') {
+		i++
+	}
+	if i >= len(text) || text[i] != '(' {
+		return extent{kind: extentNonCall}
+	}
+	var stack []byte
+	var segments []string
+	segStart := i + 1
+	for j := i; j < len(text); j++ {
+		switch c := text[j]; c {
+		case '(', '[', '{':
+			stack = append(stack, c)
+		case ')', ']', '}':
+			if stack[len(stack)-1] != bracketOpener[c] {
+				return extent{kind: extentMismatched}
+			}
+			stack = stack[:len(stack)-1]
+			if len(stack) == 0 {
+				return extent{kind: extentBalanced, segments: append(segments, text[segStart:j])}
+			}
+		case ',':
+			if len(stack) == 1 {
+				segments = append(segments, text[segStart:j])
+				segStart = j + 1
+			}
+		}
+	}
+	return extent{kind: extentUnbalanced}
+}
+
+// bracketOpener maps each closing bracket to its opener.
+var bracketOpener = map[byte]byte{')': '(', ']': '[', '}': '{'}
+
+// allowanceSelectors lists the selectors whose occurrences the allowance
+// hook may admit. It is empty until the access-mode allowance predicate
+// lands, so every occurrence is reported.
+var allowanceSelectors = map[string]bool{}
+
+// occurrenceAllowed is the allowance hook: it reports whether a single
+// selector occurrence, classified by its call extent, is exempt from being
+// reported.
+func occurrenceAllowed(sel string, ext extent) bool {
+	return allowanceSelectors[sel] && ext.kind == extentBalanced
+}
+
+// lineReportsSelector is the per-line, per-selector evaluator: it reports
+// whether line (starting at byte offset lineStart of the whole maskedText)
+// yields a finding for sel, i.e. whether any qualified occurrence of sel on
+// the line is not allowed. When allowance is false (the line cursor lost
+// sync) every occurrence is reported, failing closed.
+func lineReportsSelector(maskedText, line string, lineStart int, allowance bool, sel string) bool {
+	if !findSelector(line, sel) {
+		return false
+	}
+	if !allowance {
+		return true
+	}
+	for _, pos := range selectorOccurrences(line, sel) {
+		if !occurrenceAllowed(sel, extractExtent(maskedText, lineStart+pos+len(sel))) {
+			return true
+		}
 	}
 	return false
 }
@@ -109,12 +244,25 @@ func findSelector(line, sel string) bool {
 // f"{relPath}:{line_no}: write primitive {sel!r} found" (via pysem.Repr).
 // relPath is echoed back into the finding text verbatim and must already
 // be in the caller's desired display form (forward-slash, repo-relative).
+//
+// It keeps a byte cursor into maskedText alongside the line loop so each
+// occurrence's call extent can be extracted from the whole text; if the
+// cursor ever loses sync the allowance is disabled for the rest of the
+// text, so every occurrence is reported (fail closed).
 func scanText(relPath, maskedText string) []string {
 	var findings []string
+	cur := 0
+	allowance := true
 	for i, line := range pysem.SplitLines(maskedText) {
 		lineNo := i + 1
+		lineStart := cur
+		if allowance {
+			next, ok := advanceCursor(maskedText, cur, line)
+			allowance = ok
+			cur = next
+		}
 		for _, sel := range Selectors {
-			if findSelector(line, sel) {
+			if lineReportsSelector(maskedText, line, lineStart, allowance, sel) {
 				findings = append(findings, fmt.Sprintf("%s:%d: write primitive %s found", relPath, lineNo, pysem.Repr(sel)))
 			}
 		}
