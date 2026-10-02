@@ -241,16 +241,22 @@ func TestRootTreeHasGitignore(t *testing.T) {
 
 // realExitError returns a genuine *exec.ExitError (git exiting non-zero),
 // so fake runners can reproduce a git process that ran and failed, which
-// exitCode distinguishes from a process that never started.
+// exitCode distinguishes from a process that never started. It runs a
+// builtin subcommand through the suite's isolated runner (so neither a
+// user-level alias nor a git-* executable on PATH can intercept it) that
+// must fail: verifying a ref that cannot exist in a fresh, empty
+// repository.
 func realExitError(t *testing.T) error {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not found on PATH")
+	git := newIsolatedGitRunner(t)
+	dir := t.TempDir()
+	if _, stderr, err := git(dir, nil, "init", "-q"); err != nil {
+		t.Fatalf("git init failed: %v: %s", err, stderr)
 	}
-	err := exec.Command("git", "this-is-not-a-command").Run()
+	_, _, err := git(dir, nil, "rev-parse", "--verify", "--quiet", "refs/heads/does-not-exist")
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
-		t.Fatalf("expected *exec.ExitError from an unknown git subcommand, got %v", err)
+		t.Fatalf("expected *exec.ExitError from verifying a nonexistent ref, got %v", err)
 	}
 	return err
 }
