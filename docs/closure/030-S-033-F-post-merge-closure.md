@@ -126,8 +126,22 @@ CI gate jobs.
 * Ship moved `033-F` from `active` to `done` and verified the re-read.
 
 **Pre-mode.** `shipment-reconcile` pre-mode (`expected_status: done`) returned `PROCEED`.
-The record was active and record-consistent, every manifest item was pre-archived `done`,
-and there were no orphans.
+The record was active and record-consistent, every manifest item was `done`, and there
+were no orphans. The eight tasks were already in `.backlogit/archive/`. They were relocated
+by `f67fc3d` and by the 033.005-T through 033.008-T feature commits. `033-F` was still in
+`.backlogit/queue/` with `status: done` after the a1 transition.
+
+**Location-defect disclosure (found in post-close review).** The helper that encoded the
+classification and safe-close snapshots recorded the `033-F` location as `archive`. The
+real pre-close location was `queue`. Both snapshots came from the same helper, so the
+Step 0 match held on every field except location. The binding recomputed with the correct
+`033-F` encoding (`done` / `queue`) is
+`72ce320618fa8abce9525e3b66928b9f41111a56bea4390f7013173cd7bf0deb`.
+
+Location is not a coverage input, and the root and descendant topology are unchanged. So
+the `CASCADE` / `FULLY_COVERED_ROOT` verdict and the `CLOSED` outcome stay valid. A review
+claim that `033-F` was still `active` at pre-mode is refuted by `.backlogit/logs/033-F.jsonl`:
+the a1 transition to `done` was recorded at 20:14:52Z, and pre-mode ran at 20:16:29Z.
 
 **Classification.** Classify-close-path returned `CASCADE` / `FULLY_COVERED_ROOT` with
 `CLASSIFICATION_BINDING: 6464e6ed004517c40fae3b1b4ed393f061b36fcd786089b53bb3013c83b37f8f`.
@@ -277,8 +291,11 @@ The closure PR is opened from branch
 **READY.** This is internal CI and developer tooling, with no change to the product runtime or
 deployment surface.
 
-* Exact-HEAD local review was `READY_WITH_FOLLOWUPS` (P0 = 0, P1 = 0 unresolved), with both
-  follow-ups captured.
+* The multi-model adversarial review ran at pinned `ac22deb` and returned
+  `READY_WITH_FOLLOWUPS` (P0 = 0, P1 = 0 unresolved), with both follow-ups captured.
+  * The post-review delta was re-reviewed locally with gates green, rather than by a second
+    multi-model cycle. That delta was `1cbedc9` (stash captures) and `d40da16` (doc comments).
+  * The PR readiness block recorded `d40da16` as the current HEAD.
 * Copilot review completed and P-018 returned `SATISFIED`.
 * All PR checks and post-merge CI checks passed.
 * P-009 and P-016 passed.
