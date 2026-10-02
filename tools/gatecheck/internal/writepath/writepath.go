@@ -9,6 +9,55 @@
 // --self-test, --self-test-integrity, or an unknown flag) rather than only
 // the inner Python script's mode argument, so a future CLI wrapper (M1-T10)
 // only needs to forward argv and the resolved --root.
+//
+// # Residual evasion surface (034.007-T, AC-4.7)
+//
+// The detector is the 26 qualified selectors in Selectors. The following
+// surface is recorded here, never silently left unhandled:
+//
+//  1. Named import aliases -- KNOWN OPEN, pending Unit E (feature 049-F,
+//     shipment 039-S). An aliased import of a write-capable package
+//     (import o "os" -> o.WriteFile(...), or an alias of database/sql /
+//     go.etcd.io/bbolt) is not detected.
+//  2. pathsafe.NewRoot receiver / Root.Resolve first-caller tracking --
+//     KNOWN OPEN, pending Unit E (feature 049-F, shipment 039-S). No
+//     tripwire exists. The pathsafe risk-register triggers ("forced the
+//     moment a real write path exists", root.go) and feature 038-F's "once
+//     a live caller exists" trigger stay awaited, not monitored.
+//  3. Dot-imports, blank imports, and local identifiers shadowing a package
+//     name (including a local syscall identifier, which the D-2' predicate
+//     in occurrenceAllowed trusts by spelling).
+//  4. os.Root method calls and (*os.File).Write*.
+//  5. Undecidable or non-simple call shape -> rejected. A
+//     syscall.CreateFile reached via a wrapper or function value, with an
+//     extent that does not balance, with any argument that is not a bare
+//     operand (call, composite literal, index, string or raw string), or
+//     with any access, disposition or flags spelling outside the D-2'
+//     predicate's exact tokens is rejected, not exempted (D-2' rules 2-7).
+//     This is a false-positive surface: a future legitimate metadata-only
+//     call in such a shape trips the gate and needs an explicit, reviewed
+//     widening. It is never a silent hole.
+//  6. Write primitives outside the selector set are not detected:
+//     ioutil.WriteFile, ioutil.TempFile, ioutil.TempDir; syscall write and
+//     namespace calls other than syscall.CreateFile and syscall.Write
+//     (syscall.WriteFile, Open, Unlink, Rename, Mkdir, CreateHardLink,
+//     DeleteFile); and golang.org/x/sys/windows and golang.org/x/sys/unix
+//     equivalents. None occurs in internal/** or cmd/** at 9b299c8.
+//     Widening the selector set is out of D-031-2's scope and is tracked as
+//     stash entry 458F9385.
+//  7. Selector split by a newline or comment -- KNOWN OPEN, closed by Unit
+//     E's AST engine (feature 049-F). Go inserts no semicolon after ".", so
+//     "syscall." + newline + "CreateFile(...)" and "os./**/WriteFile(...)"
+//     are valid Go that gofmt preserves; after masking neither contains the
+//     contiguous selector text, so every selector is evaded.
+//
+// Residual-risk statement: until feature 049-F ships, this gate is a
+// qualified-selector tripwire, not a complete mechanical proof. Items 1, 2,
+// 6 and 7 are known open fail-open surfaces. At 9b299c8 there are zero
+// aliased write-capable imports, zero production Root.Resolve callers and
+// zero item-6 primitives in internal/**/cmd/**, so items 1, 2 and 6 are not
+// exploited today. None of the four is mechanically guarded. The
+// compensating control is human and agent PR review against this list.
 package writepath
 
 import (
