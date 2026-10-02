@@ -121,9 +121,13 @@ Safe-close revalidated the binding before mutation and returned `CLOSED`:
   P-007 check found no archive deletions.
 
 The repository's `scripts/acquire_lock.ps1` and `scripts/release_lock.ps1` were
-absent. The documented file-lock advisory-lock contract was followed with an
-atomic create-new lock at `.backlogit/queue/.038-S.md.lock`; it was released
-after post-mode. No lock remained. Reconciliation reports are:
+absent. Neither `file-lock` nor `shipment-reconcile` defines a fallback for that
+case. Ship used a **degraded manual substitute**: an atomic create-new lock file
+at `.backlogit/queue/.038-S.md.lock`, which mirrors the `.{filename}.lock`
+format the `file-lock` skill describes. It was released after post-mode, and no
+lock remained. This is not a sanctioned procedure. Making the reconcile lock
+satisfiable here is tracked by existing Stage-owned stash entry `9F824B64`.
+Reconciliation reports are:
 
 * `.backlogit/reconcile/038-S-pre-2026-10-02T15-54-25Z.md`
 * `.backlogit/reconcile/038-S-safe-close-2026-10-02T15-58-29Z.md`
@@ -182,8 +186,9 @@ developer gate runs on `main`.
   result are recorded above.
 * **Merge:** normal `gh pr merge 91 --merge --delete-branch` succeeded under
   scoped P-017 authorization. No `--admin` attempt occurred.
-* **Locking:** the repository lock scripts were missing; the documented atomic
-  lock-file fallback was acquired and released around reconciliation.
+* **Locking:** the repository lock scripts were missing, and no documented
+  fallback exists. Ship acquired and released a degraded manual substitute (an
+  atomic create-new lock file) around reconciliation. See stash `9F824B64`.
 
 ## Rollback trigger and procedure
 
