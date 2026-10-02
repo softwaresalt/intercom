@@ -197,17 +197,20 @@ func TestCursor_MultiLineExtentAcrossSeparators(t *testing.T) {
 // TestCursor_InvalidUTF8FailsClosed pins the cursor's fail-closed fallback:
 // pysem.SplitLines replaces invalid UTF-8 with U+FFFD, so the cursor slice no
 // longer equals the line, the allowance is disabled for the rest of the text,
-// and every occurrence is still reported.
+// and every occurrence is still reported. Both lines hold an allowed-shape
+// CreateFile; a lost cursor resets to offset 0, where the first line's
+// allowed extent sits, so only a disabled allowance reports both lines.
 func TestCursor_InvalidUTF8FailsClosed(t *testing.T) {
-	text := "os.Remove(a)\xff\nos.Remove(b)"
+	call := "syscall.CreateFile(" + allowedCreateFileArgs + ")"
+	text := call + "\xff\n" + call
 	lines := pysem.SplitLines(text)
 	if _, ok := advanceCursor(text, 0, lines[0]); ok {
 		t.Fatal("cursor accepted a line that differs from the raw text slice")
 	}
 	got := scanText("x.go", text)
 	want := []string{
-		"x.go:1: write primitive 'os.Remove' found",
-		"x.go:2: write primitive 'os.Remove' found",
+		"x.go:1: write primitive 'syscall.CreateFile' found",
+		"x.go:2: write primitive 'syscall.CreateFile' found",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scanText = %q, want %q", got, want)

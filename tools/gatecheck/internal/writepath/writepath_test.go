@@ -461,7 +461,7 @@ func TestOccurrenceAllowed_RejectionTable(t *testing.T) {
 		{"brace composite", createFileCall("T{p, 0, a, b, c, d, e}.Args()")},
 		{"call-valued argument", createFileCall("name(), 0, 0, nil, " + oe + ", " + bs + ", 0")},
 		{"index expression", createFileCall("p[0], 0, 0, nil, " + oe + ", " + bs + ", 0")},
-		{"tag-shaped raw string", "syscall.CreateFile(p, 0, `json:\"x\"`, nil, " + oe + ", " + bs + ", 0)\n"},
+		{"tag-shaped raw string", gomask.MaskGoNonCode("syscall.CreateFile(p, 0, `json:\"x\"`, nil, " + oe + ", " + bs + ", 0)\n")},
 		{"interpreted string argument", createFileCall("p, 0, \"rw\", nil, " + oe + ", " + bs + ", 0")},
 		{"rune argument", createFileCall("p, 0, 'x', nil, " + oe + ", " + bs + ", 0")},
 		{"leading empty segment", createFileCall(", 0, 0, nil, " + oe + ", " + bs + ", 0")},
