@@ -56,10 +56,32 @@
       ]
     },
     {
+      "name": "reject-io-copyn-copybuffer.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-io-copyn-copybuffer.go:17: write primitive 'io.CopyN' found",
+        "scripts/testdata/writepath/reject-io-copyn-copybuffer.go:20: write primitive 'io.CopyBuffer' found"
+      ]
+    },
+    {
       "name": "reject-link.go",
       "expect_rejected": true,
       "findings": [
         "scripts/testdata/writepath/reject-link.go:11: write primitive 'os.Link' found"
+      ]
+    },
+    {
+      "name": "reject-os-openroot.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-os-openroot.go:15: write primitive 'os.OpenRoot' found"
+      ]
+    },
+    {
+      "name": "reject-os-root-type.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-os-root-type.go:16: write primitive 'os.Root' found"
       ]
     },
     {
@@ -90,6 +112,13 @@
       ]
     },
     {
+      "name": "reject-syscall-write.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-syscall-write.go:15: write primitive 'syscall.Write' found"
+      ]
+    },
+    {
       "name": "reject-tag-shaped-raw-string-expr.go",
       "expect_rejected": true,
       "findings": [
@@ -112,7 +141,7 @@
         "--self-test"
       ],
       "cwd": ".",
-      "stdout": "PASS accept-clean.go: clean as expected\nPASS accept-mentions-in-comment.go: clean as expected\nPASS accept-non-tag-raw-string-selector.go: clean as expected\nPASS accept-syscall-createfile-metadata.go: clean as expected\nPASS reject-createtemp.go: rejected as expected\nPASS reject-link.go: rejected as expected\nPASS reject-struct-tag-selector.go: rejected as expected\nPASS reject-syscall-createfile-evasion.go: rejected as expected\nPASS reject-syscall-createfile-write.go: rejected as expected\nPASS reject-tag-shaped-raw-string-expr.go: rejected as expected\nPASS reject-writefile.go: rejected as expected\nself-test passed: fixtures matched expectations and the tracked tree is clean\n",
+      "stdout": "PASS accept-clean.go: clean as expected\nPASS accept-mentions-in-comment.go: clean as expected\nPASS accept-non-tag-raw-string-selector.go: clean as expected\nPASS accept-syscall-createfile-metadata.go: clean as expected\nPASS reject-createtemp.go: rejected as expected\nPASS reject-io-copyn-copybuffer.go: rejected as expected\nPASS reject-link.go: rejected as expected\nPASS reject-os-openroot.go: rejected as expected\nPASS reject-os-root-type.go: rejected as expected\nPASS reject-struct-tag-selector.go: rejected as expected\nPASS reject-syscall-createfile-evasion.go: rejected as expected\nPASS reject-syscall-createfile-write.go: rejected as expected\nPASS reject-syscall-write.go: rejected as expected\nPASS reject-tag-shaped-raw-string-expr.go: rejected as expected\nPASS reject-writefile.go: rejected as expected\nself-test passed: fixtures matched expectations and the tracked tree is clean\n",
       "stderr": "",
       "exit_code": 0
     },
@@ -123,7 +152,7 @@
         "--self-test-integrity"
       ],
       "cwd": ".",
-      "stdout": "PASS accept-clean.go: clean as expected\nPASS accept-mentions-in-comment.go: clean as expected\nPASS accept-non-tag-raw-string-selector.go: clean as expected\nPASS accept-syscall-createfile-metadata.go: clean as expected\nPASS reject-createtemp.go: rejected as expected\nPASS reject-link.go: rejected as expected\nPASS reject-struct-tag-selector.go: rejected as expected\nPASS reject-syscall-createfile-evasion.go: rejected as expected\nPASS reject-syscall-createfile-write.go: rejected as expected\nPASS reject-tag-shaped-raw-string-expr.go: rejected as expected\nPASS reject-writefile.go: rejected as expected\nself-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)\n",
+      "stdout": "PASS accept-clean.go: clean as expected\nPASS accept-mentions-in-comment.go: clean as expected\nPASS accept-non-tag-raw-string-selector.go: clean as expected\nPASS accept-syscall-createfile-metadata.go: clean as expected\nPASS reject-createtemp.go: rejected as expected\nPASS reject-io-copyn-copybuffer.go: rejected as expected\nPASS reject-link.go: rejected as expected\nPASS reject-os-openroot.go: rejected as expected\nPASS reject-os-root-type.go: rejected as expected\nPASS reject-struct-tag-selector.go: rejected as expected\nPASS reject-syscall-createfile-evasion.go: rejected as expected\nPASS reject-syscall-createfile-write.go: rejected as expected\nPASS reject-syscall-write.go: rejected as expected\nPASS reject-tag-shaped-raw-string-expr.go: rejected as expected\nPASS reject-writefile.go: rejected as expected\nself-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)\n",
       "stderr": "",
       "exit_code": 0
     },
