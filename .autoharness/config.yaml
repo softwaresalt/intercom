@@ -64,74 +64,48 @@ strict_safety:
 # Model routing preferences (map tiers to model identifiers and per-tier config)
 model_routing:
   tier1:
-    model: gpt-5.4-mini              # Fast/cheap: memory, docs, compaction (e.g., gpt-5.4-mini)
-    reasoning_effort: ""  # Leave empty to use model default
-    model_provider: ""       # e.g., openai, anthropic — leave empty for default
-    model_family: "gpt-5.4-mini"           # Resolved into Tier 1 agent frontmatter
+    model: gpt-6-luna              # Fast/cheap: memory, docs, compaction
+    model_provider: "openai"       # e.g., openai, anthropic — leave empty for default
+    model_family: "gpt-6-luna"           # Resolved into Tier 1 agent frontmatter
+    reasoning_effort: "xhigh"  # Leave empty to use model default
   tier2:
-    model: claude-sonnet-5              # Standard: orchestration, code, review (e.g., claude-sonnet-5)
-    reasoning_effort: ""
-    model_provider: ""
-    model_family: "claude-sonnet-5"
+    model: claude-sonnet-5.5
+    model_provider: "anthropic"
+    model_family: "claude-sonnet-5.5"
+    reasoning_effort: "high"
   tier3:
-    model: claude-opus-5              # Frontier: planning, architecture, analysis (e.g., claude-opus-5)
-    reasoning_effort: ""
-    model_provider: ""
-    model_family: "claude-opus-5"
+    model: "gpt-6.1-sol"
+    model_family: "gpt-6.1-sol"
+    model_provider: "openai"
+    reasoning_effort: "xhigh"
   orchestrator:
-    model_family: "gpt-5.4"     # Orchestrator model override (default: gpt-5.4)
-    reasoning_effort: ""
-    model_provider: ""
-  # P-013.5: optional role routes for Stage/Ship invocation-time model routing.
-  # Absent/empty sub-fields fall back to tier3 (stage) / tier2 (ship) — do not
-  # remove this block to "disable" routing; leave sub-fields empty instead.
+    model_family: "claude-opus-5.5"
+    model_provider: "anthropic"
+    reasoning_effort: "high"
   stage:
-    model_family: "claude-opus-5"             # Stage role route (falls back to tier3 when empty)
-    model_provider: ""
-    reasoning_effort: ""
-    # F02FD596: optional nested per-role escalation override for Stage.
-    # Takes precedence over the legacy flat model_routing.escalation below;
-    # missing sub-fields fall back per-field to tier3 (never to the legacy
-    # flat route). MUST NOT be declared alongside a non-empty legacy flat
-    # escalation (both-present is AMBIGUOUS and fails closed, H2). Always
-    # rendered (like the flat escalation block below) so Step 3.4 can
-    # preserve an existing operator value through re-render/tune; leave
-    # sub-fields empty to omit this override.
-    escalation:
-      model_family: "gpt-5.6-sol"
-      model_provider: "openai"
-      reasoning_effort: "high"
+    model_family: "claude-opus-5.5"             # Stage role route (falls back to tier3 when empty)
+    model_provider: "anthropic"
+    reasoning_effort: "high"
   ship:
-    model_family: "claude-sonnet-5"               # Ship role route (falls back to tier2 when empty)
-    model_provider: ""
-    reasoning_effort: ""
-    # F02FD596: optional nested per-role escalation override for Ship. Same
-    # precedence/ambiguity/always-rendered rules as Stage's nested
-    # escalation above.
+    model_family: "gpt-6-luna"
+    model_provider: "openai"
+    reasoning_effort: "xhigh"
     escalation:
-      model_family: "gpt-5.6-sol"
-      model_provider: "openai"
+      model_provider: "anthropic"
+      model_family: "claude-sonnet-5.5"
       reasoning_effort: "high"
-  # P-013.6: optional escalation route for telemetry-driven auto-escalation.
-  # Absent/empty sub-fields fall back per-field to tier3. If the resolved
-  # route equals a declared role route's resolved route, that is
-  # ESCALATION_DEGRADED (same-route no-op) -- declare a distinct family here
-  # to keep genuine escalation available; do not remove this block to
-  # "disable" escalation, leave sub-fields empty instead.
-  # F02FD596 -- DEPRECATED-LEGACY: prefer nested per-role escalation
-  # (stage.escalation / ship.escalation above) instead of this flat,
-  # role-agnostic block. Retained for backward compatibility (H9); MUST NOT
-  # coexist with any nested <role>.escalation override -- both-present is
-  # AMBIGUOUS and fails closed (H2). Migrate fully to nested per-role
-  # escalation, or remove the nested override(s), before declaring both.
-  escalation:
-    model_family: ""          # Escalation route (falls back to tier3 when empty)
-    model_provider: ""
-    reasoning_effort: ""
   anchor_review:
-    model_provider: "openai"       # Anchor reviewer provider (default: openai)
-    model_family: "gpt-5.6-sol"           # Anchor reviewer family (default: gpt-5.6-sol)
-    reasoning_effort: "high"  # Leave empty to use model default
+    model_family: "gpt-6.1-sol"
+    model_provider: "openai"
+    reasoning_effort: "xhigh"  # Leave empty to use model default
+  alt_doc_review:
+    # Alternate route for the doc-review skill's review pass. Deliberately a
+    # third provider (tiers are mostly Anthropic — tier1 is OpenAI — and
+    # escalation/anchor are OpenAI) for
+    # cross-model diversity. Schema allows only these two keys (no
+    # reasoning_effort). Clearing either field falls back to Tier 2.
+    model_provider: "google"
+    model_family: "gemini-3.8-flash"
 
 # AI CLI tool startup configuration
 # Resolves copilot in the generated start.ps1 and start.sh scripts,
