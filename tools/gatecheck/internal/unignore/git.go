@@ -33,8 +33,8 @@ import (
 // convention) use exitCode. This mirrors retiredarch.GitRunner and
 // writepath.GitRunner's shape, widened to accept arbitrary git subcommands
 // and an optional stdin payload (unignore calls check-ignore --stdin,
-// show, diff, init, config, add, commit and rev-parse -- not just
-// ls-files).
+// show, diff, init, config, add, commit, rev-parse and ls-tree -- not
+// just ls-files).
 type GitRunner func(dir string, stdin []byte, args ...string) (stdout []byte, stderr []byte, err error)
 
 // DefaultGitRunner is the production GitRunner: it shells out to
@@ -72,15 +72,21 @@ func exitCode(err error) int {
 	return -1
 }
 
-// rootGitignoreTextAt reproduces root_gitignore_text_at verbatim,
-// including its 035-F degradation (035-F: fixed after M4): at ref ==
-// "HEAD" it reads the root .gitignore directly off disk (an absent file
-// is treated as empty content, not an error); at any other ref it reads
-// `git show <ref>:.gitignore` via git, and ANY non-zero exit from that
-// command -- whether the ref itself is invalid, or the file is simply
-// absent at that ref -- degrades to an empty baseline rather than
-// surfacing an error. This degradation is faithfully preserved, not
-// fixed, by this port (035-F re-plans the fix for after M4).
+// rootGitignoreTextAt resolves the root .gitignore baseline at ref. At
+// ref == "HEAD" it reads the root .gitignore directly off disk (an absent
+// file is treated as empty content, not an error). At any other ref it
+// first resolves ref to a tree object (resolveBaselineTree), then reads
+// `git show <tree>:.gitignore`, the tree-qualified path. Resolving first
+// means an unresolvable ref -- including an empty or option-like one that
+// `git show` could otherwise accept without resolving any ref -- is a
+// distinct non-nil error before `git show` ever runs. When `git show`
+// fails for a resolved tree, classifyShowFailure separates the two failure
+// modes that root_gitignore_text_at used to conflate (035-F): a tree with
+// no root .gitignore returns ("", nil), a legitimate empty baseline, while
+// any other failure returns a non-nil error. Failing closed at this point
+// of use keeps the merge-blocking regression check from passing vacuously
+// on an empty baseline, independent of the upstream `git diff` guard in
+// runDifferentialCheck.
 func rootGitignoreTextAt(repoDir, ref string, git GitRunner) (string, error) {
 	if ref == "HEAD" {
 		data, err := os.ReadFile(filepath.Join(repoDir, ".gitignore"))
@@ -96,18 +102,118 @@ func rootGitignoreTextAt(repoDir, ref string, git GitRunner) (string, error) {
 		}
 		return text, nil
 	}
-	stdout, _, err := git(repoDir, nil, "show", fmt.Sprintf("%s:.gitignore", ref))
+	tree, err := resolveBaselineTree(repoDir, ref, git)
 	if err != nil {
-		// 035-F: an invalid ref, or a ref that simply lacks a root
-		// .gitignore, both degrade to an empty baseline. Faithfully
-		// ported, not fixed, here.
-		return "", nil
+		return "", err
+	}
+	stdout, showStderr, err := git(repoDir, nil, "show", tree+":.gitignore")
+	if err != nil {
+		// 035-F: the tree already resolved, so only a positively absent
+		// root .gitignore is an empty baseline; anything else is an error.
+		return "", classifyShowFailure(repoDir, ref, tree, git, err, showStderr)
 	}
 	text, convErr := pysem.GitText(stdout)
 	if convErr != nil {
 		return "", convErr
 	}
 	return text, nil
+}
+
+// resolveBaselineTree resolves ref to the object ID of the tree it names
+// (`git rev-parse --verify --quiet <ref>^{tree}`), or returns a non-nil
+// error naming ref when it cannot be resolved. An empty ref, or one with a
+// leading "-", is rejected before git runs: neither can be a resolvable
+// ref, and git could parse a leading "-" as an option. The returned ID is
+// required to be hexadecimal, so later git invocations never receive
+// caller-controlled text.
+func resolveBaselineTree(repoDir, ref string, git GitRunner) (string, error) {
+	if ref == "" || strings.HasPrefix(ref, "-") {
+		return "", fmt.Errorf("::error::cannot resolve ref %q for the root .gitignore baseline: not a valid ref", ref)
+	}
+	out, stderr, err := git(repoDir, nil, "rev-parse", "--verify", "--quiet", ref+"^{tree}")
+	if err != nil {
+		if exitCode(err) < 0 {
+			return "", fmt.Errorf("::error::git rev-parse could not run while resolving ref %q: %v", ref, err)
+		}
+		return "", fmt.Errorf(
+			"::error::cannot resolve ref %q for the root .gitignore baseline: git rev-parse --verify failed: %v: %s",
+			ref, err, strings.TrimSpace(string(stderr)),
+		)
+	}
+	tree := strings.TrimSpace(string(out))
+	if !isHexObjectID(tree) {
+		return "", fmt.Errorf("::error::cannot resolve ref %q for the root .gitignore baseline: git rev-parse --verify returned no object ID (%q)", ref, tree)
+	}
+	return tree, nil
+}
+
+// isHexObjectID reports whether s is a non-empty lowercase hexadecimal
+// git object ID, as `git rev-parse --verify` prints.
+func isHexObjectID(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// classifyShowFailure decides what a failed `git show <tree>:.gitignore`
+// means once ref has already resolved to tree. git exits 128 both for a
+// missing path and for other read failures, and its stderr text is
+// locale-dependent, so neither is inspected. Instead git is asked a
+// structured question: does the tree's exact root listing
+// (`git ls-tree --full-tree -z <tree>`) contain a .gitignore entry?
+//
+// It returns nil ONLY when the root .gitignore is positively absent --
+// the legitimate empty-baseline case. Every other outcome is a non-nil
+// error: git failing to run, ls-tree failing or producing unparseable
+// output, or a .gitignore entry that exists but could not be shown.
+func classifyShowFailure(repoDir, ref, tree string, git GitRunner, showErr error, showStderr []byte) error {
+	if exitCode(showErr) < 0 {
+		return fmt.Errorf("::error::git show %s:.gitignore could not run while resolving ref %q: %v", tree, ref, showErr)
+	}
+	listing, lsStderr, lsErr := git(repoDir, nil, "ls-tree", "--full-tree", "-z", tree)
+	if lsErr != nil {
+		return fmt.Errorf(
+			"::error::git ls-tree %s failed while resolving the root .gitignore at ref %q: %v: %s",
+			tree, ref, lsErr, strings.TrimSpace(string(lsStderr)),
+		)
+	}
+	present, parseErr := rootTreeHasGitignore(listing)
+	if parseErr != nil {
+		return fmt.Errorf("::error::cannot parse git ls-tree output for ref %q: %v", ref, parseErr)
+	}
+	if present {
+		return fmt.Errorf(
+			"::error::git show %s:.gitignore failed although the root .gitignore exists at ref %q: %v: %s",
+			tree, ref, showErr, strings.TrimSpace(string(showStderr)),
+		)
+	}
+	return nil
+}
+
+// rootTreeHasGitignore reports whether a `git ls-tree -z` listing of a
+// single tree contains an entry named exactly ".gitignore". Each record is
+// "<mode> SP <type> SP <object> TAB <name> NUL"; a record without a TAB is
+// malformed and reported as an error rather than skipped.
+func rootTreeHasGitignore(listing []byte) (bool, error) {
+	for _, record := range bytes.Split(listing, []byte{0}) {
+		if len(record) == 0 {
+			continue
+		}
+		_, name, ok := bytes.Cut(record, []byte{'\t'})
+		if !ok {
+			return false, fmt.Errorf("malformed ls-tree record %q", record)
+		}
+		if string(name) == ".gitignore" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // makeScratchGitignore reproduces make_scratch_gitignore: it isolates
