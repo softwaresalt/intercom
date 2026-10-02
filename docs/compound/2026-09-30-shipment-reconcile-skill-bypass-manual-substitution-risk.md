@@ -176,3 +176,12 @@ The residual is unchanged in kind:
 Stash `D10D3AFC`, an invokable `safe-close` CLI or gate, therefore stays relevant. See
 `docs/closure/037-S-047-F-post-merge-closure.md` and
 `.backlogit/reconcile/037-S-cascade-close-2026-10-01T18-21-40Z.md`.
+
+**Recurrence in 030-S (2026-10-02).** The 030-S cascade close repeated the same-helper
+blind spot. The helper encoded the covering feature `033-F` as `archive` while it was still in
+`queue` (status `done`), so the recompute-and-compare matched without validating location. A
+multi-model post-close review caught it, and an independent cross-check against the commit
+rename (`queue => archive` in the archival commit) confirmed it. The verdict was again
+unaffected. This is a second data point for `D10D3AFC`. Until that lands, derive each member's
+location from an actual filesystem probe (`Test-Path` on the queue and archive paths), never
+from an assumption in helper code. See `docs/closure/030-S-033-F-post-merge-closure.md`.
