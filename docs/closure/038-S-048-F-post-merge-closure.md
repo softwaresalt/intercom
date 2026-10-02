@@ -143,9 +143,9 @@ The pre-existing Stage-owned deferred entry `D10E82EC` remains open for Stage
 triage. It was not the source artifact for this feature, was not edited or
 archived, and was not duplicated. It records an out-of-scope rationale-comment
 expansion and retains its original pre-PR source references. The entry was
-captured during the 048-F build but was not committed in PR #91. It reaches
-`main` in the shared stash file through backlog commit `f73e784` on this
-closure branch, and its content is unchanged.
+captured during the 048-F build but was not committed in PR #91. It is first
+committed in backlog commit `f73e784` on this closure branch, and it reaches
+`main` when this closure PR merges. Its content is unchanged.
 
 ## Pre-deploy audits and rollout path
 
@@ -252,7 +252,8 @@ misapplied and was not a real blocker:
     037-S was archived.
 
 Shipment `038-S` stays archived as `shipped`. It was not re-claimed, reopened
-or mutated.
+or mutated. This record reports the ruling for this closure only. It does not
+change the Ship contract.
 
 **Closure-PR topology evidence.** On the closure branch, Ship re-ran
 `autoharness gate pipeline-topology --mode manual --phase ambient --json`. It
@@ -273,9 +274,10 @@ commit under the scoped P-017 authorization. Admin fallback is not authorized.
 The closure PR body records the readiness result.
 
 The backlog index resync succeeded after archival and knowledge maintenance
-(`backlogit sync`, 398 artifacts indexed). Ship-owned checkpoint
-`.backlogit/checkpoints/checkpoint-20261002-161423.json` was created at the
-halt. It is resolved after the closure PR merges.
+(`backlogit sync`, 398 artifacts indexed). Ship created checkpoint
+`.backlogit/checkpoints/checkpoint-20261002-161423.json` at the halt. Resuming
+from the ambient gate did not resolve it. The checkpoint stays active until
+the closure PR merges, and Ship resolves it then.
 
 ## Releasability evidence
 

@@ -75,4 +75,6 @@ closure PR, defines no lifecycle gate. The ambient topology check
 returned exit 0 on the closure branch, with `active_shipment_ids: []` and
 `WORKTREE_TOPOLOGY_OK`. Under the scoped P-017 activation, Ship resumed
 checkpoint `checkpoint-20261002-161423.json` and continued the closure PR
-without re-claiming or mutating 038-S.
+without re-claiming or mutating 038-S. Resuming did not resolve the
+checkpoint. It stays active until the closure PR merges, and Ship resolves it
+then.
