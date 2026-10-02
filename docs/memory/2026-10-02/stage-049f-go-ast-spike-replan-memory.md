@@ -1,0 +1,67 @@
+---
+title: "Stage memory — 049-F go/ast write-path spike, rev 7 re-plan, gate FAIL (hold kept)"
+date: 2026-10-02
+agent: stage
+feature: 049-F
+shipment: 039-S
+mode: dark (P-017)
+status: hold-kept
+base_commit: 961b652
+---
+
+# Stage memory: 049-F go/ast spike and rev 7 re-plan
+
+## Outcome
+
+* I executed stash 1EEBECA5 (operator decision D-049-1) once its trigger fired
+  (031-S merged at `961b652`).
+* **The spike is complete.** The findings are in
+  `docs/decisions/2026-10-02-intercom-go-writepath-go-ast-spike.md`.
+  * G-1..G-7 are all feasible.
+  * G-3 shows **exact verdict parity**, with 0 divergences across 19 fixtures,
+    3 filebased inputs, 17 tracked files and 155 `.go` files.
+* **Plan revision 7** re-plans Unit E as a linear chain:
+  E-T2 → E-T3 → E-T4 → E-T5 → E-T7 → E-T6.
+  * E-T7 is the new task 049.007-T. It folds in stash 458F9385 (residual
+    item 6 widening, 50 selectors).
+  * E-T6 narrows items 2 and 6 and discloses residual item 8.
+* **The plan-review gate FAILed in all 3 cycles:**
+
+  | Cycle | gpt-5.6-sol | claude-opus-5.5 | gemini-3.8-flash / grok-4.7 |
+  |---|---|---|---|
+  | 1 | FAIL | ADVISORY | gemini ADVISORY |
+  | 2 | FAIL | FAIL | gemini ADVISORY |
+  | 3 | FAIL | FAIL | gemini empty → grok FAIL |
+
+  Each cycle surfaced new P1s, most of them in E-T3's test-port contract. The
+  cycle-3 fixes are applied but **not re-gated**.
+* **The hold is kept (D-049-7).** 049-F stays `blocked` and 039-S stays on hold,
+  so DARK_MODE_HALTED for 039-S.
+  * The escalation route is ESCALATION_DEGRADED (engram is unavailable), which
+    falls back to the operator halt.
+
+## Backlog changes
+
+* New task 049.007-T, with `blocks` edges 049.004→049.003, 049.007→049.005 and
+  049.006→049.007. 039-S lists 049.007-T.
+* New `hold` section on 049-F.
+* Rev 7 replan sections on 049.001-T..049.007-T, plus the post-cycle-3
+  amendments on 049.003-T (ACs, replan) and 049.005-T (GK3-4).
+* Stash created:
+  * FE2F02FF (residual item 8);
+  * C0D28448 (item-6 remainder).
+* Stash archived:
+  * 1EEBECA5 (the spike doc exists);
+  * 458F9385 (folded into 049.007-T).
+
+## Next steps (operator)
+
+* Authorise one more plan-review round over rev 7, as D-030-6 did for Unit A,
+  or choose another disposition.
+* Lift 049-F `blocked → queued` only on ADVISORY or better with no P0/P1, then
+  run the 039-S `pre_claim` topology gate.
+
+## Failed approaches
+
+* gemini-3.8-flash returned an empty response in cycle 3. I used grok-4.7 as
+  the fallback.

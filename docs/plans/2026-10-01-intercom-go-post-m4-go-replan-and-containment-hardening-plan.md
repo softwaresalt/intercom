@@ -5,8 +5,8 @@ source_document: docs/decisions/2026-10-01-intercom-go-post-m4-stash-triage-and-
 agent: Stage
 date: 2026-10-01
 stage_branch: chore/stage-post-m4-followups-and-go-replan
-bound_snapshot: 9b299c8 (origin/main)
-revision: 6
+bound_snapshot: 9b299c8 (origin/main); Unit E rev 7 re-plan bound to 961b652 (origin/main)
+revision: 7
 requires_plan_hardening: yes
 ---
 
@@ -160,6 +160,101 @@ revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
 > All P2 findings, and most P3s, were applied as text amendments inside the
 > reviewed design. 033-F is `queued`, and Unit A is claimable in dependency
 > order. The revision-5 FAIL paragraph above is historical.
+
+> **Revision 7 — changelog (2026-10-02, the post-spike Unit E re-plan,
+> operator decision D-049-1; deliberation §4.9).** Units A–D are
+> **unchanged**: 030-S, 031-S and 032-S have shipped and 038-S is closed.
+> Only Unit E changes. The re-plan is bound to `961b652` (`origin/main`, after
+> the 031-S merge).
+>
+> 1. **E-T1 spike complete.** Stage ran the `go/ast` spike under the P-016
+>    spike-worktree exception (`logs/spike-049-wt`, since removed). The
+>    findings are in
+>    `docs/decisions/2026-10-02-intercom-go-writepath-go-ast-spike.md`.
+>    * G-1 and G-2 are FEASIBLE.
+>    * G-3 reaches **exact verdict parity**: 0 divergences across the 19
+>      fixtures, the 3 `filebased` inputs, the 17 tracked in-scope files and
+>      all 155 module `.go` files.
+>    * G-4 is a representation change only, and G-5 is additive.
+>    * G-6 is syntactic intra-function tracking; `go/types` is rejected.
+>    * G-7 puts every task within the 2-hour rule.
+> 2. **E-T2..E-T6 lose "(provisional)".** Each now carries a spike citation,
+>    an explicit file list, a scenario count and a red/green phase
+>    (AC-E1.2). E-T2 is **de-risked from complexity `high` to `medium`**,
+>    with the spike as the recorded de-risking step.
+> 3. **New task E-T7 (049.007-T), the selector-set widening.** It folds in
+>    stash entry **458F9385** (D-T4 residual item 6, review finding R4-P2-g),
+>    as the rev-5 recommendation proposed. The widening is **import-path
+>    keyed** and appends to `Selectors`. Golden changes are additive only
+>    (AC-E7.2), and the D-T1a oracle stays bound to the frozen 20 (H-2 E).
+>    E-T7 **narrows** item 6 to the 50 enumerated primitives; it does not
+>    close it. The uncovered same-family remainder stays a disclosed residual
+>    (stash **C0D28448**).
+> 4. **Edges are linearised for golden serialisation and one shared import
+>    table:** E-T2 → E-T3 → E-T4 → E-T5 → E-T7 → E-T6. The new `blocks`
+>    edges are `049.004-T → 049.003-T`, `049.007-T → 049.005-T` and
+>    `049.006-T → 049.007-T`.
+> 5. **E-T6 is re-scoped.** It also narrows item 6 and syncs the selector
+>    count and list in both header locations (AC-D4.2). Items 2 and 6 are
+>    narrowed, not removed: item 2 to the G-6 cross-function residual, item 6
+>    to the un-enumerated same-family remainder. It also discloses the
+>    new **residual item 8**, dynamic proc invocation (`syscall.NewLazyDLL`
+>    and similar). That item is live in production and stays out of scope;
+>    it is captured as low-priority stash entry **FE2F02FF**.
+> 6. **H-1 E, H-2 E, H-5, H-6, the Verification golden paragraph and
+>    Constitution rows IV and X** are updated to match.
+>
+> 7. **Plan-review cycle 1 amendments** (see `## Plan Review — Revision 7
+>    (Unit E)`):
+>    * item 6 is **narrowed**, not closed (PR7-1, SB-1), and is added to the
+>      H-2 E protected list;
+>    * physical file counts are stated next to the D-T6 artifact counting
+>      convention (PR7-2, SB-6);
+>    * AC-E7.3 records an exact-name scan over all 50 selectors (PR7-3);
+>    * the E-T1 ACs mirror 049.001-T (PR7-4, SB-3);
+>    * residual item 8 and the item 6 remainder have stash IDs, and H-5 has
+>      full-set re-measure commands (SB-2, SB-9);
+>    * E-T7 adds a dot-import fixture row (SB-7), and H-6 orders the E-T6 and
+>      E-T7 reverts (SB-8).
+>
+> 8. **Plan-review cycle 2 amendments:**
+>    * E-T3 grows to 3 files and size **M**. It ports the AC-D1.1–D1.3 extent
+>      tests in `writepath_extent_test.go` to named AST tests (AC-E3.3), and
+>      deletes `scanText` and `advanceCursor` with the extractor. E-T2 states
+>      that they survive unchanged until E-T3, so every task boundary compiles
+>      (SB2-2);
+>    * H-5 records the inclusive (`_test.go`-including) item-6 command that
+>      AC-E7.3 cites (PR7C2-1);
+>    * H-6 states that AC-D4.2 is a manual review check, so the E-T7 → E-T6
+>      header lag is an accepted drift window (SB2-4);
+>    * AC-E7.1 says canonical `unix.*`, matching E-T4's `os.*` (GM2-2);
+>    * the backlog bodies of 049.006-T and 049.007-T now mirror the plan,
+>      item 6 is narrowed rather than removed, and the stale description text
+>      is marked superseded (PR7-1, SB2-1, SB2-6, GM2-1). The review section
+>      below is added (SB2-3).
+>
+> 9. **Plan-review cycle 3 (FINAL) — FAIL; the hold is kept.** All three
+>    responding reviewers returned FAIL with a new P1 each: gpt-5.6-sol,
+>    claude-opus-5.5, and grok-4.7 standing in for an empty gemini-3.8-flash
+>    response. Stage verified every P1 against the code. The fixes are
+>    **applied but NOT re-gated**:
+>    * E-T3's complete deletion list now names `lineReportsSelector` and
+>      `findSelector`, and the AC-D2.3 same-line test is ported (SB3-1,
+>      GPT3-1);
+>    * non-parseable extent inputs become G-2 fail-closed parse errors
+>      (GK3-1);
+>    * `TestFindSelector_LookaroundTable` is re-pointed (GK3-2);
+>    * the AC-E3.3 grep is extended and scoped (SB3-2..SB3-4);
+>    * the E-T2 note is corrected (GK3-3);
+>    * 049.005-T gains a supersession sentence (GK3-4).
+>
+>    The re-entry limit is exhausted, so **049-F stays blocked and 039-S
+>    stays on hold** pending an operator-authorized re-gate (deliberation
+>    D-049-7).
+>
+> Unit E is re-gated under `## Plan Review — Revision 7 (Unit E)`. The 049-F
+> STAGE HOLD lifts only on ADVISORY or better with no P0/P1. **Outcome: FAIL
+> at cycle 3; the hold is kept.**
 
 ---
 
@@ -1956,9 +2051,12 @@ tasks are therefore two artifacts: the fixture set and the golden.
 ## Unit E — 049-F / 039-S (NEW): Migrate the write-path scanner to `go/ast` and close the alias and `Resolve` residuals
 
 **Gating.** (1) `blocks` edge **039-S → 031-S**: Unit E cannot be claimed before
-Unit D ships, because Unit D's fixtures are its parity corpus. (2) **STAGE HOLD**
-on 049-F: E-T2..E-T6 are **provisional** and are re-planned against the spike
-findings, then re-gated through plan-review, before the hold lifts.
+Unit D ships, because Unit D's fixtures are its parity corpus. 031-S shipped at
+`961b652`, so this edge is satisfied. (2) **STAGE HOLD** on 049-F: E-T2..E-T6
+were **provisional** until the spike.
+* **Rev 7.** They are re-planned against the spike findings, and E-T7 is added.
+* The hold lifts only when the `## Plan Review — Revision 7 (Unit E)` gate
+  returns ADVISORY or better with no P0/P1. Its outcome is recorded there.
 
 **Why a hold and not just an edge.** Option B **invalidates** the original
 spike's mechanism decisions (deliberation §4.2), so the spike that replaces them
@@ -1979,6 +2077,27 @@ Size **XS** (Ship's verification half), complexity **trivial**. Read-only.
 Depends on 034.009-T (the last task of the Unit D corpus chain; the full
 corpus must exist on `main`).
 
+> **Spike status — COMPLETE (rev 7, 2026-10-02).** Stage ran the spike at
+> `961b652`, after 031-S merged and before any 039-S claim. It used the P-016
+> spike-worktree exception: the worktree `logs/spike-049-wt` was created, used
+> for throwaway test code only, and removed. Nothing was committed from it.
+>
+> **Findings:** `docs/decisions/2026-10-02-intercom-go-writepath-go-ast-spike.md`.
+>
+> | Question | Verdict |
+> |---|---|
+> | G-1 | FEASIBLE. The boundary is `scanSource(relPath, src string) ([]string, error)`. `gomask` is still used, for raw-string interiors and the line map. |
+> | G-2 | FEASIBLE. Any parser error is ED-2 exit 1, and positions use `PositionFor(pos, false)`. |
+> | G-3 | EXACT PARITY, with 0 divergences in each corpus: 19/19 fixtures, 3/3 `filebased`, 17/17 tracked, 155/155 module `.go` files. AC-E2.6 items 1–3 suffice. |
+> | G-4 | FEASIBLE. A representation change only, made strictly stricter by import-path `syscall` resolution. |
+> | G-5 | FEASIBLE and **additive**. The binding additivity rule is restated in E-T4. |
+> | G-6 | Syntactic intra-function tracking. `go/types` is rejected. |
+> | G-7 | Every task within the 2-hour rule, and E-T2 de-risked to `medium`. |
+>
+> The H-5 re-measure at `961b652` found no new trigger. Its exact commands and
+> output are in the session memory. Ship's verification of AC-E1.1–AC-E1.3 is
+> the only remaining E-T1 work.
+
 > **Spike timing — SCHEDULED (rev 5, operator decision D-049-1).** The
 > Stage-executed spike runs **after 031-S merges to `main` and before Ship
 > claims 039-S**. G-3 verdict parity needs the whole Unit D corpus, up to
@@ -1995,7 +2114,8 @@ corpus must exist on `main`).
 >   signal (7 days), to which Stage is subscribed.
 > * **After the spike.** Stage re-plans E-T2..E-T6, folds in stash 458F9385
 >   (residual item 6), re-runs plan-review, and only then lifts the 049-F
->   STAGE HOLD.
+>   STAGE HOLD. *(Done in rev 7. The re-plan covers E-T2..E-T7, and 458F9385
+>   became E-T7. The re-gate is under "Plan Review — Revision 7 (Unit E)".)*
 > * **Why `go/ast` at all (operator rationale, accepted Q&A, D-049-1).** The
 >   write-path gate is **CI tooling that guards intercom-go's own source**,
 >   not runtime code. `go/ast` gives:
@@ -2071,29 +2191,97 @@ answering, with evidence against the live corpus:
   `go/types`; cost and false-negative profile of each.
 * **G-7** — sizing of E-T2..E-T6 against the 2-hour rule.
 
-**Acceptance criteria (Ship, read-only)**
-* AC-E1.1 — The spike document exists and records G-1..G-7 with a decision each.
-* AC-E1.2 — The post-spike re-plan gives E-T2..E-T6 each:
+**Acceptance criteria (Ship, read-only)** — rev 7 mirrors these verbatim in
+049.001-T's `acceptance-criteria` section.
+* AC-E1.1 — The spike document
+  (`docs/decisions/2026-10-02-intercom-go-writepath-go-ast-spike.md`) exists.
+  It was produced by Stage, not Ship, under the P-016 spike-worktree exception
+  **after** 031-S merged (034.009-T on `main`), and it records G-1..G-7 with a
+  decision each.
+* AC-E1.2 — The post-spike re-plan gives E-T2..E-T7 (049.002-T..049.007-T;
+  E-T7 was added by rev 7) each:
   * a citation of the spike;
-  * an explicit file list and test-scenario count within the 2-hour rule;
+  * an explicit file list and test-scenario count within the 2-hour rule
+    (or a recorded, justified deviation);
   * at least one verifiable AC;
   * a red/green phase declaration.
 
-  None is left at complexity `high` without a recorded de-risking step.
-* AC-E1.3 — If either is unmet, **HALT and return to Stage**; decide nothing.
+  None is left at complexity `high` without a recorded de-risking step. The
+  re-plan was re-gated through plan-review (ADVISORY or better, no P0/P1),
+  and the 458F9385 fold-in decision is recorded.
+* AC-E1.3 — The spike worktree was cleaned up, or its findings handed off,
+  before 039-S was claimed. Stash 1EEBECA5 is archived with a pointer to the
+  spike document.
+* AC-E1.4 — Ship decides, re-sizes and narrows nothing here (P-010). If any of
+  AC-E1.1..AC-E1.3 is unmet, **HALT and return to Stage**.
 
-### E-T2 — 049.002-T: Replace masked-text detection with `go/parser` + `go/ast` (provisional)
+### E-T2 — 049.002-T: Replace masked-text detection with `go/parser` + `go/ast`
 
-Size **M**, complexity **high** (de-risked by E-T1). `writepath.go` +
-`writepath_test.go`. Depends on E-T1.
+Size **M**, complexity **medium**. This was `high` before rev 7; the E-T1 spike
+is the recorded de-risking step (G-3 exact parity, G-7). Depends on E-T1.
+
+* **Spike citation:** G-1, G-2, G-3 and G-7 in
+  `docs/decisions/2026-10-02-intercom-go-writepath-go-ast-spike.md`.
+* **Files (4):** `writepath.go`, `writepath_test.go` and
+  `writepath_oracle_test.go`, all in `tools/gatecheck/internal/writepath/`, and
+  `tools/gatecheck/internal/retiredarch/writepath_mask_test.go`.
+  * The production change is confined to `writepath.go`. The other three are
+    test files that must change atomically with it (AC-E2.6, G-1).
+  * This is the upper edge of the 2-hour heuristic, and it is accepted because
+    splitting the task would leave `main` red between commits.
+* **Test scenarios (3):**
+  1. Unparseable input, including a partial AST, fails closed with exit 1.
+  2. A `//line` directive does not move positions.
+  3. The golden byte-identity is re-routed through `scanSource`.
+* **Phase:** **red → green.** The scenario 1 and 2 tests are committed red
+  against the masked engine, then made green by the swap in the same task.
+  The golden and oracle are characterization (green before and after).
+
+**Engine design, as proven by the spike (G-1 and the spike's algorithm section).**
+* The production boundary is `scanSource(relPath, src string) ([]string, error)`.
+  It takes the decoded, unmasked `pysem.ReadText` output.
+* It parses with `parser.ParseFile(fset, relPath, src,
+  parser.ParseComments|parser.SkipObjectResolution)`.
+* On **any** error, it returns the error and nothing else. The caller emits an
+  ED-2 `::error::` and exits 1.
+* It computes `gomask.MaskGoNonCode(src)` once, as the single canonical masker.
+  Line numbers come from `pysem.SplitLines` boundaries of that masked text,
+  through a rune-index map.
+* **Selector hits.** It matches each `*ast.SelectorExpr` whose `X` is an
+  `*ast.Ident` against `Selectors`, using the line of `X`.
+* **Raw-string hits.** For each raw-string `*ast.BasicLit`, it compares the
+  interior (`Pos+1..End-1`) with the masked text. A **visible** interior is
+  scanned with `selectorOccurrences`, which preserves the tag-shaped
+  raw-string rule (G-3).
+* **Output.** Hits are de-duplicated by (line, selector index), sorted by line
+  and then by `Selectors` order, and formatted exactly as `scanText` formats
+  them.
 
 Swap the detection engine in **one commit**. Presence selectors become
 `*ast.SelectorExpr` matches on the package identifier. Findings keep the exact
 text, line and order. Parse failure fails closed (G-2), the struct-tag rule is
 preserved per G-3, and production detection goes through the G-1 source-level
 boundary. The masked-text extractor and predicate stay in place for
-`syscall.CreateFile` until E-T3. E-T2 owns the G-1 re-anchoring of
-`retiredarch`'s writepath scan-loop pin.
+`syscall.CreateFile` until E-T3: `scanSource` calls the existing
+`occurrenceAllowed(sel, extractExtent(masked, offset))` for a
+`syscall.CreateFile` hit.
+* **`scanText` after E-T2 (rev 7 cycle 2, SB2-2).** E-T2 removes `scanText`'s
+  two non-extent callers: the golden row loop (`writepath_test.go:148`, scenario
+  3) and the oracle's production side (`writepath_oracle_test.go:242`, AC-E2.6).
+  The production entry point (`writepath.go:371`) is also re-pointed to
+  `scanSource`. `scanText`, `advanceCursor`, `extractExtent` and the text-based
+  `occurrenceAllowed` stay **unexported and unchanged** in E-T2, together with
+  `lineReportsSelector` and `findSelector`. Their remaining test callers are in
+  `writepath_extent_test.go` and in the `writepath_test.go` predicate,
+  same-line and lookaround tests (`:161–182`, `:384–512`). E-T2 does not edit
+  any of those tests, so the package compiles and every Unit D extent test
+  stays green at the E-T2 boundary. E-T3 retires them; see E-T3 (post-cycle-3
+  amendment GK3-3).
+
+E-T2 owns the G-1 re-anchoring of
+`retiredarch`'s writepath scan-loop pin: the `writePathMaskFlow` pin at
+`writepath_mask_test.go:35` is re-anchored on `scanSource`. Its
+canonical-mask and single-definition assertions are not weakened.
 
 **Acceptance criteria**
 * AC-E2.1 — The golden JSON is **byte-identical** (`selectors`,
@@ -2128,13 +2316,82 @@ boundary. The masked-text extractor and predicate stay in place for
   The legacy implementation, the frozen 20 and every other expectation stay
   **unedited**. Any further oracle change HALTs (H-3).
 
-### E-T3 — 049.003-T: Port the allowance predicate onto `*ast.CallExpr` (provisional)
+### E-T3 — 049.003-T: Port the allowance predicate onto `*ast.CallExpr`
 
-Size **S**, complexity **medium**. `writepath.go` + `writepath_test.go`.
-Depends on E-T2.
+Size **M**, complexity **medium** (rev 7 cycle 2: was S; the third file and
+the AC-D1.1–D1.3 test port below raise the size). Depends on E-T2.
+
+* **Spike citation:** G-4, plus the G-3 stricter-divergence list.
+* **Files (3):** `writepath.go`, `writepath_test.go` and
+  `writepath_extent_test.go`, all in `tools/gatecheck/internal/writepath/`.
+  `writepath_extent_test.go` is required because it calls `extractExtent`
+  (`:52`, `:93`, `:180`), `scanText` (`:109`, `:118`, `:185`, `:210`) and
+  `advanceCursor` (`:22`, `:158`, `:207`, `:226`). The package would not
+  compile if E-T3 deleted those functions without it (rev 7 cycle 2, SB2-2).
+  `writepath_test.go:384–512` is ported in the same commit (post-cycle-3
+  amendment SB3-1/GPT3-1). That range covers the helpers `createFileCall`,
+  `allowedCreateFileArgs` and `firstExtent`, the `occurrenceAllowed` predicate
+  tests, and the AC-D2.3 same-line test
+  `TestLineReportsSelector_AllowedCallCannotHideWritingCall`.
+  `writepath_test.go:161–182` (`TestFindSelector_LookaroundTable`) is also
+  ported. Three files is at the edge of
+  the 2-hour heuristic. It is accepted for the same reason as E-T2: the
+  deletion and the test port must land atomically or the package does not
+  compile.
+* **Test scenarios (3):**
+  1. An 8-argument call with a string argument is rejected.
+  2. A variadic (`...`) call is rejected.
+  3. The `syscall` qualifier resolves to import path `"syscall"`, and an
+     alias of another package named `syscall` loses the allowance.
+* **Phase:** **red → green.** Scenario 3 is red against the name-based
+  predicate. Scenarios 1–2 are characterization (rejected by both engines),
+  written to pin the port.
 
 Re-express D-2′ over the AST (G-4) as a representation change only, and delete
-the masked-text extent extractor.
+the masked-text extent extractor (`extractExtent` and the text-based
+`occurrenceAllowed`), together with `scanText`, `advanceCursor` and the
+`extent` type, which have no remaining caller once the extractor is gone.
+**Complete deletion list (post-cycle-3 amendment SB3-1/SB3-2/GK3-2):**
+
+* `scanText`, `lineReportsSelector`, `findSelector`, `advanceCursor`,
+  `extractExtent` and the text-based `occurrenceAllowed`;
+* the `extent` type, `extentKind` and its constants, and `bracketOpener`;
+* the test helpers `firstExtent` and `absoluteOccurrences`. `createFileCall`
+  and `allowedCreateFileArgs` are either re-expressed as AST test inputs or
+  deleted.
+
+`lineReportsSelector` is deleted because its only production caller is
+`scanText`. `findSelector` is deleted because its only production caller is
+`lineReportsSelector`, and Unit D forbids it from becoming test-only.
+`nextOccurrence` is **retained** as the raw-string boundary helper behind
+`selectorOccurrences`.
+`selectorOccurrences` is **retained**: `scanSource` uses it for visible
+raw-string interiors (G-3), and `TestSelectorOccurrences_EnumeratesEvery`
+stays unchanged.
+* **Extent-test port (rev 7 cycle 2, SB2-2).** The Unit D extent contracts
+  move to named AST tests in `writepath_extent_test.go`, in the same commit:
+
+  | Unit D test (contract) | Ported to |
+  |---|---|
+  | `TestExtractExtent_ReparseWindowsCreateFile` (AC-D1.1) | `TestCallExpr_ReparseWindowsCreateFile`: the live `syscall.CreateFile` in `internal/pathsafe/reparse_windows.go`, located by content and parsed with `go/parser`, is one `*ast.CallExpr` with 7 arguments that the predicate allows. Its comment-only mentions yield no `scanSource` finding. |
+  | `TestExtractExtent_Classifications` (AC-D1.2, extractor level), **parseable cases** (`os.Remove`, `os.Remove;`, call, call after whitespace and newline, nested depth-1 split, trailing comma, empty call) | `TestCallExpr_Classifications`: each case wrapped as a parseable file (for example `var f = os.Remove`), classified over the AST (non-call selector vs `*ast.CallExpr` with its argument count), with the same verdicts. |
+  | `TestExtractExtent_Classifications`, **non-parseable cases** (unbalanced EOF, unbalanced with no closer, mismatched closer, mismatched brace, and form feed in code position) — post-cycle-3 amendment GK3-1 | `TestScanSource_SyntaxErrorFailsClosed`: each case, wrapped in a function body, is a **parse error** under G-2. It returns the error with exit 1, yields no finding, and the partial AST is not scanned. That is a stricter fail-closed verdict, never a weaker one. The distinct `extentUnbalanced` and `extentMismatched` kinds are **not** preserved; they were masked-text artefacts. |
+  | `TestScanText_ClassificationsKeepFindingText` (AC-D1.2, scan level), `TestScanText_OneFindingPerSelectorPerLine` | Re-routed through `scanSource`, with the same expected finding text and the same one-finding-per-(line, selector) rule, for the **parseable** inputs (`f := os.Remove` and `os.Remove(a)` inside a function body). The non-parseable inputs `os.Remove(a, (b` and `os.Remove(a, [b)` move to `TestScanSource_SyntaxErrorFailsClosed` (GK3-1). |
+  | `TestLineReportsSelector_AllowedCallCannotHideWritingCall` (AC-D2.3, R4-P1-3; post-cycle-3 amendment SB3-1/GPT3-1) | `TestScanSource_AllowedCallCannotHideWritingCall`: the same three single-line cases, each wrapped as a parseable function body and run through `scanSource`. An allowed `syscall.CreateFile` alone gives no finding; allowed-then-writing and writing-then-allowed each give exactly one `syscall.CreateFile` finding on that line. The "allowance disabled" sub-case is deleted with `advanceCursor`, its only subject. |
+  | `TestFindSelector_LookaroundTable` (`writepath_test.go:161–182`; post-cycle-3 amendment GK3-2) | Same table, re-pointed at `selectorOccurrences` (want `len(...) > 0`). The lookaround boundary contract stays pinned on the retained `nextOccurrence`. |
+  | `TestCursor_MultiLineExtentAcrossSeparators` (AC-D1.3) | `TestScanSource_MultiLineCallAcrossSeparators`: a multi-line call whose lines are separated by `\f` or `\u2028` in **comment or string positions** maps every finding to the correct `pysem.SplitLines` line through the rune-index line table, including a hit on the final line with and without a trailing boundary. The same separators in **code position** are a parse error, so they fail closed with exit 1 (G-2, AC-E2.6 item 3). That is a stricter verdict, never a weaker one. |
+  | `TestCursor_InvalidUTF8FailsClosed`, `TestCursor_LastLineBoundsCheck` | Deleted with `advanceCursor`, their only subject. Invalid UTF-8 still fails closed at `ReadText` (AC-D1a.1). Last-line mapping is pinned by the AC-D1.3 port above. |
+
+  The `writepath_test.go` predicate tests (`firstExtent` and its callers) are
+  re-expressed over the `*ast.CallExpr` with unchanged cases and verdicts,
+  except the "unbalanced extent" and "mismatched extent" rows (`:443–444`).
+  Those are non-parseable and move to `TestScanSource_SyntaxErrorFailsClosed`
+  under the GK3-1 rule above.
+* **Per-file import table (rev 7).** E-T3 introduces a table from the
+  identifier name to the import path, built from `f.Imports`. An unnamed
+  import binds `path.Base(path)`. E-T3 uses the table only for the `"syscall"`
+  check. E-T4 and E-T7 extend the same table. They never introduce a second
+  one, which is why the edges are linear.
 
 **Acceptance criteria**
 * AC-E3.1 — All Unit D predicate tests and fixtures keep their verdicts. The
@@ -2144,14 +2401,63 @@ the masked-text extent extractor.
   INT `*ast.BasicLit` `0` access, an exact `syscall.OPEN_EXISTING` disposition
   and the exact `syscall.FILE_FLAG_BACKUP_SEMANTICS` flag are allowed, on a non-variadic call whose `X` resolves to
   import path `"syscall"`. Any widening HALTs (H-2 E).
+* AC-E3.3 (rev 7 cycle 2, SB2-2) — The AC-D1.1, AC-D1.2 and AC-D1.3 contracts
+  are carried by the named AST tests in the port table, with unchanged cases
+  and verdicts, or a stricter fail-closed verdict for code-position separators
+  and the non-parseable extent cases (GK3-1). The AC-D2.3 same-line contract is
+  carried by `TestScanSource_AllowedCallCannotHideWritingCall` (SB3-1). After
+  E-T3, every symbol in the complete deletion list has no definition and no
+  caller. The check is
+  `git grep -nE '\b(extractExtent|scanText|advanceCursor|lineReportsSelector|findSelector|occurrenceAllowed|firstExtent|absoluteOccurrences)\(|\b(extentKind|bracketOpener)\b'`
+  over `tools/gatecheck/internal/writepath/`, which must be empty. It is scoped
+  to that package because the `retiredarch` mutation table embeds `scanText(`
+  inside Go source strings (SB3-4). `go build ./...`, `go vet ./...` and
+  `go test ./tools/gatecheck/...` pass.
 
-### E-T4 — 049.004-T (re-parented 034.006-T): Resolve named import aliases (provisional)
+### E-T4 — 049.004-T (re-parented 034.006-T): Resolve named import aliases
 
-Size **M**, complexity **medium** (re-sized after E-T1). Depends on E-T2.
+Size **M**, complexity **medium** (re-sized after E-T1). Depends on E-T3. Rev 7
+changed this from E-T2, to keep one shared import table and serialise the
+`writepath.go` edits.
 
-Map **named** aliases to canonical import paths via `*ast.ImportSpec` and match
-selectors on the canonical path. Dot-imports and blank imports follow the G-5
-disposition; shadowing stays a residual.
+* **Spike citation:** G-5 (including its **additivity rule**), plus residual
+  items 1, 3 and 7.
+* **Files (4 artifacts; 7 physical files)**, counted under the D-T6 fixture
+  counting convention: a fixture data file plus its golden row and
+  stream-capture lines is one artifact. The artifacts are:
+  * `writepath.go`, the only production file;
+  * `writepath_test.go`;
+  * the four new fixtures under `scripts/testdata/writepath/`, one artifact;
+  * the golden JSON.
+
+  The deviation from the fewer-than-3-files heuristic is recorded in the
+  Constitution Check: the extra files are test data, and the fixtures and
+  golden must land atomically (AC-E4.2). **Functions changed:** 2, the
+  import-table builder and the selector matcher.
+* **Test scenarios (4):** the four AC-E4.1 fixtures, as rows of the one
+  table-driven golden self-test (`runFixtureSelfTest`). Under the D-T6
+  convention that is one table-driven test with four rows; the plan
+  still lists four scenarios, which is the upper edge of the heuristic.
+* **Phase:** **red → green.** `reject-alias-os-writefile.go` and
+  `reject-dot-import-os.go` are red against the E-T3 engine.
+  `reject-split-selector.go` is green on arrival, because E-T2 closed item 7;
+  it is declared as a regression pin. `accept-alias-copilot.go` is a negative
+  control.
+
+Map **named** aliases to canonical import paths via `*ast.ImportSpec` (extending
+E-T3's table) and match selectors on the canonical path. Dot-imports and blank
+imports follow the G-5 disposition; shadowing stays a residual.
+* **Additivity rule (G-5, binding).** Alias resolution **adds** matches and
+  never removes one.
+  * A `SelectorExpr` whose `X` is spelled exactly as a selector's qualifier
+    stays a finding even when that name is not bound to the canonical path.
+  * Presence matching keyed only on import paths is forbidden, because it
+    would fail open (H-2 E).
+* **Dot imports.** A dot import of a write-capable package is reported at the
+  import spec's line, using the canonical selector prefix (for example
+  `os.*`). The import is the finding, so `Selectors` gains **no** bare-name
+  entries for dot imports. The exact finding text is pinned by the
+  `reject-dot-import-os.go` golden row.
 
 **Acceptance criteria**
 * AC-E4.1 — New fixtures have golden rows:
@@ -2166,14 +2472,42 @@ disposition; shadowing stays a residual.
   fixtures. Every pre-existing `selectors` and `fixture_findings` row stays
   unchanged.
 
-### E-T5 — 049.005-T (re-parented 034.005-T): `Root.Resolve` first-caller tripwire (provisional)
+### E-T5 — 049.005-T (re-parented 034.005-T): `Root.Resolve` first-caller tripwire
 
 Size **M**, complexity **medium**. Depends on E-T4 (the tripwire must resolve
 `internal/pathsafe` through aliases).
 
+* **Spike citation:** G-6.
+* **Files (4 artifacts; 5 physical files)**, counted under the D-T6
+  convention:
+  * `writepath.go`;
+  * `writepath_test.go`;
+  * two new fixtures under `scripts/testdata/writepath/`:
+    `reject-resolve-first-caller.go` (constructs a root with
+    `pathsafe.NewRoot` and calls `.Resolve(` on it in one function) and
+    `accept-unrelated-resolve.go` (a `.Resolve(` call on an unrelated
+    receiver, in a file that imports `pathsafe`);
+  * the golden JSON.
+
+  **Functions changed:** 1–2, the binding tracker and its call from the scan
+  loop.
+* **Test scenarios (3):**
+  1. The tripwire fires on a fixture caller.
+  2. It does not fire on an unrelated `.Resolve(` receiver.
+  3. The tracked tree stays clean.
+* **Phase:** **red → green.** Scenario 1 is red against the E-T4 engine.
+  Scenarios 2–3 are negative controls.
+
 Fire only when a file imports `internal/pathsafe` **and** calls `.Resolve(` on a
-receiver bound from `pathsafe.NewRoot` (binding strategy per G-6). A bare
-`.Resolve(` match is insufficient.
+receiver bound from `pathsafe.NewRoot`. A bare `.Resolve(` match is
+insufficient.
+* **Binding strategy (G-6).** Syntactic tracking within one `*ast.FuncDecl` or
+  `*ast.FuncLit`. It records identifiers bound by `x := pathsafe.NewRoot(...)`,
+  `x, err := pathsafe.NewRoot(...)` or `var x = pathsafe.NewRoot(...)`, with
+  the qualifier resolved through E-T4's table to
+  `github.com/softwaresalt/intercom-go/internal/pathsafe`.
+* **No `go/types`.** Cross-function flows, struct fields, package-level
+  variables and method values remain a residual, carried by E-T6.
 
 **Acceptance criteria**
 * AC-E5.1 (AC-4.4) — Fires on a fixture introducing a production
@@ -2184,18 +2518,146 @@ receiver bound from `pathsafe.NewRoot` (binding strategy per G-6). A bare
 
 ### E-T6 — 049.006-T: Retire closed residuals from the gate documentation
 
-Size **XS**, complexity **trivial**. Documentation only. Depends on E-T3 and
-E-T5.
+Size **XS**, complexity **trivial**. Documentation only. Depends on E-T3, E-T5
+and E-T7 (rev 7 added E-T7; the linear chain makes E-T7 the effective
+predecessor).
 
-Remove items 1, 2 and **7** from D-T4's residual record in both locations,
-plus item 3's dot-import clause if G-5 closed it. Item 7 cites E-T2 and E-T4's
-`reject-split-selector.go`. Replace the residual-risk statement with the
-post-migration posture. Items 4–6 remain.
+* **Spike citation:** the residual-item disposition table.
+* **Files (2):** the `writepath.go` package-doc header and the
+  `scripts/check-write-path-precondition.sh` header. These are the two
+  residual-record locations; no code changes.
+* **Test scenarios (1):** the AC-D4.2 detector-scope check.
+* **Phase:** green (documentation). The gate's existing tests must stay green.
+
+**Rev 7 disposition**, in both locations:
+
+| Item | Disposition |
+|---|---|
+| 1 | Remove; closed by E-T4 / `reject-alias-os-writefile.go`. |
+| 2 | **Narrow, do not remove.** Same-function `NewRoot` → `Resolve` binding is closed by E-T5. The G-6 residual (cross-function flows, struct fields, package-level variables, method values) is retained. |
+| 3 | Remove the dot-import clause, closed by E-T4 / `reject-dot-import-os.go`. State that blank imports are inert. Shadowing remains. |
+| 6 | **Narrow, do not remove.** The 50 enumerated `ioutil`/`syscall`/`windows`/`unix` primitives are closed by E-T7 and its fixtures. The retained residual names the uncovered same-family remainder: metadata and attribute writes (`syscall.Chmod`/`Fchmod`/`Chown`/`Utimes`/`SetFileAttributes`, `unix.Fchmod`/`Chown`/`Fchown`/`Lchown`/`Utimes`/`Setxattr`, `windows.SetFileAttributes`), positional and vector writes (`syscall.Pwrite`, `unix.Writev`/`Pwritev`), `syscall.Ftruncate`, `syscall.Link`/`Symlink`, `unix.Mknod`/`Mknodat`, and any other un-enumerated write-capable symbol in those packages. Deferred as stash **C0D28448**. |
+| 7 | Remove; closed by E-T2, pinned by E-T4's `reject-split-selector.go`. |
+| 4, 5 | Remain verbatim. |
+| 8 (new) | Add as a disclosed residual (deliberation §4.9): dynamic invocation via `syscall.NewLazyDLL` / `LazyProc.Call`, `syscall.Syscall*` and the `golang.org/x/sys` equivalents. These can reach any OS write API without a write-named selector. `syscall.NewLazyDLL` is live in production, so it cannot become a finding without an allowance design. Out of Unit E's scope; deferred as stash **FE2F02FF**. |
+
+Also:
+* Replace the residual-risk statement with the post-migration posture.
+* Sync the detector-scope selector count and list in both headers with the
+  widened `Selectors`, so AC-D4.2 holds again.
 
 **Acceptance criteria**
-* AC-E6.1 — Each removed residual item cites the task and fixture that closed it.
-  Every retained item is still present verbatim, and AC-D4.2's detector-scope
-  check still holds.
+* AC-E6.1 — Each removed or narrowed residual item cites the task and fixture
+  that closed it, or closed part of it. Every retained item, and the retained
+  part of each narrowed item (2 and 6), is still present verbatim. AC-D4.2's
+  detector-scope check holds against the widened `Selectors`.
+* AC-E6.2 — Item 8 is recorded in both locations, citing stash FE2F02FF.
+
+### E-T7 — 049.007-T (rev 7, stash 458F9385): Widen the selector set to import-path-keyed write primitives
+
+Size **M**, complexity **medium**. Depends on E-T5 for golden serialisation,
+and on E-T4 for the alias table, which is transitive through E-T5. This
+**narrows** D-T4 residual item 6 (review finding R4-P2-g) to the un-enumerated
+same-family remainder; it does not close it (see E-T6 row 6 and stash
+**C0D28448**).
+
+* **Spike citation:** G-5, G-7 and the residual-item disposition table.
+* **Deliberation:** §4.9.
+* **Files (4 artifacts; 6 physical files)**, counted under the D-T6
+  convention:
+  * `writepath.go` (`Selectors` and its doc comment, plus the import table);
+  * `writepath_test.go`;
+  * three new fixtures under `scripts/testdata/writepath/`;
+  * the golden JSON.
+
+  **Functions changed:** 1, the import-table entries. `Selectors` is data.
+* **Test scenarios (3):** the three AC-E7.1 fixtures, as rows of the one
+  table-driven golden self-test. The existing tracked-tree scan is the
+  clean-tree control.
+* **Phase:** **red → green.** Each fixture is committed red (no finding under
+  the E-T5 engine), then made green by the widening.
+
+**Change.**
+* **Selectors.** Append the following to the **end** of `Selectors`, in this
+  order:
+  * `ioutil`: `ioutil.WriteFile`, `ioutil.TempFile`, `ioutil.TempDir`.
+  * `syscall`, the write and namespace calls other than the existing
+    `syscall.CreateFile` and `syscall.Write`: `syscall.WriteFile`,
+    `syscall.Open`, `syscall.Unlink`, `syscall.Rename`, `syscall.Mkdir`,
+    `syscall.Rmdir`, `syscall.CreateHardLink`, `syscall.DeleteFile`,
+    `syscall.MoveFile`, `syscall.RemoveDirectory`, `syscall.CreateDirectory`,
+    `syscall.CreateSymbolicLink`, `syscall.Truncate`, `syscall.Creat`.
+  * `windows` (`golang.org/x/sys/windows`): `windows.WriteFile`,
+    `windows.CreateFile`, `windows.DeleteFile`, `windows.MoveFile`,
+    `windows.MoveFileEx`, `windows.CreateDirectory`,
+    `windows.RemoveDirectory`, `windows.CreateHardLink`,
+    `windows.CreateSymbolicLink`, `windows.SetEndOfFile`,
+    `windows.SetFileInformationByHandle`.
+  * `unix` (`golang.org/x/sys/unix`): `unix.Open`, `unix.Openat`,
+    `unix.Openat2`, `unix.Creat`, `unix.Write`, `unix.Pwrite`, `unix.Unlink`,
+    `unix.Unlinkat`, `unix.Rename`, `unix.Renameat`, `unix.Renameat2`,
+    `unix.Mkdir`, `unix.Mkdirat`, `unix.Rmdir`, `unix.Link`, `unix.Linkat`,
+    `unix.Symlink`, `unix.Symlinkat`, `unix.Truncate`, `unix.Ftruncate`,
+    `unix.Chmod`, `unix.Fchmodat`.
+
+  That is 50 additions, for 76 in total.
+* **Import table.** Extend E-T4's qualifier → canonical import-path table:
+
+  | Qualifier | Import path |
+  |---|---|
+  | `ioutil` | `io/ioutil` |
+  | `syscall` | `syscall` |
+  | `windows` | `golang.org/x/sys/windows` |
+  | `unix` | `golang.org/x/sys/unix` |
+
+  The G-5 additivity rule applies uniformly: spelled-qualifier matching **or**
+  path-resolved alias matching. Dot imports of these paths are findings as
+  in E-T4. After E-T7 the table covers all **eight** `Selectors` qualifiers:
+  `os`, `io`, `syscall`, `sql` (`database/sql`) and `bbolt`
+  (`go.etcd.io/bbolt`) from Unit D, plus the new `ioutil`, `windows` and
+  `unix`.
+* **No allowance.** `windows.CreateFile` is always reported. The D-2′
+  allowance stays `"syscall"`-only (G-4), so no predicate widening is implied.
+* **Build tags.** `go/parser` ignores build constraints, so x/sys files are
+  scanned on every `GOOS`. The repo has no x/sys dependency; the gate parses
+  source and does not type-check it.
+
+**Acceptance criteria**
+* AC-E7.1 — New fixtures have golden rows:
+  * `reject-ioutil-write-primitives.go`;
+  * `reject-syscall-namespace-primitives.go`;
+  * `reject-xsys-write-primitives.go`. Its `golang.org/x/sys/windows` import
+    is aliased, so it proves path keying, and it imports
+    `golang.org/x/sys/unix` unaliased.
+
+  Each reports the expected selectors at the expected lines.
+  `reject-ioutil-write-primitives.go` also carries a dot import,
+  `. "golang.org/x/sys/unix"`. It is reported at the import spec's line with
+  the canonical `unix.*` prefix (matching E-T4's `os.*`), which proves that the E-T4 dot-import rule
+  extends to the new paths (G-5).
+* AC-E7.2 — **The golden changes are additive only.**
+  * The `selectors` array gains exactly the 50 entries, appended in order.
+  * The new fixture rows and the matching new stream `PASS` lines are added.
+  * Every pre-existing `selectors`, `fixture_findings`, stream and
+    `filebased` byte stays unchanged.
+  * The `len(Selectors) == len(golden.Selectors)` pin holds.
+  * The D-T1a oracle stays bound to the frozen 20 and to AC-E2.6's frozen
+    fixture list.
+* AC-E7.3 — The tracked-tree scan of `internal/**` and `cmd/**` stays clean at
+  the parent commit. Rev 7 recorded an exact-name scan of **all 50** appended
+  selectors at `961b652`:
+  * the command was the H-5 item-6 **inclusive variant** (the item-6 pattern,
+    an anchored alternation of every appended `qualifier.Name` plus
+    `golang.org/x/sys`, with the `':!*_test.go'` exclusion removed; recorded
+    in H-5);
+  * it ran over `internal/**` and `cmd/**` **including** `_test.go` files;
+  * it found **zero** code-position hits. The only match is the comment at
+    `internal/pathsafe/reparse_windows.go:15`, which mentions
+    `golang.org/x/sys/windows`. The gate skips comments, so that is not a
+    finding.
+
+  Ship re-runs the inclusive variant at the parent commit. Any code-position
+  hit is a HALT (H-2 E).
 
 ---
 
@@ -2209,13 +2671,13 @@ Units A–C were checked in revisions 1–3.
 | I. Safety-First Go | Gatecheck tool code only. INV-4 (lint clean, no dead code). The D-T1 cursor fails closed with no panic. E-T2 parse errors are exit 1. | None |
 | II. Test-First (NON-NEGOTIABLE) | Red/green phases are declared per task (H-4). D-T2 has a genuine red phase (AC-D2.4). D-T1a, D-T5a, D-T5b and D-T6 are **declared** green on arrival as characterization or regression fixtures, with committed falsifiability via selector-naming golden rows. | Green-on-arrival fixtures are disclosed, not claimed as red phases |
 | III. Workspace Isolation | No write primitive outside `testdata` (INV-3, AC-D5.5). The gate *is* the workspace-write tripwire. Units D/E only narrow what it allows (INV-2). | None |
-| IV. CLI Workspace Containment (NON-NEGOTIABLE) | The residual-risk statement (D-T4) names every known open fail-open surface: items 1, 2, 6, 7. Deferral of alias and `Resolve` coverage is operator-approved (D-031-2) and bounded by 039-S, with the H-5 re-measure. | Interval fail-open residuals are accepted by the operator, visible, and not hidden |
+| IV. CLI Workspace Containment (NON-NEGOTIABLE) | The residual-risk statement (D-T4) names every known open fail-open surface: items 1, 2, 6, 7. Deferral of alias and `Resolve` coverage is operator-approved (D-031-2) and bounded by 039-S, with the H-5 re-measure. **Rev 7:** Unit E closes items 1 and 7 and the item-3 dot clause, and narrows items 2 and 6. It discloses the new item 8 (dynamic proc invocation) rather than leaving it implicit. | Interval fail-open residuals are accepted by the operator, visible, and not hidden. Retained items 2 (narrowed), 3 (shadowing), 4, 5, 6 (narrowed; stash C0D28448) and 8 (stash FE2F02FF) are disclosed in E-T6. |
 | V. Structured Observability | Finding text is unchanged (`write primitive '<sel>' found`). ED-2 `::error::` lines are retained. | None |
-| VI. Single Responsibility | Each task covers one skill domain: code, docs or fixtures. Scenario counting is stated (table-driven = 1). | None |
+| VI. Single Responsibility | Each task covers one skill domain: code, docs or fixtures. Scenario counting is stated (table-driven = 1). **Rev 7:** file counts use the D-T6 artifact convention, so a fixture data file plus its golden row and stream lines is one artifact. The physical counts are stated alongside: E-T2 4, E-T4 7, E-T5 5, E-T7 6. | E-T4/E-T5/E-T7 exceed the fewer-than-3-files heuristic in physical files only. The extra files are fixture data that must land atomically with the golden (AC-E4.2, AC-E7.2), and production code stays one file. |
 | VII. Destructive Command Approval (NON-NEGOTIABLE) | No backlog item deleted. `return-blocked`/`adopt` were operator-directed (D-031-2) and recorded with an ID map (H-6). `WRITE_PATH_GATE_ADVISORY` stays operator-only (H-3). | None |
 | VIII. Explicit Safety Modes | `WRITE_PATH_GATE_ADVISORY` is the explicit elevated-risk lever. Ship must not use it (H-3). | None |
 | IX. Git-Friendly Persistence | Golden JSON and fixtures are committed; golden changes are atomic with fixtures. | None |
-| X. Agent Context Efficiency | Tasks are S/XS within the 2-hour rule. Unit E stays provisional until the spike, so no speculative detail. | None |
+| X. Agent Context Efficiency | Tasks are S/XS within the 2-hour rule. Unit E stayed provisional until the spike, so there is no speculative detail. **Rev 7:** Unit E is now concrete, with M/S/XS sizing measured by G-7. E-T2's four files are an atomic engine-plus-test-pin set (G-1). | None |
 | XI. Merge Commit History Preservation (NON-NEGOTIABLE) | One commit per task; rollback by revert in reverse dependency order (H-6). No squash or rebase is implied. | None |
 
 ## Constitution Check — Unit A (rev 6) and the P-002 deviation (CN-1)
@@ -2283,11 +2745,12 @@ Unit D (031-S):  D-T1a → D-T1 → D-T2 → D-T3 ─┬→ D-T4                
                  no-op closure authorised (D-000-2); P-002 skip authorised (D-000-3)
 
 Unit E (039-S):  [039-S blocks-on 031-S]   [049-F depends-on 034-F]
-                 [spike runs after 031-S merges, before 039-S claim — D-049-1, stash 1EEBECA5]
-                 D-T6 → E-T1 → E-T2 → E-T3 ─┐
-                                E-T2 → E-T4 → E-T5 ─┴→ E-T6
-                 (034.009 → 049.001 → 049.002 → 049.003;
-                  049.002 → 049.004 → 049.005; 049.003 + 049.005 → 049.006)
+                 [spike ran after 031-S merged (961b652) — D-049-1, stash 1EEBECA5]
+                 rev 7 (linear; one shared import table, serialised golden):
+                 D-T6 → E-T1 → E-T2 → E-T3 → E-T4 → E-T5 → E-T7 → E-T6
+                 (034.009 → 049.001 → 049.002 → 049.003 → 049.004 → 049.005
+                  → 049.007 → 049.006; the rev 4 edges 049.004→049.002 and
+                  049.006→049.003/049.005 are retained and are now redundant)
 ```
 
 **Recommended shipment order: 038-S (C) → 032-S (B) → 030-S (A) → 031-S (D) →
@@ -2326,7 +2789,7 @@ predated both Unit C's discovery and the 031-S option fork.
 | B | One function + its tests | Over-strict error converts a legitimately absent `.gitignore` into a merge-blocking failure. Bounded to one gate; guarded by AC-B2.2. |
 | C | `parseRoot`, shared by **all four** engines | A regression breaks every gate at once. Guarded by AC-C1.3's four real self-test entry points. |
 | D | `writepath` scanner — the **only** mechanical enforcement of the write-path precondition (merge-blocking at `ci.yml:333-347` unless the operator sets `WRITE_PATH_GATE_ADVISORY`) plus its fixtures/golden. No product code. | **Fail-open:** D-T1's per-occurrence enumeration drops or mis-lines a hit, or D-T2's predicate allows a writing or file-creating `syscall.CreateFile` (non-zero access, non-`OPEN_EXISTING` disposition, `DELETE_ON_CLOSE`, smuggled composite/raw-string arguments, or a same-line pairing) — a silent hole in a security gate. Guarded by AC-D1a.1 (frozen differential oracle over corpus and live tree), AC-D2.2/AC-D2.3 (rejection table and same-line test), AC-D5.1 (fixture-level positive control and evasion corpus), and the golden. **Fail-closed:** line/order drift reddens golden or the repo scan — loud, blocks merges until fixed. **Collateral:** `retiredarch`'s writepath scan-loop pin — kept unmodified by D-1′ (AC-D1.4). |
-| E | Same scanner, **engine swap** | **Fail-open:** the tag-shaped-raw-string rule, a partial-AST-on-parse-error scan, `//line`/`\n`-only line drift, or a predicate *widening* during the port flips a reject to accept. Guarded by G-2/G-3/G-4, AC-E2.1–E2.3, AC-E3.2 and the Unit D parity corpus. Collateral: deleting `gomask` would break `retiredarch` — forbidden by the Unit E invariant; the `retiredarch` writepath pin is re-anchored by E-T2 (G-1). |
+| E | Same scanner, **engine swap** | **Fail-open:** the tag-shaped-raw-string rule, a partial-AST-on-parse-error scan, `//line`/`\n`-only line drift, or a predicate *widening* during the port flips a reject to accept. Guarded by G-2/G-3/G-4, AC-E2.1–E2.3, AC-E3.2 and the Unit D parity corpus. Collateral: deleting `gomask` would break `retiredarch` — forbidden by the Unit E invariant; the `retiredarch` writepath pin is re-anchored by E-T2 (G-1). **Rev 7:** *fail-open* if E-T4's alias resolution or E-T7's path keying **replaces** spelled-qualifier matching instead of adding to it (G-5 additivity rule), or if E-T5's binding tracker silently drops the bare tripwire. *Fail-closed:* E-T7's widening flags a live tracked-tree identifier. The rev 7 measurement at `961b652` found none, so this is guarded by AC-E7.3 and is loud by design. *Collateral:* E-T7 changes the `Selectors` length. The `len(Selectors)==len(golden.Selectors)` pin forces an atomic golden append, and the oracle stays bound to the frozen 20. |
 
 ### H-2 — Named stop conditions
 
@@ -2357,7 +2820,17 @@ Halt and return to Stage rather than deciding:
   `SplitLines` line numbering); if E-T2/E-T3 would change **any** golden byte, or
   E-T4/E-T5 would change any **pre-existing** golden row; if the predicate port
   would allow anything D-2′ rejects; or if the migration would require deleting
-  or modifying `gomask`.
+  or modifying `gomask`. **Rev 7 additions:**
+  * HALT if E-T4 or E-T7 would key presence matching on import paths **only**
+    (G-5 additivity).
+  * HALT if E-T7 would remove or reorder any existing `Selectors` entry,
+    change any pre-existing golden byte (AC-E7.2), or extend the D-2′
+    allowance beyond `"syscall"`.
+  * HALT if E-T7's widening makes the tracked-tree scan fail (AC-E7.3). Do
+    **not** drop the colliding selector to make it pass; return it to Stage.
+  * HALT if E-T6 would delete a residual item that rev 7 marks as narrowed
+    or retained (items 2, 3-shadowing, 4, 5, 6 and 8). Items 2 and 6 are
+    narrowed, not removed.
 * **All** — if any task would introduce a write primitive into `internal/**` or
   `cmd/**` (INV-3), or would leave the tree lint-dirty (INV-4), or would require
   an atomic landing pair not declared in INV-5.
@@ -2495,13 +2968,31 @@ Halt and return to Stage rather than deciding:
   `reject-split-selector.go`). Pre-existing; affects all selectors. *Likelihood:*
   very low (gofmt-hostile, never idiomatic). *Impact:* high. *Compensating
   controls:* the residual record and PR review.
-* **Selector coverage gap (D-T4 item 6) — KNOWN OPEN, not scheduled.**
+* **Selector coverage gap (D-T4 item 6) — KNOWN OPEN until 039-S ships;
+  narrowed, not closed, by E-T7 (049.007-T) in rev 7.**
   `ioutil.*` write helpers, `syscall` write/namespace calls beyond the two
   selected, and `golang.org/x/sys` equivalents are undetected. *Likelihood:*
-  low (none at `9b299c8`; `ioutil` is deprecated). *Impact:* high. Widening the
-  selector set is outside D-031-2's operator-approved scope. It is captured as
-  stash entry **458F9385** (rev 5, D-S-5), and Stage recommends folding it into
-  039-S / 049-F at the post-spike re-plan.
+  low (none at `9b299c8` or `961b652`; `ioutil` is deprecated). *Impact:*
+  high. Widening the selector set was outside D-031-2's operator-approved
+  scope. It was captured as stash entry **458F9385** (rev 5, D-S-5) and folded
+  into 039-S / 049-F at the rev 7 post-spike re-plan (deliberation §4.9). The
+  stash entry is archived.
+  E-T7 covers the 50 enumerated primitives. The uncovered same-family
+  remainder (see E-T6 row 6) **stays KNOWN OPEN after 039-S ships** and is
+  deferred as stash **C0D28448**.
+* **Dynamic proc invocation (new D-T4 residual item 8, rev 7) — KNOWN OPEN,
+  not scheduled.** This covers `syscall.NewLazyDLL`/`LazyProc.Call`,
+  `syscall.Syscall*` and the `golang.org/x/sys` equivalents. They reach any OS
+  write API with no write-named selector.
+  * *Likelihood:* low. The only live use is `internal/pathsafe`'s
+    metadata-only `GetFinalPathNameByHandleW` probe (`reparse_windows.go:19`).
+  * *Impact:* high.
+  * A selector cannot cover it without an allowance design for that live use,
+    so it is disclosed by E-T6 and captured as low-priority stash entry
+    **FE2F02FF** (deliberation §4.9).
+  * *Compensating controls:* the residual record, PR review, the
+    `reparse_windows.go` file being under `internal/pathsafe` review, and the
+    item-8 re-measure below.
 * **Interval bound and re-measurement — POLICY (rev 5, operator decision
   D-031-5).** This replaces a CI tripwire. Neither deferred residual has a time
   bound if 039-S stalls. **Every Stage session re-measures until 039-S ships**,
@@ -2511,12 +3002,18 @@ Halt and return to Stage rather than deciding:
   tolerated; the `grep -v` drops `return "io"`-style string literals such as
   `internal/apperr/apperr.go:67`) and
   `git grep -nE '\.Resolve\(|pathsafe\.NewRoot\(' -- 'internal/**' 'cmd/**' ':!*_test.go' ':!internal/pathsafe/**'`
-  and, for item 6,
-  `git grep -nE '(ioutil\.(WriteFile|TempFile|TempDir)|syscall\.(WriteFile|Open|Unlink|Rename|Mkdir|CreateHardLink|DeleteFile)|golang\.org/x/sys)\b' -- 'internal/**' 'cmd/**' ':!*_test.go'`
+  and, for item 6 (rev 7: the full 50-name E-T7 set; it supersedes the rev-5
+  seven-name subset),
+  `git grep -nE '(^|[^A-Za-z0-9_.])(ioutil\.(WriteFile|TempFile|TempDir)|syscall\.(WriteFile|Open|Unlink|Rename|Mkdir|Rmdir|CreateHardLink|DeleteFile|MoveFile|RemoveDirectory|CreateDirectory|CreateSymbolicLink|Truncate|Creat)|windows\.(WriteFile|CreateFile|DeleteFile|MoveFile|MoveFileEx|CreateDirectory|RemoveDirectory|CreateHardLink|CreateSymbolicLink|SetEndOfFile|SetFileInformationByHandle)|unix\.(Open|Openat|Openat2|Creat|Write|Pwrite|Unlink|Unlinkat|Rename|Renameat|Renameat2|Mkdir|Mkdirat|Rmdir|Link|Linkat|Symlink|Symlinkat|Truncate|Ftruncate|Chmod|Fchmodat))([^A-Za-z0-9_]|$)|golang\.org/x/sys' -- 'internal/**' 'cmd/**' ':!*_test.go'`
+  and, for item 8 (rev 7),
+  `git grep -nE 'NewLazyDLL|NewProc|Syscall[0-9]*\(' -- 'internal/**' 'cmd/**' ':!*_test.go'`
   (POSIX `[[:space:]]`, not GNU `\s`, per compound lesson
   `2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md`; the
   item-6 command's only current hit is the comment at
-  `internal/pathsafe/reparse_windows.go:15`, re-verified at `2c05b6e`).
+  `internal/pathsafe/reparse_windows.go:15`, re-verified at `961b652`. The
+  item-8 command's expected hits are `reparse_windows.go:15/:19/:20` and
+  `internal/pathsafe/root.go:308`. Lines 15 and `root.go:308` are comments,
+  `:19` and `:20` are the live probe. Any other hit is a trigger).
   At `9b299c8` the first is empty and the second lists only `internal/config/validate.go`
   (`pathsafe.NewRoot` calls at `:42`/`:67` and a comment at `:32`); any new hit is a
   trigger to promote 039-S to the head of the queue. A blocking CI tripwire was
@@ -2527,6 +3024,18 @@ Halt and return to Stage rather than deciding:
   empty; the second lists only `internal/config/validate.go:32/:42/:67`; the
   third lists only the comment at `internal/pathsafe/reparse_windows.go:15`.
   There is no new trigger. The verbatim output is in the session memory.
+  **Rev 7 run (2026-10-02, HEAD `961b652`):** the first command is empty
+  (positive control: the regex matches the live `copilot` alias when the
+  package set includes it). The second lists only
+  `internal/config/validate.go:32/:42/:67`, with zero `.Resolve(` callers. The
+  third (rev 7 full 50-name item-6 command) lists only the comment at
+  `internal/pathsafe/reparse_windows.go:15`. The **inclusive variant** (the
+  same command with the `':!*_test.go'` pathspec removed, run as
+  `git grep -nE '<same item-6 pattern>' origin/main -- 'internal/**' 'cmd/**'`
+  at `961b652`) gives the same single hit, so `_test.go` files add no
+  code-position match. The fourth (item 8) lists exactly the four
+  expected hits. There is no new trigger. The verbatim output is in
+  `docs/memory/2026-10-02/` for this session.
 
 ### H-6 — Rollback
 
@@ -2543,9 +3052,18 @@ Halt and return to Stage rather than deciding:
   Revert D-T3 with or before D-T2. Emergency lever (operator-only, not a Ship
   action): the `WRITE_PATH_GATE_ADVISORY` repository variable makes the repo-scan
   step advisory while the integrity self-test stays blocking (`ci.yml:333-347`).
-* **Unit E** — roll back by **landed dependency closure**: revert E-T6, E-T5,
-  E-T4, E-T3, then E-T2 (with their fixtures, golden additions and the
-  `retiredarch` re-anchoring). Only at the immediate E-T2 boundary — before E-T3
+* **Unit E** — roll back by **landed dependency closure**: revert E-T6, E-T7,
+  E-T5, E-T4, E-T3, then E-T2 (with their fixtures, golden additions and the
+  `retiredarch` re-anchoring). E-T7's selectors and golden rows are appended,
+  but it is **not** independently revertible once E-T6 has landed: E-T6's two
+  headers list the widened 76-selector set, and AC-D4.2 would then fail.
+  Revert E-T6 first, or revert E-T6 and E-T7 as a pair. Between the E-T7 and
+  E-T6 merges the header count (26) lags `Selectors` (76). That gap is
+  shipment-internal and is closed by E-T6 before 039-S completes. AC-D4.2 is a
+  **manual review check**, not an automated test: rev 4 declined a
+  header-vs-`Selectors` consistency test as new scope. The lag therefore fails
+  no gate, and the drift window is accepted (rev 7 cycle 2, SB2-4). Only at the
+  immediate E-T2 boundary — before E-T3
   deletes the masked-text extractor — is a single revert sufficient. `gomask` is
   retained so the masked engine can be restored cleanly; the Unit D corpus is
   the parity contract in **both** directions. `WRITE_PATH_GATE_ADVISORY` does
@@ -2613,7 +3131,9 @@ verdict at either boundary, and both land as separate commits.
 selector or fixture addition (D-T3, D-T5a, D-T5b, D-T6) **must** update the golden in
 the same commit, or `go test ./tools/gatecheck/...` goes red. E-T2 and E-T3 must
 leave the golden **byte-identical** (AC-E2.1, AC-E3.1); E-T4 and E-T5 may only
-**add** rows and their stream-capture `PASS` lines (AC-E4.2, AC-E5.3). D-T2's red phase is a `go test` red
+**add** rows and their stream-capture `PASS` lines (AC-E4.2, AC-E5.3). E-T7 may
+only **append** its 50 selectors to the `selectors` array and add its fixture
+rows and `PASS` lines (AC-E7.2). D-T2's red phase is a `go test` red
 only; no gate script changes verdict at that boundary because the predicate is
 dormant until D-T3 adds `syscall.CreateFile`.
 
@@ -2821,7 +3341,7 @@ planned.
 | E (feature) | 049-F | NEW. Status `blocked` = the **STAGE HOLD** pending the spike re-plan. |
 | E-T1 | 049.001-T | NEW, XS |
 | E-T2 | 049.002-T | NEW, M |
-| E-T3 | 049.003-T | NEW, S |
+| E-T3 | 049.003-T | NEW, S (rev 7 cycle 2: re-sized M; see the Harvest Record — Revision 7) |
 | E-T4 | 049.004-T | **was 034.006-T**: `shipment return-blocked` from 031-S → `move --status queued` → `adopt --parent 049-F`. Body rewritten, M. |
 | E-T5 | 049.005-T | **was 034.005-T**: same path as E-T4. Body rewritten, M. |
 | E-T6 | 049.006-T | NEW, XS |
@@ -3193,5 +3713,120 @@ task does not define a complexity field". Complexity is recorded as prose.
 
 **Index.** `backlogit sync` indexed 397 artifacts, and `backlogit doctor`
 reported "No issues found".
+
+---
+
+## Plan Review — Revision 7 (Unit E)
+
+This section records the plan-review gate for the revision 7 Unit E re-plan
+(D-049-1). Scope: plan rev 7, the spike findings
+(`docs/decisions/2026-10-02-intercom-go-writepath-go-ast-spike.md`),
+deliberation §4.9, and the 049-F / 049.001-T..049.007-T / 039-S backlog
+bodies. The gate rule is the 049-F STAGE HOLD rule: the hold lifts only on
+ADVISORY or better with no open P0/P1. There are at most 3 review-fix cycles
+(circuit-breaker Review-Fix Cycle Definition).
+
+dispatch_mode: multi-agent (three reviewers on three model families, each
+reading the repository read-only from a brief under `logs/`)
+
+### Cycle 1 — FAIL
+
+| Reviewer | Verdict | Findings |
+|---|---|---|
+| gpt-5.6-sol | FAIL | PR7-1 (P1), PR7-2 (P1), PR7-3 (P2), PR7-4 (P2) |
+| claude-opus-5.5 | ADVISORY | SB-1..SB-9 (P2/P3) |
+| gemini-3.8-flash | ADVISORY | 049.007-T ACs; full qualifier set; dot-import format (P3) |
+
+| Finding | Disposition |
+|---|---|
+| PR7-1 / SB-1 — item 6 claimed closed while same-family primitives stay uncovered | Applied. Item 6 is **narrowed** everywhere; the remainder is stash C0D28448 (P-021 C2). |
+| PR7-2 / SB-6 — file counts understated | Applied. Each task states artifacts and physical files (D-T6 convention). |
+| PR7-3 — AC-E7.3 sampled selectors | Applied. Exact-name scan of all 50 at `961b652`. |
+| PR7-4 / SB-3 — E-T1 ACs differ from 049.001-T | Applied. The backlog mirrors AC-E1.1..1.4. |
+| SB-2 / SB-9 — stash IDs, full-set H-5 commands | Applied (FE2F02FF, C0D28448; H-5 item-6 and item-8 commands). |
+| SB-7 — dot-import fixture for new paths | Applied (AC-E7.1). |
+| SB-8 — E-T6 / E-T7 revert ordering | Applied (H-6). |
+| gemini P3s | Applied (049.007-T sections; 8 qualifiers; canonical prefix). |
+
+<!-- plan-review-attempt: 1 -->
+
+### Cycle 2 (re-entry 1 of 2) — FAIL
+
+| Reviewer | Verdict | Findings |
+|---|---|---|
+| gpt-5.6-sol | FAIL | PR7-1 unresolved in `049.006-T` (P1); PR7C2-1 (P2) |
+| claude-opus-5.5 | FAIL | SB2-1 (P1), SB2-2 (P1), SB2-3 (P2), SB2-4..SB2-6 (P3) |
+| gemini-3.8-flash | ADVISORY | GM2-1 (P2), GM2-2 (P3) |
+
+| Finding | Disposition |
+|---|---|
+| PR7-1 / SB2-1 / GM2-1 — `049.006-T` replan still said "item 6 remove"; its ACs lacked the narrowed parts of items 2/6 and item 8 | Applied. A cycle-2 amendment in `049.006-T` supersedes "item 6 remove", and its acceptance criteria mirror AC-E6.1/E6.2. |
+| SB2-2 — E-T3 deletes `extractExtent` but omits `writepath_extent_test.go`, which calls it, so the package would not compile | Applied. E-T2 keeps `scanText`/`advanceCursor`/`extractExtent` unchanged; E-T3 has 3 files, size M, the extent-test port table and AC-E3.3. |
+| PR7C2-1 — AC-E7.3 claimed a `_test.go`-inclusive scan, but the recorded command excludes `_test.go` | Applied. H-5 records the inclusive variant (re-run at `961b652`: the single comment hit); AC-E7.3 cites it. |
+| SB2-3 — this section was referenced but missing | Applied (this section). |
+| SB2-4 — header-count drift window between E-T7 and E-T6 | Applied. H-6 states AC-D4.2 is a manual review check; the window is accepted. |
+| SB2-5 — spike doc file-count wording and column name | Applied in the spike doc. |
+| SB2-6 — stale description paragraphs in 049.006-T / 049.007-T | Applied. Each replan section marks the description text as superseded. |
+| GM2-2 — `unix.` vs `unix.*` | Applied (AC-E7.1 and 049.007-T). |
+
+<!-- plan-review-attempt: 2 -->
+
+### Cycle 3 (re-entry 2 of 2, FINAL) — FAIL
+
+| Reviewer | Verdict | Findings |
+|---|---|---|
+| gpt-5.6-sol | FAIL | GPT3-1 (P1) |
+| claude-opus-5.5 | FAIL | SB3-1 (P1), SB3-2..SB3-5 (P3) |
+| gemini-3.8-flash | (empty response) | — replaced by grok-4.7 |
+| grok-4.7 | FAIL | GK3-1 (P1), GK3-2 (P2), GK3-3 (P3), GK3-4 (P3) |
+
+Stage verified each P1 against the code at `961b652`. All three are real:
+
+* **SB3-1 / GPT3-1 (P1):** E-T3 neither deleted nor ported
+  `lineReportsSelector` (`writepath.go:315`), which calls `extractExtent` and
+  `occurrenceAllowed`. As planned, E-T3 either would not compile or would drop
+  the AC-D2.3 same-line security test
+  (`writepath_test.go:484–506`).
+* **GK3-1 (P1):** the `writepath_extent_test.go` classification inputs
+  `os.Remove(a, (b`, `os.Remove(`, `os.Remove(a, [b)` and `os.Remove(a}` are
+  not valid Go. Under G-2 they are parse errors with exit 1 and no finding, so
+  the port table's "same finding text" claim contradicted G-2.
+
+| Finding | Disposition (applied after cycle 3; **NOT re-gated**) |
+|---|---|
+| SB3-1 / GPT3-1 | E-T3 deletion list adds `lineReportsSelector`; port table adds `TestScanSource_AllowedCallCannotHideWritingCall`; AC-E3.3 grep extended; cited range corrected to `:384–512`. |
+| GK3-1 | Classification port split into parseable (same verdicts) and non-parseable (`TestScanSource_SyntaxErrorFailsClosed`, G-2 stricter fail-closed) rows; `extentUnbalanced`/`extentMismatched` not preserved. |
+| GK3-2 | `findSelector` deleted; `nextOccurrence` retained; `TestFindSelector_LookaroundTable` re-pointed at `selectorOccurrences`. |
+| SB3-2 / SB3-3 | Complete deletion list names `extentKind`, `bracketOpener`, `firstExtent`, `absoluteOccurrences`, and the `createFileCall`/`allowedCreateFileArgs` disposition. |
+| SB3-4 | AC-E3.3 grep scoped to `tools/gatecheck/internal/writepath/`. |
+| SB3-5 | Recorded; it is subsumed by the SB3-2 deletion list. |
+| GK3-3 | E-T2 note corrected: the predicate, same-line and lookaround tests stay unchanged until E-T3. |
+| GK3-4 | `049.005-T` carries a supersession sentence (item 2 is narrowed, not closed). |
+
+<!-- plan-review-attempt: 3 -->
+
+### Gate outcome — FAIL (cycle limit reached)
+
+Each of the three review cycles found at least one new P1. The plan-review
+re-entry limit (2 re-entries, 3 attempts) is now exhausted. Under the Stage
+agent's Step 4 rule and P-021 C3, in-scope findings that remain unverified at
+the cycle limit **halt and escalate to the operator**. They are not accepted as
+residual risk.
+
+The cycle-3 fixes above are applied, but **no reviewer has verified them**.
+Consequences:
+
+* `049-F` stays **blocked** (the STAGE HOLD is **not** lifted).
+* `039-S` stays **on hold** and is not claimable. The Orchestrator reports
+  `DARK_MODE_HALTED` for 039-S as unsafe without operator input.
+* The P-013.6 escalation route is `ESCALATION_DEGRADED`, because engram is
+  unavailable for the handoff. Stage falls back to the operator halt.
+* The next step needs the operator: an explicit, operator-authorized re-gate
+  (a fresh plan-review run over revision 7 with these amendments), or another
+  disposition. No harvest record for revision 7 is written until a gate passes.
+
+The spike result itself (G-1..G-7, exact verdict parity) is **not** in question.
+The failures are all in the decomposition detail of E-T3, the test-port
+contract.
 
 *Generated by Copilot*

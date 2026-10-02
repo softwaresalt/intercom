@@ -1,0 +1,454 @@
+package writepath
+
+// THROWAWAY SPIKE (049.001-T / E-T1). Never committed. Differential test of a
+// go/parser + go/ast detection engine against the masked-text engine.
+
+import (
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/gomask"
+	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
+)
+
+var errSpikeParse = errors.New("spike: go/parser error")
+
+// spikeLineTable maps each rune index of masked text to its 1-based
+// pysem.SplitLines line number.
+func spikeLineTable(masked string) []int {
+	rs := []rune(masked)
+	lines := make([]int, len(rs)+1)
+	line := 1
+	for i := 0; i < len(rs); i++ {
+		lines[i] = line
+		switch r := rs[i]; r {
+		case '\r':
+			if i+1 < len(rs) && rs[i+1] == '\n' {
+				lines[i+1] = line
+				i++
+			}
+			line++
+		case '\n', '\v', '\f', '\x1c', '\x1d', '\x1e', '\x85', '\u2028', '\u2029':
+			line++
+		}
+	}
+	lines[len(rs)] = line
+	return lines
+}
+
+// spikeRuneIndex maps each byte offset of src to its rune index.
+func spikeRuneIndex(src string) []int {
+	idx := make([]int, len(src)+1)
+	r := 0
+	for i := 0; i < len(src); {
+		_, w := utf8.DecodeRuneInString(src[i:])
+		for k := 0; k < w; k++ {
+			idx[i+k] = r
+		}
+		i += w
+		r++
+	}
+	idx[len(src)] = r
+	return idx
+}
+
+func spikeSelIndex(sel string) int {
+	for i, s := range Selectors {
+		if s == sel {
+			return i
+		}
+	}
+	return -1
+}
+
+// spikeBareOperand mirrors the masked-text segment rule: an argument whose
+// masked text contains no bracket, quote or backtick and is non-empty.
+func spikeBareOperand(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return true
+	case *ast.BasicLit:
+		return x.Kind == token.INT || x.Kind == token.FLOAT || x.Kind == token.IMAG
+	case *ast.SelectorExpr:
+		return spikeBareOperand(x.X)
+	case *ast.UnaryExpr:
+		return spikeBareOperand(x.X)
+	case *ast.BinaryExpr:
+		return spikeBareOperand(x.X) && spikeBareOperand(x.Y)
+	case *ast.StarExpr:
+		return spikeBareOperand(x.X)
+	}
+	return false
+}
+
+// spikeExactSel reports whether e is pkg.name written with no interior
+// whitespace or comment (the exact-token rule of D-2').
+func spikeExactSel(src string, fset *token.FileSet, e ast.Expr, pkg, name string) bool {
+	s, ok := e.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	id, ok := s.X.(*ast.Ident)
+	if !ok || id.Name != pkg || s.Sel.Name != name {
+		return false
+	}
+	a := fset.PositionFor(s.Pos(), false).Offset
+	b := fset.PositionFor(s.End(), false).Offset
+	return src[a:b] == pkg+"."+name
+}
+
+// spikeAllowed is D-2' over *ast.CallExpr.
+func spikeAllowed(src string, fset *token.FileSet, call *ast.CallExpr) bool {
+	if call == nil || call.Ellipsis != token.NoPos || len(call.Args) != allowedCreateFileArgCount {
+		return false
+	}
+	for _, a := range call.Args {
+		if !spikeBareOperand(a) {
+			return false
+		}
+	}
+	lit, ok := call.Args[1].(*ast.BasicLit)
+	if !ok || lit.Kind != token.INT || lit.Value != allowedCreateFileAccess {
+		return false
+	}
+	return spikeExactSel(src, fset, call.Args[4], "syscall", "OPEN_EXISTING") &&
+		spikeExactSel(src, fset, call.Args[5], "syscall", "FILE_FLAG_BACKUP_SEMANTICS")
+}
+
+type spikeHit struct {
+	line int
+	sel  int
+}
+
+// astScan is the spike engine: unmasked decoded source in, findings or a
+// fail-closed parse error out.
+func astScan(rel, src string) ([]string, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, rel, src, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errSpikeParse, err)
+	}
+	masked := gomask.MaskGoNonCode(src)
+	maskedRunes := []rune(masked)
+	lineOf := spikeLineTable(masked)
+	runeOf := spikeRuneIndex(src)
+	lineAt := func(off int) int { return lineOf[runeOf[off]] }
+
+	hits := map[spikeHit]bool{}
+	callOf := map[*ast.SelectorExpr]*ast.CallExpr{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if c, ok := n.(*ast.CallExpr); ok {
+			if s, ok := ast.Unparen(c.Fun).(*ast.SelectorExpr); ok && c.Fun == ast.Expr(s) {
+				callOf[s] = c
+			}
+		}
+		return true
+	})
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.SelectorExpr:
+			id, ok := x.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			sel := id.Name + "." + x.Sel.Name
+			si := spikeSelIndex(sel)
+			if si < 0 {
+				return true
+			}
+			if sel == allowedCreateFileSelector && spikeAllowed(src, fset, callOf[x]) {
+				return true
+			}
+			hits[spikeHit{lineAt(fset.PositionFor(id.Pos(), false).Offset), si}] = true
+		case *ast.BasicLit:
+			if x.Kind != token.STRING || !strings.HasPrefix(x.Value, "`") {
+				return true
+			}
+			// Visibility is decided by the whole-file canonical mask
+			// (gomask preserves rune count), never by re-masking the
+			// literal standalone (which loses struct-tag context).
+			a := fset.PositionFor(x.Pos(), false).Offset + 1 // skip opening backtick (masked to space)
+			b := fset.PositionFor(x.End(), false).Offset - 1 // skip closing backtick
+			ml := string(maskedRunes[runeOf[a]:runeOf[b]])
+			if ml != src[a:b] {
+				return true // blanked: not a visible tag
+			}
+			for si, sel := range Selectors {
+				for _, pos := range selectorOccurrences(ml, sel) {
+					hits[spikeHit{lineAt(a + pos), si}] = true
+				}
+			}
+		}
+		return true
+	})
+	keys := make([]spikeHit, 0, len(hits))
+	for k := range hits {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].line != keys[j].line {
+			return keys[i].line < keys[j].line
+		}
+		return keys[i].sel < keys[j].sel
+	})
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, fmt.Sprintf("%s:%d: write primitive %s found", rel, k.line, pysem.Repr(Selectors[k.sel])))
+	}
+	return out, nil
+}
+
+type spikeTally struct {
+	files, equal, diff, parseErr int
+}
+
+func spikeCompare(t *testing.T, tally *spikeTally, rel, src string) {
+	t.Helper()
+	tally.files++
+	text := scanText(rel, gomask.MaskGoNonCode(src))
+	got, err := astScan(rel, src)
+	if err != nil {
+		tally.parseErr++
+		t.Logf("PARSE-FAIL-CLOSED %s: %v (text findings=%d)", rel, err, len(text))
+		return
+	}
+	if strings.Join(text, "\n") == strings.Join(got, "\n") {
+		tally.equal++
+		return
+	}
+	tally.diff++
+	t.Logf("DIVERGENCE %s\n  text=%q\n  ast =%q", rel, text, got)
+}
+
+func TestSpikeParity_FixtureCorpus(t *testing.T) {
+	root := repoRoot(t)
+	matches, _ := filepath.Glob(filepath.Join(root, "scripts", "testdata", "writepath", "*.go"))
+	sort.Strings(matches)
+	var tally spikeTally
+	for _, m := range matches {
+		rel := "scripts/testdata/writepath/" + filepath.Base(m)
+		src, err := pysem.ReadText(m)
+		if err != nil {
+			t.Fatalf("%s: %v", rel, err)
+		}
+		spikeCompare(t, &tally, rel, src)
+	}
+	t.Logf("FIXTURES files=%d equal=%d diff=%d parseErr=%d", tally.files, tally.equal, tally.diff, tally.parseErr)
+	g := loadWritepathGolden(t)
+	for _, row := range g.FixtureFindings {
+		src, _ := pysem.ReadText(filepath.Join(root, "scripts", "testdata", "writepath", row.Name))
+		got, err := astScan("scripts/testdata/writepath/"+row.Name, src)
+		if err != nil || strings.Join(got, "\n") != strings.Join(row.Findings, "\n") {
+			t.Logf("GOLDEN-MISMATCH %s err=%v got=%q want=%q", row.Name, err, got, row.Findings)
+		}
+	}
+	t.Logf("GOLDEN fixture_findings rows=%d", len(g.FixtureFindings))
+}
+
+func TestSpikeParity_Filebased(t *testing.T) {
+	g := loadWritepathGolden(t)
+	var tally spikeTally
+	for _, row := range g.Filebased {
+		dir := t.TempDir()
+		p := filepath.Join(dir, row.Name)
+		if err := os.WriteFile(p, rawBytesToString(row.RawBytes), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		src, err := pysem.ReadText(p)
+		if row.DecodeError {
+			t.Logf("FILEBASED %s decode error before engine: %v", row.Name, errors.Is(err, pysem.ErrInvalidUTF8))
+			continue
+		}
+		spikeCompare(t, &tally, row.Name, src)
+		got, _ := astScan(row.Name, src)
+		t.Logf("FILEBASED %s golden-equal=%v", row.Name, strings.Join(got, "\n") == strings.Join(row.Findings, "\n"))
+	}
+	t.Logf("FILEBASED files=%d equal=%d diff=%d parseErr=%d", tally.files, tally.equal, tally.diff, tally.parseErr)
+}
+
+func spikeTracked(t *testing.T) (string, []string) {
+	root := repoRoot(t)
+	out, err := DefaultGitRunner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing, _ := pysem.GitText(out)
+	var rels []string
+	for _, p := range pysem.SplitLines(listing) {
+		if p != "" && shouldScan(p) {
+			rels = append(rels, p)
+		}
+	}
+	return root, rels
+}
+
+func TestSpikeParity_TrackedTree(t *testing.T) {
+	root, rels := spikeTracked(t)
+	var tally spikeTally
+	for _, rel := range rels {
+		src, err := pysem.ReadText(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("%s: %v", rel, err)
+		}
+		spikeCompare(t, &tally, rel, src)
+	}
+	t.Logf("TRACKED files=%d equal=%d diff=%d parseErr=%d", tally.files, tally.equal, tally.diff, tally.parseErr)
+}
+
+// TestSpikeParity_AllModuleGo widens the parity sample to every tracked .go
+// file in the repository (not only the gate's scan scope).
+func TestSpikeParity_AllModuleGo(t *testing.T) {
+	root := repoRoot(t)
+	out, err := DefaultGitRunner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = out
+	var tally spikeTally
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			n := d.Name()
+			if n == ".git" || n == "logs" || n == "node_modules" || n == ".copilot" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.Contains(filepath.ToSlash(p), "scripts/testdata/writepath/") {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		src, err := pysem.ReadText(p)
+		if err != nil {
+			t.Logf("READ-ERR %s: %v", rel, err)
+			return nil
+		}
+		spikeCompare(t, &tally, filepath.ToSlash(rel), src)
+		return nil
+	})
+	t.Logf("ALLGO files=%d equal=%d diff=%d parseErr=%d", tally.files, tally.equal, tally.diff, tally.parseErr)
+}
+
+func TestSpikeHazards(t *testing.T) {
+	imp := "package p\n\nimport (\n\t\"os\"\n\t\"syscall\"\n)\n\n"
+	cases := []struct{ name, src string }{
+		{"oracle-code-position-boundaries", "package p\n\nfunc f() {\n\t_ = 1\f\tos.Remove(\"a\")\v\tos.Create(\"b\")\u2028\tos.Rename(\"c\", \"d\")\n}\n"},
+		{"oracle-comment-and-string-boundaries", "package p\n\nimport \"os\"\n\n// a\fb\vc\u2028d\nvar s = \"e\ff\vg\u2028h\"\n\nfunc f() error { return os.Remove(s) }\n"},
+		{"line-directive", imp + "//line other.go:900\nfunc f() { os.Remove(\"a\") }\n"},
+		{"bom-at-0", "\ufeff" + imp + "func f() { os.Remove(\"a\") }\n"},
+		{"bom-mid-file-code", imp + "func f() { \ufeffos.Remove(\"a\") }\n"},
+		{"bom-mid-file-comment", imp + "// \ufeff\nfunc f() { os.Remove(\"a\") }\n"},
+		{"ff-in-code", imp + "func f() {\f os.Remove(\"a\") }\n"},
+		{"nel-in-code", imp + "func f() {\u0085 os.Remove(\"a\") }\n"},
+		{"partial-ast-missing-brace", imp + "func f() { os.Remove(\"a\")\n"},
+		{"partial-ast-bad-decl", imp + "func f() { os.Remove(\"a\") }\nfunc g( {\n"},
+		{"no-package-clause", "func f() { os.Remove(\"a\") }\n"},
+		{"multibyte-before-hit", imp + "var s = \"ééé漢字\"; func f() { _ = s; os.Remove(\"a\") }\n// 漢\nfunc g() { os.Create(\"b\") }\n"},
+		{"tag-with-boundary-in-value", "package p\n\ntype T struct {\n\tA int `json:\"a\vb\" x:\"os.Remove\"`\n\tB int `y:\"os.Create\"`\n}\n"},
+		{"tag-shaped-raw-expr", "package p\n\nvar s = `k:\"os.Remove\"`\n"},
+		{"non-tag-raw-expr", "package p\n\nvar s = `os.Remove(x)`\n"},
+		{"split-selector-space", imp + "func f() { os . Remove(\"a\") }\n"},
+		{"split-selector-newline", imp + "func f() { os.\n\tRemove(\"a\") }\n"},
+		{"split-selector-comment", imp + "func f() { os./*c*/Remove(\"a\") }\n"},
+		{"alias-import", "package p\n\nimport xo \"os\"\n\nfunc f() { xo.Remove(\"a\") }\n"},
+		{"dot-import", "package p\n\nimport . \"os\"\n\nfunc f() { Remove(\"a\") }\n"},
+		{"blank-import", "package p\n\nimport _ \"os\"\n"},
+		{"unimported-os-ident", "package p\n\nfunc f(os T) { os.Remove(1) }\n"},
+		{"nested-selector", imp + "func f() { x.os.Remove(\"a\") }\n"},
+		{"os-root-type", imp + "var r *os.Root\n"},
+		{"createfile-func-value", imp + "var open = syscall.CreateFile\n"},
+		{"createfile-allowed", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+		{"createfile-allowed-trailing-comma", imp + "func f(p *uint16) {\n\tsyscall.CreateFile(\n\t\tp,\n\t\t0,\n\t\t0,\n\t\tsa,\n\t\tsyscall.OPEN_EXISTING,\n\t\tsyscall.FILE_FLAG_BACKUP_SEMANTICS,\n\t\t0,\n\t)\n}\n"},
+		{"createfile-comment-in-args", imp + "func f(p *uint16) { syscall.CreateFile(p, 0 /*c*/, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+		{"createfile-split-dispo", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, 0, sa, syscall . OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+		{"createfile-split-dispo-newline", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, 0, sa, syscall.\nOPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+		{"createfile-8-args-last-string", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0, \"x\") }\n"},
+		{"createfile-ellipsis", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, xs...) }\n"},
+		{"createfile-paren-flag", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, 0, sa, syscall.OPEN_EXISTING, (syscall.FILE_FLAG_BACKUP_SEMANTICS), 0) }\n"},
+		{"createfile-binary-flag", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS|1, 0) }\n"},
+		{"createfile-binary-other-arg", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, a|b, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+		{"createfile-paren-callee", imp + "func f(p *uint16) { (syscall.CreateFile)(p, 0, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+		{"createfile-allowed-plus-write-same-line", imp + "func f(p *uint16) { syscall.CreateFile(p, 0, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0); syscall.CreateFile(p, 1, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+		{"createfile-access-hex0", imp + "func f(p *uint16) { syscall.CreateFile(p, 0x0, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+		{"createfile-aliased-syscall-name", "package p\n\nimport syscall \"golang.org/x/sys/windows\"\n\nfunc f(p *uint16) { syscall.CreateFile(p, 0, 0, sa, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0) }\n"},
+	}
+	for _, c := range cases {
+		text := scanText(c.name, gomask.MaskGoNonCode(c.src))
+		got, err := astScan(c.name, c.src)
+		status := "EQUAL"
+		if err != nil {
+			status = "AST-FAIL-CLOSED"
+		} else if strings.Join(text, "\n") != strings.Join(got, "\n") {
+			status = "DIVERGE"
+		}
+		t.Logf("HAZARD %-42s %-16s text=%q ast=%q err=%v", c.name, status, text, got, err)
+	}
+	// //line: go/token.Position with adjusted=true vs false.
+	fset := token.NewFileSet()
+	src := cases[2].src
+	f, _ := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
+	ast.Inspect(f, func(n ast.Node) bool {
+		if s, ok := n.(*ast.SelectorExpr); ok {
+			t.Logf("LINEDIR adjusted=%v unadjusted=%v", fset.PositionFor(s.Pos(), true), fset.PositionFor(s.Pos(), false))
+			return false
+		}
+		return true
+	})
+	// go/token line counting: a tag value with \v.
+	src2 := cases[12].src
+	fset2 := token.NewFileSet()
+	f2, _ := parser.ParseFile(fset2, "y.go", src2, 0)
+	ast.Inspect(f2, func(n ast.Node) bool {
+		if b, ok := n.(*ast.BasicLit); ok && b.Kind == token.STRING {
+			t.Logf("TOKENLINE lit=%q token.Line=%d", b.Value, fset2.PositionFor(b.Pos(), false).Line)
+		}
+		return true
+	})
+}
+
+// TestSpikeImportsAndRoots measures G-5/G-6 on the tracked tree.
+func TestSpikeImportsAndRoots(t *testing.T) {
+	root, rels := spikeTracked(t)
+	writePkgs := map[string]bool{"os": true, "io": true, "database/sql": true, "go.etcd.io/bbolt": true, "syscall": true, "io/ioutil": true, "golang.org/x/sys/windows": true, "golang.org/x/sys/unix": true}
+	widen := []string{"ioutil.WriteFile", "ioutil.TempFile", "ioutil.TempDir", "syscall.WriteFile", "syscall.Open", "syscall.Unlink", "syscall.Rename", "syscall.Mkdir", "syscall.CreateHardLink", "syscall.DeleteFile", "windows.", "unix."}
+	for _, rel := range rels {
+		src, _ := pysem.ReadText(filepath.Join(root, filepath.FromSlash(rel)))
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, rel, src, parser.ImportsOnly)
+		if err != nil {
+			continue
+		}
+		for _, is := range f.Imports {
+			path, _ := strconv.Unquote(is.Path.Value)
+			if is.Name != nil {
+				t.Logf("IMPORT-NAMED %s name=%s path=%s writeCapable=%v", rel, is.Name.Name, path, writePkgs[path])
+			}
+			if path == "golang.org/x/sys/windows" || path == "golang.org/x/sys/unix" || path == "io/ioutil" {
+				t.Logf("IMPORT-WIDEN %s path=%s", rel, path)
+			}
+		}
+		masked := gomask.MaskGoNonCode(src)
+		for _, w := range widen {
+			if strings.Contains(masked, w) && w != "windows." && w != "unix." {
+				t.Logf("WIDEN-HIT %s %s", rel, w)
+			}
+		}
+		for _, needle := range []string{"NewRoot(", ".Resolve(", "pathsafe\""} {
+			if n := strings.Count(masked, needle); n > 0 {
+				t.Logf("ROOTS %s %q x%d", rel, needle, n)
+			}
+		}
+	}
+}
