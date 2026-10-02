@@ -168,6 +168,43 @@ func TestRootGitignoreTextAt_ValidRefAbsentGitignore_ReturnsEmpty(t *testing.T) 
 	}
 }
 
+// TestRootGitignoreTextAt_OptionLikeRefs_RealGit proves against real git
+// (not only the scripted runner) that refs which `git show <ref>:.gitignore`
+// could previously satisfy without naming a baseline — an option-like
+// argument, an empty ref, or a bare `:` index path — now fail closed with
+// an error naming the ref, even when a committed .gitignore exists.
+func TestRootGitignoreTextAt_OptionLikeRefs_RealGit(t *testing.T) {
+	git := newIsolatedGitRunner(t)
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		if _, stderr, err := git(dir, nil, args...); err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, stderr)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("committed-content\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+	run("add", ".gitignore")
+	run("commit", "-q", "-m", "base")
+
+	for _, ref := range []string{"--format=x", "", ":"} {
+		t.Run(ref, func(t *testing.T) {
+			text, err := rootGitignoreTextAt(dir, ref, git)
+			if err == nil {
+				t.Fatalf("expected an error for ref %q, got nil (text %q)", ref, text)
+			}
+			if text != "" {
+				t.Fatalf("expected empty text alongside the error for ref %q, got %q", ref, text)
+			}
+			if !strings.Contains(err.Error(), "::error::") {
+				t.Fatalf("error %q is not a ::error:: diagnostic", err)
+			}
+		})
+	}
+}
+
 func TestRootTreeHasGitignore(t *testing.T) {
 	entry := func(name string) string {
 		return "100644 blob 0123456789abcdef0123456789abcdef01234567\t" + name + "\x00"
@@ -374,6 +411,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 		})
 	}
 }
+
 func TestMakeScratchGitignore(t *testing.T) {
 	git := newIsolatedGitRunner(t)
 	root := t.TempDir()

@@ -38,8 +38,9 @@ phase: build-complete
   absent-file was NOT made into an error.
 * **Leading `-` refs.** On the new `rev-parse` call, a ref that starts with
   `-` is rejected as unresolvable instead of being passed to git, which
-  could parse it as an option. The happy path (`git show` succeeding) is
-  unchanged, which preserves INV-1.
+  could parse it as an option. For a valid ref with a root `.gitignore`, the
+  returned text is unchanged (INV-1); the git invocations changed in the
+  review-fix cycle below.
 * The three tasks landed as separate commits: `aff681f` (red), `ccc4b2a`
   (green) and `29a365a` (comments).
 
@@ -68,6 +69,7 @@ clean. The wrapper `--self-test` passed. `--base-ref origin/main` passed
 * Out-of-scope follow-up (P-021 C2): stash `B29A565E`. It covers ref
   option-injection hardening for the `checks.go` `git diff` and `runCheck`
   `rev-parse` calls.
+
 ## Next
 
 Multi-persona adversarial review at a pinned HEAD, then the feature PR, the
