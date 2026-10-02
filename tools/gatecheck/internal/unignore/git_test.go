@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -100,24 +101,70 @@ func TestRootGitignoreTextAt_ValidRef(t *testing.T) {
 	}
 }
 
-// TestRootGitignoreTextAt_InvalidRef_DegradesToEmpty characterizes the
-// 035-F defect (plan §6): an invalid ref -- or a valid ref that simply
-// lacks a root .gitignore -- both degrade silently to an empty baseline
-// rather than surfacing an error. This port preserves that behaviour
-// faithfully; 035-F re-plans the fix for after M4.
-func TestRootGitignoreTextAt_InvalidRef_DegradesToEmpty(t *testing.T) {
-	git := newIsolatedGitRunner(t)
+// initRepoWithCommit creates a git repository in a fresh temp directory
+// with a single commit containing only a placeholder file (no root
+// .gitignore), and returns the directory. The repository is otherwise
+// valid, so any failure to resolve a baseline from it is attributable to
+// the ref (or the absent file) alone.
+func initRepoWithCommit(t *testing.T, git GitRunner) string {
+	t.Helper()
 	dir := t.TempDir()
-	if _, stderr, err := git(dir, nil, "init", "-q", "-b", "main"); err != nil {
-		t.Fatalf("git init failed: %v: %s", err, stderr)
+	run := func(args ...string) {
+		t.Helper()
+		if _, stderr, err := git(dir, nil, args...); err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, stderr)
+		}
 	}
+	run("init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "placeholder.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write placeholder: %v", err)
+	}
+	run("add", "placeholder.txt")
+	run("commit", "-q", "-m", "base without .gitignore")
+	return dir
+}
 
-	text, err := rootGitignoreTextAt(dir, "this-ref-does-not-exist", git)
-	if err != nil {
-		t.Fatalf("expected degraded-empty, not an error: %v", err)
+// TestRootGitignoreTextAt_InvalidRef_ReturnsError pins the 035-F fix
+// (AC-B1.1/AC-B1.2): an unresolvable ref must surface a distinct,
+// non-nil error at the point of use, independent of the upstream
+// `git diff` guard in runDifferentialCheck. Before the fix, an invalid
+// ref silently degraded to an empty baseline, so no ignore rule could
+// ever be observed as removed and the merge-blocking regression check
+// passed vacuously.
+func TestRootGitignoreTextAt_InvalidRef_ReturnsError(t *testing.T) {
+	git := newIsolatedGitRunner(t)
+	dir := initRepoWithCommit(t, git)
+
+	const badRef = "this-ref-does-not-exist"
+	text, err := rootGitignoreTextAt(dir, badRef, git)
+	if err == nil {
+		t.Fatalf("expected an error for unresolvable ref %q, got nil (text %q): an invalid ref must not degrade to an empty baseline", badRef, text)
 	}
 	if text != "" {
-		t.Fatalf("expected empty content for invalid ref, got %q", text)
+		t.Fatalf("expected empty text alongside the error, got %q", text)
+	}
+	if !strings.Contains(err.Error(), badRef) {
+		t.Fatalf("error %q does not name the unresolvable ref %q", err, badRef)
+	}
+}
+
+// TestRootGitignoreTextAt_ValidRefAbsentGitignore_ReturnsEmpty guards the
+// other half of the 035-F distinction (plan stop condition): a ref that
+// resolves but simply has no root .gitignore is a legitimate empty
+// baseline, NOT an error. Over-strictness here would turn a legitimately
+// absent .gitignore into a merge-blocking failure.
+func TestRootGitignoreTextAt_ValidRefAbsentGitignore_ReturnsEmpty(t *testing.T) {
+	git := newIsolatedGitRunner(t)
+	dir := initRepoWithCommit(t, git)
+
+	// "main" is a valid, non-HEAD ref, so this exercises the
+	// `git show <ref>:.gitignore` path rather than the HEAD disk read.
+	text, err := rootGitignoreTextAt(dir, "main", git)
+	if err != nil {
+		t.Fatalf("expected an empty baseline for a valid ref without .gitignore, got error: %v", err)
+	}
+	if text != "" {
+		t.Fatalf("expected empty content for absent .gitignore at a valid ref, got %q", text)
 	}
 }
 
