@@ -206,3 +206,103 @@ func TestContainsAll_EmptyInput_False(t *testing.T) {
 		t.Fatalf("containsAll must still accept a non-empty subset")
 	}
 }
+
+// TestCheckPathspecPin_FrozenDecls_RejectTable is the AC-A3b.1 reject
+// table (one scenario: a single token-equality / shared-rule predicate over
+// data rows). Every row keeps scanScope's literals present, so the
+// ALP-1 + A-T3a presence pin accepts it (red-phase rule, rev 6). Each row
+// asserts SelectFound==true AND PathspecOK==false (and PrefixOK==false for
+// shared-rule rows), so a parse error cannot satisfy it.
+func TestCheckPathspecPin_FrozenDecls_RejectTable(t *testing.T) {
+	rows := []struct {
+		name, old, new string
+		shared         bool
+	}{
+		{"git_call_in_dead_code",
+			"\tout, err := git(root, pathspecs...)\n",
+			"\tvar out []byte\n\tvar err error\n\tif false {\n\t\tout, err = git(root, pathspecs...)\n\t}\n", false},
+		{"discarded_git_call_second_call_produces_out",
+			"\tout, err := git(root, pathspecs...)\n",
+			"\t_, _ = git(root, pathspecs...)\n\tout, err := git(root)\n", false},
+		{"root_reassigned",
+			"\tout, err := git(root, pathspecs...)\n",
+			"\troot = \"/tmp\"\n\tout, err := git(root, pathspecs...)\n", false},
+		{"second_runner_exec_command",
+			"\tout, err := git(root, pathspecs...)\n",
+			"\tout, err := exec.Command(\"git\", \"ls-files\").Output()\n", false},
+		{"extra_filter",
+			"if shouldScanRepoPath(path) {",
+			"if shouldScanRepoPath(path) && !strings.HasPrefix(path, \"cmd/\") {", false},
+		{"pathspecs_resliced",
+			"git(root, pathspecs...)",
+			"git(root, pathspecs[1:]...)", false},
+		{"default_git_runner_drops_pathspecs",
+			"args := append([]string{\"ls-files\", \"--\"}, pathspecs...)",
+			"args := []string{\"ls-files\", \"--\", \"internal/**\"}", false},
+		{"extra_exclude_cmd_arm",
+			"\t{pathspec: \"internal/**\", prefix: \"internal/\", includeTests: false},\n",
+			"\t{pathspec: \"internal/**\", prefix: \"internal/\", includeTests: false},\n\t{pathspec: \":(exclude)cmd/**\", exact: \":(exclude)cmd/**\"},\n", false},
+		{"duplicated_cmd_arm_first",
+			"var scanScope = []scanArm{\n",
+			"var scanScope = []scanArm{\n\t{pathspec: \"cmd/**\", prefix: \"cmd/\", includeTests: false},\n", false},
+		{"init_func",
+			"\treturn selected, nil\n}\n",
+			"\treturn selected, nil\n}\n\nfunc init() {}\n", true},
+		{"go_build_constraint",
+			"package retiredarch\n",
+			"//go:build linux\n\npackage retiredarch\n", true},
+		{"aliased_import",
+			"\t\"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem\"\n",
+			"\tps \"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem\"\n", false},
+		{"engine_for_path_references_scan_scope",
+			"\tif filepath.Base(path) == \"config.toml.example\" {\n",
+			"\tif len(scanScope) == 0 {\n\t\treturn \"\"\n\t}\n\tif filepath.Base(path) == \"config.toml.example\" {\n", true},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			pin := checkPathspecPin(writeMutatedCopy(t, r.old, r.new))
+			if !pin.SelectFound || pin.PathspecOK {
+				t.Fatalf("want SelectFound=true and PathspecOK=false, got %+v", pin)
+			}
+			if r.shared && pin.PrefixOK {
+				t.Fatalf("shared-rule violation must also clear PrefixOK, got %+v", pin)
+			}
+		})
+	}
+}
+
+// TestCheckPathspecPin_FrozenDecls_PositiveControls is AC-A3b.2 (one
+// scenario; green on arrival, declared as regression guards): rewritten
+// comments, a //line directive and re-indented bodies do not change any
+// frozen declaration's tokens, and the live select.go is accepted.
+func TestCheckPathspecPin_FrozenDecls_PositiveControls(t *testing.T) {
+	rows := []struct {
+		name string
+		pin  func(t *testing.T) PathspecPin
+	}{
+		{"comment_and_whitespace_insensitive", func(t *testing.T) PathspecPin {
+			src, err := os.ReadFile(realSelectGoPath(t))
+			if err != nil {
+				t.Fatalf("read select.go: %v", err)
+			}
+			text := strings.ReplaceAll(string(src), "\n\t", "\n  \t ")
+			text = strings.ReplaceAll(text, "// selectRepoPaths ports select_repo_paths.", "// selectRepoPaths: a REWRITTEN doc comment.")
+			text = strings.Replace(text, "  \t sort.Strings(selected)\n", "//line elsewhere.go:900\n  \t /* inline */ sort.Strings(selected) // trailing\n", 1)
+			path := filepath.Join(t.TempDir(), "select.go")
+			if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+				t.Fatalf("write rewritten copy: %v", err)
+			}
+			return checkPathspecPin(path)
+		}},
+		{"live_tree", func(t *testing.T) PathspecPin {
+			return SelectionPathspecPin(repoRoot(t))
+		}},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			if pin := r.pin(t); !pin.OK() {
+				t.Fatalf("must be ACCEPTED, got %+v", pin)
+			}
+		})
+	}
+}

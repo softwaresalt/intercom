@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"os"
 	"os/exec"
@@ -37,6 +38,135 @@ var pathspecPinLiterals = []string{"config.toml.example", "cmd/**", "internal/**
 // compare against literally in its own body.
 var prefixPinLiterals = []string{"cmd/", "internal/"}
 
+// canonicalDecls is this file's OWN, independently authored copy of the
+// plan's §A-CANON declarations (033.005-T, H-11): it is never derived from
+// select.go's text. Frozen declarations of select.go must be token-equal to
+// the same-named declaration parsed from this text; comments and whitespace
+// are not part of the contract.
+const canonicalDecls = `package retiredarch
+
+import (
+	"bytes"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
+)
+
+type GitRunner func(root string, pathspecs ...string) ([]byte, error)
+
+func DefaultGitRunner(root string, pathspecs ...string) ([]byte, error) {
+	args := append([]string{"ls-files", "--"}, pathspecs...)
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	var stdout, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderrBuf
+	if err := cmd.Run(); err != nil {
+		if msg := strings.TrimSpace(stderrBuf.String()); msg != "" {
+			return nil, fmt.Errorf("%w: %s", err, msg)
+		}
+		return nil, err
+	}
+	return stdout.Bytes(), nil
+}
+
+type scanArm struct {
+	pathspec     string
+	prefix       string
+	exact        string
+	includeTests bool
+}
+
+var scanScope = []scanArm{
+	{pathspec: "config.toml.example", exact: "config.toml.example"},
+	{pathspec: "cmd/**", prefix: "cmd/", includeTests: true},
+	{pathspec: "internal/**", prefix: "internal/", includeTests: false},
+}
+
+func shouldScanRepoPath(path string) bool {
+	for _, a := range scanScope {
+		if a.prefix == "" {
+			if path == a.exact {
+				return true
+			}
+			continue
+		}
+		if strings.HasPrefix(path, a.prefix) {
+			if !a.includeTests && (strings.Contains(path, "/testdata/") || strings.HasSuffix(path, "_test.go")) {
+				return false
+			}
+			return strings.HasSuffix(path, ".go")
+		}
+	}
+	return false
+}
+
+func selectRepoPaths(root string, git GitRunner) ([]string, error) {
+	pathspecs := make([]string, 0, len(scanScope))
+	for _, a := range scanScope {
+		pathspecs = append(pathspecs, a.pathspec)
+	}
+	out, err := git(root, pathspecs...)
+	if err != nil {
+		return nil, err
+	}
+	listing, err := pysem.GitText(out)
+	if err != nil {
+		return nil, err
+	}
+	var selected []string
+	for _, path := range pysem.SplitLines(listing) {
+		if shouldScanRepoPath(path) {
+			selected = append(selected, path)
+		}
+	}
+	sort.Strings(selected)
+	return selected, nil
+}
+`
+
+// closedWorldDecls is the closed world of select.go (033.005-T): every
+// top-level declaration name it must contain exactly once, with its kind.
+// The import declaration is keyed "import". Anything else fails closed.
+var closedWorldDecls = map[string]token.Token{
+	"import":             token.IMPORT,
+	"GitRunner":          token.TYPE,
+	"DefaultGitRunner":   token.FUNC,
+	"scanArm":            token.TYPE,
+	"scanScope":          token.VAR,
+	"shouldScanRepoPath": token.FUNC,
+	"engineForPath":      token.FUNC,
+	"scanPath":           token.FUNC,
+	"selectRepoPaths":    token.FUNC,
+}
+
+// confinedIdentDecls are the §A-CANON declaration names, the only
+// declarations of select.go in which the identifiers scanScope and scanArm
+// may occur (fixed from 033.005-T onward).
+var confinedIdentDecls = map[string]bool{
+	"import":             true,
+	"GitRunner":          true,
+	"DefaultGitRunner":   true,
+	"scanArm":            true,
+	"scanScope":          true,
+	"shouldScanRepoPath": true,
+	"selectRepoPaths":    true,
+}
+
+// pathspecFrozenDecls is the frozen set PathspecOK requires to be
+// token-equal to canonicalDecls.
+var pathspecFrozenDecls = []string{"import", "GitRunner", "DefaultGitRunner", "scanArm", "scanScope", "selectRepoPaths"}
+
+// declTok is one (token, literal) pair of a declaration's token stream.
+type declTok struct {
+	tok token.Token
+	lit string
+}
+
 // PathspecPin is the result of the selection pathspec pin check.
 type PathspecPin struct {
 	SelectFound bool
@@ -51,11 +181,14 @@ func (p PathspecPin) OK() bool {
 }
 
 // checkPathspecPin parses selectGoPath (a filesystem path to a Go source
-// file shaped like select.go) and evaluates the pin against its
-// scanScope declaration. PathspecOK requires selectRepoPaths to exist and
-// scanScope to hold every pathspecPinLiterals entry; PrefixOK requires
-// shouldScanRepoPath to exist and scanScope to hold every prefixPinLiterals
-// entry. A read or parse error fails closed (every field false); a missing
+// file shaped like select.go) and evaluates the pin against it.
+// PathspecOK requires selectRepoPaths to exist, scanScope to hold every
+// pathspecPinLiterals entry (presence, retained through IVL-1), the
+// pathspecFrozenDecls set to be token-equal to canonicalDecls, and the
+// shared rules (sharedRulesOK) to hold. PrefixOK requires
+// shouldScanRepoPath to exist, scanScope to hold every prefixPinLiterals
+// entry, and the shared rules to hold: a shared-rule violation clears both
+// flags. A read or parse error fails closed (every field false); a missing
 // function or a missing scanScope fails its half closed.
 func checkPathspecPin(selectGoPath string) PathspecPin {
 	src, err := os.ReadFile(selectGoPath)
@@ -63,7 +196,7 @@ func checkPathspecPin(selectGoPath string) PathspecPin {
 		return PathspecPin{}
 	}
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, selectGoPath, src, 0)
+	file, err := parser.ParseFile(fset, selectGoPath, src, parser.ParseComments)
 	if err != nil {
 		return PathspecPin{}
 	}
@@ -75,18 +208,147 @@ func checkPathspecPin(selectGoPath string) PathspecPin {
 	if scope := findScanScopeDecl(file); scope != nil {
 		scopeLits = collectStringLits(scope)
 	}
+	decls, shared := sharedRulesOK(file)
 
 	result := PathspecPin{
 		SelectFound: selectBody != nil,
 		GuardFound:  guardBody != nil,
 	}
 	if selectBody != nil {
-		result.PathspecOK = containsAll(scopeLits, pathspecPinLiterals)
+		result.PathspecOK = shared &&
+			containsAll(scopeLits, pathspecPinLiterals) &&
+			frozenDeclsOK(fset, src, decls, pathspecFrozenDecls)
 	}
 	if guardBody != nil {
-		result.PrefixOK = containsAll(scopeLits, prefixPinLiterals)
+		result.PrefixOK = shared && containsAll(scopeLits, prefixPinLiterals)
 	}
 	return result
+}
+
+// sharedRulesOK indexes file's top-level declarations by name (the import
+// declaration keyed "import") and reports whether the shared rules hold:
+//   - closed world: exactly the closedWorldDecls names, each once, with its
+//     kind; type/var declarations are single-spec, single-name; functions
+//     are receiver-less; anything else (init, _, const, methods, a second
+//     import, an extra var/type, a bad declaration) fails;
+//   - no //go:build, // +build or //go:linkname directive comment;
+//   - the identifiers scanScope and scanArm occur only inside the
+//     confinedIdentDecls declarations.
+//
+// The index is returned even when the rules fail, so a trusted text that is
+// not a full closed world (canonicalDecls) can still be indexed.
+func sharedRulesOK(file *ast.File) (map[string]ast.Decl, bool) {
+	decls := make(map[string]ast.Decl)
+	ok := true
+	for _, decl := range file.Decls {
+		name, kind := "", token.ILLEGAL
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil && d.Name != nil {
+				name, kind = d.Name.Name, token.FUNC
+			}
+		case *ast.GenDecl:
+			kind = d.Tok
+			switch {
+			case d.Tok == token.IMPORT:
+				name = "import"
+			case len(d.Specs) != 1:
+			case d.Tok == token.TYPE:
+				if ts, isType := d.Specs[0].(*ast.TypeSpec); isType {
+					name = ts.Name.Name
+				}
+			case d.Tok == token.VAR:
+				if vs, isValue := d.Specs[0].(*ast.ValueSpec); isValue && len(vs.Names) == 1 {
+					name = vs.Names[0].Name
+				}
+			}
+		}
+		if want, known := closedWorldDecls[name]; !known || want != kind || decls[name] != nil {
+			ok = false
+			continue
+		}
+		decls[name] = decl
+		ast.Inspect(decl, func(n ast.Node) bool {
+			if id, isIdent := n.(*ast.Ident); isIdent && (id.Name == "scanScope" || id.Name == "scanArm") && !confinedIdentDecls[name] {
+				ok = false
+			}
+			return true
+		})
+	}
+	if len(decls) != len(closedWorldDecls) {
+		ok = false
+	}
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if strings.HasPrefix(c.Text, "//go:build") || strings.HasPrefix(c.Text, "// +build") || strings.HasPrefix(c.Text, "//go:linkname") {
+				ok = false
+			}
+		}
+	}
+	return decls, ok
+}
+
+// frozenDeclsOK reports whether every declaration named in names exists in
+// decls (indexed from src by sharedRulesOK) and is token-equal (declTokens)
+// to the same-named declaration of canonicalDecls. A missing declaration on
+// either side, an empty names list, or a canonical parse error fails closed.
+func frozenDeclsOK(fset *token.FileSet, src []byte, decls map[string]ast.Decl, names []string) bool {
+	canonFset := token.NewFileSet()
+	canonFile, err := parser.ParseFile(canonFset, "canonical.go", canonicalDecls, parser.ParseComments)
+	if err != nil || len(names) == 0 {
+		return false
+	}
+	canonDecls, _ := sharedRulesOK(canonFile)
+	for _, name := range names {
+		got, want := decls[name], canonDecls[name]
+		if got == nil || want == nil {
+			return false
+		}
+		gotToks, gotOK := declTokens(fset, src, got)
+		wantToks, wantOK := declTokens(canonFset, []byte(canonicalDecls), want)
+		if !gotOK || !wantOK || len(gotToks) != len(wantToks) {
+			return false
+		}
+		for i := range gotToks {
+			if gotToks[i] != wantToks[i] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// declTokens tokenises the source span of decl with go/scanner, comments
+// dropped, and returns its (token, literal) pairs. The span is taken from
+// raw byte offsets (token.File.Offset), never from Position, so a //line
+// directive cannot move it; decl.Pos() excludes the Doc comment. Every
+// SEMICOLON literal is normalised to ";" so an automatically inserted "\n"
+// equals an explicit ";". A bad span or a scan error fails closed.
+func declTokens(fset *token.FileSet, src []byte, decl ast.Node) ([]declTok, bool) {
+	tf := fset.File(decl.Pos())
+	if tf == nil || !decl.End().IsValid() {
+		return nil, false
+	}
+	start, end := tf.Offset(decl.Pos()), tf.Offset(decl.End())
+	if start < 0 || end > len(src) || start >= end {
+		return nil, false
+	}
+	span := src[start:end]
+	var s scanner.Scanner
+	scanErrs := 0
+	s.Init(token.NewFileSet().AddFile("", -1, len(span)), span, func(token.Position, string) { scanErrs++ }, 0)
+	var out []declTok
+	for {
+		_, tok, lit := s.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok == token.SEMICOLON {
+			lit = ";"
+		}
+		out = append(out, declTok{tok: tok, lit: lit})
+	}
+	return out, scanErrs == 0
 }
 
 // findScanScopeDecl is findFuncBody's sibling for the package-level
