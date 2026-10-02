@@ -738,6 +738,99 @@ under P-013.5.
 * **(B) Late-identifier reconciliation.** Not triggered for these entries: none
   carries an `N/A` source ref.
 
+### 4.8 Operator decisions on the rev-5 open items (2026-10-01 second follow-up, explicit, final)
+
+* **D-030-6 — OPTION A: Stage remediates in plan rev 6, with ONE
+  operator-authorised review round 4.**
+  * **The decision.** The operator chose option (a) of D-030-5. Stage revises
+    Unit A to rev 6, with a changelog, fixing SEC-1..SEC-5 and the round-3 P2s.
+  * **Exception to the cap.** The operator explicitly authorises **one**
+    additional plan-review round (round 4) on the revised Unit A. This is an
+    operator-authorised exception to the 3-cycle cap. It is not repeatable,
+    and **no round 5** may be run.
+  * **Conditions.** If round 4 returns ADVISORY or better with no P0/P1, lift
+    the hold: 033-F → `queued`, remove the hold notes, and clear do-not-claim.
+    If it returns FAIL, keep the hold and report.
+  * **Contract surface.** Fixes stay on the retiredarch pin's scan-scope
+    integrity. Anything outside it is a P-021 DEFERRED SCOPE EXPANSION entry.
+    ALP-1 is not split, and INV-5 is respected.
+  * **The rev-6 design.** The use-whitelist is replaced by a **closed-world,
+    frozen-declaration pin**:
+    * §A-CANON canonical texts in `pin.go`, compared token-for-token with
+      `select.go`'s selection declarations (`import`, `GitRunner`,
+      `DefaultGitRunner`, `scanArm`, `scanScope`, `shouldScanRepoPath`,
+      `selectRepoPaths`);
+    * a closed world and confinement for `select.go`;
+    * `scopeDataOK` data invariants;
+    * package closure.
+  * **Finding map.**
+    * SEC-1: shared rules, token equality, and `scopeDataOK`'s magic,
+      duplicate and shadowing rejection.
+    * SEC-2: new A-T4 (`cmd/x/main.go` probe).
+    * SEC-3: `selectRepoPaths` frozen.
+    * SEC-4: `DefaultGitRunner` frozen.
+    * SEC-5: `shouldScanRepoPath` frozen.
+  * **New tasks.**
+    * **033.007-T** (A-T3d, package closure; S, medium; test-first).
+    * **033.008-T** (A-T4; XS, low; test-first).
+    * Edges: 033.007-T → 033.006-T, 033.008-T → 033.002-T,
+      033.007-T → 033.008-T (all `blocks`).
+  * **P-021 captures** (P-021 C6 deliberation required before planning):
+    * **DC921AF6** (R-A1): runner wiring outside `select.go`, and
+      `scanPath`/`engineForPath` dispatch.
+    * **D7BF9F74** (R-A2): the git environment and config, including redirect
+      variables, and `pysem` integrity.
+* **D-030-7 — Gate outcome (2026-10-01): round 4 ADVISORY, so the 030-S hold
+  is LIFTED.**
+  * **Verdicts.** Six personas, no P0/P1. Security Lens, Go, Scope,
+    Constitution and Learnings returned ADVISORY. The Architecture
+    Strategist anchor (gpt-6.1-sol) returned PASS. SEC-1..SEC-7, GO-1..GO-4,
+    SC-1..SC-4 and CN-1..CN-3 are all CLOSED.
+  * **Amendments.** All P2s (SEC4-1..3, GO4-1..2, SC4-1, CN4-1..2,
+    LR4-1..3) and most P3s were applied as text inside the reviewed design.
+    No re-review was run.
+  * **Backlog.** 033-F is `blocked → queued`. 033-F, 030-S and
+    033.004/005/006-T carry HOLD LIFTED sections. Record: plan,
+    `## Plan Review — Revision 6 (Unit A)`.
+* **D-000-3 — P-002 test-first SKIP AUTHORISED, item-scoped.**
+  * **Scope.** The skip covers the verified no-op closures of **034.001-T**
+    (031-S) and **033.003-T** (030-S) ONLY. Ship may record a P-002 test-first
+    skip for those two items, citing D-000-3, as part of the
+    `queued → active → done` no-op closure with gate evidence.
+  * **Limits.** It is not a general waiver, and it does not extend to any
+    task that adds or changes code. It discharges the CN-2 / AC-D0.4 /
+    AC-X3.4 hard precondition that D-000-2 left open.
+  * **Where recorded.** Both tasks (`description` and `acceptance-criteria`),
+    plan D-T0, "Dropped from Unit A", and the Constitution Check P-002
+    deviation entry.
+* **D-032-4 — 035-F moved `blocked → queued`.**
+  * **Why.** This is consistent with D-032-1 (the 032-S hold was lifted at
+    rev 4, but the status stayed `blocked`, a prose-only lift) and with
+    034-F's handling.
+  * **Path.** A direct `backlogit move 035-F --status queued`, exit 0. No
+    force was used.
+  * **Result.** 032-S is claimable: `queued`, with 037-S archived.
+
+**P-021 obligations for this second follow-up.**
+* **(A) Duplicate scan, unconditional.** It ran over the 25 active stash
+  entries for `DC921AF6` and `D7BF9F74`, using the keywords runner,
+  `selectRepoPaths`, pathspec, `GIT_`, `pysem`, `scanPath`, `engineForPath`
+  and retiredarch. **No duplicate was found**, so the scan is CLEAN. Three
+  adjacent entries were checked and found to be different expansions:
+  * `990AFA71`: symlink escape in `scanPath`'s lexical join. That is path
+    containment, not dispatch integrity.
+  * `5A8EC1BC`: consolidation of the three GitRunner shapes. That is
+    maintainability, not environment integrity, although a future
+    `D7BF9F74` design should consider it.
+  * `9FF9EEB4`: fixture-manifest parity.
+
+  None was merged or archived.
+* **(B) Late-identifier reconciliation.** Both entries carry `PR N/A` and
+  `review-thread N/A`. They are Stage plan-review captures, not
+  PR-review-thread captures, and no Ship residual-risk record cites them yet.
+  The result is **no late identifier found**, and the `N/A` stands as a
+  truthful record.
+
 ---
 
 ## 5. Decision summary
@@ -757,7 +850,11 @@ under P-013.5.
 | D-031-6 | `os.Chtimes` **confirmed** in 034.009-T. |
 | D-000-2 | Verified no-op closure **authorised** for 034.001-T (031-S) and 033.003-T (030-S): `queued → active → done` with gate evidence. `hooks.yaml` unchanged. |
 | D-049-1 | Go-era `go/ast` spike **scheduled** after 031-S merges and before 039-S is claimed. Stage-executed (P-016). Trigger is stash 1EEBECA5; backstop is `blocked_stale`. |
-| D-030-5 | Rev-5 Unit A plan-review round 3 (final re-entry) returned **FAIL** (Security Lens SEC-1..SEC-5, P1). **030-S back on STAGE HOLD** (033-F `blocked`). A-T3 tasks harvested under the hold per decision 7. Escalation is `ESCALATION_DEGRADED`, so this goes to operator review. Remediation options (a)/(b)/(c) are open. |
+| D-030-5 | Rev-5 Unit A plan-review round 3 (final re-entry) returned **FAIL** (Security Lens SEC-1..SEC-5, P1). **030-S back on STAGE HOLD** (033-F `blocked`). A-T3 tasks harvested under the hold per decision 7. Escalation is `ESCALATION_DEGRADED`, so this goes to operator review. Remediation options (a)/(b)/(c) are open. *Resolved by D-030-6/D-030-7.* |
+| D-030-6 | Operator chose **OPTION A**. Plan rev 6 adds the closed-world frozen-declaration pin, new **033.007-T** (A-T3d) and **033.008-T** (A-T4), and P-021 stash **DC921AF6** / **D7BF9F74**. **One operator-authorised plan-review round 4**, an exception to the 3-cycle cap; no round 5. |
+| D-030-7 | Round 4 returned **ADVISORY**, no P0/P1 (anchor PASS). **030-S HOLD LIFTED**: 033-F `blocked → queued`, hold notes replaced, do-not-claim cleared. P2s applied as text. |
+| D-000-3 | **P-002 test-first skip authorised** for the verified no-op closures of **034.001-T** and **033.003-T ONLY**, citing D-000-3. Not a general waiver. Discharges the D-000-2 open precondition. |
+| D-032-4 | **035-F `blocked → queued`** by direct `move` (exit 0). **032-S claimable.** |
 | D-S-5 | Item-6 selector widening captured as stash **458F9385** (task, low). Recommended for 039-S / 049-F. |
 | D-032-1 | 032-S re-planned onto Go; all 3 tasks retargeted. **HOLD LIFTED** on plan-review ADVISORY (round 3, no P1/P2). |
 | D-032-2 | Valid-ref/absent-file must stay `("", nil)`; invalid-ref must become a distinct error. |
