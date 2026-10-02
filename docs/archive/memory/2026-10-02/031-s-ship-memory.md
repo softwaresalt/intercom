@@ -3,7 +3,7 @@ title: "031-S / 034-F Ship memory — Harden write-path gate, masked-text increm
 date: 2026-10-02
 shipment: 031-S
 feature: 034-F
-status: build-complete
+status: shipped
 branch: feat/031-s-harden-write-path-gate-masked-text-increment
 base: 8a517bb
 ---
@@ -45,16 +45,22 @@ Build is complete. All nine manifest tasks are `done` on branch
 * Deferred residuals were not implemented: 458F9385, alias tracking,
   WRITE_PATH_GATE_ADVISORY, and widening D-2′.
 
+## Merge and closure
+
+* PR #97 merged at `c04d9751d0ce98d0e10bf5d498985d2ddf8b73ee` (2026-10-02T22:24:10Z), normal
+  merge commit, no `--admin`. First `main` CI passed (run 37072295122).
+* Adversarial review: 3 cycles (`f3f4a87`, `34386ad`, `2144414`), ending READY x3.
+  Copilot: 1 iteration, 0 threads, P-018 SATISFIED.
+* a0 lifecycle gate passed. a1 moved `034-F` active -> done; backlogit 1.11.0 also relocated
+  it to `.backlogit/archive/` (status still `done`).
+* Classify: `CASCADE` / `FULLY_COVERED_ROOT`, binding
+  `d3fe146612514f1fb4e3547c714530936dc3b228f508e0f6b9167542620c95bb`, locations probed from
+  file presence. Step 0 `BINDING_MATCH`; safe-close `CLOSED` (`returned_ids` empty).
+* `031-S` archived `shipped`; `034-F` archived `done`. Backlog closure commit `f734fd8`.
+* Closure doc: `docs/closure/031-S-034-F-post-merge-closure.md`.
+
 ## Next steps
 
-1. Run the adversarial review on at least three models, using the pinned patch
-   `logs/review-031-<sha>.patch`.
-2. Run the lifecycle gate, then open the PR with a `## Local Review Readiness` block.
-3. Run the Copilot loop and the CI gate, then merge with `--merge --delete-branch`.
-4. Step 6 closure:
-   1. Run the a0 gate.
-   2. Run a1 to move 034-F to `done`.
-   3. Run pre-mode, then classify the close path (CASCADE expected), then safe-close
-      with the binding, then post-mode.
-   4. Open the closure PR.
-   5. Run P-020 compact-context.
+1. Closure PR from `post-merge/031-s-harden-write-path-gate` (ambient gate, three-model
+   review, Copilot loop, merge).
+2. Return to clean `main`, resolve checkpoints, delete temp files.

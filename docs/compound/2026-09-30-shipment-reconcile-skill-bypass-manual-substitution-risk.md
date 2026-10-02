@@ -185,3 +185,14 @@ rename (`queue => archive` in the archival commit) confirmed it. The verdict was
 unaffected. This is a second data point for `D10D3AFC`. Until that lands, derive each member's
 location from an actual filesystem probe (`Test-Path` on the queue and archive paths), never
 from an assumption in helper code. See `docs/closure/030-S-033-F-post-merge-closure.md`.
+
+**Probe-based location in 031-S (2026-10-02).** The 031-S close applied that rule. One
+helper (`logs/bind031.py`, uncommitted) resolved each member's location from file presence,
+and failed closed with `RECONCILE_FAIL_SNAPSHOT_AMBIGUOUS` (both roots) or
+`RECONCILE_FAIL_SNAPSHOT_MISSING` (neither root).
+The probe mattered: with backlogit 1.11.0, the Step 6 a1 `move 034-F --status done` also
+relocated `034-F` from `.backlogit/queue/` to `.backlogit/archive/` while it still declared
+`status: done`. In 030-S, the a1 move of `033-F` left it in `queue`. A covering feature's
+post-a1 location is therefore not stable across shipments, and an assumed location would have
+been wrong in one case or the other. The binding encoded `034-F` as `done` / `archive`. See
+`docs/closure/031-S-034-F-post-merge-closure.md`. Stash `D10D3AFC` stays the durable fix.
