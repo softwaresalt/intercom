@@ -378,3 +378,132 @@ func TestRunFixtureSelfTest_NoFixturesDiscovered(t *testing.T) {
 		t.Fatalf("Stderr = %q, want %q prefix", res.Stderr, "no fixtures discovered under ")
 	}
 }
+
+// createFileCall builds a masked syscall.CreateFile call with the given
+// argument list, as the scan path would see it.
+func createFileCall(args string) string {
+	return gomask.MaskGoNonCode("syscall.CreateFile(" + args + ")\n")
+}
+
+// allowedCreateFileArgs is the only argument shape D-2' admits.
+const allowedCreateFileArgs = "p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"
+
+// firstExtent extracts the extent following the first occurrence of sel in
+// masked text.
+func firstExtent(t *testing.T, masked, sel string) extent {
+	t.Helper()
+	pos := strings.Index(masked, sel)
+	if pos < 0 {
+		t.Fatalf("no %s in %q", sel, masked)
+	}
+	return extractExtent(masked, pos+len(sel))
+}
+
+// TestOccurrenceAllowed_ReparseWindowsCreateFile is AC-D2.1: the real
+// reparse_windows.go extent, located by content, is allowed, keyed on the
+// call's arguments and never on the file path.
+func TestOccurrenceAllowed_ReparseWindowsCreateFile(t *testing.T) {
+	const sel = "syscall.CreateFile"
+	raw, err := pysem.ReadText(filepath.Join(repoRoot(t), "internal", "pathsafe", "reparse_windows.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	masked := gomask.MaskGoNonCode(raw)
+	offsets := absoluteOccurrences(t, masked, sel)
+	if len(offsets) != 1 {
+		t.Fatalf("masked occurrences = %d, want 1", len(offsets))
+	}
+	if !occurrenceAllowed(sel, extractExtent(masked, offsets[0]+len(sel))) {
+		t.Error("the live metadata-only CreateFile call must be allowed")
+	}
+	if !occurrenceAllowed(sel, firstExtent(t, createFileCall(allowedCreateFileArgs), sel)) {
+		t.Error("the single-line allowed shape must be allowed")
+	}
+	if occurrenceAllowed("os.Remove", firstExtent(t, createFileCall(allowedCreateFileArgs), sel)) {
+		t.Error("the allowance must be keyed on the syscall.CreateFile selector only")
+	}
+}
+
+// TestOccurrenceAllowed_RejectionTable is AC-D2.2: every non-conforming
+// extent is rejected (fail closed, INV-2).
+func TestOccurrenceAllowed_RejectionTable(t *testing.T) {
+	const sel = "syscall.CreateFile"
+	const (
+		oe = "syscall.OPEN_EXISTING"
+		bs = "syscall.FILE_FLAG_BACKUP_SEMANTICS"
+	)
+	callWith := func(access, disposition, flags string) string {
+		return createFileCall("p, " + access + ", 0, nil, " + disposition + ", " + flags + ", 0")
+	}
+	cases := []struct {
+		name   string
+		masked string
+	}{
+		{"non-call reference", gomask.MaskGoNonCode("f := syscall.CreateFile\n")},
+		{"unbalanced extent", gomask.MaskGoNonCode("syscall.CreateFile(" + allowedCreateFileArgs + "\n")},
+		{"mismatched extent", gomask.MaskGoNonCode("syscall.CreateFile(" + allowedCreateFileArgs + "]\n")},
+		{"six arguments", createFileCall("p, 0, 0, nil, " + oe + ", " + bs)},
+		{"eight arguments", createFileCall(allowedCreateFileArgs + ", 0")},
+		{"access 0x0", callWith("0x0", oe, bs)},
+		{"access 00", callWith("00", oe, bs)},
+		{"access (0)", callWith("(0)", oe, bs)},
+		{"access uint32(0)", callWith("uint32(0)", oe, bs)},
+		{"access named constant", callWith("noAccess", oe, bs)},
+		{"access GENERIC_WRITE", callWith("syscall.GENERIC_WRITE", oe, bs)},
+		{"CREATE_NEW", callWith("0", "syscall.CREATE_NEW", bs)},
+		{"CREATE_ALWAYS", callWith("0", "syscall.CREATE_ALWAYS", bs)},
+		{"OPEN_ALWAYS", callWith("0", "syscall.OPEN_ALWAYS", bs)},
+		{"TRUNCATE_EXISTING", callWith("0", "syscall.TRUNCATE_EXISTING", bs)},
+		{"numeric disposition", callWith("0", "3", bs)},
+		{"DELETE_ON_CLOSE alone", callWith("0", oe, "syscall.FILE_FLAG_DELETE_ON_CLOSE")},
+		{"DELETE_ON_CLOSE OR-ed", callWith("0", oe, bs+"|syscall.FILE_FLAG_DELETE_ON_CLOSE")},
+		{"OPEN_REPARSE_POINT OR-ed", callWith("0", oe, bs+"|syscall.FILE_FLAG_OPEN_REPARSE_POINT")},
+		{"brace composite", createFileCall("T{p, 0, a, b, c, d, e}.Args()")},
+		{"call-valued argument", createFileCall("name(), 0, 0, nil, " + oe + ", " + bs + ", 0")},
+		{"index expression", createFileCall("p[0], 0, 0, nil, " + oe + ", " + bs + ", 0")},
+		{"tag-shaped raw string", "syscall.CreateFile(p, 0, `json:\"x\"`, nil, " + oe + ", " + bs + ", 0)\n"},
+		{"interpreted string argument", createFileCall("p, 0, \"rw\", nil, " + oe + ", " + bs + ", 0")},
+		{"rune argument", createFileCall("p, 0, 'x', nil, " + oe + ", " + bs + ", 0")},
+		{"leading empty segment", createFileCall(", 0, 0, nil, " + oe + ", " + bs + ", 0")},
+		{"two trailing empty segments", createFileCall(allowedCreateFileArgs + ",,")},
+		{"empty call", createFileCall("")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if occurrenceAllowed(sel, firstExtent(t, tc.masked, sel)) {
+				t.Errorf("%q must be rejected", tc.masked)
+			}
+		})
+	}
+}
+
+// TestLineReportsSelector_AllowedCallCannotHideWritingCall is AC-D2.3: an
+// allowed call and a writing call on one line, in both orders, still yield
+// the finding; the selector is passed as a parameter because
+// syscall.CreateFile is not yet in Selectors.
+func TestLineReportsSelector_AllowedCallCannotHideWritingCall(t *testing.T) {
+	const sel = "syscall.CreateFile"
+	allowed := "syscall.CreateFile(" + allowedCreateFileArgs + ")"
+	writing := "syscall.CreateFile(p, syscall.GENERIC_WRITE, 0, nil, syscall.CREATE_ALWAYS, 0, 0)"
+	cases := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{"allowed alone", allowed, false},
+		{"allowed then writing", allowed + "; " + writing, true},
+		{"writing then allowed", writing + "; " + allowed, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			masked := gomask.MaskGoNonCode(tc.line)
+			if got := lineReportsSelector(masked, masked, 0, true, sel); got != tc.want {
+				t.Errorf("lineReportsSelector(%q) = %v, want %v", tc.line, got, tc.want)
+			}
+		})
+	}
+	masked := gomask.MaskGoNonCode(allowed)
+	if !lineReportsSelector(masked, masked, 0, false, sel) {
+		t.Error("with the allowance disabled the allowed call must still be reported (fail closed)")
+	}
+}

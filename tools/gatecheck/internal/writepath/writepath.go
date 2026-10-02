@@ -206,16 +206,50 @@ func extractExtent(text string, after int) extent {
 // bracketOpener maps each closing bracket to its opener.
 var bracketOpener = map[byte]byte{')': '(', ']': '[', '}': '{'}
 
-// allowanceSelectors lists the selectors whose occurrences the allowance
-// hook may admit. It is empty until the access-mode allowance predicate
-// lands, so every occurrence is reported.
-var allowanceSelectors = map[string]bool{}
+// The access-mode allowance (D-2') admits exactly one argument shape: the
+// metadata-only syscall.CreateFile call that opens an existing object with
+// no access rights and only FILE_FLAG_BACKUP_SEMANTICS.
+const (
+	allowedCreateFileSelector = "syscall.CreateFile"
+	allowedCreateFileArgCount = 7
+	allowedCreateFileAccess   = "0"
+	allowedCreateFileDispo    = "syscall.OPEN_EXISTING"
+	allowedCreateFileFlags    = "syscall.FILE_FLAG_BACKUP_SEMANTICS"
+)
 
-// occurrenceAllowed is the allowance hook: it reports whether a single
-// selector occurrence, classified by its call extent, is exempt from being
-// reported.
+// occurrenceAllowed is the D-2' access-mode allowance: it reports whether a
+// single selector occurrence, classified by its call extent, is exempt from
+// being reported. Every rule is an exact-token match, so the predicate can
+// only err toward reporting (fail closed). Rejected shapes include nested
+// brackets (call arguments, composite literals, index expressions), visible
+// raw strings, blanked string or rune arguments (empty segments), any
+// argument count other than 7, any access spelling other than the token 0,
+// any disposition other than OPEN_EXISTING, and any flag expression other
+// than the bare FILE_FLAG_BACKUP_SEMANTICS.
 func occurrenceAllowed(sel string, ext extent) bool {
-	return allowanceSelectors[sel] && ext.kind == extentBalanced
+	if sel != allowedCreateFileSelector || ext.kind != extentBalanced {
+		return false
+	}
+	for _, seg := range ext.segments {
+		if strings.ContainsAny(seg, "()[]{}`\"") {
+			return false
+		}
+	}
+	args := ext.segments
+	if n := len(args); n > 0 && strings.TrimSpace(args[n-1]) == "" {
+		args = args[:n-1]
+	}
+	if len(args) != allowedCreateFileArgCount {
+		return false
+	}
+	for _, arg := range args {
+		if strings.TrimSpace(arg) == "" {
+			return false
+		}
+	}
+	return strings.TrimSpace(args[1]) == allowedCreateFileAccess &&
+		strings.TrimSpace(args[4]) == allowedCreateFileDispo &&
+		strings.TrimSpace(args[5]) == allowedCreateFileFlags
 }
 
 // lineReportsSelector is the per-line, per-selector evaluator: it reports
