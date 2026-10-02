@@ -27,11 +27,16 @@ Shipment `032-S` delivered feature `035-F`, "Repair unignore-regression checker 
 resolution" (post-M4 plan Unit B / S-8). PR #93 merged to `main` at
 `532cf525e0b5bd99a6b1ec4ea8335c7d4d911775` on 2026-10-02.
 
-The merge fixes a fail-open path in the merge-blocking unignore-regression check:
+The merge fixes a latent defence-in-depth defect in the merge-blocking
+unignore-regression check's baseline helper:
 
 * **Before:** `rootGitignoreTextAt` treated any `git show <ref>:.gitignore` failure as
-  "no `.gitignore`". An invalid baseline ref therefore produced an empty baseline, and
-  the check passed vacuously.
+  "no `.gitignore`". At the helper level, an unresolvable ref therefore became an
+  empty baseline.
+  * This was not a live fail-open at the entry point: `runDifferentialCheck`'s
+    upstream `git diff <base> <head>` already rejects an ordinary invalid ref.
+  * During review, option-like and empty refs (`--format=x`, `""`, `:`) were found
+    to reach `git show` and succeed before any validation ran.
 * **After:**
   * The ref is validated: an empty ref, or one starting with `-`, is rejected before
     any git call.
@@ -41,7 +46,9 @@ The merge fixes a fail-open path in the merge-blocking unignore-regression check
   * A `show` failure is classified with an exact
     `ls-tree --full-tree -z <treeOID>` listing.
   * `("", nil)` is returned only for a valid ref whose root tree has no `.gitignore`.
-    Every other failure is a `::error::` diagnostic naming the ref.
+    Every other non-`HEAD` resolve, `show` or `ls-tree` failure is a `::error::`
+    diagnostic naming the ref.
+  * The `HEAD` working-tree read path and text-conversion errors are unchanged.
 
 The change is internal CI and developer gate tooling only. It does not touch
 Intercom's product CLI, TUI, WebSocket/API or deployment surfaces, so no production
@@ -185,7 +192,9 @@ runs on `main`.
 
 ### Failure signals
 
-* An invalid or misspelled `--base-ref` passes instead of failing with `::error::`.
+* The unignore unit tests (`TestRootGitignoreTextAt_*`) show `rootGitignoreTextAt`
+  returning `("", nil)` for an unresolvable or option-like ref. The CLI cannot
+  show this on its own while the upstream `git diff` guard rejects invalid refs.
 * A repository whose baseline legitimately lacks a root `.gitignore` starts
   failing I6.
 
@@ -202,7 +211,8 @@ runs on `main`.
 ## Rollback trigger and procedure
 
 Trigger a rollback if the I6 gate begins failing for a valid baseline that has no
-`.gitignore`, or begins passing for an invalid ref. Open a merge-commit revert PR for
+`.gitignore`. Also trigger one if a function-level test shows `rootGitignoreTextAt`
+accepting an unresolvable or option-like ref. Open a merge-commit revert PR for
 PR #93 and rerun the unignore tests. Do not revert directly on `main`.
 
 ## Validation window and owner
@@ -219,6 +229,10 @@ and the repository maintainer (`softwaresalt/intercom`).
 * Both were captured threadless during local review. Their source refs are recorded
   in the entries, and both reach `main` with this closure PR. No other follow-up was
   identified by local review, Copilot or this closure.
+* Closure review noted that `B29A565E` cites `unignore.go:321`; the call is at line
+  320. The entry was not edited: Ship's P-021 C2 single-write invariant forbids
+  amending a captured entry. The line drift is minor, and Stage can correct it at
+  triage.
 
 ## Knowledge graduation
 

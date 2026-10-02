@@ -10,10 +10,15 @@ tags: [git, fail-open, gatecheck, unignore, option-injection, 032-s]
 ## Symptom
 
 In 032-S / 035-F, `rootGitignoreTextAt` ran `git show <ref>:.gitignore`. It treated
-any failure as "no `.gitignore`" and returned an empty baseline. An invalid or
-misspelled `--base-ref` therefore produced an empty baseline. No ignore rule could
-then be observed as removed, so the merge-blocking unignore-regression check
-passed vacuously.
+any failure as "no `.gitignore`" and returned an empty baseline. At the helper
+level, an unresolvable ref therefore silently became an empty baseline, which
+would let the unignore-regression check pass vacuously.
+
+This was a **latent** defence-in-depth defect, not a live fail-open. Today
+`runDifferentialCheck` first runs `git diff <base> <head>`, and that call already
+rejects an ordinary invalid ref. The helper's own contract was still unsafe,
+though. During review, option-like and empty refs (`--format=x`, `""`, `:`) were
+found to reach `git show` and succeed before any validation ran.
 
 ## Root cause
 
