@@ -206,9 +206,10 @@ trap 'exit 143' TERM
 
 # Caller-argument allowlist (post-review remediation, PR #83 Copilot
 # round 4/5 findings), retained as defense-in-depth: gatecheck_invoke
-# prepends the trusted "--root ${ROOT}", and main.go's parseRoot now treats
-# that first root option as authoritative and rejects any later
-# "--root"/"--root=" option. The trusted root therefore cannot be
+# prepends the trusted "--root ${ROOT}", and main.go's parseRoot applies
+# the shared --root contract as the central enforcement for every gate
+# engine. The first root occurrence is authoritative and later
+# "--root"/"--root=" options are rejected, so the trusted root cannot be
 # overridden. The pre-M2-T11 wrapper's `case "${1:-}"` dispatch inspected
 # only the first argument and silently ignored $2 onward; round 4 instead
 # rejected multiple arguments, contrary to the CLI-surface-preservation
@@ -218,12 +219,12 @@ trap 'exit 143' TERM
 # three-way allowlist the old wrapper used (an unrecognized first argument
 # still exits 2), and only that single validated mode argument -- not
 # "$@" -- is forwarded to gatecheck_invoke below. Later wrapper arguments
-# remain ignored as before. Independently, parseRoot makes the prepended
-# trusted root authoritative by rejecting any later "--root"/"--root="
-# option; this wrapper's first-argument allowlist remains defense-in-depth.
-# This does not change the shared --root contract used by every gate engine
-# (write-path, unignore, merge-strategy-evaluate) outside this shipment's
-# scope.
+# remain ignored as before. Independently, parseRoot enforces
+# first-occurrence authority on the prepended trusted root by rejecting any
+# later "--root"/"--root=" option; this wrapper's first-argument allowlist
+# remains defense-in-depth. The shared parser contract is the central
+# all-engine enforcement, with this wrapper allowlist retained as
+# defense-in-depth.
 mode="${1:-}"
 case "${mode}" in
 "" | --self-test | --self-test-integrity) ;;

@@ -49,6 +49,18 @@ func TestRun_RootOccurrences(t *testing.T) {
 			wantDiagnostic: "--root specified more than once",
 		},
 		{
+			name:           "trusted --root= plus trailing --root",
+			rootArgs:       []string{"--root=" + trustedRoot, "--root", overrideRoot},
+			wantCode:       1,
+			wantDiagnostic: "--root specified more than once",
+		},
+		{
+			name:           "empty --root= plus trailing --root",
+			rootArgs:       []string{"--root=", "--root", overrideRoot},
+			wantCode:       1,
+			wantDiagnostic: "--root specified more than once",
+		},
+		{
 			name:           "--root without a value",
 			rootArgs:       []string{"--root"},
 			wantCode:       1,
