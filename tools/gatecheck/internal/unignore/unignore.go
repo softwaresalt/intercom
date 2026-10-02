@@ -5,6 +5,12 @@
 // dispatch as Run (plan §6, M3-T7) -- mirroring exactly how
 // retiredarch.Run and writepath.Run already absorb their own wrappers'
 // argument parsing.
+//
+// This package documents an accepted, scoped Principle III exception, not an
+// undiscovered hole: unignore self-test scenario and scratch repos are created
+// by os.MkdirTemp("", ...) outside the repo root. The retired Python used
+// tempfile.TemporaryDirectory() for the same purpose, so this preserves its
+// temporary-repository behavior.
 package unignore
 
 import (
