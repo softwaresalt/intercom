@@ -51,6 +51,23 @@ Bash first on PATH), `go test -race` for `internal/unignore`,
 clean. The wrapper `--self-test` passed. `--base-ref origin/main` passed
 (denylist 9, differential 6303).
 
+## Review-fix cycle 1 (adversarial review round 1)
+
+* The anchor reviewer (gpt-5.6-sol) found a P1. An empty ref, or one that
+  starts with `-`, could make `git show` *succeed* before any validation ran
+  (for example, an option like `--format=x`, or `:.gitignore` reading the
+  index). That is a remaining fail-open path.
+* Fix: `resolveBaselineTree` now runs FIRST.
+  * It rejects empty refs and refs that start with `-`.
+  * It resolves the ref with `rev-parse --verify --quiet <ref>^{tree}` and
+    requires a hex object ID.
+  * `git show` then reads `<treeOID>:.gitignore`, so git never parses
+    caller text in show position.
+* `classifyShowFailure` now uses `ls-tree --full-tree -z <tree>`. The
+  `GitRunner` doc lists `ls-tree` (Opus F1–F3).
+* Out-of-scope follow-up (P-021 C2): stash `B29A565E`. It covers ref
+  option-injection hardening for the `checks.go` `git diff` and `runCheck`
+  `rev-parse` calls.
 ## Next
 
 Multi-persona adversarial review at a pinned HEAD, then the feature PR, the

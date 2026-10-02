@@ -218,11 +218,15 @@ func realExitError(t *testing.T) error {
 	return err
 }
 
-// TestRootGitignoreTextAt_ShowFailureClassification drives the non-HEAD
-// failure branches with a scripted GitRunner: every outcome other than a
-// resolvable ref with a positively absent root .gitignore is an error.
-func TestRootGitignoreTextAt_ShowFailureClassification(t *testing.T) {
+// TestRootGitignoreTextAt_NonHEADClassification drives the non-HEAD path
+// with a scripted GitRunner: every outcome other than a resolved tree
+// whose root .gitignore is either shown or positively absent is an error.
+// The scripted runner fails the test on any git call it was not given a
+// reply for, so cases that must reject before git runs also prove that no
+// git process (in particular `git show`) is ever invoked for them.
+func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 	exitErr := realExitError(t)
+	const tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 	absentListing := "100644 blob 0123456789abcdef0123456789abcdef01234567\tREADME.md\x00"
 	presentListing := absentListing + "100644 blob 0123456789abcdef0123456789abcdef01234567\t.gitignore\x00"
 
@@ -231,84 +235,102 @@ func TestRootGitignoreTextAt_ShowFailureClassification(t *testing.T) {
 		err    error
 	}
 	cases := []struct {
-		name    string
-		ref     string
-		replies map[string]reply
-		wantErr bool
-		wantSub string
+		name     string
+		ref      string
+		replies  map[string]reply
+		wantText string
+		wantSub  string // empty means a nil error is expected
 	}{
 		{
-			name:    "git could not start",
-			ref:     "main",
-			replies: map[string]reply{"show": {err: errors.New("exec: not found")}},
-			wantErr: true,
-			wantSub: "could not run",
-		},
-		{
-			name:    "leading dash ref",
-			ref:     "-x",
-			replies: map[string]reply{"show": {err: exitErr}},
-			wantErr: true,
+			name:    "empty ref rejected before git",
+			ref:     "",
 			wantSub: "not a valid ref",
 		},
 		{
-			name: "unresolvable ref",
-			ref:  "nope",
+			name: "option-like ref rejected before git even if show would succeed",
+			ref:  "--format=x",
 			replies: map[string]reply{
-				"show":      {err: exitErr},
-				"rev-parse": {err: exitErr},
+				"show": {stdout: "x\n"},
 			},
-			wantErr: true,
+			wantSub: "not a valid ref",
+		},
+		{
+			name:    "rev-parse could not start",
+			ref:     "main",
+			replies: map[string]reply{"rev-parse": {err: errors.New("exec: not found")}},
+			wantSub: "could not run",
+		},
+		{
+			name:    "unresolvable ref",
+			ref:     "nope",
+			replies: map[string]reply{"rev-parse": {err: exitErr}},
 			wantSub: "cannot resolve ref",
 		},
 		{
-			name: "rev-parse returns no object",
+			name:    "rev-parse returns no object",
+			ref:     "main",
+			replies: map[string]reply{"rev-parse": {stdout: "\n"}},
+			wantSub: "no object ID",
+		},
+		{
+			name:    "rev-parse returns a non-hex object",
+			ref:     "main",
+			replies: map[string]reply{"rev-parse": {stdout: "-x\n"}},
+			wantSub: "no object ID",
+		},
+		{
+			name: "show could not start",
 			ref:  "main",
 			replies: map[string]reply{
-				"show":      {err: exitErr},
-				"rev-parse": {stdout: "\n"},
+				"rev-parse": {stdout: tree + "\n"},
+				"show":      {err: errors.New("exec: not found")},
 			},
-			wantErr: true,
-			wantSub: "no object",
+			wantSub: "could not run",
 		},
 		{
 			name: "ls-tree fails",
 			ref:  "main",
 			replies: map[string]reply{
+				"rev-parse": {stdout: tree + "\n"},
 				"show":      {err: exitErr},
-				"rev-parse": {stdout: "abc123\n"},
 				"ls-tree":   {err: exitErr},
 			},
-			wantErr: true,
 			wantSub: "ls-tree",
 		},
 		{
 			name: "present but unshowable",
 			ref:  "main",
 			replies: map[string]reply{
+				"rev-parse": {stdout: tree + "\n"},
 				"show":      {err: exitErr},
-				"rev-parse": {stdout: "abc123\n"},
 				"ls-tree":   {stdout: presentListing},
 			},
-			wantErr: true,
 			wantSub: "exists",
 		},
 		{
 			name: "resolvable ref with absent .gitignore",
 			ref:  "main",
 			replies: map[string]reply{
+				"rev-parse": {stdout: tree + "\n"},
 				"show":      {err: exitErr},
-				"rev-parse": {stdout: "abc123\n"},
 				"ls-tree":   {stdout: absentListing},
 			},
-			wantErr: false,
+		},
+		{
+			name: "resolvable ref with .gitignore",
+			ref:  "main",
+			replies: map[string]reply{
+				"rev-parse": {stdout: tree + "\n"},
+				"show":      {stdout: "foo\n"},
+			},
+			wantText: "foo\n",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var calls []string
+			var calls [][]string
 			fake := func(_ string, _ []byte, args ...string) ([]byte, []byte, error) {
-				calls = append(calls, args[0])
+				calls = append(calls, args)
 				r, ok := tc.replies[args[0]]
 				if !ok {
 					t.Fatalf("unexpected git %v", args)
@@ -316,20 +338,38 @@ func TestRootGitignoreTextAt_ShowFailureClassification(t *testing.T) {
 				return []byte(r.stdout), []byte("scripted stderr"), r.err
 			}
 			text, err := rootGitignoreTextAt(t.TempDir(), tc.ref, fake)
-			if text != "" {
-				t.Fatalf("expected empty text, got %q", text)
+			if text != tc.wantText {
+				t.Fatalf("got text %q, want %q", text, tc.wantText)
 			}
-			if !tc.wantErr {
+			if tc.wantSub == "" {
 				if err != nil {
 					t.Fatalf("expected nil error, got %v (calls %v)", err, calls)
 				}
-				return
+			} else {
+				if err == nil {
+					t.Fatalf("expected an error, got nil (calls %v)", calls)
+				}
+				if !strings.Contains(err.Error(), tc.wantSub) {
+					t.Fatalf("error %q does not contain %q", err, tc.wantSub)
+				}
 			}
-			if err == nil {
-				t.Fatalf("expected an error, got nil (calls %v)", calls)
-			}
-			if !strings.Contains(err.Error(), tc.wantSub) {
-				t.Fatalf("error %q does not contain %q", err, tc.wantSub)
+			// Once the ref resolves, git only ever receives the resolved
+			// tree ID, never the caller-supplied ref text.
+			for _, call := range calls {
+				switch call[0] {
+				case "rev-parse":
+					if want := []string{"rev-parse", "--verify", "--quiet", tc.ref + "^{tree}"}; strings.Join(call, " ") != strings.Join(want, " ") {
+						t.Fatalf("rev-parse args %v, want %v", call, want)
+					}
+				case "show":
+					if want := []string{"show", tree + ":.gitignore"}; strings.Join(call, " ") != strings.Join(want, " ") {
+						t.Fatalf("show args %v, want %v", call, want)
+					}
+				case "ls-tree":
+					if want := []string{"ls-tree", "--full-tree", "-z", tree}; strings.Join(call, " ") != strings.Join(want, " ") {
+						t.Fatalf("ls-tree args %v, want %v", call, want)
+					}
+				}
 			}
 		})
 	}
