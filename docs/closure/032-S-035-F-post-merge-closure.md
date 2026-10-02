@@ -232,8 +232,14 @@ and the repository maintainer (`softwaresalt/intercom`).
 * `F5958BBC`: deferred scope expansion (P-021 C2). Isolate the existing
   `TestExitCode_ExitError` from user git aliases and `git-*` executables on PATH.
 * Both were captured threadless during local review. Their source refs are recorded
-  in the entries, and both reach `main` with this closure PR. No other follow-up was
-  identified by local review, Copilot or this closure.
+  in the entries, and both reach `main` with this closure PR.
+* `48EA04C1`: deferred scope expansion (P-021 C2), found during the closure PR's
+  local review.
+  * The gap: before trusting a successful `git show`, check that the baseline root
+    `.gitignore` is a blob. A directory named `.gitignore` currently produces tree
+    listing text instead.
+  * This is pre-existing, low risk, and errs toward false regressions.
+* No other follow-up was identified by local review, Copilot or this closure.
 * Closure review noted that `B29A565E` cites `unignore.go:321`; the call is at line
   320. The entry was not edited: Ship's P-021 C2 single-write invariant forbids
   amending a captured entry. The line drift is minor, and Stage can correct it at

@@ -54,9 +54,10 @@ reach the helper from the CLI; see stash `B29A565E`.
    exactly. If no entry is named `<path>`, the file is genuinely absent and the
    result is `("", nil)`. Any other outcome is a `::error::` that names the ref.
    * This classification runs only after `git show` has failed. If the failed path
-     still exists in the listing (for example, as a directory or submodule
-     entry), it is "present but unreadable", which is an error, not "absent". A
-     successful `show` is accepted as-is.
+     still exists in the listing (for example, as a submodule/gitlink entry), it
+     is "present but unreadable", which is an error, not "absent". A successful
+     `show` is accepted as-is. A directory named `.gitignore` makes `git show`
+     exit 0 with a tree listing, so it is not caught here (stash `48EA04C1`).
 4. **Test both halves.**
    * A scripted runner should assert the exact git arguments, and should fail on
      any git call it was not given a reply for. That proves rejected refs never
