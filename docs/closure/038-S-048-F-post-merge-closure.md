@@ -248,8 +248,8 @@ misapplied and was not a real blocker:
   lifecycle gate.
 * Once safe-close archives the shipment, no shipment is active, so the
   lifecycle gate cannot pass. Earlier closure PRs were also opened after
-    archival. For example, the 037-S / 047-F closure PR #88 was opened after
-    037-S was archived.
+  archival. For example, the 037-S / 047-F closure PR #88 was opened after
+  037-S was archived.
 
 Shipment `038-S` stays archived as `shipped`. It was not re-claimed, reopened
 or mutated. This record reports the ruling for this closure only. It does not
