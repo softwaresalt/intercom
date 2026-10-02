@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,14 +46,20 @@ func TestCheckWritePathWrapper_LegitimateModesReachBuild(t *testing.T) {
 	bash := requireBash(t)
 	script := writePathWrapperPath(t)
 
-	for _, args := range [][]string{
-		{"--self-test"},
-		{"--self-test-integrity"},
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "repo_scan"},
+		{name: "--self-test", args: []string{"--self-test"}},
+		{name: "--self-test-integrity", args: []string{"--self-test-integrity"}},
 	} {
-		name := strings.Join(args, "_")
-		t.Run(name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			goShimLog := installGoShim(t, bash)
-			trace, _ := runWritePathWrapperWithTrace(t, bash, script, args...)
+			trace, exitCode := runWritePathWrapperWithTrace(t, bash, script, tc.args...)
+			if exitCode != 0 {
+				t.Errorf("exit code = %d, want 0 (trace=%q)", exitCode, trace)
+			}
 			if strings.Contains(trace, "::error::unrecognized argument") {
 				t.Errorf("root-injection guard rejected a legitimate invocation: %q", trace)
 			}
@@ -63,61 +70,109 @@ func TestCheckWritePathWrapper_LegitimateModesReachBuild(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read go shim calls: %v", err)
 			}
-			if !strings.Contains(string(goShimCalls), "env GOEXE") || !strings.Contains(string(goShimCalls), "build") {
-				t.Errorf("go shim did not receive the build sequence: %q", goShimCalls)
+			calls := strings.Split(strings.TrimSpace(string(goShimCalls)), "\n")
+			if len(calls) != 2 {
+				t.Errorf("go shim received %d invocations, want exactly env GOEXE and build: %q", len(calls), goShimCalls)
+				return
+			}
+			if calls[0] != "env GOEXE" {
+				t.Errorf("first go shim invocation = %q, want %q", calls[0], "env GOEXE")
+			}
+			if !strings.HasPrefix(calls[1], "-C ") ||
+				!strings.Contains(calls[1], " build -trimpath -o ") ||
+				!strings.HasSuffix(calls[1], " ./tools/gatecheck") {
+				t.Errorf("second go shim invocation did not receive the expected build command: %q", calls[1])
 			}
 		})
 	}
 }
 
+func TestInstallGoShim_UnexpectedInvocationFailsClearly(t *testing.T) {
+	bash := requireBash(t)
+	installGoShim(t, bash)
+
+	cmd := exec.Command(bash, "-c", "go unexpected-argument")
+	output, err := cmd.CombinedOutput()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("unexpected go shim invocation error = %v, want exit code 97 (output: %q)", err, output)
+	}
+	if got, want := exitErr.ExitCode(), 97; got != want {
+		t.Errorf("unexpected go shim exit code = %d, want %d (output: %q)", got, want, output)
+	}
+	if !strings.Contains(string(output), "unexpected go shim invocation") {
+		t.Errorf("unexpected go shim invocation output lacks diagnostic: %q", output)
+	}
+}
+
+func workspaceTempDir(t *testing.T) string {
+	t.Helper()
+
+	workspace, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get workspace working directory: %v", err)
+	}
+	workspace, err = filepath.Abs(workspace)
+	if err != nil {
+		t.Fatalf("resolve workspace working directory: %v", err)
+	}
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, workspace)
+	}
+
+	dir := t.TempDir()
+	absoluteDir, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatalf("resolve temporary directory: %v", err)
+	}
+	relativeDir, err := filepath.Rel(workspace, absoluteDir)
+	if err != nil {
+		t.Fatalf("check temporary directory containment: %v", err)
+	}
+	if relativeDir == ".." ||
+		filepath.IsAbs(relativeDir) ||
+		strings.HasPrefix(relativeDir, ".."+string(filepath.Separator)) {
+		t.Fatalf("temporary directory is outside workspace")
+	}
+	return dir
+}
+
 func installGoShim(t *testing.T, bash string) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp(".", ".gatecheck-go-shim-")
-	if err != nil {
-		t.Fatalf("create go shim directory: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Errorf("remove go shim directory: %v", err)
-		}
-	})
-	dir, err = filepath.Abs(dir)
-	if err != nil {
-		t.Fatalf("resolve go shim directory: %v", err)
-	}
+	dir := workspaceTempDir(t)
+	bashDir := resolveBashPath(t, bash, dir)
 	shimPath := filepath.Join(dir, "go")
 	logPath := filepath.Join(dir, "go-calls.log")
 	shim := `#!/usr/bin/env bash
 set -eu
-printf '%s\n' "$*" >> "$GATECHECK_TEST_GO_LOG"
-case "$1" in
+shim_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+printf '%s\n' "$*" >> "${shim_dir}/go-calls.log"
+unexpected() {
+  printf 'unexpected go shim invocation (exit code 97): %s\n' "$*" >&2
+  exit 97
+}
+case "${1-}" in
 env)
-  if [ "$2" = "GOEXE" ]; then
+  if [ "$#" -eq 2 ] && [ "$2" = "GOEXE" ]; then
     printf '\n'
     exit 0
   fi
   ;;
 -C)
-  shift
-  output=""
-  while [ "$#" -gt 0 ]; do
-    if [ "$1" = "-o" ]; then
-      shift
-      output="$1"
-      break
-    fi
-    shift
-  done
-  if [ -z "$output" ]; then
-    exit 1
+  if [ "$#" -ne 7 ] ||
+    [ "$3" != "build" ] ||
+    [ "$4" != "-trimpath" ] ||
+    [ "$5" != "-o" ] ||
+    [ "$7" != "./tools/gatecheck" ]; then
+    unexpected "$*"
   fi
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$output"
-  chmod +x "$output"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$6"
+  chmod +x "$6"
   exit 0
   ;;
 esac
-exit 1
+unexpected "$*"
 `
 	if err := os.WriteFile(shimPath, []byte(shim), 0o755); err != nil {
 		t.Fatalf("write go shim: %v", err)
@@ -127,17 +182,33 @@ exit 1
 	}
 
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("GATECHECK_TEST_GO_LOG", toBashPath(logPath))
 
 	cmd := exec.Command(bash, "-c", "command -v go")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("locate go shim: %v (output: %q)", err, output)
 	}
-	if got, want := strings.TrimSpace(string(output)), toBashPath(shimPath); !strings.EqualFold(filepath.ToSlash(got), filepath.ToSlash(want)) {
+	if got, want := strings.TrimSpace(string(output)), path.Join(bashDir, "go"); !strings.EqualFold(filepath.ToSlash(got), filepath.ToSlash(want)) {
 		t.Fatalf("go resolves to %q, want test shim %q", got, want)
 	}
 	return logPath
+}
+
+func resolveBashPath(t *testing.T, bash, windowsOrNativePath string) string {
+	t.Helper()
+
+	cmd := exec.Command(bash, "-c", `directory="$1"
+if command -v cygpath >/dev/null 2>&1; then
+  directory="$(cygpath -u "$directory")"
+elif command -v wslpath >/dev/null 2>&1; then
+  directory="$(wslpath -u "$directory")"
+fi
+cd "$directory" && pwd`, "bash", windowsOrNativePath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("resolve Bash path for %q: %v (output: %q)", windowsOrNativePath, err, output)
+	}
+	return strings.TrimSpace(string(output))
 }
 
 func runWritePathWrapperWithTrace(t *testing.T, bash, script string, args ...string) (string, int) {
