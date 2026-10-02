@@ -76,6 +76,20 @@
   shim (without spawning a real build), and added both repeated-root ordering
   cases. Focused tests and the full Go quality gates passed. The C3 deferred
   comment was not added to code.
+- **Post-remediation adversarial gate: BLOCKED.** The adversarial agent
+  reported its review environment was at `7fad096` rather than requested HEAD
+  `f95d1c04ecfec42b88c778c0ed0e2abe952e3961` and could not inspect the
+  committed diff; it also could not confirm reviewer/model identities or
+  cross-model diversity. This repository workspace independently remains at
+  `f95d1c04ecfec42b88c778c0ed0e2abe952e3961`, with the expected 12 changed
+  paths in the base..HEAD diff. The review therefore did not pass; it is
+  recorded as BLOCKED, not as zero findings or a clean adversarial consensus.
+  Ship's direct final-source inspection found no unresolved P0/P1 findings;
+  all three in-scope P3 findings from the prior report were fixed, and the
+  remaining C3 P3 suggestion is captured as D10E82EC. This local assessment
+  does not substitute for the blocked independent review.
+  No PR was pushed/opened. The lifecycle topology gate was re-run after the
+  remediation and passed.
 - The Windows shell-test environment needs
   `C:\Program Files\Git\bin` at the front of `PATH`; the WSL launcher named
   `bash.exe` otherwise translates paths incorrectly. A transient
@@ -96,12 +110,14 @@
   worktree across the feature-branch merge and closure-branch creation. No PR
   is open. C-T5 and C-T6 source locks were released after their respective
   task verification.
-- Next: run report-only local review and post-remediation adversarial review on
-  the final current HEAD. The first adversarial report noted that exact model
-  identities were unavailable; the committed diff was independently verified
-  locally, but cross-model diversity remains unverified unless the rerun
-  confirms it. Then commit this memory checkpoint, prepare current-HEAD
-  readiness evidence, push/create the feature PR, and follow the required
-  Copilot-review / CI / merge gates. Do not use admin fallback.
+- **Halted before PR creation/push.** Ship directly inspected the final parser,
+  C-T1 tests, C-T2 Go-shim harness, C-T5 package documentation, shared runner,
+  and full committed base..HEAD diff; no source correctness or scope blocker
+  was found in that inspection. The required independent adversarial review
+  did not cover the requested HEAD, so overall PR readiness remains BLOCKED
+  pending a valid adversarial review. Remote CI, Copilot review, local PR
+  readiness verification, and merge gates have not run. Do not push, open a
+  PR, or merge until the review gate is validly completed and follow-ups are
+  recorded. No admin fallback is authorized.
 - **Stop condition:** if an authorized change makes any existing engine
   self-test change verdict or exit code, halt and return to Stage.
