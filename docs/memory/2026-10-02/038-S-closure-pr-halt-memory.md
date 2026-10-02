@@ -30,8 +30,7 @@ closure_pr: null
 * After the topology-gate halt, Ship created one active, official backlog
   checkpoint for resumption:
   `.backlogit/checkpoints/checkpoint-20261002-161423.json`. It is Ship-owned.
-  Resuming the closure-PR work does not resolve it. It stays active until the
-  closure PR merges (see Resolution below).
+  Ship resolved it once the resume was confirmed (see Resolution below).
 
 ## Halt condition
 
@@ -76,6 +75,7 @@ closure PR, defines no lifecycle gate. The ambient topology check
 returned exit 0 on the closure branch, with `active_shipment_ids: []` and
 `WORKTREE_TOPOLOGY_OK`. Under the scoped P-017 activation, Ship resumed
 checkpoint `checkpoint-20261002-161423.json` and continued the closure PR
-without re-claiming or mutating 038-S. Resuming did not resolve the
-checkpoint. It stays active until the closure PR merges, and Ship resolves it
-then.
+without re-claiming or mutating 038-S. For the resumed phase, Ship created
+checkpoint `checkpoint-20261002-163308.json` with a current resume hint. Once the
+resume was confirmed, Ship resolved `checkpoint-20261002-161423.json`, so only
+`163308` remains active. Ship resolves `163308` after the closure PR merges.

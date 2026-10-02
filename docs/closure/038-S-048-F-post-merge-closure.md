@@ -281,12 +281,14 @@ The closure PR body records the readiness result.
 
 The backlog index resync succeeded after archival and knowledge maintenance
 (`backlogit sync`, 398 artifacts indexed). Ship created checkpoint
-`.backlogit/checkpoints/checkpoint-20261002-161423.json` at the halt. Resuming
-from the ambient gate did not resolve it. The checkpoint stays active until
-the closure PR merges, and Ship resolves it then. For the resumed closure-PR
-phase, Ship created a second active checkpoint,
-`.backlogit/checkpoints/checkpoint-20261002-163308.json`, which supersedes the
-halt checkpoint's stale resume hint. Ship resolves both checkpoints together.
+`.backlogit/checkpoints/checkpoint-20261002-161423.json` at the halt. For the
+resumed closure-PR phase, Ship created
+`.backlogit/checkpoints/checkpoint-20261002-163308.json` with a current resume
+hint. Once the resume was confirmed, Ship resolved the halt checkpoint
+(`161423`, resolved 2026-10-02T16:57:02Z). That follows the Ship contract:
+resolve the selected checkpoint after a confirmed resume, and keep at most one
+active checkpoint. `163308` is the only active Ship checkpoint, and Ship
+resolves it after the closure PR merges.
 
 ## Releasability evidence
 
