@@ -9,6 +9,55 @@
 // --self-test, --self-test-integrity, or an unknown flag) rather than only
 // the inner Python script's mode argument, so a future CLI wrapper (M1-T10)
 // only needs to forward argv and the resolved --root.
+//
+// # Residual evasion surface (034.007-T, AC-4.7)
+//
+// The detector is the 26 qualified selectors in Selectors. The following
+// surface is recorded here, never silently left unhandled:
+//
+//  1. Named import aliases -- KNOWN OPEN, pending Unit E (feature 049-F,
+//     shipment 039-S). An aliased import of a write-capable package
+//     (import o "os" -> o.WriteFile(...), or an alias of database/sql /
+//     go.etcd.io/bbolt) is not detected.
+//  2. pathsafe.NewRoot receiver / Root.Resolve first-caller tracking --
+//     KNOWN OPEN, pending Unit E (feature 049-F, shipment 039-S). No
+//     tripwire exists. The pathsafe risk-register triggers ("forced the
+//     moment a real write path exists", root.go) and feature 038-F's "once
+//     a live caller exists" trigger stay awaited, not monitored.
+//  3. Dot-imports, blank imports, and local identifiers shadowing a package
+//     name (including a local syscall identifier, which the D-2' predicate
+//     in occurrenceAllowed trusts by spelling).
+//  4. os.Root method calls and (*os.File).Write*.
+//  5. Undecidable or non-simple call shape -> rejected. A
+//     syscall.CreateFile reached via a wrapper or function value, with an
+//     extent that does not balance, with any argument that is not a bare
+//     operand (call, composite literal, index, string or raw string), or
+//     with any access, disposition or flags spelling outside the D-2'
+//     predicate's exact tokens is rejected, not exempted (D-2' rules 2-7).
+//     This is a false-positive surface: a future legitimate metadata-only
+//     call in such a shape trips the gate and needs an explicit, reviewed
+//     widening. It is never a silent hole.
+//  6. Write primitives outside the selector set are not detected:
+//     ioutil.WriteFile, ioutil.TempFile, ioutil.TempDir; syscall write and
+//     namespace calls other than syscall.CreateFile and syscall.Write
+//     (syscall.WriteFile, Open, Unlink, Rename, Mkdir, CreateHardLink,
+//     DeleteFile); and golang.org/x/sys/windows and golang.org/x/sys/unix
+//     equivalents. None occurs in internal/** or cmd/** at 9b299c8.
+//     Widening the selector set is out of D-031-2's scope and is tracked as
+//     stash entry 458F9385.
+//  7. Selector split by a newline or comment -- KNOWN OPEN, closed by Unit
+//     E's AST engine (feature 049-F). Go inserts no semicolon after ".", so
+//     "syscall." + newline + "CreateFile(...)" and "os./**/WriteFile(...)"
+//     are valid Go that gofmt preserves; after masking neither contains the
+//     contiguous selector text, so every selector is evaded.
+//
+// Residual-risk statement: until feature 049-F ships, this gate is a
+// qualified-selector tripwire, not a complete mechanical proof. Items 1, 2,
+// 6 and 7 are known open fail-open surfaces. At 9b299c8 there are zero
+// aliased write-capable imports, zero production Root.Resolve callers and
+// zero item-6 primitives in internal/**/cmd/**, so items 1, 2 and 6 are not
+// exploited today. None of the four is mechanically guarded. The
+// compensating control is human and agent PR review against this list.
 package writepath
 
 import (
@@ -20,21 +69,28 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/gomask"
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
 
-// Selectors is the ordered list of 20 qualified write-primitive selectors
-// this gate detects, ported verbatim from the SELECTORS list in
-// scripts/check-write-path-precondition.sh (including the three
-// adversarial-review additions noted there).
+// Selectors is the ordered list of 26 qualified write-primitive selectors
+// this gate detects. The first 20 were ported verbatim from the retired
+// Python SELECTORS list (including its three adversarial-review
+// additions); the last six (syscall.CreateFile, syscall.Write,
+// os.OpenRoot, os.Root, io.CopyN, io.CopyBuffer) were appended by
+// 034.004-T so existing finding order is unchanged. syscall.CreateFile is
+// reported unless occurrenceAllowed proves the exact metadata-only
+// reparse-probe call shape.
 var Selectors = []string{
 	"os.WriteFile", "os.Create", "os.OpenFile", "os.Remove", "os.RemoveAll",
 	"os.Rename", "os.Mkdir", "os.MkdirAll", "os.Symlink", "os.Chmod",
 	"os.Truncate", "io.Copy", "sql.Open", "bbolt.Open",
 	"os.CreateTemp", "os.MkdirTemp", "os.Link", "os.Chown", "os.Lchown",
 	"os.Chtimes",
+	"syscall.CreateFile", "syscall.Write", "os.OpenRoot", "os.Root",
+	"io.CopyN", "io.CopyBuffer",
 }
 
 const (
@@ -79,26 +135,194 @@ func shouldScan(relPath string) bool {
 	return strings.HasPrefix(relPath, "internal/") || strings.HasPrefix(relPath, "cmd/")
 }
 
-// findSelector reports whether line contains sel as a qualified selector:
-// not preceded by a word rune or '.', and not followed by a word rune. It
-// is the explicit replacement for Python's
-// re.compile(r'(?<![\w.])' + re.escape(sel) + r'(?![\w])').search(line):
-// only whether at least one satisfying occurrence exists matters (a
-// boolean hit), not an enumeration of every occurrence, matching
-// pattern.search's truthiness semantics.
-func findSelector(line, sel string) bool {
-	start := 0
+// nextOccurrence returns the byte offset of the first occurrence of sel in
+// line at or after start that is a qualified selector -- not preceded by a
+// word rune or '.', and not followed by a word rune -- or -1 if there is
+// none. It is the explicit replacement for one step of Python's
+// re.compile(r'(?<![\w.])' + re.escape(sel) + r'(?![\w])').finditer(line).
+func nextOccurrence(line, sel string, start int) int {
 	for start <= len(line) {
 		idx := strings.Index(line[start:], sel)
 		if idx < 0 {
-			return false
+			return -1
 		}
 		pos := start + idx
-		end := pos + len(sel)
-		if !pysem.PrecededByWordOrDot(line, pos) && !pysem.FollowedByWord(line, end) {
-			return true
+		if !pysem.PrecededByWordOrDot(line, pos) && !pysem.FollowedByWord(line, pos+len(sel)) {
+			return pos
 		}
 		start = pos + 1
+	}
+	return -1
+}
+
+// findSelector reports whether line contains sel as a qualified selector,
+// i.e. whether the first enumerated occurrence exists. It matches
+// pattern.search's truthiness semantics and serves as the per-line fast
+// path ahead of full enumeration.
+func findSelector(line, sel string) bool {
+	return nextOccurrence(line, sel, 0) >= 0
+}
+
+// selectorOccurrences returns the byte offset of every qualified-selector
+// occurrence of sel in line, in order, or nil if there is none.
+func selectorOccurrences(line, sel string) []int {
+	var offsets []int
+	for pos := nextOccurrence(line, sel, 0); pos >= 0; pos = nextOccurrence(line, sel, pos+1) {
+		offsets = append(offsets, pos)
+	}
+	return offsets
+}
+
+// advanceCursor checks that line is exactly text[cur:cur+len(line)] and
+// returns the offset just past the single line boundary that follows it
+// ("\r\n" as two bytes, otherwise the boundary rune's UTF-8 width, or
+// nothing at the end of text). It reports false, failing closed, when the
+// line does not match the text at cur or the boundary cannot be decoded.
+func advanceCursor(text string, cur int, line string) (int, bool) {
+	end := cur + len(line)
+	if end > len(text) || text[cur:end] != line {
+		return 0, false
+	}
+	if end == len(text) {
+		return end, true
+	}
+	if strings.HasPrefix(text[end:], "\r\n") {
+		return end + 2, true
+	}
+	r, width := utf8.DecodeRuneInString(text[end:])
+	if r == utf8.RuneError && width <= 1 {
+		return 0, false
+	}
+	return end + width, true
+}
+
+// extentKind classifies the masked text that follows a selector occurrence.
+type extentKind int
+
+const (
+	// extentNonCall: the selector is not followed (after whitespace) by '('.
+	extentNonCall extentKind = iota
+	// extentBalanced: the call's parentheses close with every bracket matched.
+	extentBalanced
+	// extentUnbalanced: the text ends before the call closes (undecidable).
+	extentUnbalanced
+	// extentMismatched: a closer does not match the innermost opener
+	// (undecidable).
+	extentMismatched
+)
+
+// extent is the call extent of one selector occurrence. segments holds the
+// raw interior text split at commas at bracket depth exactly 1 (the call's
+// own parentheses); it is nil unless kind is extentBalanced.
+type extent struct {
+	kind     extentKind
+	segments []string
+}
+
+// extractExtent extracts the call extent starting at offset after (just
+// past a selector occurrence) in the whole masked text: it skips Go
+// whitespace, newlines included, requires '(', and walks to the balanced
+// ')' while tracking a bracket stack over (), [] and {}. Byte-wise scanning
+// is safe because ASCII bytes never occur inside a multi-byte UTF-8
+// sequence.
+func extractExtent(text string, after int) extent {
+	i := after
+	for i < len(text) && (text[i] == ' ' || text[i] == '\t' || text[i] == '\r' || text[i] == '\n') {
+		i++
+	}
+	if i >= len(text) || text[i] != '(' {
+		return extent{kind: extentNonCall}
+	}
+	var stack []byte
+	var segments []string
+	segStart := i + 1
+	for j := i; j < len(text); j++ {
+		switch c := text[j]; c {
+		case '(', '[', '{':
+			stack = append(stack, c)
+		case ')', ']', '}':
+			if stack[len(stack)-1] != bracketOpener[c] {
+				return extent{kind: extentMismatched}
+			}
+			stack = stack[:len(stack)-1]
+			if len(stack) == 0 {
+				return extent{kind: extentBalanced, segments: append(segments, text[segStart:j])}
+			}
+		case ',':
+			if len(stack) == 1 {
+				segments = append(segments, text[segStart:j])
+				segStart = j + 1
+			}
+		}
+	}
+	return extent{kind: extentUnbalanced}
+}
+
+// bracketOpener maps each closing bracket to its opener.
+var bracketOpener = map[byte]byte{')': '(', ']': '[', '}': '{'}
+
+// The access-mode allowance (D-2') admits exactly one argument shape: the
+// metadata-only syscall.CreateFile call that opens an existing object with
+// no access rights and only FILE_FLAG_BACKUP_SEMANTICS.
+const (
+	allowedCreateFileSelector = "syscall.CreateFile"
+	allowedCreateFileArgCount = 7
+	allowedCreateFileAccess   = "0"
+	allowedCreateFileDispo    = "syscall.OPEN_EXISTING"
+	allowedCreateFileFlags    = "syscall.FILE_FLAG_BACKUP_SEMANTICS"
+)
+
+// occurrenceAllowed is the D-2' access-mode allowance: it reports whether a
+// single selector occurrence, classified by its call extent, is exempt from
+// being reported. Every rule is an exact-token match, so the predicate can
+// only err toward reporting (fail closed). Rejected shapes include nested
+// brackets (call arguments, composite literals, index expressions), visible
+// raw strings, blanked string or rune arguments (empty segments), any
+// argument count other than 7, any access spelling other than the token 0,
+// any disposition other than OPEN_EXISTING, and any flag expression other
+// than the bare FILE_FLAG_BACKUP_SEMANTICS.
+func occurrenceAllowed(sel string, ext extent) bool {
+	if sel != allowedCreateFileSelector || ext.kind != extentBalanced {
+		return false
+	}
+	for _, seg := range ext.segments {
+		if strings.ContainsAny(seg, "()[]{}`\"") {
+			return false
+		}
+	}
+	args := ext.segments
+	if n := len(args); n > 0 && strings.TrimSpace(args[n-1]) == "" {
+		args = args[:n-1]
+	}
+	if len(args) != allowedCreateFileArgCount {
+		return false
+	}
+	for _, arg := range args {
+		if strings.TrimSpace(arg) == "" {
+			return false
+		}
+	}
+	return strings.TrimSpace(args[1]) == allowedCreateFileAccess &&
+		strings.TrimSpace(args[4]) == allowedCreateFileDispo &&
+		strings.TrimSpace(args[5]) == allowedCreateFileFlags
+}
+
+// lineReportsSelector is the per-line, per-selector evaluator: it reports
+// whether line (starting at byte offset lineStart of the whole maskedText)
+// yields a finding for sel, i.e. whether any qualified occurrence of sel on
+// the line is not allowed. When allowance is false (the line cursor lost
+// sync) every occurrence is reported, failing closed.
+func lineReportsSelector(maskedText, line string, lineStart int, allowance bool, sel string) bool {
+	if !findSelector(line, sel) {
+		return false
+	}
+	if !allowance {
+		return true
+	}
+	for _, pos := range selectorOccurrences(line, sel) {
+		if !occurrenceAllowed(sel, extractExtent(maskedText, lineStart+pos+len(sel))) {
+			return true
+		}
 	}
 	return false
 }
@@ -109,12 +333,25 @@ func findSelector(line, sel string) bool {
 // f"{relPath}:{line_no}: write primitive {sel!r} found" (via pysem.Repr).
 // relPath is echoed back into the finding text verbatim and must already
 // be in the caller's desired display form (forward-slash, repo-relative).
+//
+// It keeps a byte cursor into maskedText alongside the line loop so each
+// occurrence's call extent can be extracted from the whole text; if the
+// cursor ever loses sync the allowance is disabled for the rest of the
+// text, so every occurrence is reported (fail closed).
 func scanText(relPath, maskedText string) []string {
 	var findings []string
+	cur := 0
+	allowance := true
 	for i, line := range pysem.SplitLines(maskedText) {
 		lineNo := i + 1
+		lineStart := cur
+		if allowance {
+			next, ok := advanceCursor(maskedText, cur, line)
+			allowance = ok
+			cur = next
+		}
 		for _, sel := range Selectors {
-			if findSelector(line, sel) {
+			if lineReportsSelector(maskedText, line, lineStart, allowance, sel) {
 				findings = append(findings, fmt.Sprintf("%s:%d: write primitive %s found", relPath, lineNo, pysem.Repr(sel)))
 			}
 		}
