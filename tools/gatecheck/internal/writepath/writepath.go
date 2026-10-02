@@ -26,16 +26,22 @@ import (
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
 
-// Selectors is the ordered list of 20 qualified write-primitive selectors
-// this gate detects, ported verbatim from the SELECTORS list in
-// scripts/check-write-path-precondition.sh (including the three
-// adversarial-review additions noted there).
+// Selectors is the ordered list of 26 qualified write-primitive selectors
+// this gate detects. The first 20 were ported verbatim from the retired
+// Python SELECTORS list (including its three adversarial-review
+// additions); the last six (syscall.CreateFile, syscall.Write,
+// os.OpenRoot, os.Root, io.CopyN, io.CopyBuffer) were appended by
+// 034.004-T so existing finding order is unchanged. syscall.CreateFile is
+// reported unless occurrenceAllowed proves the exact metadata-only
+// reparse-probe call shape.
 var Selectors = []string{
 	"os.WriteFile", "os.Create", "os.OpenFile", "os.Remove", "os.RemoveAll",
 	"os.Rename", "os.Mkdir", "os.MkdirAll", "os.Symlink", "os.Chmod",
 	"os.Truncate", "io.Copy", "sql.Open", "bbolt.Open",
 	"os.CreateTemp", "os.MkdirTemp", "os.Link", "os.Chown", "os.Lchown",
 	"os.Chtimes",
+	"syscall.CreateFile", "syscall.Write", "os.OpenRoot", "os.Root",
+	"io.CopyN", "io.CopyBuffer",
 }
 
 const (

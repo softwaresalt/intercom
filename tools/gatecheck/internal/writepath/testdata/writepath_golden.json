@@ -19,7 +19,13 @@
     "os.Link",
     "os.Chown",
     "os.Lchown",
-    "os.Chtimes"
+    "os.Chtimes",
+    "syscall.CreateFile",
+    "syscall.Write",
+    "os.OpenRoot",
+    "os.Root",
+    "io.CopyN",
+    "io.CopyBuffer"
   ],
   "fixture_findings": [
     {
