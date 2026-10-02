@@ -62,6 +62,15 @@ set -euo pipefail
 #     14d44e3c are unchanged -- this mode addition changes no selector or
 #     masking logic.
 
+for arg in "$@"; do
+  case "$arg" in
+    --root | --root=*)
+      echo "::error::unrecognized argument: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/gatecheck-run.sh
 source "${SCRIPT_DIR}/lib/gatecheck-run.sh"
