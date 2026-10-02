@@ -144,9 +144,10 @@ func TestCheckPathspecPin_PrefixMutation_Rejected(t *testing.T) {
 	}
 }
 
-// TestPinLiterals_NonEmpty is the AC-A2.2 non-vacuity guard: containsAll
-// is vacuously true for an empty wanted list, so emptying either pin list
-// would turn the pin into one that asserts nothing.
+// TestPinLiterals_NonEmpty is the AC-A2.2 non-vacuity guard. containsAll
+// already rejects an empty wanted list; this test independently asserts
+// that neither pin list is emptied, so the pin always names the literals
+// it guards.
 func TestPinLiterals_NonEmpty(t *testing.T) {
 	if len(pathspecPinLiterals) == 0 {
 		t.Fatalf("pathspecPinLiterals must be non-empty")

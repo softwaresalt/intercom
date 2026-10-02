@@ -347,9 +347,11 @@ func packageClosureOK(selectGoPath string) bool {
 
 // closureFileOK applies the per-file package-closure rules to one parsed
 // file. isSelect marks select.go itself, the only file that may mention
-// scanScope or scanArm or declare a closed-world name. Unresolvable
-// imports, dot-imports of os or syscall, and any reference to an
-// envMutators function through an os or syscall import fail closed.
+// scanScope or scanArm or declare a closed-world name. Malformed import
+// path literals, imports of unsafe or C, dot-imports of os or syscall, and
+// any reference to an envMutators function through an os or syscall import
+// fail closed. Import paths are only parsed, never resolved: whether an
+// imported package exists is left to the build gate, not this pin.
 func closureFileOK(file *ast.File, isSelect bool) bool {
 	imports := make(map[string]string)
 	for _, imp := range file.Imports {
