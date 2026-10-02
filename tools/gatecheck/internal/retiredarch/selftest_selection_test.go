@@ -103,3 +103,19 @@ func TestRunRepoSelectionSelfTest_GitError_Propagates(t *testing.T) {
 		t.Fatal("expected an error when the injected GitRunner fails")
 	}
 }
+
+// TestCmdProbesHold_DropsNonTestCmdGo_False is the AC-A4.1 pure-predicate
+// test: a predicate that keeps only cmd/ test and testdata files (dropping
+// ordinary non-test cmd/ Go files) must fail the probe set, while the real
+// shouldScanRepoPath must pass it.
+func TestCmdProbesHold_DropsNonTestCmdGo_False(t *testing.T) {
+	dropping := func(p string) bool {
+		return strings.HasSuffix(p, "_test.go") || strings.Contains(p, "/testdata/")
+	}
+	if cmdProbesHold(dropping) {
+		t.Fatalf("cmdProbesHold(predicate dropping non-test cmd/ Go files) = true, want false")
+	}
+	if !cmdProbesHold(shouldScanRepoPath) {
+		t.Fatalf("cmdProbesHold(shouldScanRepoPath) = false, want true")
+	}
+}

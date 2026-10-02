@@ -255,6 +255,7 @@ func runRepoSelectionSelfTest(root string, git GitRunner) (selfTestOutput, error
 
 	cmdTestProbe := shouldScanRepoPath("cmd/x/y_test.go")
 	cmdTestdataProbe := shouldScanRepoPath("cmd/x/testdata/z.go")
+	cmdMainProbe := shouldScanRepoPath("cmd/x/main.go")
 	var cmdTestFilesSelected []string
 	for _, p := range relPaths {
 		if strings.HasPrefix(p, "cmd/") && strings.HasSuffix(p, "_test.go") {
@@ -263,15 +264,16 @@ func runRepoSelectionSelfTest(root string, git GitRunner) (selfTestOutput, error
 	}
 	out.reportAssertion(
 		"selection cmd/ coverage (AG-5/D4)",
-		cmdTestProbe && cmdTestdataProbe && len(cmdTestFilesSelected) > 0,
+		cmdProbesHold(shouldScanRepoPath) && len(cmdTestFilesSelected) > 0,
 		fmt.Sprintf("cmd/ deliberately includes *_test.go and testdata/ paths (%d tracked cmd/**/*_test.go file(s) selected)", len(cmdTestFilesSelected)),
 		fmt.Sprintf(
 			"AG-5/D4 violation: this assertion guards the DELIBERATE decision that cmd/ "+
 				"selection coverage includes test and testdata paths (unlike internal/**) -- "+
 				"should_scan_repo_path('cmd/x/y_test.go')=%s, "+
 				"should_scan_repo_path('cmd/x/testdata/z.go')=%s, "+
+				"should_scan_repo_path('cmd/x/main.go')=%s, "+
 				"tracked cmd/**/*_test.go selected=%d",
-			pyBool(cmdTestProbe), pyBool(cmdTestdataProbe), len(cmdTestFilesSelected),
+			pyBool(cmdTestProbe), pyBool(cmdTestdataProbe), pyBool(cmdMainProbe), len(cmdTestFilesSelected),
 		),
 	)
 
@@ -290,6 +292,20 @@ func runRepoSelectionSelfTest(root string, git GitRunner) (selfTestOutput, error
 	)
 
 	return out, nil
+}
+
+// cmdProbesHold reports whether pred includes every literal cmd/ selection
+// probe (AG-5/D4, SEC-2). The expected result for each probe is "included";
+// these literals are deliberately independent of scanScope, so a narrowed
+// scope that silently drops ordinary non-test cmd/ Go files is caught here
+// even though the test and testdata probes still pass.
+func cmdProbesHold(pred func(string) bool) bool {
+	for _, p := range []string{"cmd/x/y_test.go", "cmd/x/testdata/z.go", "cmd/x/main.go"} {
+		if !pred(p) {
+			return false
+		}
+	}
+	return true
 }
 
 // joinRoot mirrors Python's `root / p` (pathlib's join operator) closely
