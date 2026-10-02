@@ -1,11 +1,41 @@
 // This file (pin.go) ports selection_pathspec_pin (015.011-T AC-6/AG-1,
-// re-derived by 032.004-T) as a SOURCE-TEXT-ANCHORED pin: rather than
-// Python's inspect.getsource(), this port re-parses
-// tools/gatecheck/internal/retiredarch/select.go from disk with go/parser
-// and requires the pathspec/prefix literals to appear as *ast.BasicLit
-// strings INSIDE the package-level scanScope declaration (033.002-T), the
+// re-derived by 032.004-T; Unit A decisions D-030-4 and D-030-6) as a
+// SOURCE-TEXT-ANCHORED pin: rather than Python's inspect.getsource(), it
+// re-parses tools/gatecheck/internal/retiredarch/select.go from disk with
+// go/parser. The package-level scanScope declaration (033.002-T) is the
 // single home of the scan-scope literals that selectRepoPaths and
-// shouldScanRepoPath both derive from; both functions must still exist.
+// shouldScanRepoPath both derive from. The pin holds when:
+//
+//   - Frozen declarations (033.005-T/033.006-T): pathspecFrozenDecls owns
+//     PathspecOK and prefixFrozenDecls owns PrefixOK; every declaration in
+//     a set must be token-equal to this file's own copy of the plan's
+//     §A-CANON texts (canonicalDecls).
+//   - Closed world (sharedRulesOK): select.go declares exactly the
+//     closedWorldDecls names, each once and with its kind, and the
+//     identifiers scanScope and scanArm occur only in confinedIdentDecls.
+//   - Scope data (scopeDataOK): the scanScope arm values match
+//     pathspecPinLiterals and prefixPinLiterals, with includeTests true
+//     exactly on includeTestsPinPrefixes (the round-4 includeTests rule).
+//   - Package closure (packageClosureOK, 033.007-T): every non-_test.go .go
+//     file in select.go's directory parses; only select.go mentions
+//     scanScope or scanArm or declares a closed-world name; no file
+//     declares a universe name (universeDeclNames, checked by a
+//     toolchain-stable test against types.Universe), imports "unsafe" or
+//     "C", carries a //go:linkname directive, or calls os/syscall
+//     Setenv, Unsetenv or Clearenv (round-4 environment-mutation rule);
+//     and go/build ImportDir reports no non-Go sources (round-4 allowlist).
+//
+// Every rule fails closed: a shared-rule, scope-data or closure violation,
+// or any read, parse or ImportDir error, clears both flags.
+//
+// Residuals (not enforced here): R-A1, runner wiring and downstream
+// dispatch outside the frozen surface (stash DC921AF6); R-A2, git
+// environment or configuration set outside this package (stash D7BF9F74);
+// R-A3, _test.go files are outside package closure; R-A4, out-of-model
+// attacks (cross-package linkname, reflect, unsafe elsewhere, binary
+// patching). A coordinated pin.go + select.go edit cannot be caught here:
+// A-T4's independent cmd/x/main.go probe is that control, backed by human
+// review of any pin.go diff.
 //
 // H-11 (self-comparison caveat, gate-reliability plan §8): the expected
 // literal lists below (pathspecPinLiterals, prefixPinLiterals) are this
@@ -20,6 +50,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/scanner"
 	"go/token"
@@ -169,6 +200,31 @@ var prefixFrozenDecls = []string{"import", "scanArm", "scanScope", "shouldScanRe
 // be true; every other arm must leave it false.
 var includeTestsPinPrefixes = []string{"cmd/"}
 
+// universeDeclNames is this file's authored list of Go universe-scope
+// names (033.007-T): no file in select.go's package may declare one at
+// package scope, so the frozen texts cannot be re-bound by shadowing a
+// builtin. A toolchain-stable test checks that it covers every universe
+// identifier the §A-CANON texts mention.
+var universeDeclNames = map[string]bool{
+	"any": true, "bool": true, "byte": true, "comparable": true,
+	"complex64": true, "complex128": true, "error": true,
+	"float32": true, "float64": true, "int": true, "int8": true,
+	"int16": true, "int32": true, "int64": true, "rune": true,
+	"string": true, "uint": true, "uint8": true, "uint16": true,
+	"uint32": true, "uint64": true, "uintptr": true,
+	"true": true, "false": true, "iota": true, "nil": true,
+	"append": true, "cap": true, "clear": true, "close": true,
+	"complex": true, "copy": true, "delete": true, "imag": true,
+	"len": true, "make": true, "max": true, "min": true, "new": true,
+	"panic": true, "print": true, "println": true, "real": true,
+	"recover": true,
+}
+
+// envMutators are the os and syscall functions no file in select.go's
+// package may reference (round-4 SEC4-3): DefaultGitRunner inherits the
+// process environment.
+var envMutators = map[string]bool{"Setenv": true, "Unsetenv": true, "Clearenv": true}
+
 // armValues is one scan-scope arm's field values as read from the AST of
 // the package-level scope declaration (an absent key is the zero value).
 type armValues struct {
@@ -204,9 +260,10 @@ func (p PathspecPin) OK() bool {
 // and the pathspecFrozenDecls set to be token-equal to canonicalDecls.
 // PrefixOK requires shouldScanRepoPath to exist, the shared rules and
 // scopeDataOK to hold, and the prefixFrozenDecls set to be token-equal to
-// canonicalDecls. A shared-rule or scope-data violation clears both flags.
-// A read or parse error fails closed (every field false); a missing
-// function fails its half closed.
+// canonicalDecls. Package closure (packageClosureOK) is required by both
+// flags. A shared-rule, scope-data or closure violation clears both flags.
+// A read or parse error of select.go fails closed (every field false); a
+// missing function fails its half closed.
 func checkPathspecPin(selectGoPath string) PathspecPin {
 	src, err := os.ReadFile(selectGoPath)
 	if err != nil {
@@ -223,16 +280,141 @@ func checkPathspecPin(selectGoPath string) PathspecPin {
 
 	decls, shared := sharedRulesOK(file)
 	scopeOK := scopeDataOK(scopeFieldValues(decls))
+	closureOK := packageClosureOK(selectGoPath)
 
 	result := PathspecPin{
 		SelectFound: selectBody != nil,
 		GuardFound:  guardBody != nil,
 	}
-	result.PathspecOK = selectBody != nil && shared && scopeOK &&
+	result.PathspecOK = selectBody != nil && shared && scopeOK && closureOK &&
 		frozenDeclsOK(fset, src, decls, pathspecFrozenDecls)
-	result.PrefixOK = guardBody != nil && shared && scopeOK &&
+	result.PrefixOK = guardBody != nil && shared && scopeOK && closureOK &&
 		frozenDeclsOK(fset, src, decls, prefixFrozenDecls)
 	return result
+}
+
+// packageClosureOK enumerates every non-_test.go .go entry of selectGoPath's
+// directory, requires it to be a readable, parseable regular file that
+// satisfies closureFileOK, and requires go/build ImportDir (all build
+// constraints ignored, cgo enabled) to succeed and report no non-Go
+// sources. Any error, a non-regular entry, or a missing select.go fails
+// closed.
+func packageClosureOK(selectGoPath string) bool {
+	dir := filepath.Dir(selectGoPath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	selectName := filepath.Base(selectGoPath)
+	sawSelect := false
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if !e.Type().IsRegular() {
+			return false
+		}
+		path := filepath.Join(dir, name)
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return false
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, src, parser.ParseComments)
+		if err != nil {
+			return false
+		}
+		isSelect := name == selectName
+		sawSelect = sawSelect || isSelect
+		if !closureFileOK(file, isSelect) {
+			return false
+		}
+	}
+	if !sawSelect {
+		return false
+	}
+	ctx := build.Default
+	ctx.UseAllFiles = true
+	ctx.CgoEnabled = true
+	pkg, err := ctx.ImportDir(dir, 0)
+	if err != nil {
+		return false
+	}
+	return len(pkg.CgoFiles)+len(pkg.CFiles)+len(pkg.CXXFiles)+len(pkg.MFiles)+
+		len(pkg.HFiles)+len(pkg.FFiles)+len(pkg.SFiles)+len(pkg.SwigFiles)+
+		len(pkg.SwigCXXFiles)+len(pkg.SysoFiles) == 0
+}
+
+// closureFileOK applies the per-file package-closure rules to one parsed
+// file. isSelect marks select.go itself, the only file that may mention
+// scanScope or scanArm or declare a closed-world name. Unresolvable
+// imports, dot-imports of os or syscall, and any reference to an
+// envMutators function through an os or syscall import fail closed.
+func closureFileOK(file *ast.File, isSelect bool) bool {
+	imports := make(map[string]string)
+	for _, imp := range file.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil || path == "unsafe" || path == "C" {
+			return false
+		}
+		local := path[strings.LastIndex(path, "/")+1:]
+		if imp.Name != nil {
+			local = imp.Name.Name
+		}
+		if local == "." && (path == "os" || path == "syscall") {
+			return false
+		}
+		imports[local] = path
+	}
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if strings.HasPrefix(c.Text, "//go:linkname") {
+				return false
+			}
+		}
+	}
+	var names []*ast.Ident
+	for _, d := range file.Decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil {
+				names = append(names, d.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.ValueSpec:
+					names = append(names, s.Names...)
+				case *ast.TypeSpec:
+					names = append(names, s.Name)
+				}
+			}
+		}
+	}
+	for _, n := range names {
+		if universeDeclNames[n.Name] {
+			return false
+		}
+		if _, closed := closedWorldDecls[n.Name]; closed && !isSelect {
+			return false
+		}
+	}
+	ok := true
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch n := node.(type) {
+		case *ast.Ident:
+			if !isSelect && (n.Name == "scanScope" || n.Name == "scanArm") {
+				ok = false
+			}
+		case *ast.SelectorExpr:
+			if x, isIdent := n.X.(*ast.Ident); isIdent && envMutators[n.Sel.Name] &&
+				(imports[x.Name] == "os" || imports[x.Name] == "syscall") {
+				ok = false
+			}
+		}
+		return ok
+	})
+	return ok
 }
 
 // scopeFieldValues reads the field values of every element of the

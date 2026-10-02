@@ -1,6 +1,10 @@
 package retiredarch
 
 import (
+	"go/parser"
+	"go/scanner"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
@@ -389,5 +393,106 @@ func TestScopeDataOK_Table(t *testing.T) {
 				t.Fatalf("scopeDataOK(%+v) = %v, want %v", r.arms, got, r.want)
 			}
 		})
+	}
+}
+
+// TestCheckPathspecPin_PackageClosure_RejectTable is AC-A3d.1 (033.007-T):
+// each row writes the live select.go plus ONE extra non-test entry into a
+// temp dir; package closure must clear both flags. Rows other than the
+// unparseable and unreadable ones also assert SelectFound && GuardFound and
+// that the extra .go file parses, so no row can pass for the wrong reason.
+// A select.go-only fixture is accepted (green on arrival).
+func TestCheckPathspecPin_PackageClosure_RejectTable(t *testing.T) {
+	src, err := os.ReadFile(realSelectGoPath(t))
+	if err != nil {
+		t.Fatalf("read select.go: %v", err)
+	}
+	const hdr = "package retiredarch\n\n"
+	rows := []struct {
+		name, file, body string
+		dir, broken      bool
+	}{
+		{name: "init mutates scanScope", file: "mutate.go", body: hdr + "func init() { scanScope = scanScope[1:] }\n"},
+		{name: "mentions scanArm", file: "mention.go", body: hdr + "var _ scanArm\n"},
+		{name: "func append", file: "append.go", body: hdr + "func append(xs []string, _ ...string) []string { return xs }\n"},
+		{name: "var len", file: "len.go", body: hdr + "var len = 0\n"},
+		{name: "type string", file: "string.go", body: hdr + "type string = []byte\n"},
+		{name: "var nil true", file: "nil.go", body: hdr + "var nil, true = 0, 1\n"},
+		{name: "import unsafe", file: "unsafe.go", body: hdr + "import _ \"unsafe\"\n"},
+		{name: "import C", file: "cgo.go", body: hdr + "import \"C\"\n"},
+		{name: "go:linkname", file: "link.go", body: hdr + "//go:linkname x runtime.x\nvar x int\n"},
+		{name: "os.Setenv in init", file: "env.go", body: hdr + "import \"os\"\n\nfunc init() { _ = os.Setenv(\"GIT_INDEX_FILE\", \"x\") }\n"},
+		{name: "assembly .s", file: "asm.s", body: "TEXT ·f(SB),0,$0-0\n\tRET\n"},
+		{name: "object .syso", file: "blob.syso", body: "\x00\x01\x02"},
+		{name: "swig .swig", file: "iface.swig", body: "%module retiredarch\n"},
+		{name: "closed-world name", file: "cw.go", body: hdr + "func engineForPath() {}\n"},
+		{name: "unparseable", file: "broken.go", body: hdr + "func {\n", broken: true},
+		{name: "unreadable directory x.go", file: "x.go", dir: true, broken: true},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			dir := t.TempDir()
+			selectPath := filepath.Join(dir, "select.go")
+			if err := os.WriteFile(selectPath, src, 0o644); err != nil {
+				t.Fatalf("write select.go: %v", err)
+			}
+			extra := filepath.Join(dir, r.file)
+			if r.dir {
+				if err := os.Mkdir(extra, 0o755); err != nil {
+					t.Fatalf("mkdir: %v", err)
+				}
+			} else if err := os.WriteFile(extra, []byte(r.body), 0o644); err != nil {
+				t.Fatalf("write extra: %v", err)
+			}
+			if !r.broken && strings.HasSuffix(r.file, ".go") {
+				if _, err := parser.ParseFile(token.NewFileSet(), extra, r.body, parser.ParseComments); err != nil {
+					t.Fatalf("row fixture must parse: %v", err)
+				}
+			}
+			pin := checkPathspecPin(selectPath)
+			if pin.PathspecOK || pin.PrefixOK {
+				t.Fatalf("package closure must clear both flags, got %+v", pin)
+			}
+			if !r.broken && (!pin.SelectFound || !pin.GuardFound) {
+				t.Fatalf("row must fail on closure only (SelectFound && GuardFound), got %+v", pin)
+			}
+		})
+	}
+	t.Run("select.go only accepted", func(t *testing.T) {
+		dir := t.TempDir()
+		selectPath := filepath.Join(dir, "select.go")
+		if err := os.WriteFile(selectPath, src, 0o644); err != nil {
+			t.Fatalf("write select.go: %v", err)
+		}
+		if pin := checkPathspecPin(selectPath); !pin.OK() {
+			t.Fatalf("select.go-only fixture must be accepted, got %+v", pin)
+		}
+	})
+}
+
+// TestUniverseDeclNames_CoverCanonicalTexts is AC-A3d.2 (033.007-T): every
+// identifier token of the §A-CANON texts that types.Universe resolves must
+// be in pin.go's authored universeDeclNames list. Toolchain-stable: a new
+// builtin the frozen code does not mention cannot redden it.
+func TestUniverseDeclNames_CoverCanonicalTexts(t *testing.T) {
+	fset := token.NewFileSet()
+	var s scanner.Scanner
+	s.Init(fset.AddFile("canon", -1, len(canonicalDecls)), []byte(canonicalDecls), nil, 0)
+	seen := 0
+	for {
+		_, tok, lit := s.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok != token.IDENT || types.Universe.Lookup(lit) == nil {
+			continue
+		}
+		seen++
+		if !universeDeclNames[lit] {
+			t.Errorf("universe identifier %q used by the canonical texts is missing from universeDeclNames", lit)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("canonical texts must mention at least one universe identifier (non-vacuity)")
 	}
 }
