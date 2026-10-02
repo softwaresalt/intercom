@@ -3,8 +3,8 @@ title: "Deliberation — Post-M4 stash triage and Go re-plan of held shipments 0
 description: "Dispositions for 8 post-M4 deferred-scope-expansion stash entries, and the retarget of held plan units 6/7/8 from the retired Python gate engines onto the Go engines under tools/gatecheck"
 topic: "Post-M4 follow-ups: stash triage + Go re-plan of 030-S (033-F), 031-S (034-F), 032-S (035-F)"
 depth: "deep"
-decision_status: "partially-decided"
-promoted_to: "plan (030-S, 032-S); BLOCKED pending operator decision (031-S)"
+decision_status: "decided"
+promoted_to: "plan (030-S, 032-S, 038-S; 031-S revised per D-031-2; new follow-up 049-F/039-S)"
 agent: Stage
 date: 2026-10-01
 stage_branch: chore/stage-post-m4-followups-and-go-replan
@@ -18,10 +18,13 @@ source_stash:
   - 978D2946
   - 50E6F22C
   - 9F824B64
+  - 8E9F8E55  # D-031-2 fold-in (034.009-T)
+  - B72E9715  # D-031-2 fold-in (034.004-T)
 related_shipments:
   - 030-S (033-F)
   - 031-S (034-F)
   - 032-S (035-F)
+  - 039-S (049-F)  # D-031-2 follow-up
 ---
 
 # Deliberation — Post-M4 stash triage and Go re-plan
@@ -288,7 +291,7 @@ document for full text.
 
 ---
 
-## 4. Re-plan — 031-S / 034-F "Harden write-path gate" — **BLOCKED, operator decision required**
+## 4. Re-plan — 031-S / 034-F "Harden write-path gate" — **decided: SPLIT (D-031-2, §4.5)**
 
 ### 4.1 What the port changed
 
@@ -385,6 +388,156 @@ outside the eight entries this session was scoped to:
   would keep the pin green. **This directly weakens the D-030-2 reasoning above**
   and is a natural companion to the re-planned 033.002-T in **030-S**.
 
+### 4.5 D-031-2 — Operator decision: SPLIT 031-S (2026-10-01, explicit, confirmed)
+
+**Decision.** The operator chose neither pure option. 031-S is **split**:
+
+* **031-S stays the Option A hardening increment** — the masked-text work whose
+  value carries over to Option B: D-1 call extents (034.002-T), the D-2
+  access-mode predicate targeting `internal/pathsafe/reparse_windows.go:164-171`
+  (034.003-T), four new selectors **plus B72E9715's `io.CopyN`/`io.CopyBuffer`**
+  (034.004-T, 20 → 26), honest residual documentation (034.007-T) and fixtures
+  plus a positive control (034.008-T). **8E9F8E55** is harvested into a new
+  sibling 034.009-T, split out of 034.008-T under the 2-hour rule. The 031-S
+  fixtures are explicitly the **verdict-parity regression corpus** for the
+  later `go/ast` migration.
+* **Deferred to a new follow-up feature 049-F / shipment 039-S** — the parts
+  that are hard as text scanning and that Option B replaces: named import alias
+  resolution (034.006-T → 049.004-T) and the `Root.Resolve`/`NewRoot` tripwire
+  (034.005-T → 049.005-T), preceded by a Go-era `go/ast` spike (049.001-T:
+  feasibility, fail-closed handling of unparseable files, verdict parity against
+  the existing corpus plus the 031-S fixtures) and the engine migration itself
+  (049.002-T, 049.003-T), then a docs close-out (049.006-T). **`gomask` is not
+  deleted** — `retiredarch` depends on it.
+* **034.001-T is SATISFIED** by the port (same disposition as 033.003-T under
+  D-030-2): retitled, its edge from 034.002-T removed, left `queued` in the
+  manifest. Lifecycle constraint: `.backlogit/hooks.yaml` allows only
+  `queued → active|blocked`. There is no `queued → archived|rejected`
+  transition, so Stage cannot give the item a terminal state.
+
+  **Named prerequisite for 031-S closure** (plan D-T0): before Ship's closure
+  classification, the operator does one of two things.
+  * Authorise Ship to close it as an explicit no-op. This is recorded as a
+    **disclosed deviation** from the two-set gate in the closure artifact.
+  * Or give it, and 033.003-T, a terminal state.
+* **DD0BB60F was NOT approved** in this decision and is left untouched in the
+  stash (still a 030-S fold-in candidate awaiting a separate operator call).
+
+**Why this is sound.** It lands every Option-A unit whose work survives the
+`go/ast` migration. D-1/D-2 become the migration's behavioural spec, the new
+selectors carry over unchanged, and the fixtures become its parity contract.
+It defers exactly the two units that are disproportionately hard in a text
+scanner: alias resolution needs import-block parsing, and receiver tracking
+needs type/flow information. Neither has a live instance at `9b299c8`: zero
+aliased `os`/`io`/`syscall` imports in scope, and zero production `.Resolve(`
+callers.
+
+**Accepted residual (made explicit).** Between 031-S ship and 039-S ship,
+aliased imports evade the gate and the first `Root.Resolve` caller lands
+unmonitored. These are recorded as **KNOWN OPEN** residuals in the gate's own
+header (034.007-T AC) with a residual-risk statement, and the plan's H-5
+assesses likelihood and impact and gives a per-session re-measurement command.
+
+**Backlog mechanics (correcting the earlier memory note).**
+`backlogit shipment return-blocked` **is** a supported member-removal path. It
+removes the item from the manifest and sets it to `blocked`. Prior art restores
+`queued` with `move --status queued`. The two deferred tasks were removed that
+way and then re-parented with `backlogit adopt`, which **renumbers** them. ID
+map (the rollback record): `034.006-T → 049.004-T`, `034.005-T → 049.005-T`.
+Nothing was deleted.
+
+The split also re-points **038-F**, whose trigger was "the `Root.Resolve`
+tripwire delivered by 034.005-T". Edge 038-F → 049-F was added, keeping the
+038-F → 034-F edge as historical record. A marked description section records
+the re-identification, so 038-F cannot read as unblocked once 031-S ships. The
+full harvest read-back is in the plan's `## Harvest Record — Revision 4`.
+
+**Gating.** 039-S `blocks`-depends on 031-S, and 049-F depends on 034-F, so the
+follow-up cannot be claimed first. 049-F also carries a **STAGE HOLD** until
+049.001-T's spike findings exist and the re-planned E-T2..E-T6 pass plan-review.
+
+**Hold disposition (conditional).** The 031-S hold is lifted **only if**
+plan-review of the revised 031-S unit and the follow-up unit returns ADVISORY or
+better with no P0/P1. The outcome is recorded in the plan's
+`## Plan Review — Revision 4` and in the D-031-2 row of §5.
+
+#### 4.5.1 Triage of the two harvested stash entries (P-021 C5/C6)
+
+| Entry | Duplicate scan (C5, unconditional) | Late-identifier reconciliation (C6) | Harvested into |
+|---|---|---|---|
+| **8E9F8E55** | **CLEAN** over all 24 active stash entries. Adjacent 8E18CCF5 and 56B16321 are distinct expansions and were not merged. | `PR=N/A` → **recovered PR #71**, joined on the entry ID from Ship's records `docs/archive/memory/2026-09-20-ship-027-s-pr-ready-awaiting-merge-approval.md` (cites both entry IDs; the PR was created immediately after) and `docs/closure/027-S-030-F-post-merge-closure.md` (`pr: 71`). `review-thread=N/A` **stands** as a truthful terminal record: a threadless local review, no late thread found. | 034.009-T (031-S). The stash text also lists `os.Chtimes`, so it is included. |
+| **B72E9715** | **CLEAN** (same scan). | Same as above: **PR #71 recovered**; `review-thread=N/A` stands. | 034.004-T (031-S). |
+
+Both entries were annotated in place with the recovered PR and their promotion
+targets, and then **archived** (`backlogit stash archive`, non-destructive)
+after harvest.
+
+### 4.6 D-031-3 — Go-era amendments to D-1/D-2 (Stage, from rev-4 plan-review round 1)
+
+The rev-4 plan-review round 1 returned **FAIL**: 1 P0 and 6 P1s. Six personas
+were dispatched; the Security Lens, Go, Constitution, Architecture and
+Learnings personas raised the blocking findings. The D-1/D-2 mechanism
+decisions were taken in the Python era, on 2026-09-19. Three defects show they
+no longer hold for the Go engine, and the P1s carry the rest of the
+remediation:
+
+1. **P0 — paren-only depth is bypassable.** Commas inside braces, or inside
+   tag-shaped raw strings (which the masker leaves visible), sit at paren
+   depth 1. They can fake a 7-argument list with `0` in slot 1 while the real
+   call writes, e.g. `syscall.CreateFile(T{p, 0, …}.Args())`.
+2. **P1 — access `0` is not "metadata-only".** `CreateFile` with access `0`
+   plus `CREATE_NEW`, `CREATE_ALWAYS` or `OPEN_ALWAYS` still creates a file, and
+   `FILE_FLAG_DELETE_ON_CLOSE` deletes one.
+3. **P1 — "scanText stops iterating lines" breaks a Go-era architectural pin.**
+   `retiredarch/writepath_mask_test.go` requires `scanText` to range over
+   `pysem.SplitLines` at top level.
+
+**Decision (Stage, within planning authority; flagged to the operator).**
+
+* **D-1′** — the extent algorithm is kept. In addition:
+  * the `SplitLines` line loop is **retained** and gains a byte cursor;
+  * depth is tracked over `()[]{}`, and a mismatched closer is undecidable;
+  * every occurrence on a line is enumerated.
+* **D-2′** — D-2's four conditions, **plus**:
+  * a bare-operand rule: the extent may contain no inner brackets, braces or
+    parens, and no quotes or backquotes;
+  * `Args[4]` must be exactly `syscall.OPEN_EXISTING`;
+  * `Args[5]` must use only the allowlist `FILE_FLAG_BACKUP_SEMANTICS` /
+    `FILE_FLAG_OPEN_REPARSE_POINT` (narrowed in round 2, see below);
+  * the predicate is evaluated per occurrence, with the once-per-line
+    de-duplication applied **after** it.
+* **Task splits under the 2-hour rule.** The frozen differential oracle moves
+  out of 034.002-T into new **034.010-T**. The new-selector presence fixtures
+  move out of 034.008-T into new **034.011-T**.
+
+Both amendments only **narrow** the allowance or preserve parity. Neither
+widens what the gate admits. The live `internal/pathsafe/reparse_windows.go:164`
+call still passes every D-2′ condition: access `0`, `OPEN_EXISTING`,
+`FILE_FLAG_BACKUP_SEMANTICS`, bare operands.
+
+The operator's D-031-2 scope is unchanged. Unit E's G-4 now requires the
+`go/ast` port of D-2′ to be a representation change only.
+
+**Round-2 narrowings (rev-4 plan-review round 2).** Round 2 found one P1:
+D-T1a's oracle could not survive Unit E unedited. Stage made these further
+narrowings:
+
+* **Rule 3b (new).** Every segment must be non-empty. `gomask` blanks
+  interpreted strings and runes, delimiters included.
+* **Rule 7 (narrowed).** The flags argument must be **exactly**
+  `syscall.FILE_FLAG_BACKUP_SEMANTICS`, with no `|` combinations.
+  `FILE_FLAG_OPEN_REPARSE_POINT` is dropped because no caller uses it.
+* **Oracle lifecycle.** The oracle's legacy side is frozen. It has exactly one
+  authorised adaptation, in E-T2 (plan AC-E2.6), and that adaptation can only
+  make it stricter.
+* **Residual item 7.** A selector split by a newline or comment is now recorded
+  as a known-open fail-open surface.
+
+**Operator acknowledgment of D-031-3: PENDING.** D-031-3 is a Stage amendment
+made under planning authority and gated by the operator's D-031-2 hold-lift
+condition. The operator should acknowledge or overrule it before 031-S is
+claimed.
+
 ---
 
 ## 5. Decision summary
@@ -395,7 +548,9 @@ outside the eight entries this session was scoped to:
 | D-030-1 | 030-S re-planned onto Go; 2 tasks retargeted. **HOLD LIFTED** on plan-review ADVISORY (round 3, no P1/P2). A-T1/A-T2 declared atomic landing pair ALP-1. |
 | D-030-2 | 033.003-T dropped — `pin.go` already supersedes it. Intent carried as ACs. Hazard narrative corrected at plan-review round 1: the pin fails **loudly**, the real risk is a **vacuously green** pin from emptied literal lists. |
 | D-030-3 | C312BD4C stays deferred, but **re-scoped**: fix the stale comment, not the regex. |
-| D-031-1 | 031-S **BLOCKED** — operator must choose Option A (masked-text port, recommended) or Option B (`go/ast` rewrite, needs a fresh spike). **HOLD NOT LIFTED.** |
+| D-031-1 | 031-S **BLOCKED** — operator must choose Option A (masked-text port, recommended) or Option B (`go/ast` rewrite, needs a fresh spike). **HOLD NOT LIFTED.** *Superseded by D-031-2.* |
+| D-031-2 | Operator **SPLIT** 031-S (§4.5). 031-S keeps the Option A increment (034.002/003/004/007/008-T + new 034.009-T; B72E9715 and 8E9F8E55 folded in); 034.001-T SATISFIED. 034.005-T/034.006-T re-parented to new **049-F / 039-S** (`go/ast` spike + migration), gated by `blocks` 039-S → 031-S and a STAGE HOLD on 049-F. Hold lift conditional on rev-4 plan-review — outcome: **round 3 ADVISORY, no P0/P1 → 031-S HOLD LIFTED** (rounds 1–2 FAIL, remediated via D-031-3). 049-F hold retained pending spike re-plan. |
+| D-031-3 | Go-era amendments **D-1′/D-2′** from rev-4 plan-review rounds 1–2 (§4.6): `SplitLines` loop retained + fail-closed byte cursor; `()[]{}` depth; per-occurrence predicate; bare-operand rule + rule 3b (non-empty segments); exact `syscall.OPEN_EXISTING`; flags exactly `syscall.FILE_FLAG_BACKUP_SEMANTICS`; frozen oracle with single authorised E-T2 adaptation; residual item 7. Oracle and presence fixtures split into new 034.010-T / 034.011-T. Narrows only; never widens. **Operator acknowledgment: PENDING.** |
 | D-032-1 | 032-S re-planned onto Go; all 3 tasks retargeted. **HOLD LIFTED** on plan-review ADVISORY (round 3, no P1/P2). |
 | D-032-2 | Valid-ref/absent-file must stay `("", nil)`; invalid-ref must become a distinct error. |
 | D-032-3 | `git_test.go:103-121` must be **inverted**, not merely supplemented. |
