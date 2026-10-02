@@ -96,18 +96,90 @@ func rootGitignoreTextAt(repoDir, ref string, git GitRunner) (string, error) {
 		}
 		return text, nil
 	}
-	stdout, _, err := git(repoDir, nil, "show", fmt.Sprintf("%s:.gitignore", ref))
+	stdout, showStderr, err := git(repoDir, nil, "show", fmt.Sprintf("%s:.gitignore", ref))
 	if err != nil {
 		// 035-F: an invalid ref, or a ref that simply lacks a root
 		// .gitignore, both degrade to an empty baseline. Faithfully
 		// ported, not fixed, here.
-		return "", nil
+		return "", classifyShowFailure(repoDir, ref, git, err, showStderr)
 	}
 	text, convErr := pysem.GitText(stdout)
 	if convErr != nil {
 		return "", convErr
 	}
 	return text, nil
+}
+
+// classifyShowFailure decides what a failed `git show <ref>:.gitignore`
+// means. git exits 128 both for an unresolvable ref and for a resolvable
+// ref whose tree has no root .gitignore, and its stderr text is
+// locale-dependent, so neither is inspected to tell the two apart.
+// Instead git is asked two structured questions: does ref peel to a tree
+// (`git rev-parse --verify --quiet <ref>^{tree}`), and does that tree's
+// exact root listing (`git ls-tree -z <tree>`) contain a .gitignore entry?
+//
+// It returns nil ONLY when the ref resolves and the root .gitignore is
+// positively absent -- the legitimate empty-baseline case. Every other
+// outcome is a non-nil error: an unresolvable ref, git failing to run,
+// or a .gitignore entry that exists but could not be shown.
+func classifyShowFailure(repoDir, ref string, git GitRunner, showErr error, showStderr []byte) error {
+	if exitCode(showErr) < 0 {
+		return fmt.Errorf("::error::git show %s:.gitignore could not run: %v", ref, showErr)
+	}
+	// A leading "-" can never be a resolvable ref, and passing it to
+	// rev-parse would risk it being parsed as an option.
+	if strings.HasPrefix(ref, "-") {
+		return fmt.Errorf("::error::cannot resolve ref %q for the root .gitignore baseline: not a valid ref", ref)
+	}
+	treeOut, revStderr, revErr := git(repoDir, nil, "rev-parse", "--verify", "--quiet", ref+"^{tree}")
+	if revErr != nil {
+		return fmt.Errorf(
+			"::error::cannot resolve ref %q for the root .gitignore baseline: git rev-parse --verify failed: %v: %s",
+			ref, revErr, strings.TrimSpace(string(revStderr)),
+		)
+	}
+	tree := strings.TrimSpace(string(treeOut))
+	if tree == "" {
+		return fmt.Errorf("::error::cannot resolve ref %q for the root .gitignore baseline: git rev-parse --verify returned no object", ref)
+	}
+	listing, lsStderr, lsErr := git(repoDir, nil, "ls-tree", "-z", tree)
+	if lsErr != nil {
+		return fmt.Errorf(
+			"::error::git ls-tree %s failed while resolving the root .gitignore at ref %q: %v: %s",
+			tree, ref, lsErr, strings.TrimSpace(string(lsStderr)),
+		)
+	}
+	present, parseErr := rootTreeHasGitignore(listing)
+	if parseErr != nil {
+		return fmt.Errorf("::error::cannot parse git ls-tree output for ref %q: %v", ref, parseErr)
+	}
+	if present {
+		return fmt.Errorf(
+			"::error::git show %s:.gitignore failed although the root .gitignore exists at that ref: %v: %s",
+			ref, showErr, strings.TrimSpace(string(showStderr)),
+		)
+	}
+	return nil
+}
+
+// rootTreeHasGitignore reports whether a `git ls-tree -z` listing of a
+// single tree contains an entry named exactly ".gitignore". Each record is
+// "<mode> SP <type> SP <object> TAB <name> NUL"; a record without a TAB is
+// malformed and reported as an error rather than skipped.
+func rootTreeHasGitignore(listing []byte) (bool, error) {
+	for _, record := range bytes.Split(listing, []byte{0}) {
+		if len(record) == 0 {
+			continue
+		}
+		_, name, ok := bytes.Cut(record, []byte{'\t'})
+		if !ok {
+			return false, fmt.Errorf("malformed ls-tree record %q", record)
+		}
+		if string(name) == ".gitignore" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // makeScratchGitignore reproduces make_scratch_gitignore: it isolates

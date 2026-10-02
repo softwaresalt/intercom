@@ -168,6 +168,172 @@ func TestRootGitignoreTextAt_ValidRefAbsentGitignore_ReturnsEmpty(t *testing.T) 
 	}
 }
 
+func TestRootTreeHasGitignore(t *testing.T) {
+	entry := func(name string) string {
+		return "100644 blob 0123456789abcdef0123456789abcdef01234567\t" + name + "\x00"
+	}
+	cases := []struct {
+		name    string
+		listing string
+		want    bool
+		wantErr bool
+	}{
+		{name: "empty listing", listing: "", want: false},
+		{name: "exact entry", listing: entry("README.md") + entry(".gitignore"), want: true},
+		{name: "near-miss names only", listing: entry(".gitignore-extra") + entry("x.gitignore") + entry(".gitignore.bak"), want: false},
+		{name: "malformed record", listing: "100644 blob deadbeef .gitignore\x00", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := rootTreeHasGitignore([]byte(tc.listing))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// realExitError returns a genuine *exec.ExitError (git exiting non-zero),
+// so fake runners can reproduce a git process that ran and failed, which
+// exitCode distinguishes from a process that never started.
+func realExitError(t *testing.T) error {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found on PATH")
+	}
+	err := exec.Command("git", "this-is-not-a-command").Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *exec.ExitError from an unknown git subcommand, got %v", err)
+	}
+	return err
+}
+
+// TestRootGitignoreTextAt_ShowFailureClassification drives the non-HEAD
+// failure branches with a scripted GitRunner: every outcome other than a
+// resolvable ref with a positively absent root .gitignore is an error.
+func TestRootGitignoreTextAt_ShowFailureClassification(t *testing.T) {
+	exitErr := realExitError(t)
+	absentListing := "100644 blob 0123456789abcdef0123456789abcdef01234567\tREADME.md\x00"
+	presentListing := absentListing + "100644 blob 0123456789abcdef0123456789abcdef01234567\t.gitignore\x00"
+
+	type reply struct {
+		stdout string
+		err    error
+	}
+	cases := []struct {
+		name    string
+		ref     string
+		replies map[string]reply
+		wantErr bool
+		wantSub string
+	}{
+		{
+			name:    "git could not start",
+			ref:     "main",
+			replies: map[string]reply{"show": {err: errors.New("exec: not found")}},
+			wantErr: true,
+			wantSub: "could not run",
+		},
+		{
+			name:    "leading dash ref",
+			ref:     "-x",
+			replies: map[string]reply{"show": {err: exitErr}},
+			wantErr: true,
+			wantSub: "not a valid ref",
+		},
+		{
+			name: "unresolvable ref",
+			ref:  "nope",
+			replies: map[string]reply{
+				"show":      {err: exitErr},
+				"rev-parse": {err: exitErr},
+			},
+			wantErr: true,
+			wantSub: "cannot resolve ref",
+		},
+		{
+			name: "rev-parse returns no object",
+			ref:  "main",
+			replies: map[string]reply{
+				"show":      {err: exitErr},
+				"rev-parse": {stdout: "\n"},
+			},
+			wantErr: true,
+			wantSub: "no object",
+		},
+		{
+			name: "ls-tree fails",
+			ref:  "main",
+			replies: map[string]reply{
+				"show":      {err: exitErr},
+				"rev-parse": {stdout: "abc123\n"},
+				"ls-tree":   {err: exitErr},
+			},
+			wantErr: true,
+			wantSub: "ls-tree",
+		},
+		{
+			name: "present but unshowable",
+			ref:  "main",
+			replies: map[string]reply{
+				"show":      {err: exitErr},
+				"rev-parse": {stdout: "abc123\n"},
+				"ls-tree":   {stdout: presentListing},
+			},
+			wantErr: true,
+			wantSub: "exists",
+		},
+		{
+			name: "resolvable ref with absent .gitignore",
+			ref:  "main",
+			replies: map[string]reply{
+				"show":      {err: exitErr},
+				"rev-parse": {stdout: "abc123\n"},
+				"ls-tree":   {stdout: absentListing},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			fake := func(_ string, _ []byte, args ...string) ([]byte, []byte, error) {
+				calls = append(calls, args[0])
+				r, ok := tc.replies[args[0]]
+				if !ok {
+					t.Fatalf("unexpected git %v", args)
+				}
+				return []byte(r.stdout), []byte("scripted stderr"), r.err
+			}
+			text, err := rootGitignoreTextAt(t.TempDir(), tc.ref, fake)
+			if text != "" {
+				t.Fatalf("expected empty text, got %q", text)
+			}
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil error, got %v (calls %v)", err, calls)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected an error, got nil (calls %v)", calls)
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Fatalf("error %q does not contain %q", err, tc.wantSub)
+			}
+		})
+	}
+}
 func TestMakeScratchGitignore(t *testing.T) {
 	git := newIsolatedGitRunner(t)
 	root := t.TempDir()
