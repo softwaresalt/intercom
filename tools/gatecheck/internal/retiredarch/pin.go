@@ -161,6 +161,23 @@ var confinedIdentDecls = map[string]bool{
 // token-equal to canonicalDecls.
 var pathspecFrozenDecls = []string{"import", "GitRunner", "DefaultGitRunner", "scanArm", "scanScope", "selectRepoPaths"}
 
+// prefixFrozenDecls is the frozen set PrefixOK requires to be token-equal
+// to canonicalDecls (033.006-T).
+var prefixFrozenDecls = []string{"import", "scanArm", "scanScope", "shouldScanRepoPath"}
+
+// includeTestsPinPrefixes are the prefix arms whose includeTests field must
+// be true; every other arm must leave it false.
+var includeTestsPinPrefixes = []string{"cmd/"}
+
+// armValues is one scan-scope arm's field values as read from the AST of
+// the package-level scope declaration (an absent key is the zero value).
+type armValues struct {
+	pathspec     string
+	prefix       string
+	exact        string
+	includeTests bool
+}
+
 // declTok is one (token, literal) pair of a declaration's token stream.
 type declTok struct {
 	tok token.Token
@@ -182,14 +199,14 @@ func (p PathspecPin) OK() bool {
 
 // checkPathspecPin parses selectGoPath (a filesystem path to a Go source
 // file shaped like select.go) and evaluates the pin against it.
-// PathspecOK requires selectRepoPaths to exist, scanScope to hold every
-// pathspecPinLiterals entry (presence, retained through IVL-1), the
-// pathspecFrozenDecls set to be token-equal to canonicalDecls, and the
-// shared rules (sharedRulesOK) to hold. PrefixOK requires
-// shouldScanRepoPath to exist, scanScope to hold every prefixPinLiterals
-// entry, and the shared rules to hold: a shared-rule violation clears both
-// flags. A read or parse error fails closed (every field false); a missing
-// function or a missing scanScope fails its half closed.
+// PathspecOK requires selectRepoPaths to exist, the shared rules
+// (sharedRulesOK) to hold, the scope field values to satisfy scopeDataOK,
+// and the pathspecFrozenDecls set to be token-equal to canonicalDecls.
+// PrefixOK requires shouldScanRepoPath to exist, the shared rules and
+// scopeDataOK to hold, and the prefixFrozenDecls set to be token-equal to
+// canonicalDecls. A shared-rule or scope-data violation clears both flags.
+// A read or parse error fails closed (every field false); a missing
+// function fails its half closed.
 func checkPathspecPin(selectGoPath string) PathspecPin {
 	src, err := os.ReadFile(selectGoPath)
 	if err != nil {
@@ -204,25 +221,139 @@ func checkPathspecPin(selectGoPath string) PathspecPin {
 	selectBody := findFuncBody(file, "selectRepoPaths")
 	guardBody := findFuncBody(file, "shouldScanRepoPath")
 
-	var scopeLits []string
-	if scope := findScanScopeDecl(file); scope != nil {
-		scopeLits = collectStringLits(scope)
-	}
 	decls, shared := sharedRulesOK(file)
+	scopeOK := scopeDataOK(scopeFieldValues(decls))
 
 	result := PathspecPin{
 		SelectFound: selectBody != nil,
 		GuardFound:  guardBody != nil,
 	}
-	if selectBody != nil {
-		result.PathspecOK = shared &&
-			containsAll(scopeLits, pathspecPinLiterals) &&
-			frozenDeclsOK(fset, src, decls, pathspecFrozenDecls)
-	}
-	if guardBody != nil {
-		result.PrefixOK = shared && containsAll(scopeLits, prefixPinLiterals)
-	}
+	result.PathspecOK = selectBody != nil && shared && scopeOK &&
+		frozenDeclsOK(fset, src, decls, pathspecFrozenDecls)
+	result.PrefixOK = guardBody != nil && shared && scopeOK &&
+		frozenDeclsOK(fset, src, decls, prefixFrozenDecls)
 	return result
+}
+
+// scopeFieldValues reads the field values of every element of the
+// package-level scope declaration (decls["scanScope"]): a single-spec var
+// whose single value is a composite literal of keyed composite-literal
+// elements. Keys must be plain identifiers naming a known field, each at
+// most once; string fields must be string literals and includeTests the
+// identifier true or false. Any other shape returns nil (fail closed).
+func scopeFieldValues(decls map[string]ast.Decl) []armValues {
+	gen, ok := decls["scanScope"].(*ast.GenDecl)
+	if !ok || gen.Tok != token.VAR || len(gen.Specs) != 1 {
+		return nil
+	}
+	spec, ok := gen.Specs[0].(*ast.ValueSpec)
+	if !ok || len(spec.Values) != 1 {
+		return nil
+	}
+	list, ok := spec.Values[0].(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	var arms []armValues
+	for _, elt := range list.Elts {
+		lit, ok := elt.(*ast.CompositeLit)
+		if !ok || lit.Type != nil {
+			return nil
+		}
+		var arm armValues
+		seen := make(map[string]bool)
+		for _, field := range lit.Elts {
+			kv, ok := field.(*ast.KeyValueExpr)
+			if !ok {
+				return nil
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok || seen[key.Name] {
+				return nil
+			}
+			seen[key.Name] = true
+			if key.Name == "includeTests" {
+				val, ok := kv.Value.(*ast.Ident)
+				if !ok || (val.Name != "true" && val.Name != "false") {
+					return nil
+				}
+				arm.includeTests = val.Name == "true"
+				continue
+			}
+			val, ok := kv.Value.(*ast.BasicLit)
+			if !ok || val.Kind != token.STRING {
+				return nil
+			}
+			s, err := strconv.Unquote(val.Value)
+			if err != nil {
+				return nil
+			}
+			switch key.Name {
+			case "pathspec":
+				arm.pathspec = s
+			case "prefix":
+				arm.prefix = s
+			case "exact":
+				arm.exact = s
+			default:
+				return nil
+			}
+		}
+		arms = append(arms, arm)
+	}
+	return arms
+}
+
+// scopeDataOK reports whether arms is exactly the pinned scan scope: the
+// pathspec set equals pathspecPinLiterals and the prefix set equals
+// prefixPinLiterals (no duplicates in either); no pathspec carries git
+// magic (leading ":"); no prefix is a prefix of another and no exact value
+// falls under a prefix; a prefix arm's pathspec is prefix+"**" and an exact
+// arm's pathspec is its exact value; and includeTests is true for exactly
+// the includeTestsPinPrefixes arms. Empty input fails closed.
+func scopeDataOK(arms []armValues) bool {
+	if len(arms) == 0 {
+		return false
+	}
+	var pathspecs, prefixes, testPrefixes, exacts []string
+	seenPathspec, seenPrefix := make(map[string]bool), make(map[string]bool)
+	for _, a := range arms {
+		if seenPathspec[a.pathspec] || strings.HasPrefix(a.pathspec, ":") {
+			return false
+		}
+		seenPathspec[a.pathspec] = true
+		pathspecs = append(pathspecs, a.pathspec)
+		if a.prefix == "" {
+			if a.pathspec != a.exact || a.includeTests {
+				return false
+			}
+			exacts = append(exacts, a.exact)
+			continue
+		}
+		if seenPrefix[a.prefix] || a.pathspec != a.prefix+"**" {
+			return false
+		}
+		seenPrefix[a.prefix] = true
+		prefixes = append(prefixes, a.prefix)
+		if a.includeTests {
+			testPrefixes = append(testPrefixes, a.prefix)
+		}
+	}
+	for i, p := range prefixes {
+		for j, q := range prefixes {
+			if i != j && strings.HasPrefix(q, p) {
+				return false
+			}
+		}
+		for _, e := range exacts {
+			if strings.HasPrefix(e, p) {
+				return false
+			}
+		}
+	}
+	return containsAll(pathspecs, pathspecPinLiterals) && containsAll(pathspecPinLiterals, pathspecs) &&
+		containsAll(prefixes, prefixPinLiterals) && containsAll(prefixPinLiterals, prefixes) &&
+		containsAll(testPrefixes, includeTestsPinPrefixes) && containsAll(includeTestsPinPrefixes, testPrefixes)
 }
 
 // sharedRulesOK indexes file's top-level declarations by name (the import
@@ -351,31 +482,6 @@ func declTokens(fset *token.FileSet, src []byte, decl ast.Node) ([]declTok, bool
 	return out, scanErrs == 0
 }
 
-// findScanScopeDecl is findFuncBody's sibling for the package-level
-// scanScope declaration: it returns the top-level var *ast.ValueSpec that
-// declares the name scanScope (only that spec, never sibling specs of a
-// grouped var block), or nil if there is none.
-func findScanScopeDecl(file *ast.File) *ast.ValueSpec {
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.VAR {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			vs, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			for _, name := range vs.Names {
-				if name.Name == "scanScope" {
-					return vs
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // findFuncBody locates the *ast.FuncDecl named name at package scope (not
 // a method) and returns its body, or nil if not found.
 func findFuncBody(file *ast.File, name string) *ast.BlockStmt {
@@ -387,26 +493,6 @@ func findFuncBody(file *ast.File, name string) *ast.BlockStmt {
 		return fn.Body
 	}
 	return nil
-}
-
-// collectStringLits walks node and returns the unquoted string value of
-// every *ast.BasicLit of kind token.STRING found anywhere inside it
-// (nested expressions, calls, composite literals, any field -- anywhere),
-// skipping any literal that fails to strconv.Unquote (never treated as a
-// match).
-func collectStringLits(node ast.Node) []string {
-	var out []string
-	ast.Inspect(node, func(n ast.Node) bool {
-		lit, ok := n.(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return true
-		}
-		if v, err := strconv.Unquote(lit.Value); err == nil {
-			out = append(out, v)
-		}
-		return true
-	})
-	return out
 }
 
 // containsAll reports whether every entry of wanted is present in haystack.

@@ -297,11 +297,96 @@ func TestCheckPathspecPin_FrozenDecls_PositiveControls(t *testing.T) {
 		{"live_tree", func(t *testing.T) PathspecPin {
 			return SelectionPathspecPin(repoRoot(t))
 		}},
+		{"should_scan_repo_path_reformatted", func(t *testing.T) PathspecPin {
+			return checkPathspecPin(writeMutatedCopy(t,
+				"\t\tif strings.HasPrefix(path, a.prefix) {\n",
+				"\t\t// A-T3c: comments and spacing inside shouldScanRepoPath only.\n\t\tif strings.HasPrefix( path, a.prefix ) { /* still the prefix arm */\n"))
+		}},
 	}
 	for _, r := range rows {
 		t.Run(r.name, func(t *testing.T) {
 			if pin := r.pin(t); !pin.OK() {
 				t.Fatalf("must be ACCEPTED, got %+v", pin)
+			}
+		})
+	}
+}
+
+// TestCheckPathspecPin_PrefixFrozen_RejectTable is the AC-A3c.1 reject
+// table (one scenario: a single token-equality predicate over data rows).
+// Every row changes only shouldScanRepoPath, so the A-T3b pin (presence
+// for the prefix half) accepts it (red-phase rule). Each row asserts
+// GuardFound==true AND PrefixOK==false, so a parse error cannot satisfy it.
+func TestCheckPathspecPin_PrefixFrozen_RejectTable(t *testing.T) {
+	const head = "func shouldScanRepoPath(path string) bool {\n"
+	const prefixIf = "\t\tif strings.HasPrefix(path, a.prefix) {\n"
+	rows := []struct{ name, old, new string }{
+		{"early_return_before_loop", head, head + "\tif len(path) > 0 {\n\t\treturn false\n\t}\n"},
+		{"goto", head, head + "\tgoto scan\nscan:\n"},
+		{"second_loop", head, head + "\tfor range scanScope {\n\t}\n"},
+		{"defer", head, head + "\tdefer func() {}()\n"},
+		{"and_false_operand", "\t\t\treturn strings.HasSuffix(path, \".go\")\n", "\t\t\treturn strings.HasSuffix(path, \".go\") && false\n"},
+		{"if_returns_false_for_cmd", prefixIf, "\t\tif strings.HasPrefix(path, \"cmd/\") {\n\t\t\treturn false\n\t\t}\n" + prefixIf},
+		{"negated_has_prefix", prefixIf, "\t\tif !strings.HasPrefix(path, a.prefix) {\n"},
+		{"swapped_has_prefix_args", prefixIf, "\t\tif strings.HasPrefix(a.prefix, path) {\n"},
+		{"continue_keyed_on_cmd_prefix", prefixIf, "\t\tif a.prefix == \"cmd/\" {\n\t\t\tcontinue\n\t\t}\n" + prefixIf},
+		{"path_reassigned", head, head + "\tpath = strings.ToUpper(path)\n"},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			pin := checkPathspecPin(writeMutatedCopy(t, r.old, r.new))
+			if !pin.GuardFound || pin.PrefixOK {
+				t.Fatalf("want GuardFound=true and PrefixOK=false, got %+v", pin)
+			}
+		})
+	}
+}
+
+// TestScopeDataOK_Table is AC-A3c.2 (one scenario; compile-red until
+// scopeDataOK existed, declared): scopeDataOK is called directly on
+// []armValues. Every mutated set is rejected; the §A-CANON values pass.
+func TestScopeDataOK_Table(t *testing.T) {
+	canon := func() []armValues {
+		return []armValues{
+			{pathspec: "config.toml.example", exact: "config.toml.example"},
+			{pathspec: "cmd/**", prefix: "cmd/", includeTests: true},
+			{pathspec: "internal/**", prefix: "internal/"},
+		}
+	}
+	with := func(extra armValues) []armValues { return append(canon(), extra) }
+	edit := func(i int, f func(*armValues)) []armValues {
+		arms := canon()
+		f(&arms[i])
+		return arms
+	}
+	rows := []struct {
+		name string
+		arms []armValues
+		want bool
+	}{
+		{"canonical", canon(), true},
+		{"exclude_magic", with(armValues{pathspec: ":(exclude)cmd/**", exact: ":(exclude)cmd/**"}), false},
+		{"bang_magic", with(armValues{pathspec: ":!cmd/**", exact: ":!cmd/**"}), false},
+		{"caret_magic", with(armValues{pathspec: ":^cmd/**", exact: ":^cmd/**"}), false},
+		{"duplicate_pathspec", with(armValues{pathspec: "internal/**", prefix: "internal/"}), false},
+		{"duplicate_prefix", with(armValues{pathspec: "cmd/x/**", prefix: "cmd/", includeTests: true}), false},
+		{"overlapping_prefix", with(armValues{pathspec: "c**", prefix: "c"}), false},
+		{"exact_under_prefix", with(armValues{pathspec: "cmd/x.go", exact: "cmd/x.go"}), false},
+		{"pathspec_not_prefix_glob", func() []armValues {
+			arms := canon()
+			arms[1].pathspec, arms[2].pathspec = arms[2].pathspec, arms[1].pathspec
+			return arms
+		}(), false},
+		{"missing_expected_pathspec", canon()[1:], false},
+		{"extra_pathspec", with(armValues{pathspec: "README.md", exact: "README.md"}), false},
+		{"cmd_include_tests_false", edit(1, func(a *armValues) { a.includeTests = false }), false},
+		{"internal_include_tests_true", edit(2, func(a *armValues) { a.includeTests = true }), false},
+		{"empty", nil, false},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			if got := scopeDataOK(r.arms); got != r.want {
+				t.Fatalf("scopeDataOK(%+v) = %v, want %v", r.arms, got, r.want)
 			}
 		})
 	}
