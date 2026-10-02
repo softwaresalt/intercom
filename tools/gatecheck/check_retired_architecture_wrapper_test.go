@@ -12,26 +12,25 @@ import (
 )
 
 // TestCheckRetiredArchitectureWrapper_RejectsUnknownFirstArgument covers the
-// PR #83 (round-4/round-5) Copilot findings: gatecheck_invoke appends the
-// trusted "--root <ROOT>" ahead of any args
-// scripts/check-retired-architecture.sh forwards, but main.go's parseRoot
-// scans the WHOLE arg list for "--root"/"--root=" and the LAST occurrence
-// wins — so blindly forwarding "$@" let a caller-supplied --root silently
-// override the trusted engine-location anchor (breaking the C-3
-// root-anchoring contract).
+// PR #83 (round-4/round-5) Copilot findings: gatecheck_invoke prepends the
+// trusted "--root <ROOT>" ahead of the mode argument
+// scripts/check-retired-architecture.sh forwards, and main.go's parseRoot
+// now treats that first "--root"/"--root=" option as authoritative and
+// rejects any later root option. The trusted root is therefore
+// authoritative; this wrapper's first-argument allowlist is retained as
+// defense-in-depth.
 //
-// Round 4 closed that gap by rejecting any invocation with more than one
-// argument, but round 5 correctly flagged that as an unrelated CLI-contract
-// change: the pre-M2-T11 wrapper's own `case "${1:-}"` dispatch inspected
-// only the first argument and silently ignored $2 onward rather than
-// rejecting it. The final fix captures only the first argument (still
-// validated against the same three-way allowlist, still exit 2 on an
-// unrecognized value) and forwards ONLY that single validated value — never
-// "$@" — to gatecheck_invoke, so any later argument (a duplicate --root
-// included) is inert exactly as it was pre-M2-T11.
+// Round 4 rejected any invocation with more than one argument, but round 5
+// flagged that as an unrelated CLI-contract change: the pre-M2-T11
+// wrapper's `case "${1:-}"` dispatch inspected only the first argument and
+// silently ignored $2 onward. The final wrapper preserves that behavior:
+// it validates and forwards only the first mode argument, never "$@".
+// Independently, parseRoot rejects later root options after the trusted
+// root; the wrapper allowlist remains defense-in-depth.
 //
-// This test covers the unresolved case: an invalid FIRST argument is still
-// rejected with exit 2 before gatecheck_build/gatecheck_invoke ever run. It
+// This test covers the invalid-first-argument case: an invalid FIRST
+// argument is still rejected with exit 2 before gatecheck_build or
+// gatecheck_invoke ever run. It
 // never needs a working Go toolchain shim and is unaffected by the
 // unrelated Windows short-path issue that TestGatecheckBuild_* et al. hit
 // when they actually build.

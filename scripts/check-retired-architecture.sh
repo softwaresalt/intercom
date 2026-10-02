@@ -205,29 +205,25 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # Caller-argument allowlist (post-review remediation, PR #83 Copilot
-# round 4/5 findings): gatecheck_invoke appends the trusted "--root
-# ${ROOT}" ahead of any args this wrapper forwards, but main.go's
-# parseRoot scans the WHOLE arg list for "--root"/"--root=" and the LAST
-# occurrence wins. The pre-M2-T11 wrapper never had this exposure because
-# its own `case "${1:-}"` dispatch inspected ONLY the first argument and
-# silently ignored $2 onward -- it never forwarded them anywhere, so a
-# stray --root past the first argument was inert. Round 4 closed the
-# security gap but overshot the CLI-surface-preservation promise (the PR
-# summary explicitly commits to "no CLI surface changes beyond swapping
-# the interpreter") by rejecting >1 argument outright instead of matching
-# that same silent-ignore behavior.
+# round 4/5 findings), retained as defense-in-depth: gatecheck_invoke
+# prepends the trusted "--root ${ROOT}", and main.go's parseRoot now treats
+# that first root option as authoritative and rejects any later
+# "--root"/"--root=" option. The trusted root therefore cannot be
+# overridden. The pre-M2-T11 wrapper's `case "${1:-}"` dispatch inspected
+# only the first argument and silently ignored $2 onward; round 4 instead
+# rejected multiple arguments, contrary to the CLI-surface-preservation
+# promise ("no CLI surface changes beyond swapping the interpreter").
 #
-# This restores BOTH properties at once: MODE captures only the first
-# argument (validated against the same three-way allowlist the old
-# wrapper used, still rejecting an unrecognized first argument with exit
-# 2, unchanged from round 4), and only that single validated value -- not
-# "$@" -- is ever forwarded to gatecheck_invoke below. Any second or later
-# argument (a duplicate --root included) is therefore never seen by
-# parseRoot at all, exactly reproducing the old wrapper's "$2 onward is
-# ignored" contract while still closing the root-override gap. This does
-# not touch the shared --root contract in main.go, which is used by every
-# gate engine (write-path, unignore, merge-strategy-evaluate) outside
-# this shipment's scope.
+# MODE captures only the first argument, validated against the same
+# three-way allowlist the old wrapper used (an unrecognized first argument
+# still exits 2), and only that single validated mode argument -- not
+# "$@" -- is forwarded to gatecheck_invoke below. Later wrapper arguments
+# remain ignored as before. Independently, parseRoot makes the prepended
+# trusted root authoritative by rejecting any later "--root"/"--root="
+# option; this wrapper's first-argument allowlist remains defense-in-depth.
+# This does not change the shared --root contract used by every gate engine
+# (write-path, unignore, merge-strategy-evaluate) outside this shipment's
+# scope.
 mode="${1:-}"
 case "${mode}" in
 "" | --self-test | --self-test-integrity) ;;
