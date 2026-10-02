@@ -14,9 +14,10 @@ feature: 035-F
 pr: 93
 merge_commit_sha: 532cf525e0b5bd99a6b1ec4ea8335c7d4d911775
 compaction_status: done
-closure_status: READY
+closure_status: READY_WITH_CONDITIONS
 releasability: READY
-conditions: []
+conditions:
+  - "Lock-protocol deviation dispositioned (see Lock disposition): later shipment closures invoke the file-lock skill script at .github/skills/file-lock/scripts/acquire_lock.ps1, not a hand-rolled lock; the contract conflict stays tracked by stash 9F824B64."
 ---
 
 # Post-merge closure: 032-S / 035-F — Repair unignore-regression checker ref resolution
@@ -154,10 +155,42 @@ Cascade Close Sub-Procedure. It returned `CLOSED`:
 **Post-mode.** Post-mode returned `PROCEED`. All archive files were present, and the
 P-007 check found no archive deletions.
 
-**Lock.** As in 037-S and 038-S, the repository has no `scripts/acquire_lock.ps1`. Ship
-used the degraded manual substitute: an atomic create-new
-`.backlogit/queue/.032-S.md.lock`, released after post-mode. Existing stash `9F824B64`
-tracks this gap.
+**Lock disposition (procedural deviation, explicitly dispositioned).**
+
+**What the protocol requires.** `shipment-reconcile` requires the `file-lock` skill to
+hold `.backlogit/queue/032-S.md` from pre-mode through post-mode.
+
+**What happened.** The skill ships its scripts at `.github/skills/file-lock/scripts/`.
+Ship followed the agent template's root path, `scripts/acquire_lock.ps1`, which does
+not exist, and so did not invoke the skill script. Instead it took the lock by hand
+with an atomic create-new `.backlogit/queue/.032-S.md.lock`, held from pre-mode
+through post-mode and then released.
+
+**Correction to earlier records.** The 037-S and 038-S closures recorded that "no
+file-lock scripts exist in the repo". That is wrong: only the root-level path is
+missing.
+
+**Why this is procedural, not substantive.**
+* The lock file path is the same one the skill's `acquire_lock.ps1` derives,
+  `.{filename}.lock` in the target's directory.
+* The creation primitive is the same: `FileMode.CreateNew` with `FileShare.None`,
+  which fails if the file already exists.
+* The single-writer exclusion was in force for the whole pre → safe-close → post
+  window.
+* The session was single-agent, there was no contention, and every integrity check
+  (two-set gate, P-007, post-mode) passed.
+* The operator's session directive, and `concurrency.instructions.md`, both state
+  that single-agent mode needs no per-file lock.
+
+**Why the gate was not re-run.** Re-running pre-mode with the skill is not
+meaningful now: the manifest is archived, so it cannot reproduce the original
+window.
+
+**Tracking and status.** The contract conflict (template path versus skill-bundled
+scripts versus the concurrency instructions) is already tracked by Stage-owned
+`9F824B64`, so no duplicate entry was created. A new fact for Stage: the
+skill-bundled scripts do exist. Closure status is `READY_WITH_CONDITIONS` until
+later closures use the skill script.
 
 **Reports.**
 * `.backlogit/reconcile/032-S-pre-2026-10-02T17-06-13Z.md` (intake)
@@ -211,7 +244,10 @@ runs on `main`.
   provenance.
 * **Merge:** the normal merge-commit path under the scoped P-017 authorization. No
   `--admin` attempt was made.
-* **Locking:** a degraded manual lock-file substitute (`9F824B64`).
+* **Locking:** a hand-rolled lock, equivalent to the `file-lock` skill script, was
+  used instead of invoking the script. This procedural deviation is dispositioned
+  above under "Lock disposition", and the contract conflict is tracked by
+  `9F824B64`.
 
 ## Rollback trigger and procedure
 
@@ -287,7 +323,9 @@ The closure PR is opened from branch
 ## Releasability evidence
 
 **READY.** This is internal CI and developer tooling, with no change to the product
-runtime or deployment surface.
+runtime or deployment surface. The closure process itself is
+`READY_WITH_CONDITIONS` because of the dispositioned lock-protocol deviation above.
+That deviation does not affect the shipped change.
 
 * Exact-HEAD local review was `READY` (P0 = 0, P1 = 0).
 * Copilot review completed and P-018 returned `SATISFIED`.
