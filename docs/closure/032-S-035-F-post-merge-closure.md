@@ -33,8 +33,12 @@ unignore-regression check's baseline helper:
 * **Before:** `rootGitignoreTextAt` treated any `git show <ref>:.gitignore` failure as
   "no `.gitignore`". At the helper level, an unresolvable ref therefore became an
   empty baseline.
-  * This was not a live fail-open at the entry point: `runDifferentialCheck`'s
-    upstream `git diff <base> <head>` already rejects an ordinary invalid ref.
+  * For ordinary invalid refs this was not a live fail-open at the entry point:
+    `runDifferentialCheck`'s upstream `git diff <base> <head>` already rejects them.
+    Option-like refs are the exception. `git diff` may parse them as options
+    rather than reject them, so they could plausibly reach the helper through
+    `--base-ref`. Hardening that upstream path is tracked separately as
+    `B29A565E`.
   * During review, option-like and empty refs (`--format=x`, `""`, `:`) were found
     to reach `git show` and succeed before any validation ran.
 * **After:**
@@ -193,8 +197,9 @@ runs on `main`.
 ### Failure signals
 
 * The unignore unit tests (`TestRootGitignoreTextAt_*`) show `rootGitignoreTextAt`
-  returning `("", nil)` for an unresolvable or option-like ref. The CLI cannot
-  show this on its own while the upstream `git diff` guard rejects invalid refs.
+  returning `("", nil)` for an unresolvable or option-like ref. For ordinary
+  invalid refs, the upstream `git diff` guard usually stops this before it is
+  visible at the CLI.
 * A repository whose baseline legitimately lacks a root `.gitignore` starts
   failing I6.
 

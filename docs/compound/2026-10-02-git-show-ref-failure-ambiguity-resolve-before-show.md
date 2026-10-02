@@ -14,11 +14,13 @@ any failure as "no `.gitignore`" and returned an empty baseline. At the helper
 level, an unresolvable ref therefore silently became an empty baseline, which
 would let the unignore-regression check pass vacuously.
 
-This was a **latent** defence-in-depth defect, not a live fail-open. Today
-`runDifferentialCheck` first runs `git diff <base> <head>`, and that call already
-rejects an ordinary invalid ref. The helper's own contract was still unsafe,
+For ordinary invalid refs this was a **latent** defence-in-depth defect, not a live
+fail-open: today `runDifferentialCheck` first runs `git diff <base> <head>`, and
+that call already rejects them. The helper's own contract was still unsafe,
 though. During review, option-like and empty refs (`--format=x`, `""`, `:`) were
-found to reach `git show` and succeed before any validation ran.
+found to reach `git show` and succeed before any validation ran. Option-like refs
+may also be parsed as options by the upstream `git diff`, so they could plausibly
+reach the helper from the CLI; see stash `B29A565E`.
 
 ## Root cause
 
@@ -51,8 +53,10 @@ found to reach `git show` and succeed before any validation ran.
    `git ls-tree --full-tree -z <treeOID>`. Parse the NUL-terminated records
    exactly. If no entry is named `<path>`, the file is genuinely absent and the
    result is `("", nil)`. Any other outcome is a `::error::` that names the ref.
-   * An entry that is a directory, symlink or submodule is "present but
-     unreadable", which is an error, not "absent".
+   * This classification runs only after `git show` has failed. If the failed path
+     still exists in the listing (for example, as a directory or submodule
+     entry), it is "present but unreadable", which is an error, not "absent". A
+     successful `show` is accepted as-is.
 4. **Test both halves.**
    * A scripted runner should assert the exact git arguments, and should fail on
      any git call it was not given a reply for. That proves rejected refs never
