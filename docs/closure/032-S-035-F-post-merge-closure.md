@@ -17,7 +17,10 @@ compaction_status: done
 closure_status: READY_WITH_CONDITIONS
 releasability: READY
 conditions:
-  - "Lock-protocol deviation dispositioned (see Lock disposition): later shipment closures invoke the file-lock skill script at .github/skills/file-lock/scripts/acquire_lock.ps1, not a hand-rolled lock; the contract conflict stays tracked by stash 9F824B64."
+  - id: "reconcile-lock-procedural-deviation"
+    description: "shipment-reconcile pre-mode took a hand-rolled atomic create-new lock at the skill's lock path instead of invoking the file-lock skill script; single-writer exclusion held for pre -> safe-close -> post. Dispositioned as procedural; does not affect the shipped change. Underlying template-path/contract conflict is Stage-owned under 9F824B64."
+    satisfied: true
+    evidence: "This document, 'Lock disposition'; .backlogit/reconcile/032-S-pre-2026-10-02T17-53-48Z.md lock disposition addendum; stash 9F824B64"
 ---
 
 # Post-merge closure: 032-S / 035-F — Repair unignore-regression checker ref resolution
@@ -166,31 +169,50 @@ not exist, and so did not invoke the skill script. Instead it took the lock by h
 with an atomic create-new `.backlogit/queue/.032-S.md.lock`, held from pre-mode
 through post-mode and then released.
 
-**Correction to earlier records.** The 037-S and 038-S closures recorded that "no
-file-lock scripts exist in the repo". That is wrong: only the root-level path is
-missing.
+**Correction to earlier records.** The 037-S closure recorded that the `file-lock`
+scripts "do not exist in this workspace", and this shipment's original pre-mode
+report repeated that claim ("no file-lock scripts in repo"). Both are wrong. Only
+the agent template's root path is missing, as the 038-S closure correctly stated.
 
 **Why this is procedural, not substantive.**
-* The lock file path is the same one the skill's `acquire_lock.ps1` derives,
+* The lock file path is the same one the skill's `acquire_lock.ps1` derives:
   `.{filename}.lock` in the target's directory.
-* The creation primitive is the same: `FileMode.CreateNew` with `FileShare.None`,
-  which fails if the file already exists.
+* The lock was an atomic create-new, which fails if the file already exists. That
+  is the same exclusion property the script relies on (`FileMode.CreateNew`).
+  This session's records show only "create-new", so no `FileShare` mode is claimed.
+* The lock was not identical to the script's. The script also checks that the
+  target exists and writes agent, timestamp, PID and file metadata into the lock.
+  The hand-rolled lock did neither. Those differences affect stale-lock
+  diagnostics, not exclusion.
 * The single-writer exclusion was in force for the whole pre → safe-close → post
   window.
 * The session was single-agent, there was no contention, and every integrity check
   (two-set gate, P-007, post-mode) passed.
-* The operator's session directive, and `concurrency.instructions.md`, both state
-  that single-agent mode needs no per-file lock.
+
+**Rationale.**
+* The operator's dark-mode session directive for this run stated that single-agent
+  mode needs no file locks, and `concurrency.instructions.md` limits per-file locks
+  to concurrent access.
+* The 037-S pre report instead held that the skill's lock rule takes precedence.
+  A lock was taken anyway, so this closure does not rely on either reading to
+  justify running without exclusion.
 
 **Why the gate was not re-run.** Re-running pre-mode with the skill is not
 meaningful now: the manifest is archived, so it cannot reproduce the original
 window.
 
-**Tracking and status.** The contract conflict (template path versus skill-bundled
-scripts versus the concurrency instructions) is already tracked by Stage-owned
-`9F824B64`, so no duplicate entry was created. A new fact for Stage: the
-skill-bundled scripts do exist. Closure status is `READY_WITH_CONDITIONS` until
-later closures use the skill script.
+**Tracking and status.**
+* The contract conflict is already tracked by Stage-owned `9F824B64`, so no
+  duplicate entry was created. The conflict is between the agent template's root
+  `scripts/acquire_lock.ps1`, the skill-bundled scripts, and
+  `concurrency.instructions.md`.
+* New fact for Stage's triage of `9F824B64`: the skill-bundled scripts exist at
+  `.github/skills/file-lock/scripts/`. Pointing the template at them is therefore a
+  third option alongside "implement" and "rewrite". The choice is Stage's to make.
+* The frontmatter condition `reconcile-lock-procedural-deviation` records this
+  disposition as satisfied, with evidence. `closure_status` is
+  `READY_WITH_CONDITIONS` so the deviation stays visible. `releasability` stays
+  `READY`.
 
 **Reports.**
 * `.backlogit/reconcile/032-S-pre-2026-10-02T17-06-13Z.md` (intake)
@@ -244,9 +266,10 @@ runs on `main`.
   provenance.
 * **Merge:** the normal merge-commit path under the scoped P-017 authorization. No
   `--admin` attempt was made.
-* **Locking:** a hand-rolled lock, equivalent to the `file-lock` skill script, was
-  used instead of invoking the script. This procedural deviation is dispositioned
-  above under "Lock disposition", and the contract conflict is tracked by
+* **Locking:** a hand-rolled atomic create-new lock at the `file-lock` skill's lock
+  path was used instead of invoking the skill script. It was exclusion-equivalent,
+  but without the script's metadata and target check. The procedural deviation is
+  dispositioned above under "Lock disposition", and the conflict is tracked by
   `9F824B64`.
 
 ## Rollback trigger and procedure
