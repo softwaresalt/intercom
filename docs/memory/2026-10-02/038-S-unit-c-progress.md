@@ -59,6 +59,23 @@
   038-S on this feature branch.
 - P-001 check: 048-F is the only active top-level feature; there are no active
   chores. No PR exists yet for this branch.
+- Adversarial review on `06d2807` reported three in-scope P3 items (C-T4
+  rationale-comment wording, C-T2 legitimate-mode harness timeout behavior,
+  and C-T1 duplicate-root test edge coverage) plus one out-of-scope P3
+  suggestion to add a rationale comment to the C-T3 wrapper guard. The
+  out-of-scope item was captured before disposition as stash **D10E82EC**;
+  its source refs are task 048.003-T, feature 048-F, shipment 038-S, PR N/A,
+  and review-thread N/A. The entry includes
+  `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE`: active stash was queryable and no
+  source-ref match was found, but the installed backlogit CLI/index exposes no
+  enumeration of archived stash entries. No thread exists on this pre-PR
+  threadless path. Stage owns later triage.
+- Remediated all three C1 in-scope findings in commit
+  `6a6eb9d8289650e28e40b9e6efc6cb9bd698be31`: corrected the stale shared-root
+  comment, bounded the legitimate-mode wrapper harness with a temporary Go
+  shim (without spawning a real build), and added both repeated-root ordering
+  cases. Focused tests and the full Go quality gates passed. The C3 deferred
+  comment was not added to code.
 - The Windows shell-test environment needs
   `C:\Program Files\Git\bin` at the front of `PATH`; the WSL launcher named
   `bash.exe` otherwise translates paths incorrectly. A transient
@@ -79,8 +96,11 @@
   worktree across the feature-branch merge and closure-branch creation. No PR
   is open. C-T5 and C-T6 source locks were released after their respective
   task verification.
-- Next: complete report-only local review and adversarial review over the
-  full shipment diff. Then commit this memory checkpoint, prepare current-HEAD
+- Next: run report-only local review and post-remediation adversarial review on
+  the final current HEAD. The first adversarial report noted that exact model
+  identities were unavailable; the committed diff was independently verified
+  locally, but cross-model diversity remains unverified unless the rerun
+  confirms it. Then commit this memory checkpoint, prepare current-HEAD
   readiness evidence, push/create the feature PR, and follow the required
   Copilot-review / CI / merge gates. Do not use admin fallback.
 - **Stop condition:** if an authorized change makes any existing engine
