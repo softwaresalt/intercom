@@ -1,12 +1,12 @@
 // This file (select.go) ports should_scan_repo_path, engine_for_path,
 // scan_path and select_repo_paths from the M4-deleted retired_arch module.
 //
-// The pathspec/prefix literals inside shouldScanRepoPath and
-// selectRepoPaths are pinned by pin.go (M2-T8), which parses THIS file's
-// own source with go/parser and requires each literal to appear as a
-// *ast.BasicLit inside the correct function body. Do not refactor these
-// literals into shared constants, helper variables, or another file --
-// doing so would make the pin fail closed (by design; see pin.go).
+// The scan-scope surface of this file (the imports, GitRunner,
+// DefaultGitRunner, scanArm, scanScope, shouldScanRepoPath and
+// selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
+// these declarations as frozen. Edit them only together with pin.go's
+// independent expectation, in the same commit; otherwise the pin fails
+// closed. scanScope is the single permitted home for the scope literals.
 package retiredarch
 
 import (
@@ -45,22 +45,50 @@ func DefaultGitRunner(root string, pathspecs ...string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// shouldScanRepoPath ports should_scan_repo_path verbatim. path is a
-// repo-relative, forward-slashed path exactly as `git ls-files` prints it.
+// scanArm is one arm of the retired-architecture scan scope. pathspec is
+// the `git ls-files` pathspec form of the arm. An exact arm (prefix == "")
+// matches only the path equal to exact. A prefix arm matches every .go path
+// under prefix; includeTests says whether that arm also keeps _test.go files
+// and testdata/ paths.
+type scanArm struct {
+	pathspec     string
+	prefix       string
+	exact        string
+	includeTests bool
+}
+
+// scanScope is the single declaration of the retired-architecture scan
+// scope (D6/D6c, as broadened by 012-S): config.toml.example, every Go file
+// under cmd/ INCLUDING tests and testdata (the guarded D4/AG-5 asymmetry,
+// 015.011-T), and every non-test Go file under internal/. Both
+// selectRepoPaths (the pathspec vector) and shouldScanRepoPath (the path
+// predicate) derive from it, so a scope change is one edit here, made in the
+// same commit as pin.go's independent expectation (§A-CANON).
+var scanScope = []scanArm{
+	{pathspec: "config.toml.example", exact: "config.toml.example"},
+	{pathspec: "cmd/**", prefix: "cmd/", includeTests: true},
+	{pathspec: "internal/**", prefix: "internal/", includeTests: false},
+}
+
+// shouldScanRepoPath ports should_scan_repo_path, evaluated from scanScope.
+// path is a repo-relative, forward-slashed path exactly as `git ls-files`
+// prints it.
 func shouldScanRepoPath(path string) bool {
-	if path == "config.toml.example" {
-		return true
+	for _, a := range scanScope {
+		if a.prefix == "" {
+			if path == a.exact {
+				return true
+			}
+			continue
+		}
+		if strings.HasPrefix(path, a.prefix) {
+			if !a.includeTests && (strings.Contains(path, "/testdata/") || strings.HasSuffix(path, "_test.go")) {
+				return false
+			}
+			return strings.HasSuffix(path, ".go")
+		}
 	}
-	if strings.HasPrefix(path, "cmd/") {
-		return strings.HasSuffix(path, ".go")
-	}
-	if !strings.HasPrefix(path, "internal/") {
-		return false
-	}
-	if strings.Contains(path, "/testdata/") || strings.HasSuffix(path, "_test.go") {
-		return false
-	}
-	return strings.HasSuffix(path, ".go")
+	return false
 }
 
 // engineForPath ports engine_for_path. path is an OS-native (possibly
@@ -118,12 +146,21 @@ func scanPath(path string) []string {
 	}
 }
 
-// selectRepoPaths ports select_repo_paths. The pathspec arguments
-// (config.toml.example, cmd/**, internal/**) are literal string
-// arguments in THIS call, exactly as pin.go requires -- never a
-// variable, slice literal defined elsewhere, or constant reference.
+// selectRepoPaths ports select_repo_paths. The pathspec vector is built
+// from scanScope, in declaration order; it restates no scope literal.
+//
+// The scan-scope surface of this file (the imports, GitRunner,
+// DefaultGitRunner, scanArm, scanScope, shouldScanRepoPath and
+// selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
+// these declarations as frozen. Edit them only together with pin.go's
+// independent expectation, in the same commit; otherwise the pin fails
+// closed. scanScope is the single permitted home for the scope literals.
 func selectRepoPaths(root string, git GitRunner) ([]string, error) {
-	out, err := git(root, "config.toml.example", "cmd/**", "internal/**")
+	pathspecs := make([]string, 0, len(scanScope))
+	for _, a := range scanScope {
+		pathspecs = append(pathspecs, a.pathspec)
+	}
+	out, err := git(root, pathspecs...)
 	if err != nil {
 		return nil, err
 	}

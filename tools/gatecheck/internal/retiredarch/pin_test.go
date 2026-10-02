@@ -68,8 +68,8 @@ func writeMutatedCopy(t *testing.T, old, new string) string {
 func TestCheckPathspecPin_Mutations_AllRejected(t *testing.T) {
 	t.Run("cmd_glob_removed", func(t *testing.T) {
 		path := writeMutatedCopy(t,
-			`git(root, "config.toml.example", "cmd/**", "internal/**")`,
-			`git(root, "config.toml.example", "internal/**")`,
+			`{pathspec: "cmd/**", prefix: "cmd/", includeTests: true},`,
+			`{prefix: "cmd/", includeTests: true},`,
 		)
 		if pin := checkPathspecPin(path); pin.OK() {
 			t.Fatalf("removing the cmd/** literal must be REJECTED, got %+v", pin)
@@ -78,12 +78,12 @@ func TestCheckPathspecPin_Mutations_AllRejected(t *testing.T) {
 
 	t.Run("cmd_glob_moved_to_package_const", func(t *testing.T) {
 		path := writeMutatedCopy(t,
-			`git(root, "config.toml.example", "cmd/**", "internal/**")`,
-			`git(root, "config.toml.example", cmdGlobPin, "internal/**")`,
+			`{pathspec: "cmd/**", prefix: "cmd/", includeTests: true},`,
+			`{pathspec: cmdGlobPin, prefix: "cmd/", includeTests: true},`,
 		)
 		// Insert the constant declaration at package scope so the file
-		// still parses; the literal is no longer INSIDE selectRepoPaths'
-		// body, which is exactly what the pin must reject.
+		// still parses; the literal is no longer INSIDE the scanScope
+		// declaration, which is exactly what the pin must reject.
 		src, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read mutated copy: %v", err)
@@ -99,8 +99,8 @@ func TestCheckPathspecPin_Mutations_AllRejected(t *testing.T) {
 
 	t.Run("cmd_glob_rewritten_as_different_raw_string", func(t *testing.T) {
 		path := writeMutatedCopy(t,
-			`git(root, "config.toml.example", "cmd/**", "internal/**")`,
-			"git(root, \"config.toml.example\", `cmd/*`, \"internal/**\")",
+			`{pathspec: "cmd/**", prefix: "cmd/", includeTests: true},`,
+			"{pathspec: `cmd/*`, prefix: \"cmd/\", includeTests: true},",
 		)
 		if pin := checkPathspecPin(path); pin.OK() {
 			t.Fatalf("rewriting cmd/** as an equivalent-shape but different-value raw string must be REJECTED, got %+v", pin)
@@ -132,11 +132,40 @@ func TestCheckPathspecPin_Mutations_AllRejected(t *testing.T) {
 // be exercised by a red mutation.
 func TestCheckPathspecPin_PrefixMutation_Rejected(t *testing.T) {
 	path := writeMutatedCopy(t,
-		`strings.HasPrefix(path, "internal/")`,
-		`strings.HasPrefix(path, "internal_moved/")`,
+		`{pathspec: "internal/**", prefix: "internal/", includeTests: false},`,
+		`{pathspec: "internal/**", prefix: "internal_moved/", includeTests: false},`,
 	)
 	if pin := checkPathspecPin(path); pin.OK() {
 		t.Fatalf("mutating the internal/ prefix literal must be REJECTED, got %+v", pin)
+	}
+}
+
+// TestPinLiterals_NonEmpty is the AC-A2.2 non-vacuity guard: containsAll
+// is vacuously true for an empty wanted list, so emptying either pin list
+// would turn the pin into one that asserts nothing.
+func TestPinLiterals_NonEmpty(t *testing.T) {
+	if len(pathspecPinLiterals) == 0 {
+		t.Fatalf("pathspecPinLiterals must be non-empty")
+	}
+	if len(prefixPinLiterals) == 0 {
+		t.Fatalf("prefixPinLiterals must be non-empty")
+	}
+}
+
+// TestCheckPathspecPin_NarrowedScope_Rejected is the AC-A2.3 negative
+// control: a select.go whose scanScope omits the cmd/** arm (a narrowed
+// scan scope) must make the pin FAIL.
+func TestCheckPathspecPin_NarrowedScope_Rejected(t *testing.T) {
+	path := writeMutatedCopy(t,
+		"\t{pathspec: \"cmd/**\", prefix: \"cmd/\", includeTests: true},\n",
+		"",
+	)
+	pin := checkPathspecPin(path)
+	if pin.OK() {
+		t.Fatalf("a scanScope without the cmd/** arm must be REJECTED, got %+v", pin)
+	}
+	if pin.PathspecOK || pin.PrefixOK {
+		t.Fatalf("a scanScope without the cmd/** arm must fail both pin halves, got %+v", pin)
 	}
 }
 

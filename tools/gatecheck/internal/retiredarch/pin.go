@@ -1,10 +1,11 @@
 // This file (pin.go) ports selection_pathspec_pin (015.011-T AC-6/AG-1,
 // re-derived by 032.004-T) as a SOURCE-TEXT-ANCHORED pin: rather than
-// Python's inspect.getsource(), which retrieves a running function's own
-// source text from its module file, this port re-parses
+// Python's inspect.getsource(), this port re-parses
 // tools/gatecheck/internal/retiredarch/select.go from disk with go/parser
 // and requires the pathspec/prefix literals to appear as *ast.BasicLit
-// strings INSIDE the selectRepoPaths/shouldScanRepoPath function bodies.
+// strings INSIDE the package-level scanScope declaration (033.002-T), the
+// single home of the scan-scope literals that selectRepoPaths and
+// shouldScanRepoPath both derive from; both functions must still exist.
 //
 // H-11 (self-comparison caveat, gate-reliability plan §8): the expected
 // literal lists below (pathspecPinLiterals, prefixPinLiterals) are this
@@ -51,8 +52,11 @@ func (p PathspecPin) OK() bool {
 
 // checkPathspecPin parses selectGoPath (a filesystem path to a Go source
 // file shaped like select.go) and evaluates the pin against its
-// selectRepoPaths and shouldScanRepoPath function bodies. A read or parse
-// error, or a missing function, fails closed (every field false).
+// scanScope declaration. PathspecOK requires selectRepoPaths to exist and
+// scanScope to hold every pathspecPinLiterals entry; PrefixOK requires
+// shouldScanRepoPath to exist and scanScope to hold every prefixPinLiterals
+// entry. A read or parse error fails closed (every field false); a missing
+// function or a missing scanScope fails its half closed.
 func checkPathspecPin(selectGoPath string) PathspecPin {
 	src, err := os.ReadFile(selectGoPath)
 	if err != nil {
@@ -67,19 +71,47 @@ func checkPathspecPin(selectGoPath string) PathspecPin {
 	selectBody := findFuncBody(file, "selectRepoPaths")
 	guardBody := findFuncBody(file, "shouldScanRepoPath")
 
+	var scopeLits []string
+	if scope := findScanScopeDecl(file); scope != nil {
+		scopeLits = collectStringLits(scope)
+	}
+
 	result := PathspecPin{
 		SelectFound: selectBody != nil,
 		GuardFound:  guardBody != nil,
 	}
 	if selectBody != nil {
-		lits := collectStringLits(selectBody)
-		result.PathspecOK = containsAll(lits, pathspecPinLiterals)
+		result.PathspecOK = containsAll(scopeLits, pathspecPinLiterals)
 	}
 	if guardBody != nil {
-		lits := collectStringLits(guardBody)
-		result.PrefixOK = containsAll(lits, prefixPinLiterals)
+		result.PrefixOK = containsAll(scopeLits, prefixPinLiterals)
 	}
 	return result
+}
+
+// findScanScopeDecl is findFuncBody's sibling for the package-level
+// scanScope declaration: it returns the top-level var *ast.ValueSpec that
+// declares the name scanScope (only that spec, never sibling specs of a
+// grouped var block), or nil if there is none.
+func findScanScopeDecl(file *ast.File) *ast.ValueSpec {
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for _, name := range vs.Names {
+				if name.Name == "scanScope" {
+					return vs
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // findFuncBody locates the *ast.FuncDecl named name at package scope (not
@@ -95,13 +127,14 @@ func findFuncBody(file *ast.File, name string) *ast.BlockStmt {
 	return nil
 }
 
-// collectStringLits walks body and returns the unquoted string value of
+// collectStringLits walks node and returns the unquoted string value of
 // every *ast.BasicLit of kind token.STRING found anywhere inside it
-// (nested expressions, calls, composite literals -- anywhere), skipping
-// any literal that fails to strconv.Unquote (never treated as a match).
-func collectStringLits(body *ast.BlockStmt) []string {
+// (nested expressions, calls, composite literals, any field -- anywhere),
+// skipping any literal that fails to strconv.Unquote (never treated as a
+// match).
+func collectStringLits(node ast.Node) []string {
 	var out []string
-	ast.Inspect(body, func(n ast.Node) bool {
+	ast.Inspect(node, func(n ast.Node) bool {
 		lit, ok := n.(*ast.BasicLit)
 		if !ok || lit.Kind != token.STRING {
 			return true
