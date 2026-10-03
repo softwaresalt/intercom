@@ -2330,11 +2330,20 @@ boundary. The masked-text extractor and predicate stay in place for
   **rune** count, not the byte count. The interim `extractExtent(masked,
   offset)` call therefore cannot take a `go/token` source byte offset
   directly.
-  * `offset` is the selector's end position (`SelectorExpr.End()`). It is
-    mapped from a source byte offset to a rune index, and from that rune
-    index to the masked text's byte offset, through the same rune-index map
-    that the line table uses.
-  * A source byte offset must never be used to index the masked text.
+  * `offset` is derived from the selector's end position in three explicit
+    steps:
+    1. `SelectorExpr.End()` is a `token.Pos`, not a byte offset. Convert it
+       first to a source byte offset with the owning file's
+       `token.File.Offset`: `tf := fset.File(sel.Pos())`, then
+       `tf.Offset(sel.End())`. This follows the `retiredarch/pin.go:643-648`
+       pattern, including its fail-closed handling of a nil file or an
+       invalid position.
+    2. Map that source byte offset to a rune index.
+    3. Map the rune index to the masked text's byte offset, through the same
+       rune-index map that the line table uses.
+  * Neither a raw `token.Pos` nor a source byte offset may be used to index
+    the masked text. A raw `token.Pos` still includes the file base, so it
+    would shift the extent and could flip the `syscall.CreateFile` allowance.
 
 E-T2 owns the G-1 re-anchoring of
 `retiredarch`'s writepath scan-loop pin: the `writePathMaskFlow` pin at
@@ -4020,7 +4029,7 @@ no stash capture was needed).
 |---|---|
 | GPT4-2 (P2) — the single-name `:=`/`=` `NewRoot` forms do not type-check, and the AC-E5.1 `err` is undeclared | **R4-8** applied to E-T5, AC-E5.1, the spike's G-6 note, and 049.005-T. |
 | GPT4-3 (P2) — 049-F's description still says the `Resolve` residual is closed | Applied: 049-F gains a `rev7-scope` section saying item 2 is **narrowed**, not closed. |
-| OP4-5 (P2) — the interim E-T2 offset is not mapped from a source byte offset to a masked byte offset | **R4-5** applied to E-T2 and 049.002-T. |
+| OP4-5 (P2) — the interim E-T2 offset is not mapped from a source byte offset to a masked byte offset | **R4-5** applied to E-T2 and 049.002-T. The PR #101 Copilot review then added the explicit conversion `token.Pos` → `token.File.Offset` → rune index → masked byte offset. |
 | OP4-6 (P2) — the wrapper scaffolding is unspecified, and the `"syscall"` import is needed for the allowance | **R4-6** applied to E-T3 and 049.003-T. |
 | OP4-7 (P3) — the argument count and the segment count differ | **R4-7** applied to the E-T3 port table. |
 | GM4-1 (P3) — the 039-S manifest lists 049.006-T before 049.007-T | **Recorded, not applied.** `backlogit shipment add` only appends, and execution order is governed by the `049.006-T → 049.007-T` `blocks` edge (D-049-4), not by manifest position. |
