@@ -1,0 +1,70 @@
+=== RUN   TestSpikeParity_FixtureCorpus
+    zz_spike_test.go:246: FIXTURES files=19 equal=19 diff=0 parseErr=0
+    zz_spike_test.go:255: GOLDEN fixture_findings rows=19
+--- PASS: TestSpikeParity_FixtureCorpus (0.01s)
+=== RUN   TestSpikeParity_Filebased
+    zz_spike_test.go:274: FILEBASED crlf.go golden-equal=true
+    zz_spike_test.go:274: FILEBASED lone-cr.go golden-equal=true
+    zz_spike_test.go:274: FILEBASED bom.go golden-equal=true
+    zz_spike_test.go:269: FILEBASED invalid-utf8.go decode error before engine: true
+    zz_spike_test.go:276: FILEBASED files=3 equal=3 diff=0 parseErr=0
+--- PASS: TestSpikeParity_Filebased (0.01s)
+=== RUN   TestSpikeParity_TrackedTree
+    zz_spike_test.go:305: TRACKED files=17 equal=17 diff=0 parseErr=0
+--- PASS: TestSpikeParity_TrackedTree (0.09s)
+=== RUN   TestSpikeParity_AllModuleGo
+    zz_spike_test.go:341: ALLGO files=155 equal=155 diff=0 parseErr=0
+--- PASS: TestSpikeParity_AllModuleGo (0.26s)
+=== RUN   TestSpikeHazards
+    zz_spike_test.go:396: HAZARD oracle-code-position-boundaries            AST-FAIL-CLOSED  text=["oracle-code-position-boundaries:5: write primitive 'os.Remove' found" "oracle-code-position-boundaries:6: write primitive 'os.Create' found" "oracle-code-position-boundaries:7: write primitive 'os.Rename' found"] ast=[] err=spike: go/parser error: oracle-code-position-boundaries:4:7: illegal character U+000C (and 3 more errors)
+    zz_spike_test.go:396: HAZARD oracle-comment-and-string-boundaries       EQUAL            text=["oracle-comment-and-string-boundaries:8: write primitive 'os.Remove' found"] ast=["oracle-comment-and-string-boundaries:8: write primitive 'os.Remove' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD line-directive                             EQUAL            text=["line-directive:9: write primitive 'os.Remove' found"] ast=["line-directive:9: write primitive 'os.Remove' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD bom-at-0                                   EQUAL            text=["bom-at-0:8: write primitive 'os.Remove' found"] ast=["bom-at-0:8: write primitive 'os.Remove' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD bom-mid-file-code                          AST-FAIL-CLOSED  text=["bom-mid-file-code:8: write primitive 'os.Remove' found"] ast=[] err=spike: go/parser error: bom-mid-file-code:8:12: illegal byte order mark
+    zz_spike_test.go:396: HAZARD bom-mid-file-comment                       AST-FAIL-CLOSED  text=["bom-mid-file-comment:9: write primitive 'os.Remove' found"] ast=[] err=spike: go/parser error: bom-mid-file-comment:8:4: illegal byte order mark
+    zz_spike_test.go:396: HAZARD ff-in-code                                 AST-FAIL-CLOSED  text=["ff-in-code:9: write primitive 'os.Remove' found"] ast=[] err=spike: go/parser error: ff-in-code:8:11: illegal character U+000C
+    zz_spike_test.go:396: HAZARD nel-in-code                                AST-FAIL-CLOSED  text=["nel-in-code:9: write primitive 'os.Remove' found"] ast=[] err=spike: go/parser error: nel-in-code:8:11: illegal character U+0085
+    zz_spike_test.go:396: HAZARD partial-ast-missing-brace                  AST-FAIL-CLOSED  text=["partial-ast-missing-brace:8: write primitive 'os.Remove' found"] ast=[] err=spike: go/parser error: partial-ast-missing-brace:8:27: expected '}', found 'EOF'
+    zz_spike_test.go:396: HAZARD partial-ast-bad-decl                       AST-FAIL-CLOSED  text=["partial-ast-bad-decl:8: write primitive 'os.Remove' found"] ast=[] err=spike: go/parser error: partial-ast-bad-decl:9:9: expected ')', found '{'
+    zz_spike_test.go:396: HAZARD no-package-clause                          AST-FAIL-CLOSED  text=["no-package-clause:1: write primitive 'os.Remove' found"] ast=[] err=spike: go/parser error: no-package-clause:1:1: expected 'package', found 'func'
+    zz_spike_test.go:396: HAZARD multibyte-before-hit                       EQUAL            text=["multibyte-before-hit:8: write primitive 'os.Remove' found" "multibyte-before-hit:10: write primitive 'os.Create' found"] ast=["multibyte-before-hit:8: write primitive 'os.Remove' found" "multibyte-before-hit:10: write primitive 'os.Create' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD tag-with-boundary-in-value                 EQUAL            text=["tag-with-boundary-in-value:5: write primitive 'os.Remove' found" "tag-with-boundary-in-value:6: write primitive 'os.Create' found"] ast=["tag-with-boundary-in-value:5: write primitive 'os.Remove' found" "tag-with-boundary-in-value:6: write primitive 'os.Create' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD tag-shaped-raw-expr                        EQUAL            text=["tag-shaped-raw-expr:3: write primitive 'os.Remove' found"] ast=["tag-shaped-raw-expr:3: write primitive 'os.Remove' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD non-tag-raw-expr                           EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD split-selector-space                       DIVERGE          text=[] ast=["split-selector-space:8: write primitive 'os.Remove' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD split-selector-newline                     DIVERGE          text=[] ast=["split-selector-newline:8: write primitive 'os.Remove' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD split-selector-comment                     DIVERGE          text=[] ast=["split-selector-comment:8: write primitive 'os.Remove' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD alias-import                               EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD dot-import                                 EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD blank-import                               EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD unimported-os-ident                        EQUAL            text=["unimported-os-ident:3: write primitive 'os.Remove' found"] ast=["unimported-os-ident:3: write primitive 'os.Remove' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD nested-selector                            EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD os-root-type                               EQUAL            text=["os-root-type:8: write primitive 'os.Root' found"] ast=["os-root-type:8: write primitive 'os.Root' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-func-value                      EQUAL            text=["createfile-func-value:8: write primitive 'syscall.CreateFile' found"] ast=["createfile-func-value:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-allowed                         EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-allowed-trailing-comma          EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-comment-in-args                 EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-split-dispo                     EQUAL            text=["createfile-split-dispo:8: write primitive 'syscall.CreateFile' found"] ast=["createfile-split-dispo:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-split-dispo-newline             EQUAL            text=["createfile-split-dispo-newline:8: write primitive 'syscall.CreateFile' found"] ast=["createfile-split-dispo-newline:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-8-args-last-string              DIVERGE          text=[] ast=["createfile-8-args-last-string:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-ellipsis                        DIVERGE          text=[] ast=["createfile-ellipsis:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-paren-flag                      EQUAL            text=["createfile-paren-flag:8: write primitive 'syscall.CreateFile' found"] ast=["createfile-paren-flag:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-binary-flag                     EQUAL            text=["createfile-binary-flag:8: write primitive 'syscall.CreateFile' found"] ast=["createfile-binary-flag:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-binary-other-arg                EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-paren-callee                    EQUAL            text=["createfile-paren-callee:8: write primitive 'syscall.CreateFile' found"] ast=["createfile-paren-callee:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-allowed-plus-write-same-line    EQUAL            text=["createfile-allowed-plus-write-same-line:8: write primitive 'syscall.CreateFile' found"] ast=["createfile-allowed-plus-write-same-line:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-access-hex0                     EQUAL            text=["createfile-access-hex0:8: write primitive 'syscall.CreateFile' found"] ast=["createfile-access-hex0:8: write primitive 'syscall.CreateFile' found"] err=<nil>
+    zz_spike_test.go:396: HAZARD createfile-aliased-syscall-name            EQUAL            text=[] ast=[] err=<nil>
+    zz_spike_test.go:404: LINEDIR adjusted=other.go:900 unadjusted=x.go:9:12
+    zz_spike_test.go:415: TOKENLINE lit="`json:\"a\vb\" x:\"os.Remove\"`" token.Line=4
+    zz_spike_test.go:415: TOKENLINE lit="`y:\"os.Create\"`" token.Line=5
+--- PASS: TestSpikeHazards (0.00s)
+=== RUN   TestSpikeImportsAndRoots
+    zz_spike_test.go:450: ROOTS internal/config/validate.go "NewRoot(" x2
+    zz_spike_test.go:436: IMPORT-NAMED internal/copilotprobe/client.go name=copilot path=github.com/github/copilot-sdk/go writeCapable=false
+    zz_spike_test.go:436: IMPORT-NAMED internal/copilotprobe/fixture.go name=copilot path=github.com/github/copilot-sdk/go writeCapable=false
+    zz_spike_test.go:436: IMPORT-NAMED internal/copilotprobe/permission.go name=copilot path=github.com/github/copilot-sdk/go writeCapable=false
+    zz_spike_test.go:450: ROOTS internal/pathsafe/root.go "NewRoot(" x1
+--- PASS: TestSpikeImportsAndRoots (0.07s)
+PASS
+ok  	github.com/softwaresalt/intercom-go/tools/gatecheck/internal/writepath	2.701s

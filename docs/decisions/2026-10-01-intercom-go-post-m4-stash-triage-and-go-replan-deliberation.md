@@ -21,9 +21,13 @@ source_stash:
   - 8E9F8E55  # D-031-2 fold-in (034.009-T)
   - B72E9715  # D-031-2 fold-in (034.004-T)
   - DD0BB60F  # D-030-4 harvest (033.004-T + 033.005-T + 033.006-T), 2026-10-01 follow-up session
+  - 1EEBECA5  # D-049-2 spike executed (049.001-T Stage half), 2026-10-02
+  - 458F9385  # D-049-3 fold-in (049.007-T, E-T7), 2026-10-02
 captured_stash:
   - 458F9385  # D-S-5 item-6 selector widening (task, low)
   - 1EEBECA5  # D-049-1 spike-schedule trigger (spike, high)
+  - FE2F02FF  # D-049-5 residual item 8, DEFERRED SCOPE EXPANSION (2026-10-02)
+  - C0D28448  # D-049-3 item-6 remainder, DEFERRED SCOPE EXPANSION (2026-10-02)
 related_shipments:
   - 030-S (033-F)
   - 031-S (034-F)
@@ -831,6 +835,152 @@ under P-013.5.
   The result is **no late identifier found**, and the `N/A` stands as a
   truthful record.
 
+### 4.9 Post-spike re-plan of 049-F / 039-S (2026-10-02, Stage, dark factory mode)
+
+**Trigger.** Stash `1EEBECA5` (D-049-1) fired when 031-S / 034-F merged (PR
+#97, closure PR #98, `main` @ `961b652`). That merge put 034.009-T, and with it
+the full Unit D verdict-parity corpus, on `main`.
+
+**Spike.** Stage ran task 049.001-T (plan E-T1) under the P-016 explicit,
+time-boxed spike worktree exception. The worktree was a detached
+`logs/spike-049-wt` at `961b652`, and the spike code was a throwaway
+`zz_spike_test.go`. Stage made no tracked mutation in the worktree and removed
+it afterwards. Findings are in
+`docs/decisions/2026-10-02-intercom-go-writepath-go-ast-spike.md`:
+
+* **G-1** — FEASIBLE: `scanSource(relPath, src)` with
+  `parser.ParseComments|parser.SkipObjectResolution`. `gomask` stays the
+  single masker for the line map.
+* **G-2** — FEASIBLE: any parse error is ED-2 (exit 1), using
+  `PositionFor(pos, false)`.
+* **G-3** — **exact verdict parity**, with 0 divergences across:
+  * the 19 fixtures;
+  * the 3 `filebased` inputs;
+  * the 17 tracked in-scope files;
+  * all 155 `.go` files in the scratch worktree (154 tracked + the harness).
+
+  The oracle adaptation is the single authorised one: freeze its glob to the
+  19 names, and turn the `\f`/`\v`/`U+2028` cases into fail-closed
+  assertions.
+* **G-4** — a representation change only. The `"syscall"` import-path check
+  is strictly stricter.
+* **G-5** — additive alias resolution. The only live alias is `copilot`, and
+  it is not write-capable.
+* **G-6** — syntactic intra-function `NewRoot` → `Resolve` binding.
+  `go/types` is rejected.
+* **G-7** — every task is within the 2-hour rule. E-T2 is de-risked from
+  `high` to `medium`.
+
+**Decisions.**
+
+* **D-049-2 — The `go/ast` migration is FEASIBLE; re-plan, do not abandon.**
+  * **Evidence.** The spike shows exact parity. The migration therefore
+    removes residual item 7 (split selector) at no verdict cost, and enables
+    import-path keying.
+  * **Rejected.** Abandoning 049-F, which would keep the masked-text engine
+    and residuals 1, 3, 6 and 7 open indefinitely.
+* **D-049-3 — Fold `458F9385` (residual item 6) into 049-F as new task E-T7
+  (049.007-T).**
+  * **Why now.** The rev-5 recommendation (D-S-5) was conditional on G-5.
+    G-5 confirms that import-path resolution keys aliased and dot-imported
+    `golang.org/x/sys` uses to their canonical path. Spelled-qualifier
+    matching (the G-5 additivity rule) still treats any identifier spelled
+    `windows` or `unix` as that qualifier. A name collision with an unrelated
+    local package or variable therefore stays a **fail-closed false
+    positive**: it is reported, never missed, and AC-E7.3 measures zero such
+    collisions at `961b652`. The fail-open concern that blocked the widening
+    under the masked-text engine is resolved; the collision is not eliminated.
+  * **Scope.** 50 selectors appended (`ioutil` 3, `syscall` 14, `windows` 11,
+    `unix` 22), 76 in total. The 458F9385 enumeration is extended with the
+    remaining namespace / ACL-relevant primitives of the same families
+    (`Rmdir`, `MoveFile`, `Truncate`, `Creat`, the `*at` variants,
+    `unix.Chmod`; `syscall.Chmod` stays uncovered and is recorded in
+    C0D28448).
+    These were enumerated from the families named in the stash entry, so this
+    widens neither the families nor the gate's contract surface.
+  * **Item 6 is narrowed, not closed** (plan-review rev 7 PR7-1 / SB-1). The
+    50-name list does not cover every same-family write-capable symbol: for
+    example metadata/attribute writes, `syscall.Pwrite`, `unix.Writev`/
+    `Pwritev`, `syscall.Ftruncate`/`Link`/`Symlink` and `unix.Mknod`. E-T6
+    records the remainder as retained item 6. Enumerating the full surface is
+    a separate contract decision, captured per P-021 C2 as `DEFERRED SCOPE
+    EXPANSION` stash **C0D28448** (low).
+  * **Constraints.**
+    * Golden changes are additive only (AC-E7.2).
+    * The D-T1a oracle stays bound to the frozen 20.
+    * No allowance is added for `windows.CreateFile`.
+    * Removing, reordering or renaming an existing selector HALTs (H-2 E).
+  * **Rejected.** A separate shipment for the widening. It would need a
+    second golden-serialisation chain against the same `writepath.go` with no
+    benefit.
+* **D-049-4 — Linearise Unit E: E-T2 → E-T3 → E-T4 → E-T5 → E-T7 → E-T6.**
+  * **Why.** E-T3 introduces the per-file import table, which E-T4, E-T5 and
+    E-T7 extend. Every task edits `writepath.go` and the golden.
+    Linearisation gives one table and one serial golden history, and avoids
+    a merge race on the `selectors` array.
+  * **Edges.** New `blocks` edges are `049.004-T → 049.003-T`,
+    `049.007-T → 049.005-T` and `049.006-T → 049.007-T`. The rev-4 edges are
+    retained but redundant.
+* **D-049-5 — New residual item 8, dynamic proc invocation: disclose and
+  defer.**
+  * **What it covers.** `syscall.NewLazyDLL` / `LazyProc.Call`,
+    `syscall.Syscall*` and the x/sys equivalents can reach any OS write API
+    with no write-named selector.
+  * **Why it is not in E-T7.** `syscall.NewLazyDLL` is **live** at
+    `internal/pathsafe/reparse_windows.go:19`, for the metadata-only
+    `GetFinalPathNameByHandleW` probe. Making it a finding would need an
+    allowance design, which is a new gate contract, not a widening.
+  * **Disposition.** E-T6 records it in both residual locations, and it is
+    captured per P-021 C2 as `DEFERRED SCOPE EXPANSION` stash **FE2F02FF**
+    (task, low, requires deliberation).
+  * **Duplicate scan.** The scan for `LazyDLL`, `NewProc`, `Syscall(` and
+    "dynamic proc" across the active stash was **CLEAN**. The nearest entry,
+    `0ECC1895`, covers env-mutation selectors in the retiredarch closure,
+    which is a different expansion.
+* **D-049-6 — The 049.001-T lifecycle: the Stage half is closed, and the task
+  stays `queued` for Ship's verification half.**
+  * **The plan rule.** E-T1 has two halves:
+    * the Stage-executed spike, now complete;
+    * a Ship-executed, read-only verification gate (XS / trivial,
+      AC-E1.1..AC-E1.3). It checks that the spike doc and the re-plan exist
+      before any engine change.
+  * **Why it stays queued.** Moving 049.001-T to `done` from Stage would skip
+    that gate. It would also be a P-010 overreach: Stage must not close
+    shipment work on Ship's behalf. `.backlogit/hooks.yaml` allows no
+    `queued → done` transition in any case.
+  * **Disposition.** Stage records the spike-complete evidence on the task
+    (section `spike`) and leaves it `queued` as the first item of 039-S.
+    Ship's claim of 039-S runs the read-only verification, and Ship closes
+    the task through the normal `queued → active → done` path.
+
+**H-5 re-measure (policy D-031-5), at `961b652`.**
+* The alias / dot-import command is empty. Its positive control matches the
+  live `copilot` alias.
+* The `NewRoot` / `Resolve` command lists only
+  `internal/config/validate.go:32/:42/:67`, with zero `.Resolve(` callers.
+* The item-6 command lists only the comment at
+  `internal/pathsafe/reparse_windows.go:15`.
+
+There is **no new trigger**.
+
+**P-021 obligations.**
+* **(A) Duplicate scan, unconditional.**
+  * `458F9385` is not tagged `DEFERRED SCOPE EXPANSION` (it is a Stage
+    D-S-5 capture), and no other active entry describes selector widening.
+    The scan is **CLEAN**.
+  * The residual-8 scan is CLEAN, as noted under D-049-5.
+* **(B) Late-identifier reconciliation.**
+  * It does not apply to the two entries triaged in this session (1EEBECA5
+    and 458F9385), because neither carries an `N/A` source-ref field.
+  * The two new captures, FE2F02FF and C0D28448, record `PR N/A` and
+    `review-thread N/A` truthfully: they come from plan-review findings, not
+    PR threads.
+  * (B) runs for them when Stage triages them in a later session.
+
+**Plan-review outcome (rev 7).** It is recorded under
+`## Plan Review — Revision 7 (Unit E)` in the plan, and in the D-049-7 row of
+the summary table below.
+
 ---
 
 ## 5. Decision summary
@@ -863,6 +1013,12 @@ under P-013.5.
 | D-S-2 | G2 (D10D3AFC + 9F824B64) deferred to a dedicated harness deliberation. |
 | D-S-3 | G3 (5A8EC1BC) deferred — its own stated fourth-engine trigger has not fired. |
 | D-S-4 | G5 (978D2946) deferred as a standalone CI-hygiene unit. |
+| D-049-2 | The `go/ast` spike (049.001-T, Stage half) is **complete**, with **exact verdict parity** (19/3/17/155, 0 divergences). The migration is FEASIBLE: **re-plan, not abandon**. Findings: `docs/decisions/2026-10-02-intercom-go-writepath-go-ast-spike.md`. |
+| D-049-3 | 458F9385 folded in as **E-T7 (049.007-T)**. 50 selectors are appended, import-path keyed, for 76 in total. Golden changes are additive only, and the oracle stays frozen at 20. Item 6 is **narrowed, not closed**; the remainder is deferred as stash **C0D28448**. |
+| D-049-4 | Unit E is linearised as E-T2 → E-T3 → E-T4 → E-T5 → E-T7 → E-T6. The new `blocks` edges are 049.004→049.003, 049.007→049.005 and 049.006→049.007. |
+| D-049-5 | New residual item 8 (dynamic proc invocation, with a live `NewLazyDLL` at `reparse_windows.go:19`) is disclosed and deferred as stash **FE2F02FF** (low). |
+| D-049-6 | 049.001-T stays `queued` for Ship's read-only verification half (AC-E1.1..AC-E1.3). Stage records the spike evidence only, and does not close the task (P-010). |
+| D-049-7 | The rev-7 Unit E plan-review returned **FAIL in all 3 cycles**; cycle 3 is the final re-entry (gpt-5.6-sol FAIL, claude-opus-5.5 FAIL, gemini-3.8-flash empty → grok-4.7 FAIL). Each cycle found new P1s in E-T3's test-port contract (SB3-1/GPT3-1, GK3-1). The cycle-3 fixes are applied but **not re-gated**. **The 049-F STAGE HOLD is KEPT (`blocked`)**, and **039-S stays on hold**, so DARK_MODE_HALTED for 039-S. `ESCALATION_DEGRADED` (engram) means operator review. **Operator action required:** authorise a re-gate round (as D-030-6 did) or choose another disposition. The spike result (D-049-2) is unaffected. |
 
 ---
 
