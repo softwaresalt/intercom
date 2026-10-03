@@ -62,9 +62,15 @@ closed. 039-S is still held.
 * **Reviewer git preflight failures.**
   * The rule: pin the diff to a `logs/*.patch` file, have reviewers read that
     file, and require each reviewer to print `REVIEWED_HEAD`.
-* **Missing file-lock scripts** (stash 9F824B64).
-  * The rule: use an atomic create-new lock instead, and record its use as a
-    closure condition. The 032-S and 030-S closures record it.
+* **Missing root-level file-lock scripts** (stash 9F824B64).
+  * `scripts/acquire_lock.ps1` is missing, but the bundled copies exist under
+    `.github/skills/file-lock/scripts/`.
+  * 038-S and 032-S used an atomic create-new lock instead:
+    * 038-S notes it in prose only.
+    * 032-S records it as the formal condition
+      `reconcile-lock-procedural-deviation`.
+  * 030-S used the bundled skill scripts, and its condition concerns a
+    different issue: the reconcile binding location.
 
 ## Failed approaches and environment notes
 
