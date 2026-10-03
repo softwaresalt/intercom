@@ -4140,6 +4140,9 @@ no stash capture was needed).
 
 <!-- plan-review-attempt: 5 -->
 
+dispatch_mode: multi-agent
+decision: FAIL
+
 * **Authority.** At 2026-10-03T00:13-07:00 the operator explicitly approved
   **one** fifth plan-review round over revision 7 Unit E, as amended by
   R4-1..R4-8 (**D-049-9**). It is the second operator-authorised exception to
