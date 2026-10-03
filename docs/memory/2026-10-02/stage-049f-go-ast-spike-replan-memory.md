@@ -65,3 +65,21 @@ base_commit: 961b652
 
 * gemini-3.8-flash returned an empty response in cycle 3. I used grok-4.7 as
   the fallback.
+
+## Adversarial diff review (pre-PR)
+
+- Reviewers: gpt-5.6-sol (GD-1..5), claude-opus-5.5 (OD-1..8) and gemini-3.8-flash (GM-1..2). All three returned ADVISORY with no P0/P1.
+- Fixes applied in the follow-up commit:
+  - Inventory scope rescoped (GD-1).
+  - AC-E3.3 grep extended with the `extent*` constants and `type extent` (GD-2); confirmed to match today's code as a positive control.
+  - Spike-output pointer fixed (GD-3).
+  - Archived stash disposition pointers added (GD-4/OD-4).
+  - Narrow-not-close title note added (GD-5).
+  - 039-S `hold` section added (OD-1).
+  - Broken cross-reference fixed (OD-2/GM-1).
+  - P-021 (B) corrected for FE2F02FF/C0D28448 (OD-3).
+  - `unix.Chmod` (OD-5).
+  - `captured_stash` frontmatter updated (OD-6/GM-2).
+  - Forced worktree removal note added (OD-8).
+- OD-7 was already superseded by the 049.003-T cycle-2 amendment.
+- Residual risk: the 039-S claim hold is advisory (a section plus 049-F `blocked`). Backlog dependency rules alone do not block a claim.

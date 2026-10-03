@@ -2050,6 +2050,10 @@ tasks are therefore two artifacts: the fixture set and the golden.
 
 ## Unit E — 049-F / 039-S (NEW): Migrate the write-path scanner to `go/ast` and close the alias and `Resolve` residuals
 
+> **Rev 7 title note.** Rev 7 *narrows* the `Resolve` residual (item 2) to
+> the G-6 cross-function cases; it does not close it (see E-T6). The heading
+> and the 049-F title are kept for traceability.
+
 **Gating.** (1) `blocks` edge **039-S → 031-S**: Unit E cannot be claimed before
 Unit D ships, because Unit D's fixtures are its parity corpus. 031-S shipped at
 `961b652`, so this edge is satisfied. (2) **STAGE HOLD** on 049-F: E-T2..E-T6
@@ -2094,8 +2098,9 @@ corpus must exist on `main`).
 > | G-6 | Syntactic intra-function tracking. `go/types` is rejected. |
 > | G-7 | Every task within the 2-hour rule, and E-T2 de-risked to `medium`. |
 >
-> The H-5 re-measure at `961b652` found no new trigger. Its exact commands and
-> output are in the session memory. Ship's verification of AC-E1.1–AC-E1.3 is
+> The H-5 re-measure at `961b652` found no new trigger. The commands are the H-5
+> commands of this plan; the results are summarized under H-5 ("Rev 7 run").
+> Ship's verification of AC-E1.1–AC-E1.3 is
 > the only remaining E-T1 work.
 
 > **Spike timing — SCHEDULED (rev 5, operator decision D-049-1).** The
@@ -2408,7 +2413,7 @@ stays unchanged.
   carried by `TestScanSource_AllowedCallCannotHideWritingCall` (SB3-1). After
   E-T3, every symbol in the complete deletion list has no definition and no
   caller. The check is
-  `git grep -nE '\b(extractExtent|scanText|advanceCursor|lineReportsSelector|findSelector|occurrenceAllowed|firstExtent|absoluteOccurrences)\(|\b(extentKind|bracketOpener)\b'`
+  `git grep -nE '\b(extractExtent|scanText|advanceCursor|lineReportsSelector|findSelector|occurrenceAllowed|firstExtent|absoluteOccurrences)\(|\b(extentKind|extentNonCall|extentBalanced|extentUnbalanced|extentMismatched|bracketOpener)\b|\btype extent\b'`
   over `tools/gatecheck/internal/writepath/`, which must be empty. It is scoped
   to that package because the `retiredarch` mutation table embeds `scanText(`
   inside Go source strings (SB3-4). `go build ./...`, `go vet ./...` and
@@ -3341,7 +3346,7 @@ planned.
 | E (feature) | 049-F | NEW. Status `blocked` = the **STAGE HOLD** pending the spike re-plan. |
 | E-T1 | 049.001-T | NEW, XS |
 | E-T2 | 049.002-T | NEW, M |
-| E-T3 | 049.003-T | NEW, S (rev 7 cycle 2: re-sized M; see the Harvest Record — Revision 7) |
+| E-T3 | 049.003-T | NEW, S (rev 7 cycle 2: re-sized M; see "Plan Review — Revision 7 (Unit E)", cycle 2, SB2-2) |
 | E-T4 | 049.004-T | **was 034.006-T**: `shipment return-blocked` from 031-S → `move --status queued` → `adopt --parent 049-F`. Body rewritten, M. |
 | E-T5 | 049.005-T | **was 034.005-T**: same path as E-T4. Body rewritten, M. |
 | E-T6 | 049.006-T | NEW, XS |

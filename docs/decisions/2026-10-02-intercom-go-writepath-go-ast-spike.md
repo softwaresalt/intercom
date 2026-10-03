@@ -59,6 +59,8 @@ re-plan of E-T2..E-T6 may proceed.
    * It was removed with `git worktree remove --force` followed by
      `git worktree prune`. Afterwards `git worktree list` shows only the main
      worktree.
+   * The forced removal discarded only the uncommitted throwaway test file.
+     P-016 requires the cleanup, and the exception covers it.
 2. **Spike engine.** The throwaway file `zz_spike_test.go` lived in package
    `writepath`, so it could call the unexported `scanText` and
    `selectorOccurrences`.
@@ -336,7 +338,9 @@ allowance. On the live tree the only allowance user,
 
 **Verdict: FEASIBLE and additive.**
 
-* **Live import inventory** at `961b652`, all module `.go` files: the only
+* **Live import inventory** at `961b652`, the 17 gate-scope production files
+  (`internal/**` and `cmd/**`, excluding `_test.go`), the same set that
+  `TestSpikeImportsAndRoots` scans: the only
   named import is `copilot` → `github.com/github/copilot-sdk/go`, in
   `internal/copilotprobe/client.go`, `fixture.go` and `permission.go`. That
   package is not write-capable.

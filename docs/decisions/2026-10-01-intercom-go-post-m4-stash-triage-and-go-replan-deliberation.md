@@ -26,6 +26,8 @@ source_stash:
 captured_stash:
   - 458F9385  # D-S-5 item-6 selector widening (task, low)
   - 1EEBECA5  # D-049-1 spike-schedule trigger (spike, high)
+  - FE2F02FF  # D-049-5 residual item 8, DEFERRED SCOPE EXPANSION (2026-10-02)
+  - C0D28448  # D-049-3 item-6 remainder, DEFERRED SCOPE EXPANSION (2026-10-02)
 related_shipments:
   - 030-S (033-F)
   - 031-S (034-F)
@@ -891,7 +893,9 @@ it afterwards. Findings are in
   * **Scope.** 50 selectors appended (`ioutil` 3, `syscall` 14, `windows` 11,
     `unix` 22), 76 in total. The 458F9385 enumeration is extended with the
     remaining namespace / ACL-relevant primitives of the same families
-    (`Rmdir`, `MoveFile`, `Truncate`, `Creat`, the `*at` variants, `Chmod`).
+    (`Rmdir`, `MoveFile`, `Truncate`, `Creat`, the `*at` variants,
+    `unix.Chmod`; `syscall.Chmod` stays uncovered and is recorded in
+    C0D28448).
     These were enumerated from the families named in the stash entry, so this
     widens neither the families nor the gate's contract surface.
   * **Item 6 is narrowed, not closed** (plan-review rev 7 PR7-1 / SB-1). The
@@ -965,8 +969,13 @@ There is **no new trigger**.
     D-S-5 capture), and no other active entry describes selector widening.
     The scan is **CLEAN**.
   * The residual-8 scan is CLEAN, as noted under D-049-5.
-* **(B) Late-identifier reconciliation.** It does not apply. Neither entry
-  carries an `N/A` source-ref field.
+* **(B) Late-identifier reconciliation.**
+  * It does not apply to the two entries triaged in this session (1EEBECA5
+    and 458F9385), because neither carries an `N/A` source-ref field.
+  * The two new captures, FE2F02FF and C0D28448, record `PR N/A` and
+    `review-thread N/A` truthfully: they come from plan-review findings, not
+    PR threads.
+  * (B) runs for them when Stage triages them in a later session.
 
 **Plan-review outcome (rev 7).** It is recorded under
 `## Plan Review — Revision 7 (Unit E)` in the plan, and in the D-049-7 row of
