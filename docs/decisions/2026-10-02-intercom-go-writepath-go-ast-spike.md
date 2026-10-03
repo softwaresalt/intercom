@@ -391,6 +391,11 @@ allowance. On the live tree the only allowance user,
     `var root pathsafe.Root` (added by the PR #99 review; the AC-E5 shape scan
     in [`h5-rev7-remeasure.txt`](assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt)
     and the `var` shape scan find none at `961b652`);
+  * round-4 amendment R4-8 (GPT4-2, not re-gated): the single-name
+    `x := ...` and `x = ...` forms do not type-check either, because
+    `NewRoot` returns `(Root, error)`. Recording them is harmless, since it
+    only widens firing. Fixtures use only the two-name forms, and the
+    plain-assignment caller declares `var err error`;
   * fire on `x.Resolve(...)` for a recorded `x`.
 
   The cost is roughly 60–80 lines plus fixtures and needs no package loading.
