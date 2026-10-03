@@ -979,7 +979,8 @@ There is **no new trigger**.
 
 **Plan-review outcome (rev 7).** It is recorded under
 `## Plan Review — Revision 7 (Unit E)` in the plan, and in the D-049-7 row of
-the summary table below.
+the summary table below. The operator-authorised round 4 (FAIL, hold kept) is
+recorded as **D-049-8**.
 
 ---
 
@@ -1019,6 +1020,7 @@ the summary table below.
 | D-049-5 | New residual item 8 (dynamic proc invocation, with a live `NewLazyDLL` at `reparse_windows.go:19`) is disclosed and deferred as stash **FE2F02FF** (low). |
 | D-049-6 | 049.001-T stays `queued` for Ship's read-only verification half (AC-E1.1..AC-E1.3). Stage records the spike evidence only, and does not close the task (P-010). |
 | D-049-7 | The rev-7 Unit E plan-review returned **FAIL in all 3 cycles**; cycle 3 is the final re-entry (gpt-5.6-sol FAIL, claude-opus-5.5 FAIL, gemini-3.8-flash empty → grok-4.7 FAIL). Each cycle found new P1s in E-T3's test-port contract (SB3-1/GPT3-1, GK3-1). The cycle-3 fixes are applied but **not re-gated**. **The 049-F STAGE HOLD is KEPT (`blocked`)**, and **039-S stays on hold**, so DARK_MODE_HALTED for 039-S. `ESCALATION_DEGRADED` (engram) means operator review. **Operator action required:** authorise a re-gate round (as D-030-6 did) or choose another disposition. The spike result (D-049-2) is unaffected. |
+| D-049-8 | **Operator-authorised plan-review round 4** (2026-10-02T22:36-07:00), one round over rev 7 Unit E as an exception to the 3-cycle cap (precedent D-030-6). **No round 5.** Outcome **FAIL**: gpt-5.6-sol (anchor) FAIL, claude-opus-5.5 FAIL, gemini-3.8-flash PASS. Four P1s were verified against the code: GPT4-1/OP4-2, OP4-1, OP4-3 and OP4-4, all in the E-T2/E-T3 test-port and boundary detail. Amendments R4-1..R4-8 are applied **un-gated**. **The 049-F STAGE HOLD is KEPT** (`blocked`), and **039-S stays on hold**. `ESCALATION_DEGRADED` (no engram handoff surface) means operator review. **Operator action required:** choose a disposition other than another unauthorised review round; see the plan's "Round 4" section. |
 
 ---
 
