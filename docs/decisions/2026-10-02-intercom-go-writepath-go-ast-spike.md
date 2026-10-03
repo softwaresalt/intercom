@@ -383,6 +383,11 @@ allowance. On the live tree the only allowance user,
     `x, err := pathsafe.NewRoot(...)` or `var x = pathsafe.NewRoot(...)`,
     where the qualifier resolves through E-T4's alias map to
     `github.com/softwaresalt/intercom-go/internal/pathsafe`;
+  * also record plain assignments (`token.ASSIGN`), such as
+    `x = pathsafe.NewRoot(...)` or `x, err = pathsafe.NewRoot(...)` after
+    `var root pathsafe.Root` (added by the PR #99 review; the AC-E5 shape scan
+    in [`h5-rev7-remeasure.txt`](assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt)
+    finds none at `961b652`);
   * fire on `x.Resolve(...)` for a recorded `x`.
 
   The cost is roughly 60–80 lines plus fixtures and needs no package loading.
@@ -468,11 +473,23 @@ source out of the Go build. To reproduce:
 
 Do not commit the file. The normative tests are written red-first by E-T2..E-T7.
 
-**Harness hardening (PR #99 review).** The committed harness reports a parse
-error, a divergence, or a golden mismatch with `t.Errorf`, so any divergence
-fails the test. The original run used `t.Logf` at those three sites. It
-recorded zero hits in every tally (`spike-output.txt`), so the verdict is
-unchanged. The hardened harness was re-run on 2026-10-02 against `961b652`
-in a throwaway P-016 worktree that was removed afterwards. It passed with the
-same tallies: fixtures 19/19, filebased 3/3, tracked 17/17 and all-module
-155/155, each with `diff=0 parseErr=0`.
+**Harness hardening (PR #99 review).** The committed harness fails the test
+on every error path that could hide a divergence:
+
+* a parse error, a parity divergence, or a golden mismatch (fixture or
+  filebased) is a `t.Errorf`;
+* a read or walk error is a `t.Errorf`, and a `git ls-files` failure is a
+  `t.Fatal`;
+* the filebased `invalid-utf8.go` row must fail with
+  `pysem.ErrInvalidUTF8`; any other error is a `t.Errorf`.
+
+The original run used `t.Logf` at those sites. It recorded zero hits in every
+tally (`spike-output.txt`), so the verdict is unchanged. The hardened harness
+was re-run on 2026-10-02 against `961b652` in a throwaway P-016 worktree that
+was removed afterwards. It passed with the same tallies: fixtures 19/19,
+filebased 3/3, tracked 17/17 and all-module 155/155, each with
+`diff=0 parseErr=0`.
+
+The H-5 re-measure commands and their verbatim output at `961b652`, plus the
+AC-E7.3 import-path scan and the AC-E5 shape scan, are in
+[`h5-rev7-remeasure.txt`](assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt).

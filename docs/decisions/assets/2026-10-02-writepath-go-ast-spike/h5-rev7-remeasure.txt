@@ -1,0 +1,46 @@
+# H-5 / AC-E7.3 / AC-E5 re-measure: verbatim output
+#
+# Recorded: 2026-10-02 (049-F plan rev 7; PR #99 Copilot iteration 2).
+# Repository: softwaresalt/intercom (module github.com/softwaresalt/intercom-go).
+# Commit measured: 961b6523765348224a4d6b5083355a29ec4d02bc (origin/main), in a detached,
+# throwaway P-016 spike worktree. Each command ran from the worktree root
+# with no revision argument, which is equivalent to naming that commit.
+# Commands 1-4 and the inclusive variant are the plan's H-5 commands.
+# The last two scans were added by the PR #99 review amendment.
+
+
+## H-5 command 1 (aliased/dot imports of the Selectors qualifier packages)
+$ git grep -nE '^[[:space:]]*(import[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*|\.)[[:space:]]+"(os|io|syscall|database/sql|go\.etcd\.io/bbolt)"' -- 'internal/**' 'cmd/**' ':!*_test.go' | grep -v 'return "'
+(no output)
+
+## H-5 command 2 (NewRoot / Resolve callers outside internal/pathsafe)
+$ git grep -nE '\.Resolve\(|pathsafe\.NewRoot\(' -- 'internal/**' 'cmd/**' ':!*_test.go' ':!internal/pathsafe/**'
+internal/config/validate.go:32:	// or explicitly-empty root never reaches pathsafe.NewRoot(""), where
+internal/config/validate.go:42:	root, err := pathsafe.NewRoot(c.DefaultWorkspaceRoot)
+internal/config/validate.go:67:		wsRoot, err := pathsafe.NewRoot(m.Path)
+
+## H-5 command 3 (item 6, rev 7 full 50-name set)
+$ git grep -nE '(^|[^A-Za-z0-9_.])(ioutil\.(WriteFile|TempFile|TempDir)|syscall\.(WriteFile|Open|Unlink|Rename|Mkdir|Rmdir|CreateHardLink|DeleteFile|MoveFile|RemoveDirectory|CreateDirectory|CreateSymbolicLink|Truncate|Creat)|windows\.(WriteFile|CreateFile|DeleteFile|MoveFile|MoveFileEx|CreateDirectory|RemoveDirectory|CreateHardLink|CreateSymbolicLink|SetEndOfFile|SetFileInformationByHandle)|unix\.(Open|Openat|Openat2|Creat|Write|Pwrite|Unlink|Unlinkat|Rename|Renameat|Renameat2|Mkdir|Mkdirat|Rmdir|Link|Linkat|Symlink|Symlinkat|Truncate|Ftruncate|Chmod|Fchmodat))([^A-Za-z0-9_]|$)|golang\.org/x/sys' -- 'internal/**' 'cmd/**' ':!*_test.go'
+internal/pathsafe/reparse_windows.go:15:// via syscall.NewLazyDLL rather than golang.org/x/sys/windows (014.003-T AC3,
+
+## H-5 command 3, inclusive variant (_test.go included)
+$ git grep -nE '(^|[^A-Za-z0-9_.])(ioutil\.(WriteFile|TempFile|TempDir)|syscall\.(WriteFile|Open|Unlink|Rename|Mkdir|Rmdir|CreateHardLink|DeleteFile|MoveFile|RemoveDirectory|CreateDirectory|CreateSymbolicLink|Truncate|Creat)|windows\.(WriteFile|CreateFile|DeleteFile|MoveFile|MoveFileEx|CreateDirectory|RemoveDirectory|CreateHardLink|CreateSymbolicLink|SetEndOfFile|SetFileInformationByHandle)|unix\.(Open|Openat|Openat2|Creat|Write|Pwrite|Unlink|Unlinkat|Rename|Renameat|Renameat2|Mkdir|Mkdirat|Rmdir|Link|Linkat|Symlink|Symlinkat|Truncate|Ftruncate|Chmod|Fchmodat))([^A-Za-z0-9_]|$)|golang\.org/x/sys' -- 'internal/**' 'cmd/**'
+internal/pathsafe/reparse_windows.go:15:// via syscall.NewLazyDLL rather than golang.org/x/sys/windows (014.003-T AC3,
+
+## H-5 command 4 (item 8, dynamic proc invocation)
+$ git grep -nE 'NewLazyDLL|NewProc|Syscall[0-9]*\(' -- 'internal/**' 'cmd/**' ':!*_test.go'
+internal/pathsafe/reparse_windows.go:15:// via syscall.NewLazyDLL rather than golang.org/x/sys/windows (014.003-T AC3,
+internal/pathsafe/reparse_windows.go:19:	modkernel32                   = syscall.NewLazyDLL("kernel32.dll")
+internal/pathsafe/reparse_windows.go:20:	procGetFinalPathNameByHandleW = modkernel32.NewProc("GetFinalPathNameByHandleW")
+internal/pathsafe/root.go:308://     syscall.NewLazyDLL, not through filepath.EvalSymlinks or
+
+## AC-E7.3 import-path scan (any import spec of the E-T7 packages: plain, aliased or dot; _test.go included)
+$ git grep -nE '"(io/ioutil|syscall|golang\.org/x/sys/(windows|unix))"' -- 'internal/**' 'cmd/**'
+internal/pathsafe/contain_posix_test.go:10:	"syscall"
+internal/pathsafe/reparse_windows.go:8:	"syscall"
+internal/pathsafe/symlink_eacces_test.go:10:	"syscall"
+internal/pathsafe/symlink_privilege_windows_test.go:7:	"syscall"
+
+## AC-E5 shape scan (plain-assignment NewRoot bindings, token.ASSIGN; _test.go included)
+$ git grep -nE '[A-Za-z_][A-Za-z0-9_]*([[:space:]]*,[[:space:]]*[A-Za-z_][A-Za-z0-9_]*)*[[:space:]]*=[[:space:]]*[A-Za-z_][A-Za-z0-9_]*\.NewRoot\(' -- 'internal/**' 'cmd/**'
+(no output)

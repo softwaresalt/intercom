@@ -246,7 +246,11 @@ func TestSpikeParity_FixtureCorpus(t *testing.T) {
 	t.Logf("FIXTURES files=%d equal=%d diff=%d parseErr=%d", tally.files, tally.equal, tally.diff, tally.parseErr)
 	g := loadWritepathGolden(t)
 	for _, row := range g.FixtureFindings {
-		src, _ := pysem.ReadText(filepath.Join(root, "scripts", "testdata", "writepath", row.Name))
+		src, err := pysem.ReadText(filepath.Join(root, "scripts", "testdata", "writepath", row.Name))
+		if err != nil {
+			t.Errorf("GOLDEN-READ %s: %v", row.Name, err)
+			continue
+		}
 		got, err := astScan("scripts/testdata/writepath/"+row.Name, src)
 		if err != nil || strings.Join(got, "\n") != strings.Join(row.Findings, "\n") {
 			t.Errorf("GOLDEN-MISMATCH %s err=%v got=%q want=%q", row.Name, err, got, row.Findings)
@@ -266,12 +270,20 @@ func TestSpikeParity_Filebased(t *testing.T) {
 		}
 		src, err := pysem.ReadText(p)
 		if row.DecodeError {
-			t.Logf("FILEBASED %s decode error before engine: %v", row.Name, errors.Is(err, pysem.ErrInvalidUTF8))
+			if !errors.Is(err, pysem.ErrInvalidUTF8) {
+				t.Errorf("FILEBASED-DECODE %s: want pysem.ErrInvalidUTF8, got %v", row.Name, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("FILEBASED-READ %s: unexpected read error: %v", row.Name, err)
 			continue
 		}
 		spikeCompare(t, &tally, row.Name, src)
-		got, _ := astScan(row.Name, src)
-		t.Logf("FILEBASED %s golden-equal=%v", row.Name, strings.Join(got, "\n") == strings.Join(row.Findings, "\n"))
+		got, err := astScan(row.Name, src)
+		if err != nil || strings.Join(got, "\n") != strings.Join(row.Findings, "\n") {
+			t.Errorf("FILEBASED-GOLDEN-MISMATCH %s err=%v got=%q want=%q", row.Name, err, got, row.Findings)
+		}
 	}
 	t.Logf("FILEBASED files=%d equal=%d diff=%d parseErr=%d", tally.files, tally.equal, tally.diff, tally.parseErr)
 }
@@ -282,7 +294,10 @@ func spikeTracked(t *testing.T) (string, []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listing, _ := pysem.GitText(out)
+	listing, err := pysem.GitText(out)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var rels []string
 	for _, p := range pysem.SplitLines(listing) {
 		if p != "" && shouldScan(p) {
@@ -306,7 +321,9 @@ func TestSpikeParity_TrackedTree(t *testing.T) {
 }
 
 // TestSpikeParity_AllModuleGo widens the parity sample to every tracked .go
-// file in the repository (not only the gate's scan scope).
+// file in the scratch worktree (not only the gate's scan scope). The worktree
+// is a clean checkout, so this equals the tracked .go set outside the
+// writepath fixtures.
 func TestSpikeParity_AllModuleGo(t *testing.T) {
 	root := repoRoot(t)
 	out, err := DefaultGitRunner(root)
@@ -315,8 +332,9 @@ func TestSpikeParity_AllModuleGo(t *testing.T) {
 	}
 	_ = out
 	var tally spikeTally
-	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+	werr := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
+			t.Errorf("WALK-ERR %s: %v", p, err)
 			return nil
 		}
 		if d.IsDir() {
@@ -332,12 +350,15 @@ func TestSpikeParity_AllModuleGo(t *testing.T) {
 		rel, _ := filepath.Rel(root, p)
 		src, err := pysem.ReadText(p)
 		if err != nil {
-			t.Logf("READ-ERR %s: %v", rel, err)
+			t.Errorf("READ-ERR %s: %v", rel, err)
 			return nil
 		}
 		spikeCompare(t, &tally, filepath.ToSlash(rel), src)
 		return nil
 	})
+	if werr != nil {
+		t.Fatal(werr)
+	}
 	t.Logf("ALLGO files=%d equal=%d diff=%d parseErr=%d", tally.files, tally.equal, tally.diff, tally.parseErr)
 }
 

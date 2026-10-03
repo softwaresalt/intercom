@@ -83,3 +83,13 @@ base_commit: 961b652
   - Forced worktree removal note added (OD-8).
 - OD-7 was already superseded by the 049.003-T cycle-2 amendment.
 - 039-S claim hold: 049-F `blocked` is mechanically enforced. Ship Step 0.5 runs `shipment-reconcile` (pre, `expected_status: queued`), so the blocked 049-F is a `status-mismatch` that halts intake (Copilot PR #99). The `hold` section is explanatory.
+
+## Staging PR #99 Copilot review
+
+- Iteration 1 (on `e5e2d7f`): two findings, fixed in `8978726`. The spike harness now fails on divergence, and the 039-S hold text names the mechanical guard.
+- Iteration 2 (on `8978726`): two inline findings and three previously missed items. All were classified as the same contract surface (P-021 C1) and applied, not re-gated:
+  - E-T5 / 049.005-T binding covers `token.ASSIGN` (`x = pathsafe.NewRoot(...)`).
+  - AC-E7.3 / 049.007-T adds an import-path scan; an aliased or dot import is a HALT.
+  - The harness filebased decode, read and golden paths, plus the fixture golden read and the all-module walk, now fail instead of logging. Re-run at `961b652`: the same tallies, PASS.
+  - H-5 evidence pointer corrected. The commands and verbatim output (H-5 1–4, the inclusive variant, the import-path scan and the shape scan) are in `docs/decisions/assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt`. This memory doc holds no verbatim output.
+- The hold is unchanged. These amendments join the operator-authorized re-gate scope.

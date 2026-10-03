@@ -255,6 +255,12 @@ revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
 > Unit E is re-gated under `## Plan Review — Revision 7 (Unit E)`. The 049-F
 > STAGE HOLD lifts only on ADVISORY or better with no P0/P1. **Outcome: FAIL
 > at cycle 3; the hold is kept.**
+>
+> 10. **Staging PR #99 review amendments (NOT re-gated).** Copilot's shadow
+>     review added `token.ASSIGN` binding coverage to E-T5, an import-path
+>     scan to AC-E7.3, and a verbatim H-5 evidence file. It also hardened the
+>     spike harness. See "Staging PR #99 review amendments" under the rev 7
+>     review. The hold is unchanged.
 
 ---
 
@@ -2510,14 +2516,23 @@ insufficient.
   `*ast.FuncLit`. It records identifiers bound by `x := pathsafe.NewRoot(...)`,
   `x, err := pathsafe.NewRoot(...)` or `var x = pathsafe.NewRoot(...)`, with
   the qualifier resolved through E-T4's table to
-  `github.com/softwaresalt/intercom-go/internal/pathsafe`.
+  `github.com/softwaresalt/intercom-go/internal/pathsafe`. It also records
+  plain assignments (`token.ASSIGN`): `x = pathsafe.NewRoot(...)` and
+  `x, err = pathsafe.NewRoot(...)`, for example after `var root pathsafe.Root`
+  (PR #99 review amendment, **not re-gated**). The AC-E5 shape scan at
+  `961b652` finds no such binding in the tree today (recorded in
+  `docs/decisions/assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt`).
 * **No `go/types`.** Cross-function flows, struct fields, package-level
   variables and method values remain a residual, carried by E-T6.
 
 **Acceptance criteria**
 * AC-E5.1 (AC-4.4) — Fires on a fixture introducing a production
   `Root.Resolve` caller; does **not** fire on the tracked tree (zero production
-  callers, re-measured at the parent commit).
+  callers, re-measured at the parent commit). Scenario 1's fixture holds two
+  callers, and each fires: one receiver bound by `:=` and one bound by plain
+  assignment (`var root pathsafe.Root` then `root, err = pathsafe.NewRoot(dir)`
+  then `root.Resolve(...)`). This stays within the three scenarios (PR #99
+  review amendment, **not re-gated**).
 * AC-E5.2 — Does not fire on an unrelated `.Resolve(` receiver.
 * AC-E5.3 — Golden changes are additive only (as AC-E4.2).
 
@@ -2663,6 +2678,19 @@ same-family remainder; it does not close it (see E-T6 row 6 and stash
 
   Ship re-runs the inclusive variant at the parent commit. Any code-position
   hit is a HALT (H-2 E).
+
+  The selector scan only sees the canonical qualifiers (`ioutil.`,
+  `syscall.`, `windows.`, `unix.`). An aliased or dot import
+  (`import u "io/ioutil"` then `u.WriteFile`) would evade it. So Ship also
+  runs an **import-path scan** at the parent commit (PR #99 review
+  amendment, **not re-gated**):
+  `git grep -nE '"(io/ioutil|syscall|golang\.org/x/sys/(windows|unix))"' <parent> -- 'internal/**' 'cmd/**'`.
+  Every hit must be an unaliased import spec. Any aliased or dot import spec
+  of these paths is a HALT pending review (H-2 E). At `961b652` the scan lists
+  four unaliased `"syscall"` imports (`internal/pathsafe/reparse_windows.go:8`
+  and three `_test.go` files) and no aliased or dot import. The output is
+  recorded in
+  `docs/decisions/assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt`.
 
 ---
 
@@ -3039,8 +3067,11 @@ Halt and return to Stage rather than deciding:
   `git grep -nE '<same item-6 pattern>' origin/main -- 'internal/**' 'cmd/**'`
   at `961b652`) gives the same single hit, so `_test.go` files add no
   code-position match. The fourth (item 8) lists exactly the four
-  expected hits. There is no new trigger. The verbatim output is in
-  `docs/memory/2026-10-02/` for this session.
+  expected hits. There is no new trigger. The commands and their verbatim
+  output are recorded in
+  `docs/decisions/assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt`
+  (re-run at `961b652` for the PR #99 review amendment, which corrected an
+  earlier pointer to the session memory doc).
 
 ### H-6 — Rollback
 
@@ -3833,5 +3864,20 @@ Consequences:
 The spike result itself (G-1..G-7, exact verdict parity) is **not** in question.
 The failures are all in the decomposition detail of E-T3, the test-port
 contract.
+
+### Staging PR #99 review amendments (applied after the gate; **NOT re-gated**)
+
+Copilot's shadow review of staging PR #99 raised these. Stage classified each
+as the same contract surface (P-021 C1), so it applied them. They do **not**
+change the gate outcome: the hold stays in place, and the operator-authorized
+re-gate covers them too.
+
+| Finding | Disposition |
+|---|---|
+| Spike harness only logged divergences (iteration 1) | Parity, golden, read, walk and filebased decode errors are now `t.Errorf`/`t.Fatal`. Re-run at `961b652`: the same tallies, PASS. |
+| 039-S hold text overstated its mechanism (iteration 1) | The `hold` section names the mechanical guard (Ship Step 0.5 `shipment-reconcile` pre-mode). |
+| E-T5 binding misses `token.ASSIGN` (iteration 2) | Binding strategy and AC-E5.1 cover `x = pathsafe.NewRoot(...)` and `x, err = ...`. |
+| AC-E7.3 misses aliased/dot `io/ioutil` imports (iteration 2) | AC-E7.3 adds an import-path scan; an aliased or dot import is a HALT. |
+| H-5 pointed at memory for verbatim output (iteration 2) | Commands and output recorded in `docs/decisions/assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt`. |
 
 *Generated by Copilot*
