@@ -40,7 +40,7 @@ tags:
 |---|---|---|
 | G-1 Feasibility and boundary | **FEASIBLE** | `go/parser` + `go/ast` reproduce every finding's text, line and order on the whole corpus; the boundary is `scanSource(rel, src string) ([]string, error)`, with `retiredarch` re-anchored on `scanSource` → `gomask.MaskGoNonCode`. |
 | G-2 Fail-closed on unparseable input | **FEASIBLE** | Any parser error, even with a partial AST, is ED-2 exit 1; `PositionFor(pos, false)` ignores `//line`; `filebased` verdicts are unchanged. |
-| G-3 Verdict parity | **EXACT PARITY, no HALT** | 0 divergences across 19 fixtures, 3 `filebased` inputs, 17 tracked in-scope files and all 155 module `.go` files; AC-E2.6 items 1–3 suffice. |
+| G-3 Verdict parity | **EXACT PARITY, no HALT** | 0 divergences across 19 fixtures, 3 `filebased` inputs, 17 tracked in-scope files and all 155 `.go` files in the scratch worktree (154 tracked + the harness); AC-E2.6 items 1–3 suffice. |
 | G-4 D-2′ on `*ast.CallExpr` | **FEASIBLE, representation only** | Every D-2′ rejection is preserved; the only behavioural deltas are stricter (8-arg trailing string, ellipsis, split selector, import-path check). |
 | G-5 Import aliases | **FEASIBLE, additive** | Named aliases resolve via `*ast.ImportSpec`; a dot import of a write-capable package is a finding; blank imports are inert; zero live write-capable aliases. |
 | G-6 `NewRoot` receiver binding | **Syntactic intra-function tracking** | 3 `NewRoot(` sites, 0 `.Resolve(` calls; `go/types` rejected on cost and dependency grounds. |
@@ -79,8 +79,9 @@ re-plan of E-T2..E-T6 may proceed.
      UTF-8).
    * **TRACKED** — every tracked file that `shouldScan` admits (17 files).
    * **ALLGO** — every `.go` file in the module except the write-path fixture
-     tree (155 files). This is a superset stress corpus well beyond the gate's
-     scope.
+     tree, as present in the scratch worktree (155 files: the 154 tracked at
+     `961b652` plus the untracked harness itself). This is a superset stress
+     corpus well beyond the gate's scope.
    * **HAZARDS** — about 40 hand-built inputs, each targeting a named G-3/G-4/G-5
      hazard.
 4. **GOROOT verification** follows compound lesson
@@ -213,7 +214,7 @@ E-T2 must use `PositionFor(pos, false)` everywhere and pin it with a committed
 | FIXTURES (`scripts/testdata/writepath/*.go`) | 19 | 19 | 0 | 0 | 0 mismatches against the 19 golden `fixture_findings` rows |
 | FILEBASED (golden `filebased`) | 3 | 3 | 0 | 0 | CRLF, lone CR and BOM are golden-equal; invalid UTF-8 fails at `ReadText` before either engine |
 | TRACKED (`shouldScan` scope) | 17 | 17 | 0 | 0 | — |
-| ALLGO (every module `.go` except write-path fixtures) | 155 | 155 | 0 | 0 | stress superset |
+| ALLGO (every `.go` in the scratch worktree except write-path fixtures: 154 tracked + harness) | 155 | 155 | 0 | 0 | stress superset |
 
 ### Named hazards
 
@@ -380,14 +381,16 @@ allowance. On the live tree the only allowance user,
   * There are **zero** `.Resolve(` call sites in production code.
 * **Syntactic tracking.** Within one `*ast.FuncDecl` or `*ast.FuncLit`:
   * record identifiers bound by `x := pathsafe.NewRoot(...)`,
-    `x, err := pathsafe.NewRoot(...)` or `var x = pathsafe.NewRoot(...)`,
+    `x, err := pathsafe.NewRoot(...)` or the multi-name declaration
+    `var x, err = pathsafe.NewRoot(...)` (a single-name `var x = ...` does not
+    compile, since `NewRoot` returns `(Root, error)`; PR #99 review amendment),
     where the qualifier resolves through E-T4's alias map to
     `github.com/softwaresalt/intercom-go/internal/pathsafe`;
   * also record plain assignments (`token.ASSIGN`), such as
     `x = pathsafe.NewRoot(...)` or `x, err = pathsafe.NewRoot(...)` after
     `var root pathsafe.Root` (added by the PR #99 review; the AC-E5 shape scan
     in [`h5-rev7-remeasure.txt`](assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt)
-    finds none at `961b652`);
+    and the `var` shape scan find none at `961b652`);
   * fire on `x.Resolve(...)` for a recorded `x`.
 
   The cost is roughly 60–80 lines plus fixtures and needs no package loading.
@@ -487,7 +490,7 @@ The original run used `t.Logf` at those sites. It recorded zero hits in every
 tally (`spike-output.txt`), so the verdict is unchanged. The hardened harness
 was re-run on 2026-10-02 against `961b652` in a throwaway P-016 worktree that
 was removed afterwards. It passed with the same tallies: fixtures 19/19,
-filebased 3/3, tracked 17/17 and all-module 155/155, each with
+filebased 3/3, tracked 17/17 and all-module 155/155 (154 tracked + the harness), each with
 `diff=0 parseErr=0`.
 
 The H-5 re-measure commands and their verbatim output at `961b652`, plus the

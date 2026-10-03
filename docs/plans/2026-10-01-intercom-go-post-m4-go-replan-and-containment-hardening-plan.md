@@ -174,7 +174,7 @@ revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
 >    * G-1 and G-2 are FEASIBLE.
 >    * G-3 reaches **exact verdict parity**: 0 divergences across the 19
 >      fixtures, the 3 `filebased` inputs, the 17 tracked in-scope files and
->      all 155 module `.go` files.
+>      all 155 `.go` files in the scratch worktree (154 tracked + the harness).
 >    * G-4 is a representation change only, and G-5 is additive.
 >    * G-6 is syntactic intra-function tracking; `go/types` is rejected.
 >    * G-7 puts every task within the 2-hour rule.
@@ -257,7 +257,7 @@ revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
 > at cycle 3; the hold is kept.**
 >
 > 10. **Staging PR #99 review amendments (NOT re-gated).** Copilot's shadow
->     review added `token.ASSIGN` binding coverage to E-T5, an import-path
+>     review added `token.ASSIGN` and multi-name `var` binding coverage to E-T5, an import-path
 >     scan to AC-E7.3, and a verbatim H-5 evidence file. It also hardened the
 >     spike harness. See "Staging PR #99 review amendments" under the rev 7
 >     review. The hold is unchanged.
@@ -2098,7 +2098,7 @@ corpus must exist on `main`).
 > |---|---|
 > | G-1 | FEASIBLE. The boundary is `scanSource(relPath, src string) ([]string, error)`. `gomask` is still used, for raw-string interiors and the line map. |
 > | G-2 | FEASIBLE. Any parser error is ED-2 exit 1, and positions use `PositionFor(pos, false)`. |
-> | G-3 | EXACT PARITY, with 0 divergences in each corpus: 19/19 fixtures, 3/3 `filebased`, 17/17 tracked, 155/155 module `.go` files. AC-E2.6 items 1–3 suffice. |
+> | G-3 | EXACT PARITY, with 0 divergences in each corpus: 19/19 fixtures, 3/3 `filebased`, 17/17 tracked, 155/155 `.go` files in the scratch worktree (154 tracked + the harness). AC-E2.6 items 1–3 suffice. |
 > | G-4 | FEASIBLE. A representation change only, made strictly stricter by import-path `syscall` resolution. |
 > | G-5 | FEASIBLE and **additive**. The binding additivity rule is restated in E-T4. |
 > | G-6 | Syntactic intra-function tracking. `go/types` is rejected. |
@@ -2514,13 +2514,15 @@ receiver bound from `pathsafe.NewRoot`. A bare `.Resolve(` match is
 insufficient.
 * **Binding strategy (G-6).** Syntactic tracking within one `*ast.FuncDecl` or
   `*ast.FuncLit`. It records identifiers bound by `x := pathsafe.NewRoot(...)`,
-  `x, err := pathsafe.NewRoot(...)` or `var x = pathsafe.NewRoot(...)`, with
-  the qualifier resolved through E-T4's table to
+  `x, err := pathsafe.NewRoot(...)` or the multi-name declaration
+  `var x, err = pathsafe.NewRoot(...)` (a `*ast.ValueSpec` with two names;
+  `NewRoot` returns `(Root, error)`, so a single-name `var x = ...` does not
+  compile, PR #99 review amendment), with the qualifier resolved through E-T4's table to
   `github.com/softwaresalt/intercom-go/internal/pathsafe`. It also records
   plain assignments (`token.ASSIGN`): `x = pathsafe.NewRoot(...)` and
   `x, err = pathsafe.NewRoot(...)`, for example after `var root pathsafe.Root`
   (PR #99 review amendment, **not re-gated**). The AC-E5 shape scan at
-  `961b652` finds no such binding in the tree today (recorded in
+  `961b652` finds no plain-assignment or `var` binding in the tree today (recorded in
   `docs/decisions/assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt`).
 * **No `go/types`.** Cross-function flows, struct fields, package-level
   variables and method values remain a residual, carried by E-T6.
@@ -2528,10 +2530,11 @@ insufficient.
 **Acceptance criteria**
 * AC-E5.1 (AC-4.4) — Fires on a fixture introducing a production
   `Root.Resolve` caller; does **not** fire on the tracked tree (zero production
-  callers, re-measured at the parent commit). Scenario 1's fixture holds two
-  callers, and each fires: one receiver bound by `:=` and one bound by plain
+  callers, re-measured at the parent commit). Scenario 1's fixture holds three
+  callers, and each fires: one receiver bound by `:=`, one bound by plain
   assignment (`var root pathsafe.Root` then `root, err = pathsafe.NewRoot(dir)`
-  then `root.Resolve(...)`). This stays within the three scenarios (PR #99
+  then `root.Resolve(...)`), and one bound by `var r, err = pathsafe.NewRoot(dir)`
+  then `r.Resolve(...)`. This stays within the three scenarios (PR #99
   review amendment, **not re-gated**).
 * AC-E5.2 — Does not fire on an unrelated `.Resolve(` receiver.
 * AC-E5.3 — Golden changes are additive only (as AC-E4.2).
@@ -3879,5 +3882,7 @@ re-gate covers them too.
 | E-T5 binding misses `token.ASSIGN` (iteration 2) | Binding strategy and AC-E5.1 cover `x = pathsafe.NewRoot(...)` and `x, err = ...`. |
 | AC-E7.3 misses aliased/dot `io/ioutil` imports (iteration 2) | AC-E7.3 adds an import-path scan; an aliased or dot import is a HALT. |
 | H-5 pointed at memory for verbatim output (iteration 2) | Commands and output recorded in `docs/decisions/assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt`. |
+| E-T5 binding omits `var x, err = pathsafe.NewRoot(...)` (iteration 3) | The single-name `var x = ...` (which does not compile) is replaced by the multi-name `ValueSpec` form. The AC-E5.1 fixture adds a third, `var`-bound caller. A `var` shape scan at `961b652` finds none. |
+| ALLGO counted the untracked harness (iteration 3) | The ALLGO figure is described as 155 `.go` files in the scratch worktree: the 154 tracked at `961b652` plus the untracked harness. |
 
 *Generated by Copilot*

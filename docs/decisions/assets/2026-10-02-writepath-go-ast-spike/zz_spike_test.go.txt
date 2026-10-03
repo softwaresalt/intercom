@@ -320,10 +320,10 @@ func TestSpikeParity_TrackedTree(t *testing.T) {
 	t.Logf("TRACKED files=%d equal=%d diff=%d parseErr=%d", tally.files, tally.equal, tally.diff, tally.parseErr)
 }
 
-// TestSpikeParity_AllModuleGo widens the parity sample to every tracked .go
-// file in the scratch worktree (not only the gate's scan scope). The worktree
-// is a clean checkout, so this equals the tracked .go set outside the
-// writepath fixtures.
+// TestSpikeParity_AllModuleGo widens the parity sample to every .go file
+// present in the scratch worktree (not only the gate's scan scope), except the
+// writepath fixtures. That is the tracked .go set (154 at 961b652) plus this
+// untracked harness file itself, hence ALLGO=155.
 func TestSpikeParity_AllModuleGo(t *testing.T) {
 	root := repoRoot(t)
 	out, err := DefaultGitRunner(root)

@@ -44,3 +44,7 @@ internal/pathsafe/symlink_privilege_windows_test.go:7:	"syscall"
 ## AC-E5 shape scan (plain-assignment NewRoot bindings, token.ASSIGN; _test.go included)
 $ git grep -nE '[A-Za-z_][A-Za-z0-9_]*([[:space:]]*,[[:space:]]*[A-Za-z_][A-Za-z0-9_]*)*[[:space:]]*=[[:space:]]*[A-Za-z_][A-Za-z0-9_]*\.NewRoot\(' -- 'internal/**' 'cmd/**'
 (no output)
+
+## AC-E5 var shape scan (multi-name var NewRoot bindings; added at PR #99 iteration 3)
+$ git grep -nE 'var[[:space:]]+[A-Za-z_][A-Za-z0-9_]*([[:space:]]*,[[:space:]]*[A-Za-z_][A-Za-z0-9_]*)*[[:space:]]*(=|[A-Za-z_.]+[[:space:]]*=)[[:space:]]*[A-Za-z_][A-Za-z0-9_]*\.NewRoot\(' 961b652 -- 'internal/**' 'cmd/**'
+(no output; exit 1)

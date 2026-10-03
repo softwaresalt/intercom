@@ -92,4 +92,7 @@ base_commit: 961b652
   - AC-E7.3 / 049.007-T adds an import-path scan; an aliased or dot import is a HALT.
   - The harness filebased decode, read and golden paths, plus the fixture golden read and the all-module walk, now fail instead of logging. Re-run at `961b652`: the same tallies, PASS.
   - H-5 evidence pointer corrected. The commands and verbatim output (H-5 1–4, the inclusive variant, the import-path scan and the shape scan) are in `docs/decisions/assets/2026-10-02-writepath-go-ast-spike/h5-rev7-remeasure.txt`. This memory doc holds no verbatim output.
+- Iteration 3 (on `484dae9`): one inline finding and one previously missed item, both applied:
+  - E-T5 / 049.005-T binding uses the multi-name `var x, err = pathsafe.NewRoot(...)` form, since a single-name `var x = ...` does not compile. The AC-E5.1 fixture adds a third caller.
+  - ALLGO 155 is described as the 154 tracked `.go` files at `961b652` plus the untracked harness.
 - The hold is unchanged. These amendments join the operator-authorized re-gate scope.

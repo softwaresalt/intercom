@@ -857,7 +857,7 @@ it afterwards. Findings are in
   * the 19 fixtures;
   * the 3 `filebased` inputs;
   * the 17 tracked in-scope files;
-  * all 155 module `.go` files.
+  * all 155 `.go` files in the scratch worktree (154 tracked + the harness).
 
   The oracle adaptation is the single authorised one: freeze its glob to the
   19 names, and turn the `\f`/`\v`/`U+2028` cases into fail-closed
