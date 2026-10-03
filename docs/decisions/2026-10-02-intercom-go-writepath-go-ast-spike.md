@@ -467,3 +467,12 @@ source out of the Go build. To reproduce:
    `github.com/softwaresalt/intercom-go`).
 
 Do not commit the file. The normative tests are written red-first by E-T2..E-T7.
+
+**Harness hardening (PR #99 review).** The committed harness reports a parse
+error, a divergence, or a golden mismatch with `t.Errorf`, so any divergence
+fails the test. The original run used `t.Logf` at those three sites. It
+recorded zero hits in every tally (`spike-output.txt`), so the verdict is
+unchanged. The hardened harness was re-run on 2026-10-02 against `961b652`
+in a throwaway P-016 worktree that was removed afterwards. It passed with the
+same tallies: fixtures 19/19, filebased 3/3, tracked 17/17 and all-module
+155/155, each with `diff=0 parseErr=0`.

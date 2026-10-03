@@ -219,7 +219,7 @@ func spikeCompare(t *testing.T, tally *spikeTally, rel, src string) {
 	got, err := astScan(rel, src)
 	if err != nil {
 		tally.parseErr++
-		t.Logf("PARSE-FAIL-CLOSED %s: %v (text findings=%d)", rel, err, len(text))
+		t.Errorf("PARSE-FAIL-CLOSED %s: %v (text findings=%d)", rel, err, len(text))
 		return
 	}
 	if strings.Join(text, "\n") == strings.Join(got, "\n") {
@@ -227,7 +227,7 @@ func spikeCompare(t *testing.T, tally *spikeTally, rel, src string) {
 		return
 	}
 	tally.diff++
-	t.Logf("DIVERGENCE %s\n  text=%q\n  ast =%q", rel, text, got)
+	t.Errorf("DIVERGENCE %s\n  text=%q\n  ast =%q", rel, text, got)
 }
 
 func TestSpikeParity_FixtureCorpus(t *testing.T) {
@@ -249,7 +249,7 @@ func TestSpikeParity_FixtureCorpus(t *testing.T) {
 		src, _ := pysem.ReadText(filepath.Join(root, "scripts", "testdata", "writepath", row.Name))
 		got, err := astScan("scripts/testdata/writepath/"+row.Name, src)
 		if err != nil || strings.Join(got, "\n") != strings.Join(row.Findings, "\n") {
-			t.Logf("GOLDEN-MISMATCH %s err=%v got=%q want=%q", row.Name, err, got, row.Findings)
+			t.Errorf("GOLDEN-MISMATCH %s err=%v got=%q want=%q", row.Name, err, got, row.Findings)
 		}
 	}
 	t.Logf("GOLDEN fixture_findings rows=%d", len(g.FixtureFindings))

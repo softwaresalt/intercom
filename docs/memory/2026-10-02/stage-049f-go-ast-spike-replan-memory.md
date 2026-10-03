@@ -82,4 +82,4 @@ base_commit: 961b652
   - `captured_stash` frontmatter updated (OD-6/GM-2).
   - Forced worktree removal note added (OD-8).
 - OD-7 was already superseded by the 049.003-T cycle-2 amendment.
-- Residual risk: the 039-S claim hold is advisory (a section plus 049-F `blocked`). Backlog dependency rules alone do not block a claim.
+- 039-S claim hold: 049-F `blocked` is mechanically enforced. Ship Step 0.5 runs `shipment-reconcile` (pre, `expected_status: queued`), so the blocked 049-F is a `status-mismatch` that halts intake (Copilot PR #99). The `hold` section is explanatory.
