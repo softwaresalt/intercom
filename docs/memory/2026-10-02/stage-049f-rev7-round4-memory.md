@@ -82,8 +82,10 @@ base_commit: e3250d3
   * round 4: also the `unparam` lint boundary.
 * An executor-side `go/parser` probe of every ported row (as R4-2 requires) is
   the mechanical fix for that pattern. Review cycles alone are not converging.
-* The plan's round-4 pattern note gives example operator options besides
-  another review round:
+* The plan's round-4 pattern note gives example paths besides another review
+  round. Each one needs a new, recorded operator decision that amends the
+  D-049-7 hold-lift rule. Without one, Ship's pre-claim reconciliation stops
+  any 039-S claim. The examples are:
   * a Ship-executed E-T2/E-T3 under an explicit rule that port-table rows are
     verified by a `go/parser` probe at execution;
   * merging E-T2 and E-T3 under a recorded 2-hour deviation.
