@@ -16,7 +16,8 @@ base_commit: 121e972
 * At 2026-10-03T00:13-07:00 the operator authorised **exactly one** more
   plan-review round, round 5, over plan rev 7 Unit E as amended by
   R4-1..R4-8. It is recorded as **D-049-9**, the second exception to the
-  3-cycle cap after D-049-8. It does not authorise a round 6.
+    3-cycle cap for the Unit E rev 7 gate after D-049-8 (the third overall,
+    after D-030-6). It does not authorise a round 6.
 * **The round-5 gate result is FAIL. The 049-F STAGE HOLD stays.**
 
   | Reviewer | Model | Verdict | Findings |
