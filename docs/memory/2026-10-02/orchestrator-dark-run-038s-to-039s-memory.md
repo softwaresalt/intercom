@@ -28,9 +28,14 @@ closed. 039-S is still held.
   * #90 (`7fad096`) added the `038-S → 037-S` blocks edge, which fixed
     `UNSEQUENCED_SHIPMENT`.
   * #99 (`272c404`) added the go/ast spike and the rev 7 re-plan.
-* Every PR was merged with a merge commit and without `--admin`. Each one had
-  a multi-model adversarial review (gpt-5.6-sol as anchor, claude-opus-5.5,
-  and gemini-3.8-flash or grok-4.7) and passed the P-018 Copilot review gate.
+* Every PR was merged with a merge commit and without `--admin`, and every
+  one passed the P-018 Copilot review gate.
+* Every PR also had a multi-model adversarial review, with gpt-5.6-sol as the
+  anchor. The other reviewers varied by PR, for example:
+  * the claude-opus or claude-sonnet families;
+  * gpt-5.5;
+  * gemini-3.8-flash, with grok-4.7 as the fallback when Gemini returned
+    nothing.
 
 ## Why 039-S halted
 
