@@ -115,6 +115,10 @@ verification AC.
   * The execution order omitted E-T1.
   * The 049-F description's "039-S is blocked by 031-S" and "Scope and
     gating are unchanged" phrases were not marked historical.
+  * A local delta review at `e68fc4b` returned gpt-5.6-sol PASS and
+    claude-opus-5.5 ADVISORY. Opus raised a P3: the new 049-F text said the
+    scope phrase "still holds", which contradicted `rev7-scope`. Fixed: the
+    scope part is now superseded by `rev7-scope`.
 
 ## Stash
 
