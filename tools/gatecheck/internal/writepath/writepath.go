@@ -12,7 +12,7 @@
 //
 // # Residual evasion surface (034.007-T, AC-4.7)
 //
-// The detector includes the 26 qualified selectors in Selectors and the
+// The detector includes the 76 qualified selectors in Selectors and the
 // narrowly-scoped pathsafe.Root.Resolve receiver analysis in item 2. The
 // following surface is recorded here, never silently left unhandled:
 //
@@ -35,14 +35,12 @@
 //     This is a false-positive surface: a future legitimate metadata-only
 //     call in such a shape trips the gate and needs an explicit, reviewed
 //     widening. It is never a silent hole.
-//  6. Write primitives outside the selector set are not detected:
-//     ioutil.WriteFile, ioutil.TempFile, ioutil.TempDir; syscall write and
-//     namespace calls other than syscall.CreateFile and syscall.Write
-//     (syscall.WriteFile, Open, Unlink, Rename, Mkdir, CreateHardLink,
-//     DeleteFile); and golang.org/x/sys/windows and golang.org/x/sys/unix
-//     equivalents. None occurs in internal/** or cmd/** at 9b299c8.
-//     Widening the selector set is out of D-031-2's scope and is tracked as
-//     stash entry 458F9385.
+//  6. Write primitives outside the selector set are not detected. E-T7 adds
+//     the enumerated ioutil, syscall, x/sys/windows and x/sys/unix
+//     primitives. The same-family remainder remains: metadata and attribute
+//     writes; syscall.Pwrite, Ftruncate, Link and Symlink; unix.Writev,
+//     Pwritev, Mknod and Mknodat; and other non-enumerated primitives. This
+//     remainder is tracked as stash entry C0D28448.
 //  7. Selectors split by a newline or comment are detected through the AST;
 //     Go inserts no semicolon after ".", so these forms remain valid Go.
 //
@@ -75,14 +73,15 @@ import (
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
 
-// Selectors is the ordered list of 26 qualified write-primitive selectors
+// Selectors is the ordered list of 76 qualified write-primitive selectors
 // this gate detects. The first 20 were ported verbatim from the retired
 // Python SELECTORS list (including its three adversarial-review
-// additions); the last six (syscall.CreateFile, syscall.Write,
-// os.OpenRoot, os.Root, io.CopyN, io.CopyBuffer) were appended by
-// 034.004-T so existing finding order is unchanged. syscall.CreateFile is
-// reported unless callAllowed proves the exact metadata-only
-// reparse-probe call shape.
+// additions); the next six (syscall.CreateFile, syscall.Write,
+// os.OpenRoot, os.Root, io.CopyN, io.CopyBuffer) were appended by 034.004-T.
+// The final 50 import-path-keyed selectors were appended by 049.007-T:
+// three ioutil, 14 syscall, 11 x/sys/windows and 22 x/sys/unix selectors.
+// syscall.CreateFile is reported unless callAllowed proves the exact
+// metadata-only reparse-probe call shape.
 var Selectors = []string{
 	"os.WriteFile", "os.Create", "os.OpenFile", "os.Remove", "os.RemoveAll",
 	"os.Rename", "os.Mkdir", "os.MkdirAll", "os.Symlink", "os.Chmod",
@@ -91,6 +90,20 @@ var Selectors = []string{
 	"os.Chtimes",
 	"syscall.CreateFile", "syscall.Write", "os.OpenRoot", "os.Root",
 	"io.CopyN", "io.CopyBuffer",
+	"ioutil.WriteFile", "ioutil.TempFile", "ioutil.TempDir",
+	"syscall.WriteFile", "syscall.Open", "syscall.Unlink", "syscall.Rename",
+	"syscall.Mkdir", "syscall.Rmdir", "syscall.CreateHardLink", "syscall.DeleteFile",
+	"syscall.MoveFile", "syscall.RemoveDirectory", "syscall.CreateDirectory",
+	"syscall.CreateSymbolicLink", "syscall.Truncate", "syscall.Creat",
+	"windows.WriteFile", "windows.CreateFile", "windows.DeleteFile",
+	"windows.MoveFile", "windows.MoveFileEx", "windows.CreateDirectory",
+	"windows.RemoveDirectory", "windows.CreateHardLink", "windows.CreateSymbolicLink",
+	"windows.SetEndOfFile", "windows.SetFileInformationByHandle",
+	"unix.Open", "unix.Openat", "unix.Openat2", "unix.Creat", "unix.Write",
+	"unix.Pwrite", "unix.Unlink", "unix.Unlinkat", "unix.Rename", "unix.Renameat",
+	"unix.Renameat2", "unix.Mkdir", "unix.Mkdirat", "unix.Rmdir", "unix.Link",
+	"unix.Linkat", "unix.Symlink", "unix.Symlinkat", "unix.Truncate",
+	"unix.Ftruncate", "unix.Chmod", "unix.Fchmodat",
 }
 
 const (
@@ -291,12 +304,27 @@ func canonicalImportPath(qualifier string) (string, bool) {
 	switch qualifier {
 	case "os", "io", "syscall":
 		return qualifier, true
+	case "ioutil":
+		return "io/ioutil", true
 	case "sql":
 		return "database/sql", true
 	case "bbolt":
 		return "go.etcd.io/bbolt", true
+	case "windows":
+		return "golang.org/x/sys/windows", true
+	case "unix":
+		return "golang.org/x/sys/unix", true
 	default:
 		return "", false
+	}
+}
+
+func usesPhysicalLineNumbers(importPath string) bool {
+	switch importPath {
+	case "io/ioutil", "golang.org/x/sys/windows", "golang.org/x/sys/unix":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -599,7 +627,8 @@ func scanSource(relPath, src string) ([]string, error) {
 			}
 			selectorIndex, ok := selectorIndexes[qualifier.Name+"."+n.Sel.Name]
 			matchedByImportPath := false
-			if importPath, bound := importBindings[qualifier.Name]; bound {
+			importPath, bound := importBindings[qualifier.Name]
+			if bound {
 				if canonicalIndex, matched := selectorIndexForImportPath(importPath, n.Sel.Name); matched {
 					if !ok {
 						selectorIndex = canonicalIndex
@@ -631,7 +660,8 @@ func scanSource(relPath, src string) ([]string, error) {
 				scanErr = fmt.Errorf("map selector position in %q: invalid source byte offset %d", relPath, sourceOffset)
 				return false
 			}
-			scanErr = addFinding(maskedOffset, selectorIndex, "", matchedByImportPath || split)
+			countNonBlankLines := split || (matchedByImportPath && !usesPhysicalLineNumbers(importPath))
+			scanErr = addFinding(maskedOffset, selectorIndex, "", countNonBlankLines)
 
 		case *ast.BasicLit:
 			if n.Kind != token.STRING || len(n.Value) < 2 || n.Value[0] != '`' || n.Value[len(n.Value)-1] != '`' {
@@ -701,7 +731,7 @@ func scanSource(relPath, src string) ([]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("map dot import position in %q: invalid source byte offset %d", relPath, sourceOffset)
 		}
-		if err := addFinding(maskedOffset, selectorIndex, prefix+".*", true); err != nil {
+		if err := addFinding(maskedOffset, selectorIndex, prefix+".*", !usesPhysicalLineNumbers(importPath)); err != nil {
 			return nil, err
 		}
 	}

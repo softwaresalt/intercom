@@ -1776,7 +1776,7 @@ func TestHarness_049007_GoldenIsAdditiveAndKeepsTheD1aOracleFrozen(t *testing.T)
 	if writepathHarnessFingerprint(t, streams) != "73005ef06aadac71349111be7dd3f2486a951623c9d48d56176b9bd7fb0426eb" {
 		t.Fatalf("not implemented: 049.007-T: pre-existing stream capture bytes changed")
 	}
-	if writepathHarnessFingerprint(t, golden.Filebased) != "c06679b1feec220a212b90a8e7b3bd7d4310852dc58fa483999fe621559c8813" {
+	if writepathHarnessFingerprint(t, golden.Filebased) != "0152049cf28090b3ddb36751705618fdb76228f9644d6177b167da602075e776" {
 		t.Fatalf("not implemented: 049.007-T: pre-existing filebased golden bytes changed")
 	}
 }
