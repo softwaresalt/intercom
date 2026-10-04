@@ -10,21 +10,31 @@
 // the inner Python script's mode argument, so a future CLI wrapper (M1-T10)
 // only needs to forward argv and the resolved --root.
 //
+// Detector scope is the ordered 76-selector list in Selectors below; it
+// matches the wrapper's detector-scope list in
+// scripts/check-write-path-precondition.sh.
+//
 // # Residual evasion surface (034.007-T, AC-4.7)
 //
 // The detector includes the 76 qualified selectors in Selectors and the
 // narrowly-scoped pathsafe.Root.Resolve receiver analysis in item 2. The
 // following surface is recorded here, never silently left unhandled:
 //
-//  1. Named import aliases are resolved through their canonical import paths
-//     (Unit E, shipment 039-S).
+// Closed residuals: item 1 (named import aliases) is closed by 049.004-T,
+// using reject-alias-os-writefile.go. Item 7 (selector split by a newline or
+// comment) is closed by 049.002-T and pinned by 049.004-T's
+// reject-split-selector.go.
+//
 //  2. Root.Resolve is reported when its receiver is bound by pathsafe.NewRoot
 //     within the same FuncDecl or FuncLit, including the supported two-name
-//     declaration and assignment forms. Cross-function flows, struct fields,
-//     package-level variables, and method values remain residuals.
-//  3. Dot imports of write-capable packages fail closed at the import spec;
-//     blank imports are inert. Local identifiers shadowing a package name
-//     (including a local syscall identifier) remain residual.
+//     declaration and assignment forms. This same-function binding is closed
+//     by 049.005-T / reject-resolve-first-caller.go. Cross-function flows,
+//     struct fields, package-level variables, and method values remain
+//     residuals.
+//  3. Dot imports of write-capable packages are reported at the import spec,
+//     closed by 049.004-T / reject-dot-import-os.go. Blank imports are inert.
+//     Local identifiers shadowing a package name (including a local syscall
+//     identifier) remain residual.
 //  4. os.Root method calls and (*os.File).Write*.
 //  5. Undecidable or non-simple call shape -> rejected. A
 //     syscall.CreateFile reached via a wrapper or function value, with an
@@ -35,22 +45,31 @@
 //     This is a false-positive surface: a future legitimate metadata-only
 //     call in such a shape trips the gate and needs an explicit, reviewed
 //     widening. It is never a silent hole.
-//  6. Write primitives outside the selector set are not detected. E-T7 adds
-//     the enumerated ioutil, syscall, x/sys/windows and x/sys/unix
-//     primitives. The same-family remainder remains: metadata and attribute
-//     writes; syscall.Pwrite, Ftruncate, Link and Symlink; unix.Writev,
-//     Pwritev, Mknod and Mknodat; and other non-enumerated primitives. This
-//     remainder is tracked as stash entry C0D28448.
-//  7. Selectors split by a newline or comment are detected through the AST;
-//     Go inserts no semicolon after ".", so these forms remain valid Go.
+//  6. Write primitives outside the selector set are not detected. E-T7 closes
+//     the 50 enumerated ioutil, syscall, x/sys/windows and x/sys/unix
+//     primitives in 049.007-T and fixtures reject-ioutil-write-primitives.go,
+//     reject-syscall-namespace-primitives.go and
+//     reject-xsys-write-primitives.go. The same-family remainder remains:
+//     metadata and attribute writes; syscall.Pwrite, Ftruncate, Link and
+//     Symlink; unix.Writev, Pwritev, Mknod and Mknodat; and other
+//     non-enumerated primitives. This remainder is tracked as stash entry
+//     C0D28448. In particular, the uncovered symbols include
+//     syscall.Chmod/Fchmod/Chown/Utimes/SetFileAttributes,
+//     unix.Fchmod/Chown/Fchown/Lchown/Utimes/Setxattr,
+//     windows.SetFileAttributes, unix.Writev/Pwritev, syscall.Ftruncate,
+//     syscall.Link/Symlink, unix.Mknod/Mknodat, and any other un-enumerated
+//     write-capable symbol in those packages.
+//  8. Dynamic invocation through syscall.NewLazyDLL / LazyProc.Call,
+//     syscall.Syscall* and the golang.org/x/sys equivalents can reach any OS
+//     write API without a write-named selector. syscall.NewLazyDLL is live in
+//     production, so this surface cannot become a finding without an
+//     allowance design. It is outside Unit E and deferred as stash entry
+//     FE2F02FF.
 //
-// Residual-risk statement: this gate is a narrow AST tripwire, not a
-// complete mechanical proof. Item 2's cross-function flows, struct fields,
-// package-level variables, and method values, plus items 4, 5, 6 and
-// package-name shadowing remain known residual surfaces. At 9b299c8 there
-// are zero production Root.Resolve callers and zero item-6 primitives in
-// internal/**/cmd/**. The compensating control is human and agent PR review
-// against this list.
+// Residual-risk statement: this gate remains a narrow AST tripwire, not a
+// complete mechanical proof. Items 2, 4, 5, 6 and 8, plus local package-name
+// shadowing in item 3, remain residual surfaces. The compensating control is
+// human and agent PR review against this list.
 package writepath
 
 import (
