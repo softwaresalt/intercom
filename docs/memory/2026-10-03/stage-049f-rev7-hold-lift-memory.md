@@ -130,9 +130,10 @@ verification AC.
 * **Cycle 2** (HEAD `e16121f`): one in-scope comment, asking for the
   `e16121f` clean review to be recorded here. It is recorded above.
   Commits after this point touch only this memory file's review history.
-  The authoritative final Reviewed HEAD, the Copilot iteration count and
-  the merge SHA are in the PR #104 "Local Review Readiness" block and in
-  Stage's return to the Orchestrator.
+  The final Reviewed HEAD is kept in the PR #104 "Local Review Readiness"
+  block. The Copilot iteration count and the merge SHA are known only after
+  merge, so they are reported in Stage's return to the Orchestrator and not
+  in this file.
 
 ## Stash
 
