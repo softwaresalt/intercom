@@ -12,16 +12,16 @@
 //
 // # Residual evasion surface (034.007-T, AC-4.7)
 //
-// The detector is the 26 qualified selectors in Selectors. The following
-// surface is recorded here, never silently left unhandled:
+// The detector includes the 26 qualified selectors in Selectors and the
+// narrowly-scoped pathsafe.Root.Resolve receiver analysis in item 2. The
+// following surface is recorded here, never silently left unhandled:
 //
 //  1. Named import aliases are resolved through their canonical import paths
 //     (Unit E, shipment 039-S).
-//  2. pathsafe.NewRoot receiver / Root.Resolve first-caller tracking --
-//     KNOWN OPEN, pending Unit E (feature 049-F, shipment 039-S). No
-//     tripwire exists. The pathsafe risk-register triggers ("forced the
-//     moment a real write path exists", root.go) and feature 038-F's "once
-//     a live caller exists" trigger stay awaited, not monitored.
+//  2. Root.Resolve is reported when its receiver is bound by pathsafe.NewRoot
+//     within the same FuncDecl or FuncLit, including the supported two-name
+//     declaration and assignment forms. Cross-function flows, struct fields,
+//     package-level variables, and method values remain residuals.
 //  3. Dot imports of write-capable packages fail closed at the import spec;
 //     blank imports are inert. Local identifiers shadowing a package name
 //     (including a local syscall identifier) remain residual.
@@ -46,12 +46,13 @@
 //  7. Selectors split by a newline or comment are detected through the AST;
 //     Go inserts no semicolon after ".", so these forms remain valid Go.
 //
-// Residual-risk statement: until feature 049-F ships, this gate is a
-// qualified-selector tripwire, not a complete mechanical proof. Items 2,
-// 4, 5, 6 and package-name shadowing remain known residual surfaces. At
-// 9b299c8 there are zero production Root.Resolve callers and zero item-6
-// primitives in internal/**/cmd/**. The compensating control is human and
-// agent PR review against this list.
+// Residual-risk statement: this gate is a narrow AST tripwire, not a
+// complete mechanical proof. Item 2's cross-function flows, struct fields,
+// package-level variables, and method values, plus items 4, 5, 6 and
+// package-name shadowing remain known residual surfaces. At 9b299c8 there
+// are zero production Root.Resolve callers and zero item-6 primitives in
+// internal/**/cmd/**. The compensating control is human and agent PR review
+// against this list.
 package writepath
 
 import (
@@ -93,8 +94,10 @@ var Selectors = []string{
 }
 
 const (
-	exceptionName = "011.003-T's Constitution Check exception (internal/config/validate.go rule 7)"
-	registerName  = "the consolidated risk register (internal/pathsafe package doc, root.go)"
+	exceptionName      = "011.003-T's Constitution Check exception (internal/config/validate.go rule 7)"
+	registerName       = "the consolidated risk register (internal/pathsafe package doc, root.go)"
+	pathsafeImportPath = "github.com/softwaresalt/intercom-go/internal/pathsafe"
+	rootResolveDisplay = "pathsafe.Root.Resolve"
 )
 
 // GitRunner runs `git ls-files -- internal/** cmd/**` rooted at root and
@@ -192,6 +195,96 @@ func importPathBindings(file *ast.File) (map[string]string, error) {
 		bindings[localName] = importPath
 	}
 	return bindings, nil
+}
+
+func isPathsafeNewRootCall(expr ast.Expr, bindings map[string]string) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "NewRoot" {
+		return false
+	}
+	qualifier, ok := selector.X.(*ast.Ident)
+	return ok && bindings[qualifier.Name] == pathsafeImportPath
+}
+
+func bindNewRootReceiver(root, result *ast.Ident, value ast.Expr, bindings map[string]string, roots map[string]struct{}) {
+	if root == nil || root.Name == "_" || result == nil || !isPathsafeNewRootCall(value, bindings) {
+		return
+	}
+	roots[root.Name] = struct{}{}
+}
+
+func pathsafeRootResolveSelectors(file *ast.File, bindings map[string]string) map[*ast.SelectorExpr]struct{} {
+	selectors := make(map[*ast.SelectorExpr]struct{})
+	importsPathsafe := false
+	for _, importPath := range bindings {
+		if importPath == pathsafeImportPath {
+			importsPathsafe = true
+			break
+		}
+	}
+	if !importsPathsafe {
+		return selectors
+	}
+
+	inspectFunction := func(body *ast.BlockStmt) {
+		if body == nil {
+			return
+		}
+		roots := make(map[string]struct{})
+		ast.Inspect(body, func(node ast.Node) bool {
+			if node == nil {
+				return true
+			}
+			if _, ok := node.(*ast.FuncLit); ok {
+				return false
+			}
+			switch n := node.(type) {
+			case *ast.AssignStmt:
+				if (n.Tok != token.DEFINE && n.Tok != token.ASSIGN) || len(n.Lhs) != 2 || len(n.Rhs) != 1 {
+					break
+				}
+				root, rootOK := n.Lhs[0].(*ast.Ident)
+				result, resultOK := n.Lhs[1].(*ast.Ident)
+				if rootOK && resultOK {
+					bindNewRootReceiver(root, result, n.Rhs[0], bindings, roots)
+				}
+			case *ast.ValueSpec:
+				if len(n.Names) == 2 && len(n.Values) == 1 {
+					bindNewRootReceiver(n.Names[0], n.Names[1], n.Values[0], bindings, roots)
+				}
+			case *ast.CallExpr:
+				selector, ok := n.Fun.(*ast.SelectorExpr)
+				if !ok || selector.Sel.Name != "Resolve" {
+					break
+				}
+				receiver, ok := selector.X.(*ast.Ident)
+				if !ok {
+					break
+				}
+				if _, bound := roots[receiver.Name]; bound {
+					selectors[selector] = struct{}{}
+				}
+			}
+			return true
+		})
+	}
+
+	for _, decl := range file.Decls {
+		if function, ok := decl.(*ast.FuncDecl); ok {
+			inspectFunction(function.Body)
+		}
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		if function, ok := node.(*ast.FuncLit); ok {
+			inspectFunction(function.Body)
+		}
+		return true
+	})
+	return selectors
 }
 
 func canonicalImportPath(qualifier string) (string, bool) {
@@ -404,6 +497,7 @@ func scanSource(relPath, src string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read imports in Go source %q: %w", relPath, err)
 	}
+	rootResolveSelectors := pathsafeRootResolveSelectors(file, importBindings)
 	masked := gomask.MaskGoNonCode(src)
 	sourceRuneOffsets := runeByteOffsets(src)
 	maskedRuneOffsets := runeByteOffsets(masked)
@@ -484,6 +578,21 @@ func scanSource(relPath, src string) ([]string, error) {
 		}
 		switch n := node.(type) {
 		case *ast.SelectorExpr:
+			if _, rootResolve := rootResolveSelectors[n]; rootResolve {
+				tf := fset.File(n.Pos())
+				sourceOffset, ok := physicalSourceOffset(tf, n.Pos(), len(src))
+				if !ok {
+					scanErr = fmt.Errorf("map Root.Resolve position in %q: invalid token position", relPath)
+					return false
+				}
+				maskedOffset, ok := maskedOffsetForSourceByte(sourceOffset, sourceRuneOffsets, maskedRuneOffsets)
+				if !ok {
+					scanErr = fmt.Errorf("map Root.Resolve position in %q: invalid source byte offset %d", relPath, sourceOffset)
+					return false
+				}
+				scanErr = addFinding(maskedOffset, len(Selectors), rootResolveDisplay, false)
+				return true
+			}
 			qualifier, ok := n.X.(*ast.Ident)
 			if !ok {
 				return true
@@ -613,9 +722,9 @@ func scanSource(relPath, src string) ([]string, error) {
 
 	result := make([]string, 0, len(ordered))
 	for _, finding := range ordered {
-		selector := Selectors[finding.selectorIndex]
-		if finding.display != "" {
-			selector = finding.display
+		selector := finding.display
+		if selector == "" {
+			selector = Selectors[finding.selectorIndex]
 		}
 		result = append(result, fmt.Sprintf("%s:%d: write primitive %s found", relPath, finding.line, pysem.Repr(selector)))
 	}
