@@ -112,7 +112,7 @@
       "name": "reject-alias-os-writefile.go",
       "expect_rejected": true,
       "findings": [
-        "scripts/testdata/writepath/reject-alias-os-writefile.go:4: write primitive 'os.WriteFile' found"
+        "scripts/testdata/writepath/reject-alias-os-writefile.go:6: write primitive 'os.WriteFile' found"
       ]
     },
     {
@@ -126,7 +126,7 @@
       "name": "reject-dot-import-os.go",
       "expect_rejected": true,
       "findings": [
-        "scripts/testdata/writepath/reject-dot-import-os.go:2: write primitive 'os.*' found"
+        "scripts/testdata/writepath/reject-dot-import-os.go:3: write primitive 'os.*' found"
       ]
     },
     {
@@ -209,8 +209,8 @@
       "name": "reject-split-selector.go",
       "expect_rejected": true,
       "findings": [
-        "scripts/testdata/writepath/reject-split-selector.go:4: write primitive 'os.WriteFile' found",
-        "scripts/testdata/writepath/reject-split-selector.go:6: write primitive 'os.WriteFile' found"
+        "scripts/testdata/writepath/reject-split-selector.go:6: write primitive 'os.WriteFile' found",
+        "scripts/testdata/writepath/reject-split-selector.go:8: write primitive 'os.WriteFile' found"
       ]
     },
     {

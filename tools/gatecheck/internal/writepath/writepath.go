@@ -338,15 +338,6 @@ func canonicalImportPath(qualifier string) (string, bool) {
 	}
 }
 
-func usesPhysicalLineNumbers(importPath string) bool {
-	switch importPath {
-	case "io/ioutil", "golang.org/x/sys/windows", "golang.org/x/sys/unix":
-		return true
-	default:
-		return false
-	}
-}
-
 func selectorIndexForImportPath(importPath, name string) (int, bool) {
 	for i, selector := range Selectors {
 		qualifier, selectorName, ok := strings.Cut(selector, ".")
@@ -381,7 +372,7 @@ func isSyscallSelector(expr ast.Expr, bindings map[string]string, name string) b
 		return false
 	}
 	qualifier, ok := selector.X.(*ast.Ident)
-	return ok && bindings[qualifier.Name] == "syscall"
+	return ok && selector.Sel.Pos()-qualifier.End() == 1 && bindings[qualifier.Name] == "syscall"
 }
 
 // bareOperand reports whether expr is one of the G-4 operand forms. Calls,
@@ -491,20 +482,6 @@ func physicalSourceOffset(file *token.File, pos token.Pos, sourceLen int) (int, 
 	return offset, true
 }
 
-func selectorHasSplitTrivia(fset *token.FileSet, selector *ast.SelectorExpr, source string) (bool, error) {
-	file := fset.File(selector.Pos())
-	start, ok := physicalSourceOffset(file, selector.X.End(), len(source))
-	if !ok {
-		return false, fmt.Errorf("map selector start: invalid token position")
-	}
-	end, ok := physicalSourceOffset(file, selector.Sel.Pos(), len(source))
-	if !ok || end < start {
-		return false, fmt.Errorf("map selector end: invalid token position")
-	}
-	between := source[start:end]
-	return strings.ContainsAny(between, "\r\n") || strings.Contains(between, "/*") || strings.Contains(between, "//"), nil
-}
-
 func lineNumberAtOffset(lineStarts []int, offset int) (int, bool) {
 	line := sort.Search(len(lineStarts), func(i int) bool {
 		return lineStarts[i] > offset
@@ -513,21 +490,6 @@ func lineNumberAtOffset(lineStarts []int, offset int) (int, bool) {
 		return 0, false
 	}
 	return line + 1, true
-}
-
-func nonBlankLineNumberAtOffset(source string, lineStarts []int, offset int) (int, bool) {
-	line, ok := lineNumberAtOffset(lineStarts, offset)
-	sourceLines := pysem.SplitLines(source)
-	if !ok || line > len(sourceLines) {
-		return 0, false
-	}
-	count := 0
-	for _, sourceLine := range sourceLines[:line] {
-		if strings.TrimSpace(sourceLine) != "" {
-			count++
-		}
-	}
-	return count, count > 0
 }
 
 // scanSource scans unmasked, decoded Go source and fails closed on any parse
@@ -603,16 +565,10 @@ func scanSource(relPath, src string) ([]string, error) {
 		display       string
 	}
 	findings := make(map[findingKey]struct{})
-	addFinding := func(maskedOffset, selectorIndex int, display string, countNonBlankLines bool) error {
+	addFinding := func(maskedOffset, selectorIndex int, display string) error {
 		line, ok := lineNumberAtOffset(lineStarts, maskedOffset)
 		if !ok {
 			return fmt.Errorf("map finding in %q: invalid masked byte offset %d", relPath, maskedOffset)
-		}
-		if countNonBlankLines {
-			line, ok = nonBlankLineNumberAtOffset(src, lineStarts, maskedOffset)
-			if !ok {
-				return fmt.Errorf("map finding in %q: invalid source line at masked byte offset %d", relPath, maskedOffset)
-			}
 		}
 		findings[findingKey{line: line, selectorIndex: selectorIndex, display: display}] = struct{}{}
 		return nil
@@ -637,7 +593,7 @@ func scanSource(relPath, src string) ([]string, error) {
 					scanErr = fmt.Errorf("map Root.Resolve position in %q: invalid source byte offset %d", relPath, sourceOffset)
 					return false
 				}
-				scanErr = addFinding(maskedOffset, len(Selectors), rootResolveDisplay, false)
+				scanErr = addFinding(maskedOffset, len(Selectors), rootResolveDisplay)
 				return true
 			}
 			qualifier, ok := n.X.(*ast.Ident)
@@ -645,7 +601,6 @@ func scanSource(relPath, src string) ([]string, error) {
 				return true
 			}
 			selectorIndex, ok := selectorIndexes[qualifier.Name+"."+n.Sel.Name]
-			matchedByImportPath := false
 			importPath, bound := importBindings[qualifier.Name]
 			if bound {
 				if canonicalIndex, matched := selectorIndexForImportPath(importPath, n.Sel.Name); matched {
@@ -653,8 +608,6 @@ func scanSource(relPath, src string) ([]string, error) {
 						selectorIndex = canonicalIndex
 						ok = true
 					}
-					canonicalQualifier, _, _ := strings.Cut(Selectors[canonicalIndex], ".")
-					matchedByImportPath = qualifier.Name != canonicalQualifier
 				}
 			}
 			if !ok {
@@ -662,11 +615,6 @@ func scanSource(relPath, src string) ([]string, error) {
 			}
 			if _, allowed := allowedCalls[n]; allowed {
 				return true
-			}
-			split, err := selectorHasSplitTrivia(fset, n, src)
-			if err != nil {
-				scanErr = fmt.Errorf("inspect selector in %q: %w", relPath, err)
-				return false
 			}
 			tf := fset.File(n.Pos())
 			sourceOffset, ok := physicalSourceOffset(tf, n.Pos(), len(src))
@@ -679,8 +627,7 @@ func scanSource(relPath, src string) ([]string, error) {
 				scanErr = fmt.Errorf("map selector position in %q: invalid source byte offset %d", relPath, sourceOffset)
 				return false
 			}
-			countNonBlankLines := split || (matchedByImportPath && !usesPhysicalLineNumbers(importPath))
-			scanErr = addFinding(maskedOffset, selectorIndex, "", countNonBlankLines)
+			scanErr = addFinding(maskedOffset, selectorIndex, "")
 
 		case *ast.BasicLit:
 			if n.Kind != token.STRING || len(n.Value) < 2 || n.Value[0] != '`' || n.Value[len(n.Value)-1] != '`' {
@@ -716,7 +663,7 @@ func scanSource(relPath, src string) ([]string, error) {
 			}
 			for selectorIndex, selector := range Selectors {
 				for _, occurrence := range selectorOccurrences(maskedInterior, selector) {
-					if err := addFinding(maskedStart+occurrence, selectorIndex, "", false); err != nil {
+					if err := addFinding(maskedStart+occurrence, selectorIndex, ""); err != nil {
 						scanErr = err
 						return false
 					}
@@ -750,7 +697,7 @@ func scanSource(relPath, src string) ([]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("map dot import position in %q: invalid source byte offset %d", relPath, sourceOffset)
 		}
-		if err := addFinding(maskedOffset, selectorIndex, prefix+".*", !usesPhysicalLineNumbers(importPath)); err != nil {
+		if err := addFinding(maskedOffset, selectorIndex, prefix+".*"); err != nil {
 			return nil, err
 		}
 	}

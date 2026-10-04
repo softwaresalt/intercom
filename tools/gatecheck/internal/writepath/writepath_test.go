@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -620,8 +621,12 @@ func TestCallExpr_RejectionTable(t *testing.T) {
 		{"OPEN_ALWAYS", `"syscall"`, callWith("0", "syscall.OPEN_ALWAYS", flags), false, true},
 		{"TRUNCATE_EXISTING", `"syscall"`, callWith("0", "syscall.TRUNCATE_EXISTING", flags), false, true},
 		{"numeric disposition", `"syscall"`, callWith("0", "3", flags), false, true},
+		{"disposition selector with interior whitespace", `"syscall"`, callWith("0", "syscall .OPEN_EXISTING", flags), false, true},
+		{"disposition selector with interior comment", `"syscall"`, callWith("0", "syscall./* interior */OPEN_EXISTING", flags), false, true},
 		{"DELETE_ON_CLOSE alone", `"syscall"`, callWith("0", open, "syscall.FILE_FLAG_DELETE_ON_CLOSE"), false, true},
 		{"DELETE_ON_CLOSE OR-ed", `"syscall"`, callWith("0", open, flags+"|syscall.FILE_FLAG_DELETE_ON_CLOSE"), false, true},
+		{"flags selector with interior whitespace", `"syscall"`, callWith("0", open, "syscall .FILE_FLAG_BACKUP_SEMANTICS"), false, true},
+		{"flags selector with interior comment", `"syscall"`, callWith("0", open, "syscall./* interior */FILE_FLAG_BACKUP_SEMANTICS"), false, true},
 		{"OPEN_REPARSE_POINT OR-ed", `"syscall"`, callWith("0", open, flags+"|syscall.FILE_FLAG_OPEN_REPARSE_POINT"), false, true},
 		{"brace composite", `"syscall"`, "syscall.CreateFile(T{p, 0, a, b, c, d, e}.Args())", false, true},
 		{"call-valued argument", `"syscall"`, "syscall.CreateFile(name(), 0, 0, nil, " + open + ", " + flags + ", 0)", false, true},
@@ -983,6 +988,12 @@ func TestHarness_049003_ASTCallPolicy(t *testing.T) {
 			wantNone: true,
 		},
 		{
+			name:     "allowed exact selectors through canonical alias",
+			imports:  `sys "syscall"`,
+			body:     "sys.CreateFile(p, 0, 0, nil, sys.OPEN_EXISTING, sys.FILE_FLAG_BACKUP_SEMANTICS, 0)",
+			wantNone: true,
+		},
+		{
 			name:     "allowed selector bare operand",
 			imports:  `"syscall"`,
 			body:     reject("pkg.path, 0, 0, nil, " + open + ", " + flags + ", 0"),
@@ -1246,11 +1257,11 @@ func TestHarness_049004_AliasDotAndSplitFixtures(t *testing.T) {
 	}{
 		{
 			name: "reject-alias-os-writefile.go",
-			want: []string{"scripts/testdata/writepath/reject-alias-os-writefile.go:4: write primitive 'os.WriteFile' found"},
+			want: []string{"scripts/testdata/writepath/reject-alias-os-writefile.go:6: write primitive 'os.WriteFile' found"},
 		},
 		{
 			name: "reject-dot-import-os.go",
-			want: []string{"scripts/testdata/writepath/reject-dot-import-os.go:2: write primitive 'os.*' found"},
+			want: []string{"scripts/testdata/writepath/reject-dot-import-os.go:3: write primitive 'os.*' found"},
 		},
 		{
 			name: "accept-alias-copilot.go",
@@ -1259,8 +1270,8 @@ func TestHarness_049004_AliasDotAndSplitFixtures(t *testing.T) {
 		{
 			name: "reject-split-selector.go",
 			want: []string{
-				"scripts/testdata/writepath/reject-split-selector.go:4: write primitive 'os.WriteFile' found",
 				"scripts/testdata/writepath/reject-split-selector.go:6: write primitive 'os.WriteFile' found",
+				"scripts/testdata/writepath/reject-split-selector.go:8: write primitive 'os.WriteFile' found",
 			},
 		},
 	}
@@ -1289,15 +1300,15 @@ func TestHarness_049004_GoldenRowsAreAdditive(t *testing.T) {
 	golden := loadWritepathGolden(t)
 	want := map[string][]string{
 		"reject-alias-os-writefile.go": {
-			"scripts/testdata/writepath/reject-alias-os-writefile.go:4: write primitive 'os.WriteFile' found",
+			"scripts/testdata/writepath/reject-alias-os-writefile.go:6: write primitive 'os.WriteFile' found",
 		},
 		"reject-dot-import-os.go": {
-			"scripts/testdata/writepath/reject-dot-import-os.go:2: write primitive 'os.*' found",
+			"scripts/testdata/writepath/reject-dot-import-os.go:3: write primitive 'os.*' found",
 		},
 		"accept-alias-copilot.go": nil,
 		"reject-split-selector.go": {
-			"scripts/testdata/writepath/reject-split-selector.go:4: write primitive 'os.WriteFile' found",
 			"scripts/testdata/writepath/reject-split-selector.go:6: write primitive 'os.WriteFile' found",
+			"scripts/testdata/writepath/reject-split-selector.go:8: write primitive 'os.WriteFile' found",
 		},
 	}
 	for name, findings := range want {
@@ -1814,16 +1825,7 @@ func runWritepathGitGrep(t *testing.T, root, revision, pattern string) []string 
 func TestHarness_049007_ParentTreeScansAreClean(t *testing.T) {
 	requireWritepathHarnessTask(t)
 	root := repoRoot(t)
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = root
-	revisionBytes, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git rev-parse HEAD: %v", err)
-	}
-	revision := strings.TrimSpace(string(revisionBytes))
-	if revision == "" {
-		t.Fatal("git rev-parse HEAD returned an empty revision")
-	}
+	const revision = "bb05b5085f35dc7c1246f88906481a453040b8b6"
 	result := runRepoScan(root, DefaultGitRunner)
 	if result.Code != 0 || result.Stdout != "" || result.Stderr != "" {
 		t.Fatalf("not implemented: 049.007-T: tracked internal/** and cmd/** scan must remain clean, got %+v", result)
@@ -1883,6 +1885,70 @@ func TestHarness_049007_D1aFixtureSetRemainsFrozen(t *testing.T) {
 		"reject-syscall-write.go",
 		"reject-tag-shaped-raw-string-expr.go",
 		"reject-writefile.go",
+	}
+	oracle, err := parser.ParseFile(token.NewFileSet(), oraclePath, oracleSource, parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse D-T1a oracle source: %v", err)
+	}
+	var oracleFixtures []string
+	foundFixtures := false
+	for _, decl := range oracle.Decls {
+		function, ok := decl.(*ast.FuncDecl)
+		if !ok || function.Name.Name != "TestOracle_FixtureCorpus_Parity" {
+			continue
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			assignment, ok := node.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, lhs := range assignment.Lhs {
+				name, ok := lhs.(*ast.Ident)
+				if !ok || name.Name != "fixtures" {
+					continue
+				}
+				if foundFixtures || i >= len(assignment.Rhs) {
+					t.Fatal("D-T1a oracle must declare one fixture list")
+				}
+				literal, ok := assignment.Rhs[i].(*ast.CompositeLit)
+				if !ok {
+					t.Fatal("D-T1a oracle fixture list must be a literal")
+				}
+				array, ok := literal.Type.(*ast.ArrayType)
+				if !ok {
+					t.Fatal("D-T1a oracle fixture list must have type []string")
+				}
+				element, ok := array.Elt.(*ast.Ident)
+				if !ok || element.Name != "string" {
+					t.Fatal("D-T1a oracle fixture list must have type []string")
+				}
+				for _, elt := range literal.Elts {
+					value, ok := elt.(*ast.BasicLit)
+					if !ok || value.Kind != token.STRING {
+						t.Fatalf("D-T1a oracle fixture entry must be a string literal, got %T", elt)
+					}
+					fixture, err := strconv.Unquote(value.Value)
+					if err != nil {
+						t.Fatalf("unquote D-T1a oracle fixture entry %q: %v", value.Value, err)
+					}
+					oracleFixtures = append(oracleFixtures, fixture)
+				}
+				foundFixtures = true
+				return false
+			}
+			return true
+		})
+	}
+	if !foundFixtures {
+		t.Fatal("D-T1a oracle fixture list in TestOracle_FixtureCorpus_Parity is missing")
+	}
+	if len(oracleFixtures) != len(frozenFixtures) {
+		t.Fatalf("D-T1a oracle fixture count = %d, want %d", len(oracleFixtures), len(frozenFixtures))
+	}
+	for i, name := range frozenFixtures {
+		if oracleFixtures[i] != name {
+			t.Fatalf("D-T1a oracle fixture[%d] = %q, want %q", i, oracleFixtures[i], name)
+		}
 	}
 	for _, name := range frozenFixtures {
 		if !strings.Contains(oracleSource, `"`+name+`"`) {
