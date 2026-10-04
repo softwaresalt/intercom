@@ -257,7 +257,9 @@ revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
 > at cycle 3, FAIL again at the operator-authorised round 4 (D-049-8), and
 > FAIL again at the operator-authorised round 5 (D-049-9), and FAIL again at the
 > operator-authorised round 6 (D-049-10, where the conditional hold-lift rule
-> did not apply). The hold is kept.**
+> did not apply). The operator then lifted the hold by override, without
+> another review round (D-049-11; see the revision 7 gate outcome after
+> item 13).**
 >
 > 10. **Staging PR #99 review amendments (NOT re-gated).** Copilot's shadow
 >     review added `token.ASSIGN` and multi-name `var` binding coverage to E-T5, an import-path
@@ -319,6 +321,22 @@ revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
 >     as **un-gated amendments**. No round 7 is authorised, so **049-F stays
 >     `blocked` and 039-S stays on hold**. See "Round 6" under
 >     `## Plan Review — Revision 7 (Unit E)`.
+>
+> **Revision 7 gate outcome: OPERATOR-LIFT → 039-S STAGE HOLD LIFTED
+> (D-049-11).** At 2026-10-03T22:25-07:00 the operator accepted R6-1 as
+> written and lifted the hold **without another plan-review round**. This
+> overrides the D-049-7 lift rule for revision 7 only:
+> * no round 7 ran, and the plan-review verdict of record stays round 6 FAIL;
+> * R4-1..R4-8, R5-1..R5-4 and R6-1..R6-6 are accepted as written. No
+>   plan-review round has gated them, so they are **implementation-time
+>   verification obligations** that Ship's TDD harness and pre-PR adversarial
+>   code review must close;
+> * 049-F moves `blocked → queued`, and 039-S is claimable by Ship in a new
+>   session.
+>
+> The "hold is kept" statements in items 9–13 above are historical. See
+> "Operator hold-lift decision (D-049-11)" under
+> `## Plan Review — Revision 7 (Unit E)`.
 
 ---
 
@@ -2277,7 +2295,10 @@ answering, with evidence against the live corpus:
 
   None is left at complexity `high` without a recorded de-risking step. The
   re-plan was re-gated through plan-review (ADVISORY or better, no P0/P1),
-  and the 458F9385 fold-in decision is recorded.
+  and the 458F9385 fold-in decision is recorded. *(D-049-11: this re-gate
+  clause is discharged by the operator hold-lift override. No round 7 ran,
+  and the verdict of record stays round 6 FAIL. Ship checks instead that
+  D-049-11 is recorded; see "Operator hold-lift decision (D-049-11)".)*
 * AC-E1.3 — The spike worktree was cleaned up, or its findings handed off,
   before 039-S was claimed. Stash 1EEBECA5 is archived with a pointer to the
   spike document.
@@ -4524,5 +4545,121 @@ no stash capture was needed. All are applied as **un-gated amendments**.
 * Copilot cycle 3, the last allowed, flagged "No reviewer has verified
   them". That was reworded to "No plan-review round has re-gated them".
   Pre-PR record reviews are not a gate.
+
+### Operator hold-lift decision (D-049-11)
+
+decision: OPERATOR-LIFT
+
+* **Authority (recorded verbatim).** At 2026-10-03T22:25-07:00 the operator
+  wrote: "Accept R6-1 as written and lift the hold as recommended, then stop
+  for manual new session initiation." This is **D-049-11**.
+* **The recommendation it accepts.** The Orchestrator recommended to the
+  operator:
+  * accept R6-1 as written and lift the hold. R6-1 adds nine parseable
+    `CreateFile` rejection rows that vary `Args[3]` and `Args[6]` (among
+    other positions), which closes GPT6-1 and PRE5-1;
+  * R6-1 is a narrow test-row addition, and pre-PR code review plus the TDD
+    harness gate its correctness at implementation time.
+* **Override semantics.**
+  * D-049-11 is an operator **override of the D-049-7 hold-lift rule for
+    revision 7**. Under that rule only a plan-review gate of ADVISORY or
+    better with no P0/P1 lifts the hold. The override lifts it **without
+    another plan-review round**.
+  * **No review round ran.** The plan-review verdict of record for revision
+    7 stays **round 6 FAIL** (D-049-10). This section does not change it, and
+    no `plan-review-attempt` marker is added.
+  * R6-1..R6-6 are accepted **as written**. So are R4-1..R4-8 and
+    R5-1..R5-4, which rounds 5 and 6 reviewed without any gate passing.
+    All of them stay **un-gated by plan-review**.
+  * D-049-11 authorises **no change to plan content** beyond recording the
+    decision and the lift. Unit E's execution content is the revision 7 text
+    as it stood at `bba0534`.
+  * It does not authorise Stage to claim or start 039-S. Ship starts 039-S
+    in a new session that the operator opens manually.
+  * **Effect on AC-E1.2 (049.001-T).** AC-E1.2 requires that "the re-plan
+    was re-gated through plan-review (ADVISORY or better, no P0/P1)". D-049-11
+    **discharges that clause** by operator override, so AC-E1.4 does not
+    HALT on it. Ship verifies instead that D-049-11 is recorded here and in
+    the deliberation §5 table. Every other clause of AC-E1.1..AC-E1.3 still
+    applies. 049.001-T carries the same note in its acceptance criteria.
+  * **Hold wording elsewhere.** Earlier "stays blocked", STAGE HOLD,
+    PROVISIONAL and do-not-claim wording in 049-F, 039-S and the 049.00x-T
+    bodies is historical. The "NOT re-gated" wording stays true, and it is
+    the reason the obligations below exist.
+* **Implementation-time verification obligations.** Each un-gated amendment
+  below becomes an obligation that Ship's TDD harness and the pre-PR
+  adversarial code review **must** close against the implemented diff. An
+  obligation found unmet is an in-scope finding (P-021 C1), fixed before
+  merge rather than deferred. The obligations are listed in the
+  `implementation-verification` section of each owning task. Each task also
+  gains a verification acceptance criterion (AC-E2.V, AC-E3.V and AC-E5.V).
+
+  | Amendment | Source finding | Owning task | Obligation |
+  |---|---|---|---|
+  | R4-1 | GPT4-1 / OP4-2 | 049.003-T | `writepath_extent_test.go:82` is a `TestScanSource_SyntaxErrorFailsClosed` row |
+  | R4-2 (as superseded by R5-1) | OP4-3 | 049.003-T | Exactly `{:443, :444, :467, :468}` fail to parse; `:442` is asserted through `scanSource` |
+  | R4-3 | OP4-1 | 049.002-T | The one `"x.go"` → `"y.go"` literal at `writepath_extent_test.go:118`; `golangci-lint` reports 0 issues at the E-T2 boundary |
+  | R4-4 | OP4-4 | 049.003-T | The discriminating raw-string tag case, with its non-vacuity precondition |
+  | R4-5 | OP4-5 | 049.002-T | The interim offset conversion `token.Pos` → `tf.Offset` → rune index → masked byte offset, failing closed |
+  | R4-6 | OP4-6 | 049.003-T | Whole-file wrappers that import every referenced package |
+  | R4-7 | OP4-7 | 049.003-T | `len(CallExpr.Args)` replaces the segment count |
+  | R4-8 | GPT4-2 | 049.005-T | Only compiling two-name `NewRoot` binding forms in the fixture and AC-E5.1 callers |
+  | R5-1 | GPT5-1 / OP5-1 | 049.003-T | Rows are built from unmasked source; `:464`–`:466` stay parseable rejections |
+  | R5-2 | OP5-2 | 049.003-T | The AC-D2.1 carriers, including the 7-argument `os.Remove` keying assertion |
+  | R5-3 | OP5-4 | 049.003-T | Imports left unused by the deletions are removed |
+  | R5-4 | GPT5-2 (secondary) | 049.002-T | The E-T2 five-file deviation (Constitution Check rows VI and X) |
+  | R6-1 | GPT6-1 / OP6-1 / GM6-1 | 049.003-T | The nine positional rejection rows. **Mutation check:** a fail-open predicate that ignores `Args[3]`/`Args[6]` must fail at least one test |
+  | R6-2 | OP6-2 | 049.002-T (`:150`/`:154`), 049.003-T (`:180`) | The renamed `t.Fatalf` prefixes |
+  | R6-3 | OP6-3 | 049.003-T | The new predicate does not reuse a deletion-list name |
+  | R6-4 | OP6-4 | 049.003-T | The `advanceCursor` call at `writepath_extent_test.go:236` is removed |
+  | R6-5 | OP6-5 | 049.003-T | The `writepath_test.go` `gomask` import is removed |
+  | R6-6 | OP6-6 | 049.002-T | The re-anchored `retiredarch` pin has no positive `scanText` dependency |
+
+* **Lift.**
+  * `049-F` moves `blocked → queued`.
+  * The `hold` sections of 049-F and 039-S say **HOLD LIFTED (D-049-11)**.
+  * 039-S is **eligible** and is the next shipment. Ship Step 0.5
+    `shipment-reconcile` no longer finds a status mismatch.
+  * See the Harvest Record — Revision 7 below.
+* **Escalation:** not triggered. The operator made the disposition directly.
+
+---
+
+## Harvest Record — Revision 7 (2026-10-03)
+
+The revision 7 harvest (049.007-T, the edges and the rev 7 bodies) was
+created in the rev 7 re-plan sessions. No harvest record was written while
+the hold stood (see "Gate outcome — FAIL (cycle limit reached)"). No gate has
+passed since: round 6 FAIL stays the verdict of record, and no round 7 ran.
+This record is written now because the operator override D-049-11 lifted the
+hold. Every mutation used
+`C:\Tools\backlogit.exe` v1.11.0 with exit codes checked, followed by a
+read-back. Body edits used `--section name=value` only.
+
+| Plan unit | Backlog ID | Disposition |
+|---|---|---|
+| E (feature) | 049-F | **`blocked → queued`** by a direct `backlogit move 049-F --status queued` (exit 0). No `--force-gates` was used, and the move was not gate-rejected. The `hold` section is replaced with **HOLD LIFTED** (D-049-11). It states that every earlier hold, PROVISIONAL, do-not-claim, stays-blocked and re-gated-before-execution text in the item, and in any section of its tasks (description, acceptance-criteria, replan and round sections), is historical as to hold status. The description's "039-S is blocked by 031-S" and "Scope and gating are unchanged" gating phrases are historical too (031-S has shipped). It also records the AC-E1.2 discharge. |
+| E (shipment) | 039-S | `queued`. The `hold` section is replaced with HOLD LIFTED. It records eligibility, the new-session start by Ship, the implementation-time obligations and the execution order. Manifest read back: `049-F, 049.001-T, 049.002-T, 049.003-T, 049.004-T, 049.005-T, 049.006-T, 049.007-T`, which covers every rev 7 task. It depends on 031-S, which has shipped. |
+| E-T1 | 049.001-T | Status unchanged (`queued`, Ship's read-only verification half, D-049-6). The acceptance criteria gain a D-049-11 note: AC-E1.2's re-gate clause is discharged by the operator override, and Ship verifies that D-049-11 is recorded instead (pre-PR review GPTH-001/OPH-1). |
+| E-T2 | 049.002-T | An `implementation-verification` section is added (R4-3, R4-5, R5-4, R6-2 E-T2 half, R6-6), and the acceptance criteria gain **AC-E2.V**. AC-E2.1..AC-E2.7 already match the plan. |
+| E-T3 | 049.003-T | An `implementation-verification` section is added (R4-1, R4-2/R5-1, R4-4, R4-6, R4-7, R5-1..R5-3, R6-1..R6-5 E-T3 parts), with the R6-1 mutation check. The acceptance criteria gain **AC-E3.V**. AC-E3.1..AC-E3.4 already match the plan, including the nine R6-1 rows. |
+| E-T4 | 049.004-T | Unchanged. AC-E4.1/AC-E4.2 and the `replan` section match the plan. No R4-*/R5-*/R6-* amendment binds it. |
+| E-T5 | 049.005-T | An `implementation-verification` section is added (R4-8), and the acceptance criteria gain **AC-E5.V**. AC-E5.1..AC-E5.3 already match the plan. |
+| E-T6 | 049.006-T | Unchanged. AC-E6.1/AC-E6.2 match the plan. |
+| E-T7 | 049.007-T | Unchanged. AC-E7.1..AC-E7.3 match the plan. |
+
+**Edges** (unchanged; `A → B` means A depends on B, type `blocks`). The
+execution order is E-T1, E-T2, E-T3, E-T4, E-T5, E-T7, E-T6, which matches
+the 039-S order 049.001-T, 049.002-T, 049.003-T, 049.004-T, 049.005-T,
+049.007-T, 049.006-T:
+* 049.002-T → 049.001-T
+* 049.003-T → 049.002-T
+* 049.004-T → 049.002-T and 049.003-T
+* 049.005-T → 049.004-T
+* 049.007-T → 049.005-T
+* 049.006-T → 049.003-T, 049.005-T and 049.007-T
+
+**Stash.** No entries were created. Every change is on the decision-record
+and backlog surface of 049-F (P-021 C1).
 
 *Generated by Copilot*
