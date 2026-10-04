@@ -93,3 +93,18 @@ commit. The commit SHA is recorded in the E-T2 task memory. The task's backlog
 Ship's allowed Backlog operations. The next task is 049.003-T. Continue only
 within shipment 039-S and the existing feature branch. No PR, merge, or closure
 action has occurred.
+
+## E-T3 completion
+
+E-T3's D-2-prime AST allowance and retired text-helper removal are in commit
+`1b51740605af99cdd601cd321c627bd078eed6ce`. The task-specific harness, package
+tests, repository tests, vet, build, lint, formatting, and AC-E3.3 deleted-symbol
+grep passed. Its expected red run had only the trailing-string argument and
+foreign-package `syscall` alias policy cases. The 049.003-T completion move
+archived the task after the code commit; the archive move is pending the next
+commit. The task's backlog `commit` field remains unchanged because a separate
+commit-tracking mutation is not in Ship's allowed Backlog operations.
+
+The next task is 049.004-T. Shipment 039-S remains the sole active shipment on
+the existing feature branch and worktree. No PR, merge, or post-merge closure
+has occurred.
