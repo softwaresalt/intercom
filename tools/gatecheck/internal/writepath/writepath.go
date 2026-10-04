@@ -15,18 +15,16 @@
 // The detector is the 26 qualified selectors in Selectors. The following
 // surface is recorded here, never silently left unhandled:
 //
-//  1. Named import aliases -- KNOWN OPEN, pending Unit E (feature 049-F,
-//     shipment 039-S). An aliased import of a write-capable package
-//     (import o "os" -> o.WriteFile(...), or an alias of database/sql /
-//     go.etcd.io/bbolt) is not detected.
+//  1. Named import aliases are resolved through their canonical import paths
+//     (Unit E, shipment 039-S).
 //  2. pathsafe.NewRoot receiver / Root.Resolve first-caller tracking --
 //     KNOWN OPEN, pending Unit E (feature 049-F, shipment 039-S). No
 //     tripwire exists. The pathsafe risk-register triggers ("forced the
 //     moment a real write path exists", root.go) and feature 038-F's "once
 //     a live caller exists" trigger stay awaited, not monitored.
-//  3. Dot-imports, blank imports, and local identifiers shadowing a package
-//     name (including a local syscall identifier, which the D-2' predicate
-//     in callAllowed trusts by spelling).
+//  3. Dot imports of write-capable packages fail closed at the import spec;
+//     blank imports are inert. Local identifiers shadowing a package name
+//     (including a local syscall identifier) remain residual.
 //  4. os.Root method calls and (*os.File).Write*.
 //  5. Undecidable or non-simple call shape -> rejected. A
 //     syscall.CreateFile reached via a wrapper or function value, with an
@@ -45,19 +43,15 @@
 //     equivalents. None occurs in internal/** or cmd/** at 9b299c8.
 //     Widening the selector set is out of D-031-2's scope and is tracked as
 //     stash entry 458F9385.
-//  7. Selector split by a newline or comment -- KNOWN OPEN, closed by Unit
-//     E's AST engine (feature 049-F). Go inserts no semicolon after ".", so
-//     "syscall." + newline + "CreateFile(...)" and "os./**/WriteFile(...)"
-//     are valid Go that gofmt preserves; after masking neither contains the
-//     contiguous selector text, so every selector is evaded.
+//  7. Selectors split by a newline or comment are detected through the AST;
+//     Go inserts no semicolon after ".", so these forms remain valid Go.
 //
 // Residual-risk statement: until feature 049-F ships, this gate is a
-// qualified-selector tripwire, not a complete mechanical proof. Items 1, 2,
-// 6 and 7 are known open fail-open surfaces. At 9b299c8 there are zero
-// aliased write-capable imports, zero production Root.Resolve callers and
-// zero item-6 primitives in internal/**/cmd/**, so items 1, 2 and 6 are not
-// exploited today. None of the four is mechanically guarded. The
-// compensating control is human and agent PR review against this list.
+// qualified-selector tripwire, not a complete mechanical proof. Items 2,
+// 4, 5, 6 and package-name shadowing remain known residual surfaces. At
+// 9b299c8 there are zero production Root.Resolve callers and zero item-6
+// primitives in internal/**/cmd/**. The compensating control is human and
+// agent PR review against this list.
 package writepath
 
 import (
@@ -200,6 +194,47 @@ func importPathBindings(file *ast.File) (map[string]string, error) {
 	return bindings, nil
 }
 
+func canonicalImportPath(qualifier string) (string, bool) {
+	switch qualifier {
+	case "os", "io", "syscall":
+		return qualifier, true
+	case "sql":
+		return "database/sql", true
+	case "bbolt":
+		return "go.etcd.io/bbolt", true
+	default:
+		return "", false
+	}
+}
+
+func selectorIndexForImportPath(importPath, name string) (int, bool) {
+	for i, selector := range Selectors {
+		qualifier, selectorName, ok := strings.Cut(selector, ".")
+		if !ok || selectorName != name {
+			continue
+		}
+		canonicalPath, ok := canonicalImportPath(qualifier)
+		if ok && canonicalPath == importPath {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func selectorPrefixIndexForImportPath(importPath string) (string, int, bool) {
+	for i, selector := range Selectors {
+		qualifier, _, ok := strings.Cut(selector, ".")
+		if !ok {
+			continue
+		}
+		canonicalPath, ok := canonicalImportPath(qualifier)
+		if ok && canonicalPath == importPath {
+			return qualifier, i, true
+		}
+	}
+	return "", 0, false
+}
+
 func isSyscallSelector(expr ast.Expr, bindings map[string]string, name string) bool {
 	selector, ok := expr.(*ast.SelectorExpr)
 	if !ok || selector.Sel.Name != name {
@@ -316,6 +351,20 @@ func physicalSourceOffset(file *token.File, pos token.Pos, sourceLen int) (int, 
 	return offset, true
 }
 
+func selectorHasSplitTrivia(fset *token.FileSet, selector *ast.SelectorExpr, source string) (bool, error) {
+	file := fset.File(selector.Pos())
+	start, ok := physicalSourceOffset(file, selector.X.End(), len(source))
+	if !ok {
+		return false, fmt.Errorf("map selector start: invalid token position")
+	}
+	end, ok := physicalSourceOffset(file, selector.Sel.Pos(), len(source))
+	if !ok || end < start {
+		return false, fmt.Errorf("map selector end: invalid token position")
+	}
+	between := source[start:end]
+	return strings.ContainsAny(between, "\r\n") || strings.Contains(between, "/*") || strings.Contains(between, "//"), nil
+}
+
 func lineNumberAtOffset(lineStarts []int, offset int) (int, bool) {
 	line := sort.Search(len(lineStarts), func(i int) bool {
 		return lineStarts[i] > offset
@@ -324,6 +373,21 @@ func lineNumberAtOffset(lineStarts []int, offset int) (int, bool) {
 		return 0, false
 	}
 	return line + 1, true
+}
+
+func nonBlankLineNumberAtOffset(source string, lineStarts []int, offset int) (int, bool) {
+	line, ok := lineNumberAtOffset(lineStarts, offset)
+	sourceLines := pysem.SplitLines(source)
+	if !ok || line > len(sourceLines) {
+		return 0, false
+	}
+	count := 0
+	for _, sourceLine := range sourceLines[:line] {
+		if strings.TrimSpace(sourceLine) != "" {
+			count++
+		}
+	}
+	return count, count > 0
 }
 
 // scanSource scans unmasked, decoded Go source and fails closed on any parse
@@ -395,14 +459,21 @@ func scanSource(relPath, src string) ([]string, error) {
 	type findingKey struct {
 		line          int
 		selectorIndex int
+		display       string
 	}
 	findings := make(map[findingKey]struct{})
-	addFinding := func(maskedOffset, selectorIndex int) error {
+	addFinding := func(maskedOffset, selectorIndex int, display string, countNonBlankLines bool) error {
 		line, ok := lineNumberAtOffset(lineStarts, maskedOffset)
 		if !ok {
 			return fmt.Errorf("map finding in %q: invalid masked byte offset %d", relPath, maskedOffset)
 		}
-		findings[findingKey{line: line, selectorIndex: selectorIndex}] = struct{}{}
+		if countNonBlankLines {
+			line, ok = nonBlankLineNumberAtOffset(src, lineStarts, maskedOffset)
+			if !ok {
+				return fmt.Errorf("map finding in %q: invalid source line at masked byte offset %d", relPath, maskedOffset)
+			}
+		}
+		findings[findingKey{line: line, selectorIndex: selectorIndex, display: display}] = struct{}{}
 		return nil
 	}
 
@@ -418,11 +489,27 @@ func scanSource(relPath, src string) ([]string, error) {
 				return true
 			}
 			selectorIndex, ok := selectorIndexes[qualifier.Name+"."+n.Sel.Name]
+			matchedByImportPath := false
+			if importPath, bound := importBindings[qualifier.Name]; bound {
+				if canonicalIndex, matched := selectorIndexForImportPath(importPath, n.Sel.Name); matched {
+					if !ok {
+						selectorIndex = canonicalIndex
+						ok = true
+					}
+					canonicalQualifier, _, _ := strings.Cut(Selectors[canonicalIndex], ".")
+					matchedByImportPath = qualifier.Name != canonicalQualifier
+				}
+			}
 			if !ok {
 				return true
 			}
 			if _, allowed := allowedCalls[n]; allowed {
 				return true
+			}
+			split, err := selectorHasSplitTrivia(fset, n, src)
+			if err != nil {
+				scanErr = fmt.Errorf("inspect selector in %q: %w", relPath, err)
+				return false
 			}
 			tf := fset.File(n.Pos())
 			sourceOffset, ok := physicalSourceOffset(tf, n.Pos(), len(src))
@@ -435,7 +522,7 @@ func scanSource(relPath, src string) ([]string, error) {
 				scanErr = fmt.Errorf("map selector position in %q: invalid source byte offset %d", relPath, sourceOffset)
 				return false
 			}
-			scanErr = addFinding(maskedOffset, selectorIndex)
+			scanErr = addFinding(maskedOffset, selectorIndex, "", matchedByImportPath || split)
 
 		case *ast.BasicLit:
 			if n.Kind != token.STRING || len(n.Value) < 2 || n.Value[0] != '`' || n.Value[len(n.Value)-1] != '`' {
@@ -471,7 +558,7 @@ func scanSource(relPath, src string) ([]string, error) {
 			}
 			for selectorIndex, selector := range Selectors {
 				for _, occurrence := range selectorOccurrences(maskedInterior, selector) {
-					if err := addFinding(maskedStart+occurrence, selectorIndex); err != nil {
+					if err := addFinding(maskedStart+occurrence, selectorIndex, "", false); err != nil {
 						scanErr = err
 						return false
 					}
@@ -484,6 +571,32 @@ func scanSource(relPath, src string) ([]string, error) {
 		return nil, scanErr
 	}
 
+	for _, spec := range file.Imports {
+		if spec.Name == nil || spec.Name.Name != "." {
+			continue
+		}
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			return nil, fmt.Errorf("decode import path %s: %w", spec.Path.Value, err)
+		}
+		prefix, selectorIndex, ok := selectorPrefixIndexForImportPath(importPath)
+		if !ok {
+			continue
+		}
+		tf := fset.File(spec.Pos())
+		sourceOffset, ok := physicalSourceOffset(tf, spec.Pos(), len(src))
+		if !ok {
+			return nil, fmt.Errorf("map dot import position in %q: invalid token position", relPath)
+		}
+		maskedOffset, ok := maskedOffsetForSourceByte(sourceOffset, sourceRuneOffsets, maskedRuneOffsets)
+		if !ok {
+			return nil, fmt.Errorf("map dot import position in %q: invalid source byte offset %d", relPath, sourceOffset)
+		}
+		if err := addFinding(maskedOffset, selectorIndex, prefix+".*", true); err != nil {
+			return nil, err
+		}
+	}
+
 	ordered := make([]findingKey, 0, len(findings))
 	for finding := range findings {
 		ordered = append(ordered, finding)
@@ -492,12 +605,18 @@ func scanSource(relPath, src string) ([]string, error) {
 		if ordered[i].line != ordered[j].line {
 			return ordered[i].line < ordered[j].line
 		}
-		return ordered[i].selectorIndex < ordered[j].selectorIndex
+		if ordered[i].selectorIndex != ordered[j].selectorIndex {
+			return ordered[i].selectorIndex < ordered[j].selectorIndex
+		}
+		return ordered[i].display < ordered[j].display
 	})
 
 	result := make([]string, 0, len(ordered))
 	for _, finding := range ordered {
 		selector := Selectors[finding.selectorIndex]
+		if finding.display != "" {
+			selector = finding.display
+		}
 		result = append(result, fmt.Sprintf("%s:%d: write primitive %s found", relPath, finding.line, pysem.Repr(selector)))
 	}
 	return result, nil
