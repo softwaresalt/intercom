@@ -119,6 +119,11 @@ verification AC.
     claude-opus-5.5 ADVISORY. Opus raised a P3: the new 049-F text said the
     scope phrase "still holds", which contradicted `rev7-scope`. Fixed: the
     scope part is now superseded by `rev7-scope`.
+  * Delta review at `d3e6d61`: gpt-5.6-sol PASS; claude-opus-5.5 ADVISORY,
+    with two P3s. The sentence over-reached, and "Its" had an unclear
+    antecedent. Fixed: the sentence now names the phrase, and only the
+    Root.Resolve closure claim is superseded by `rev7-scope`. The rest of
+    the scope, including the gomask invariant, still holds.
 
 ## Stash
 
