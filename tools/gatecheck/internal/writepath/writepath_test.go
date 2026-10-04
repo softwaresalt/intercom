@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/gomask"
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
 
@@ -202,7 +201,7 @@ func TestFilebased_ReadTextAndScan_MatchGolden(t *testing.T) {
 	}
 }
 
-func TestFindSelector_LookaroundTable(t *testing.T) {
+func TestSelectorOccurrences_LookaroundTable(t *testing.T) {
 	cases := []struct {
 		name string
 		line string
@@ -219,9 +218,9 @@ func TestFindSelector_LookaroundTable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := findSelector(tc.line, tc.sel)
+			got := len(selectorOccurrences(tc.line, tc.sel)) > 0
 			if got != tc.want {
-				t.Fatalf("findSelector(%q, %q) = %v, want %v", tc.line, tc.sel, got, tc.want)
+				t.Fatalf("selectorOccurrences(%q, %q) = %v, want %v", tc.line, tc.sel, got, tc.want)
 			}
 		})
 	}
@@ -423,132 +422,295 @@ func TestRunFixtureSelfTest_NoFixturesDiscovered(t *testing.T) {
 	}
 }
 
-// createFileCall builds a masked syscall.CreateFile call with the given
-// argument list, as the scan path would see it.
-func createFileCall(args string) string {
-	return gomask.MaskGoNonCode("syscall.CreateFile(" + args + ")\n")
-}
-
 // allowedCreateFileArgs is the only argument shape D-2' admits.
 const allowedCreateFileArgs = "p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"
 
-// firstExtent extracts the extent following the first occurrence of sel in
-// masked text.
-func firstExtent(t *testing.T, masked, sel string) extent {
+func callExprForTest(t *testing.T, imports, body string) (*ast.CallExpr, map[string]string) {
 	t.Helper()
-	pos := strings.Index(masked, sel)
-	if pos < 0 {
-		t.Fatalf("no %s in %q", sel, masked)
+	source := harnessWritepathFile(imports, body)
+	file, err := parser.ParseFile(token.NewFileSet(), "call-policy.go", source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse call-policy.go: %v", err)
 	}
-	return extractExtent(masked, pos+len(sel))
+	bindings, err := importPathBindings(file)
+	if err != nil {
+		t.Fatalf("importPathBindings: %v", err)
+	}
+	var target *ast.CallExpr
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || target != nil {
+			return target == nil
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "CreateFile" {
+			target = call
+			return false
+		}
+		return true
+	})
+	return target, bindings
 }
 
-// TestOccurrenceAllowed_ReparseWindowsCreateFile is AC-D2.1: the real
-// reparse_windows.go extent, located by content, is allowed, keyed on the
-// call's arguments and never on the file path.
-func TestOccurrenceAllowed_ReparseWindowsCreateFile(t *testing.T) {
-	const sel = "syscall.CreateFile"
+// TestCallExpr_ReparseWindowsCreateFile carries AC-D1.1 and AC-D2.1 onto the
+// AST: comments do not contribute calls, and the live trailing-comma call is
+// accepted by its parsed arguments rather than its source extent.
+func TestCallExpr_ReparseWindowsCreateFile(t *testing.T) {
 	raw, err := pysem.ReadText(filepath.Join(repoRoot(t), "internal", "pathsafe", "reparse_windows.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	masked := gomask.MaskGoNonCode(raw)
-	offsets := absoluteOccurrences(t, masked, sel)
-	if len(offsets) != 1 {
-		t.Fatalf("masked occurrences = %d, want 1", len(offsets))
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "reparse_windows.go", raw, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse reparse_windows.go: %v", err)
 	}
-	if !occurrenceAllowed(sel, extractExtent(masked, offsets[0]+len(sel))) {
-		t.Error("the live metadata-only CreateFile call must be allowed")
+	bindings, err := importPathBindings(file)
+	if err != nil {
+		t.Fatalf("importPathBindings: %v", err)
 	}
-	if !occurrenceAllowed(sel, firstExtent(t, createFileCall(allowedCreateFileArgs), sel)) {
+	var calls []*ast.CallExpr
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "CreateFile" {
+			calls = append(calls, call)
+		}
+		return true
+	})
+	if len(calls) != 1 {
+		t.Fatalf("CreateFile calls = %d, want one live call (comments are not AST calls)", len(calls))
+	}
+	if len(calls[0].Args) != allowedCreateFileArgCount || !callAllowed(calls[0], bindings) {
+		t.Error("the live metadata-only CreateFile call must be allowed with seven parsed arguments")
+	}
+
+	single, singleBindings := callExprForTest(t, `"syscall"`, "syscall.CreateFile("+allowedCreateFileArgs+")")
+	if single == nil || !callAllowed(single, singleBindings) {
 		t.Error("the single-line allowed shape must be allowed")
 	}
-	if occurrenceAllowed("os.Remove", firstExtent(t, createFileCall(allowedCreateFileArgs), sel)) {
-		t.Error("the allowance must be keyed on the syscall.CreateFile selector only")
+
+	source := harnessWritepathFile("(\n\"os\"\n\"syscall\"\n)", "os.Remove(p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)")
+	findings, err := scanSource("selector-key.go", source)
+	if err != nil {
+		t.Fatalf("scanSource(selector-key.go): %v", err)
 	}
+	selectorOffset := strings.Index(source, "os.Remove")
+	selectorLine := strings.Count(source[:selectorOffset], "\n") + 1
+	assertFindingsEqual(t, findings, []string{fmt.Sprintf("selector-key.go:%d: write primitive 'os.Remove' found", selectorLine)})
 }
 
-// TestOccurrenceAllowed_RejectionTable is AC-D2.2: every non-conforming
-// extent is rejected (fail closed, INV-2).
-func TestOccurrenceAllowed_RejectionTable(t *testing.T) {
-	const sel = "syscall.CreateFile"
-	const (
-		oe = "syscall.OPEN_EXISTING"
-		bs = "syscall.FILE_FLAG_BACKUP_SEMANTICS"
-	)
-	callWith := func(access, disposition, flags string) string {
-		return createFileCall("p, " + access + ", 0, nil, " + disposition + ", " + flags + ", 0")
-	}
+func TestCallExpr_AcceptsGBareOperands(t *testing.T) {
 	cases := []struct {
-		name   string
-		masked string
+		name string
+		args string
 	}{
-		{"non-call reference", gomask.MaskGoNonCode("f := syscall.CreateFile\n")},
-		{"unbalanced extent", gomask.MaskGoNonCode("syscall.CreateFile(" + allowedCreateFileArgs + "\n")},
-		{"mismatched extent", gomask.MaskGoNonCode("syscall.CreateFile(" + allowedCreateFileArgs + "]\n")},
-		{"six arguments", createFileCall("p, 0, 0, nil, " + oe + ", " + bs)},
-		{"eight arguments", createFileCall(allowedCreateFileArgs + ", 0")},
-		{"access 0x0", callWith("0x0", oe, bs)},
-		{"access 00", callWith("00", oe, bs)},
-		{"access (0)", callWith("(0)", oe, bs)},
-		{"access uint32(0)", callWith("uint32(0)", oe, bs)},
-		{"access named constant", callWith("noAccess", oe, bs)},
-		{"access GENERIC_WRITE", callWith("syscall.GENERIC_WRITE", oe, bs)},
-		{"CREATE_NEW", callWith("0", "syscall.CREATE_NEW", bs)},
-		{"CREATE_ALWAYS", callWith("0", "syscall.CREATE_ALWAYS", bs)},
-		{"OPEN_ALWAYS", callWith("0", "syscall.OPEN_ALWAYS", bs)},
-		{"TRUNCATE_EXISTING", callWith("0", "syscall.TRUNCATE_EXISTING", bs)},
-		{"numeric disposition", callWith("0", "3", bs)},
-		{"DELETE_ON_CLOSE alone", callWith("0", oe, "syscall.FILE_FLAG_DELETE_ON_CLOSE")},
-		{"DELETE_ON_CLOSE OR-ed", callWith("0", oe, bs+"|syscall.FILE_FLAG_DELETE_ON_CLOSE")},
-		{"OPEN_REPARSE_POINT OR-ed", callWith("0", oe, bs+"|syscall.FILE_FLAG_OPEN_REPARSE_POINT")},
-		{"brace composite", createFileCall("T{p, 0, a, b, c, d, e}.Args()")},
-		{"call-valued argument", createFileCall("name(), 0, 0, nil, " + oe + ", " + bs + ", 0")},
-		{"index expression", createFileCall("p[0], 0, 0, nil, " + oe + ", " + bs + ", 0")},
-		{"tag-shaped raw string", gomask.MaskGoNonCode("syscall.CreateFile(p, 0, `json:\"x\"`, nil, " + oe + ", " + bs + ", 0)\n")},
-		{"interpreted string argument", createFileCall("p, 0, \"rw\", nil, " + oe + ", " + bs + ", 0")},
-		{"rune argument", createFileCall("p, 0, 'x', nil, " + oe + ", " + bs + ", 0")},
-		{"leading empty segment", createFileCall(", 0, 0, nil, " + oe + ", " + bs + ", 0")},
-		{"two trailing empty segments", createFileCall(allowedCreateFileArgs + ",,")},
-		{"empty call", createFileCall("")},
+		{"identifier and integer", allowedCreateFileArgs},
+		{"selector", "pkg.path, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
+		{"unary", "p, 0, -offset, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
+		{"star", "p, 0, 0, *value, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
+		{"binary", "p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, left+right"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if occurrenceAllowed(sel, firstExtent(t, tc.masked, sel)) {
-				t.Errorf("%q must be rejected", tc.masked)
+			call, bindings := callExprForTest(t, `"syscall"`, "syscall.CreateFile("+tc.args+")")
+			if call == nil || !callAllowed(call, bindings) {
+				t.Errorf("call must be allowed: %s", tc.args)
 			}
 		})
 	}
 }
 
-// TestLineReportsSelector_AllowedCallCannotHideWritingCall is AC-D2.3: an
-// allowed call and a writing call on one line, in both orders, still yield
-// the finding; the selector is passed as a parameter to exercise the
-// per-selector evaluator directly.
-func TestLineReportsSelector_AllowedCallCannotHideWritingCall(t *testing.T) {
-	const sel = "syscall.CreateFile"
+func TestCallExpr_Classifications(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		wantCall    bool
+		wantAllowed bool
+	}{
+		{"selector reference", "f := syscall.CreateFile", false, false},
+		{"allowed call", "syscall.CreateFile(" + allowedCreateFileArgs + ")", true, true},
+		{"empty call", "syscall.CreateFile()", true, false},
+		{"call-valued argument", "syscall.CreateFile(name(), 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)", true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			call, bindings := callExprForTest(t, `"syscall"`, tc.body)
+			if (call != nil) != tc.wantCall {
+				t.Fatalf("AST call present = %v, want %v", call != nil, tc.wantCall)
+			}
+			if call != nil && callAllowed(call, bindings) != tc.wantAllowed {
+				t.Errorf("callAllowed = %v, want %v", callAllowed(call, bindings), tc.wantAllowed)
+			}
+		})
+	}
+}
+
+func TestCallExpr_ImportPathBindings(t *testing.T) {
+	cases := []struct {
+		name    string
+		imports string
+		body    string
+		want    bool
+	}{
+		{
+			name:    "unnamed canonical import",
+			imports: `"syscall"`,
+			body:    "syscall.CreateFile(p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)",
+			want:    true,
+		},
+		{
+			name:    "declared canonical alias",
+			imports: `sys "syscall"`,
+			body:    "sys.CreateFile(p, 0, 0, nil, sys.OPEN_EXISTING, sys.FILE_FLAG_BACKUP_SEMANTICS, 0)",
+			want:    true,
+		},
+		{
+			name:    "unnamed foreign path with syscall base name",
+			imports: `"example.invalid/syscall"`,
+			body:    "syscall.CreateFile(p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)",
+			want:    false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			call, bindings := callExprForTest(t, tc.imports, tc.body)
+			if call == nil {
+				t.Fatal("expected CreateFile AST call")
+			}
+			if got := callAllowed(call, bindings); got != tc.want {
+				t.Errorf("callAllowed = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCallExpr_RejectionTable carries the old D-2' rejection verdicts through
+// unmasked whole-file parsing. Exactly the legacy unbalanced, mismatched,
+// leading-empty and double-trailing-empty rows are syntax errors.
+func TestCallExpr_RejectionTable(t *testing.T) {
+	const open = "syscall.OPEN_EXISTING"
+	const flags = "syscall.FILE_FLAG_BACKUP_SEMANTICS"
+	callWith := func(access, disposition, callFlags string) string {
+		return "syscall.CreateFile(p, " + access + ", 0, nil, " + disposition + ", " + callFlags + ", 0)"
+	}
+	cases := []struct {
+		name          string
+		imports       string
+		body          string
+		parseError    bool
+		hasCreateCall bool
+	}{
+		{"non-call reference", `"syscall"`, "f := syscall.CreateFile", false, false},
+		{"unbalanced extent", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs, true, true},
+		{"mismatched extent", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + "])", true, true},
+		{"six arguments", `"syscall"`, "syscall.CreateFile(p, 0, 0, nil, " + open + ", " + flags + ")", false, true},
+		{"eight arguments", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + `, "x")`, false, true},
+		{"access 0x0", `"syscall"`, callWith("0x0", open, flags), false, true},
+		{"access 00", `"syscall"`, callWith("00", open, flags), false, true},
+		{"access (0)", `"syscall"`, callWith("(0)", open, flags), false, true},
+		{"access uint32(0)", `"syscall"`, callWith("uint32(0)", open, flags), false, true},
+		{"access named constant", `"syscall"`, callWith("noAccess", open, flags), false, true},
+		{"access GENERIC_WRITE", `"syscall"`, callWith("syscall.GENERIC_WRITE", open, flags), false, true},
+		{"CREATE_NEW", `"syscall"`, callWith("0", "syscall.CREATE_NEW", flags), false, true},
+		{"CREATE_ALWAYS", `"syscall"`, callWith("0", "syscall.CREATE_ALWAYS", flags), false, true},
+		{"OPEN_ALWAYS", `"syscall"`, callWith("0", "syscall.OPEN_ALWAYS", flags), false, true},
+		{"TRUNCATE_EXISTING", `"syscall"`, callWith("0", "syscall.TRUNCATE_EXISTING", flags), false, true},
+		{"numeric disposition", `"syscall"`, callWith("0", "3", flags), false, true},
+		{"DELETE_ON_CLOSE alone", `"syscall"`, callWith("0", open, "syscall.FILE_FLAG_DELETE_ON_CLOSE"), false, true},
+		{"DELETE_ON_CLOSE OR-ed", `"syscall"`, callWith("0", open, flags+"|syscall.FILE_FLAG_DELETE_ON_CLOSE"), false, true},
+		{"OPEN_REPARSE_POINT OR-ed", `"syscall"`, callWith("0", open, flags+"|syscall.FILE_FLAG_OPEN_REPARSE_POINT"), false, true},
+		{"brace composite", `"syscall"`, "syscall.CreateFile(T{p, 0, a, b, c, d, e}.Args())", false, true},
+		{"call-valued argument", `"syscall"`, "syscall.CreateFile(name(), 0, 0, nil, " + open + ", " + flags + ", 0)", false, true},
+		{"index expression", `"syscall"`, "syscall.CreateFile(p[0], 0, 0, nil, " + open + ", " + flags + ", 0)", false, true},
+		{"tag-shaped raw string", `"syscall"`, "syscall.CreateFile(p, 0, `json:\"x\"`, nil, " + open + ", " + flags + ", 0)", false, true},
+		{"interpreted string argument", `"syscall"`, `syscall.CreateFile(p, 0, "rw", nil, ` + open + ", " + flags + ", 0)", false, true},
+		{"rune argument", `"syscall"`, "syscall.CreateFile(p, 0, 'x', nil, " + open + ", " + flags + ", 0)", false, true},
+		{"leading empty segment", `"syscall"`, "syscall.CreateFile(, 0, 0, nil, " + open + ", " + flags + ", 0)", true, true},
+		{"two trailing empty segments", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + ",,)", true, true},
+		{"empty call", `"syscall"`, "syscall.CreateFile()", false, true},
+		{"foreign package aliased syscall", `syscall "example.invalid/other"`, "syscall.CreateFile(" + allowedCreateFileArgs + ")", false, true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			relPath := "predicate-rejection.go"
+			source := harnessWritepathFile(tc.imports, tc.body)
+			file, parseErr := parser.ParseFile(token.NewFileSet(), relPath, source, parser.ParseComments|parser.AllErrors)
+			if (parseErr != nil) != tc.parseError {
+				t.Fatalf("parse error = %v, want parseError=%v", parseErr, tc.parseError)
+			}
+			findings, scanErr := scanSource(relPath, source)
+			if tc.parseError {
+				if scanErr == nil || len(findings) != 0 {
+					t.Fatalf("unparseable source must fail closed, findings=%q err=%v", findings, scanErr)
+				}
+				return
+			}
+			if scanErr != nil {
+				t.Fatalf("scanSource: %v", scanErr)
+			}
+			bindings, err := importPathBindings(file)
+			if err != nil {
+				t.Fatalf("importPathBindings: %v", err)
+			}
+			var call *ast.CallExpr
+			ast.Inspect(file, func(node ast.Node) bool {
+				candidate, ok := node.(*ast.CallExpr)
+				if !ok || call != nil {
+					return call == nil
+				}
+				selector, ok := candidate.Fun.(*ast.SelectorExpr)
+				if ok && selector.Sel.Name == "CreateFile" {
+					call = candidate
+					return false
+				}
+				return true
+			})
+			if tc.hasCreateCall && (call == nil || callAllowed(call, bindings)) {
+				t.Error("rejection row unexpectedly satisfies the AST allowance")
+			}
+			if !tc.hasCreateCall && call != nil {
+				t.Error("non-call reference unexpectedly contains an AST call")
+			}
+			assertFindingsEqual(t, findings, []string{harnessFinding(relPath, source)})
+		})
+	}
+}
+
+// TestScanSource_AllowedCallCannotHideWritingCall carries AC-D2.3 through the
+// AST scanner: a permitted metadata call cannot hide a writing call on the
+// same source line, in either order.
+func TestScanSource_AllowedCallCannotHideWritingCall(t *testing.T) {
 	allowed := "syscall.CreateFile(" + allowedCreateFileArgs + ")"
 	writing := "syscall.CreateFile(p, syscall.GENERIC_WRITE, 0, nil, syscall.CREATE_ALWAYS, 0, 0)"
 	cases := []struct {
 		name string
 		line string
-		want bool
+		want int
 	}{
-		{"allowed alone", allowed, false},
-		{"allowed then writing", allowed + "; " + writing, true},
-		{"writing then allowed", writing + "; " + allowed, true},
+		{"allowed alone", allowed, 0},
+		{"allowed then writing", allowed + "; " + writing, 1},
+		{"writing then allowed", writing + "; " + allowed, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			masked := gomask.MaskGoNonCode(tc.line)
-			if got := lineReportsSelector(masked, masked, 0, true, sel); got != tc.want {
-				t.Errorf("lineReportsSelector(%q) = %v, want %v", tc.line, got, tc.want)
+			relPath := "same-line.go"
+			source := harnessWritepathFile(`"syscall"`, tc.line)
+			got, err := scanSource(relPath, source)
+			if err != nil {
+				t.Fatalf("scanSource: %v", err)
+			}
+			if len(got) != tc.want {
+				t.Fatalf("findings = %q, want %d", got, tc.want)
+			}
+			if tc.want > 0 {
+				assertFindingsEqual(t, got, []string{harnessFinding(relPath, source)})
 			}
 		})
-	}
-	masked := gomask.MaskGoNonCode(allowed)
-	if !lineReportsSelector(masked, masked, 0, false, sel) {
-		t.Error("with the allowance disabled the allowed call must still be reported (fail closed)")
 	}
 }
 

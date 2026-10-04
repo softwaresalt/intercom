@@ -26,7 +26,7 @@
 //     a live caller exists" trigger stay awaited, not monitored.
 //  3. Dot-imports, blank imports, and local identifiers shadowing a package
 //     name (including a local syscall identifier, which the D-2' predicate
-//     in occurrenceAllowed trusts by spelling).
+//     in callAllowed trusts by spelling).
 //  4. os.Root method calls and (*os.File).Write*.
 //  5. Undecidable or non-simple call shape -> rejected. A
 //     syscall.CreateFile reached via a wrapper or function value, with an
@@ -69,8 +69,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -84,7 +86,7 @@ import (
 // additions); the last six (syscall.CreateFile, syscall.Write,
 // os.OpenRoot, os.Root, io.CopyN, io.CopyBuffer) were appended by
 // 034.004-T so existing finding order is unchanged. syscall.CreateFile is
-// reported unless occurrenceAllowed proves the exact metadata-only
+// reported unless callAllowed proves the exact metadata-only
 // reparse-probe call shape.
 var Selectors = []string{
 	"os.WriteFile", "os.Create", "os.OpenFile", "os.Remove", "os.RemoveAll",
@@ -158,14 +160,6 @@ func nextOccurrence(line, sel string, start int) int {
 	return -1
 }
 
-// findSelector reports whether line contains sel as a qualified selector,
-// i.e. whether the first enumerated occurrence exists. It matches
-// pattern.search's truthiness semantics and serves as the per-line fast
-// path ahead of full enumeration.
-func findSelector(line, sel string) bool {
-	return nextOccurrence(line, sel, 0) >= 0
-}
-
 // selectorOccurrences returns the byte offset of every qualified-selector
 // occurrence of sel in line, in order, or nil if there is none.
 func selectorOccurrences(line, sel string) []int {
@@ -176,190 +170,99 @@ func selectorOccurrences(line, sel string) []int {
 	return offsets
 }
 
-// advanceCursor checks that line is exactly text[cur:cur+len(line)] and
-// returns the offset just past the single line boundary that follows it
-// ("\r\n" as two bytes, otherwise the boundary rune's UTF-8 width, or
-// nothing at the end of text). It reports false, failing closed, when the
-// line does not match the text at cur or the boundary cannot be decoded.
-func advanceCursor(text string, cur int, line string) (int, bool) {
-	end := cur + len(line)
-	if end > len(text) || text[cur:end] != line {
-		return 0, false
-	}
-	if end == len(text) {
-		return end, true
-	}
-	if strings.HasPrefix(text[end:], "\r\n") {
-		return end + 2, true
-	}
-	r, width := utf8.DecodeRuneInString(text[end:])
-	if r == utf8.RuneError && width <= 1 {
-		return 0, false
-	}
-	return end + width, true
-}
-
-// extentKind classifies the masked text that follows a selector occurrence.
-type extentKind int
-
-const (
-	// extentNonCall: the selector is not followed (after whitespace) by '('.
-	extentNonCall extentKind = iota
-	// extentBalanced: the call's parentheses close with every bracket matched.
-	extentBalanced
-	// extentUnbalanced: the text ends before the call closes (undecidable).
-	extentUnbalanced
-	// extentMismatched: a closer does not match the innermost opener
-	// (undecidable).
-	extentMismatched
-)
-
-// extent is the call extent of one selector occurrence. segments holds the
-// raw interior text split at commas at bracket depth exactly 1 (the call's
-// own parentheses); it is nil unless kind is extentBalanced.
-type extent struct {
-	kind     extentKind
-	segments []string
-}
-
-// extractExtent extracts the call extent starting at offset after (just
-// past a selector occurrence) in the whole masked text: it skips Go
-// whitespace, newlines included, requires '(', and walks to the balanced
-// ')' while tracking a bracket stack over (), [] and {}. Byte-wise scanning
-// is safe because ASCII bytes never occur inside a multi-byte UTF-8
-// sequence.
-func extractExtent(text string, after int) extent {
-	i := after
-	for i < len(text) && (text[i] == ' ' || text[i] == '\t' || text[i] == '\r' || text[i] == '\n') {
-		i++
-	}
-	if i >= len(text) || text[i] != '(' {
-		return extent{kind: extentNonCall}
-	}
-	var stack []byte
-	var segments []string
-	segStart := i + 1
-	for j := i; j < len(text); j++ {
-		switch c := text[j]; c {
-		case '(', '[', '{':
-			stack = append(stack, c)
-		case ')', ']', '}':
-			if stack[len(stack)-1] != bracketOpener[c] {
-				return extent{kind: extentMismatched}
-			}
-			stack = stack[:len(stack)-1]
-			if len(stack) == 0 {
-				return extent{kind: extentBalanced, segments: append(segments, text[segStart:j])}
-			}
-		case ',':
-			if len(stack) == 1 {
-				segments = append(segments, text[segStart:j])
-				segStart = j + 1
-			}
-		}
-	}
-	return extent{kind: extentUnbalanced}
-}
-
-// bracketOpener maps each closing bracket to its opener.
-var bracketOpener = map[byte]byte{')': '(', ']': '[', '}': '{'}
-
 // The access-mode allowance (D-2') admits exactly one argument shape: the
 // metadata-only syscall.CreateFile call that opens an existing object with
 // no access rights and only FILE_FLAG_BACKUP_SEMANTICS.
 const (
-	allowedCreateFileSelector = "syscall.CreateFile"
+	allowedCreateFileName     = "CreateFile"
 	allowedCreateFileArgCount = 7
 	allowedCreateFileAccess   = "0"
-	allowedCreateFileDispo    = "syscall.OPEN_EXISTING"
-	allowedCreateFileFlags    = "syscall.FILE_FLAG_BACKUP_SEMANTICS"
+	allowedCreateFileDispo    = "OPEN_EXISTING"
+	allowedCreateFileFlags    = "FILE_FLAG_BACKUP_SEMANTICS"
 )
 
-// occurrenceAllowed is the D-2' access-mode allowance: it reports whether a
-// single selector occurrence, classified by its call extent, is exempt from
-// being reported. Every rule is an exact-token match, so the predicate can
-// only err toward reporting (fail closed). Rejected shapes include nested
-// brackets (call arguments, composite literals, index expressions), visible
-// raw strings, blanked string or rune arguments (empty segments), any
-// argument count other than 7, any access spelling other than the token 0,
-// any disposition other than OPEN_EXISTING, and any flag expression other
-// than the bare FILE_FLAG_BACKUP_SEMANTICS.
-func occurrenceAllowed(sel string, ext extent) bool {
-	if sel != allowedCreateFileSelector || ext.kind != extentBalanced {
-		return false
-	}
-	for _, seg := range ext.segments {
-		if strings.ContainsAny(seg, "()[]{}`\"") {
-			return false
+// importPathBindings returns each file's declared import identifier mapped
+// to its exact import path. Unnamed imports use the final path component,
+// while declared aliases retain the identifier written in the import.
+func importPathBindings(file *ast.File) (map[string]string, error) {
+	bindings := make(map[string]string, len(file.Imports))
+	for _, spec := range file.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			return nil, fmt.Errorf("decode import path %s: %w", spec.Path.Value, err)
 		}
-	}
-	args := ext.segments
-	if n := len(args); n > 0 && strings.TrimSpace(args[n-1]) == "" {
-		args = args[:n-1]
-	}
-	if len(args) != allowedCreateFileArgCount {
-		return false
-	}
-	for _, arg := range args {
-		if strings.TrimSpace(arg) == "" {
-			return false
+		localName := path.Base(importPath)
+		if spec.Name != nil {
+			localName = spec.Name.Name
 		}
+		bindings[localName] = importPath
 	}
-	return strings.TrimSpace(args[1]) == allowedCreateFileAccess &&
-		strings.TrimSpace(args[4]) == allowedCreateFileDispo &&
-		strings.TrimSpace(args[5]) == allowedCreateFileFlags
+	return bindings, nil
 }
 
-// lineReportsSelector is the per-line, per-selector evaluator: it reports
-// whether line (starting at byte offset lineStart of the whole maskedText)
-// yields a finding for sel, i.e. whether any qualified occurrence of sel on
-// the line is not allowed. When allowance is false (the line cursor lost
-// sync) every occurrence is reported, failing closed.
-func lineReportsSelector(maskedText, line string, lineStart int, allowance bool, sel string) bool {
-	if !findSelector(line, sel) {
+func isSyscallSelector(expr ast.Expr, bindings map[string]string, name string) bool {
+	selector, ok := expr.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != name {
 		return false
 	}
-	if !allowance {
+	qualifier, ok := selector.X.(*ast.Ident)
+	return ok && bindings[qualifier.Name] == "syscall"
+}
+
+// bareOperand reports whether expr is one of the G-4 operand forms. Calls,
+// literals containing strings or characters, and composite/index expressions
+// are deliberately rejected.
+func bareOperand(expr ast.Expr) bool {
+	switch node := expr.(type) {
+	case *ast.Ident:
 		return true
+	case *ast.BasicLit:
+		return node.Kind == token.INT || node.Kind == token.FLOAT || node.Kind == token.IMAG
+	case *ast.SelectorExpr:
+		return bareOperand(node.X)
+	case *ast.UnaryExpr:
+		return bareOperand(node.X)
+	case *ast.StarExpr:
+		return bareOperand(node.X)
+	case *ast.BinaryExpr:
+		return bareOperand(node.X) && bareOperand(node.Y)
+	default:
+		return false
 	}
-	for _, pos := range selectorOccurrences(line, sel) {
-		if !occurrenceAllowed(sel, extractExtent(maskedText, lineStart+pos+len(sel))) {
-			return true
-		}
-	}
-	return false
 }
 
-// scanText scans already-decoded, newline-translated, masked text for
-// every selector hit, returning one finding string per (line, selector)
-// pair in Selectors order, formatted exactly as Python's
-// f"{relPath}:{line_no}: write primitive {sel!r} found" (via pysem.Repr).
-// relPath is echoed back into the finding text verbatim and must already
-// be in the caller's desired display form (forward-slash, repo-relative).
-//
-// It keeps a byte cursor into maskedText alongside the line loop so each
-// occurrence's call extent can be extracted from the whole text; if the
-// cursor ever loses sync the allowance is disabled for the rest of the
-// text, so every occurrence is reported (fail closed).
-func scanText(relPath, maskedText string) []string {
-	var findings []string
-	cur := 0
-	allowance := true
-	for i, line := range pysem.SplitLines(maskedText) {
-		lineNo := i + 1
-		lineStart := cur
-		if allowance {
-			next, ok := advanceCursor(maskedText, cur, line)
-			allowance = ok
-			cur = next
+// callAllowed is the D-2' AST allowance for the metadata-only
+// syscall.CreateFile call. It accepts only the exact import-path binding,
+// disposition, flags, zero access literal, argument count and G-4 operands.
+func callAllowed(call *ast.CallExpr, bindings map[string]string) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != allowedCreateFileName {
+		return false
+	}
+	qualifier, ok := selector.X.(*ast.Ident)
+	if !ok || bindings[qualifier.Name] != "syscall" {
+		return false
+	}
+	if call.Ellipsis.IsValid() || len(call.Args) != allowedCreateFileArgCount {
+		return false
+	}
+	access, ok := call.Args[1].(*ast.BasicLit)
+	if !ok || access.Kind != token.INT || access.Value != allowedCreateFileAccess {
+		return false
+	}
+	if !isSyscallSelector(call.Args[4], bindings, allowedCreateFileDispo) ||
+		!isSyscallSelector(call.Args[5], bindings, allowedCreateFileFlags) {
+		return false
+	}
+	for i, arg := range call.Args {
+		if i == 1 || i == 4 || i == 5 {
+			continue
 		}
-		for _, sel := range Selectors {
-			if lineReportsSelector(maskedText, line, lineStart, allowance, sel) {
-				findings = append(findings, fmt.Sprintf("%s:%d: write primitive %s found", relPath, lineNo, pysem.Repr(sel)))
-			}
+		if !bareOperand(arg) {
+			return false
 		}
 	}
-	return findings
+	return true
 }
 
 // scanFile reads the file at filepath.Join(root, filepath.FromSlash(relPath))
@@ -433,6 +336,10 @@ func scanSource(relPath, src string) ([]string, error) {
 		return nil, fmt.Errorf("parse Go source %q: %w", relPath, err)
 	}
 
+	importBindings, err := importPathBindings(file)
+	if err != nil {
+		return nil, fmt.Errorf("read imports in Go source %q: %w", relPath, err)
+	}
 	masked := gomask.MaskGoNonCode(src)
 	sourceRuneOffsets := runeByteOffsets(src)
 	maskedRuneOffsets := runeByteOffsets(masked)
@@ -445,11 +352,23 @@ func scanSource(relPath, src string) ([]string, error) {
 	cursor := 0
 	for i, line := range lines {
 		lineStarts[i] = cursor
-		next, ok := advanceCursor(masked, cursor, line)
-		if !ok {
+		lineEnd := cursor + len(line)
+		if lineEnd > len(masked) || masked[cursor:lineEnd] != line {
 			return nil, fmt.Errorf("map masked lines in %q: lost synchronization at byte %d", relPath, cursor)
 		}
-		cursor = next
+		cursor = lineEnd
+		if cursor == len(masked) {
+			continue
+		}
+		if strings.HasPrefix(masked[cursor:], "\r\n") {
+			cursor += 2
+			continue
+		}
+		r, width := utf8.DecodeRuneInString(masked[cursor:])
+		if r == utf8.RuneError && width <= 1 {
+			return nil, fmt.Errorf("map masked lines in %q: lost synchronization at byte %d", relPath, cursor)
+		}
+		cursor += width
 	}
 	if cursor != len(masked) {
 		return nil, fmt.Errorf("map masked lines in %q: stopped at byte %d of %d", relPath, cursor, len(masked))
@@ -463,25 +382,11 @@ func scanSource(relPath, src string) ([]string, error) {
 	allowedCalls := make(map[*ast.SelectorExpr]struct{})
 	ast.Inspect(file, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
-		if !ok {
+		if !ok || !callAllowed(call, importBindings) {
 			return true
 		}
 		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		qualifier, ok := selector.X.(*ast.Ident)
-		if !ok || qualifier.Name+"."+selector.Sel.Name != allowedCreateFileSelector {
-			return true
-		}
-
-		tf := fset.File(selector.Pos())
-		if tf == nil || tf.Size() != len(src) || selector.End() < tf.Pos(0) || selector.End() > tf.Pos(tf.Size()) {
-			return true
-		}
-		sourceEndOffset := tf.Offset(selector.End())
-		maskedEndOffset, ok := maskedOffsetForSourceByte(sourceEndOffset, sourceRuneOffsets, maskedRuneOffsets)
-		if ok && occurrenceAllowed(allowedCreateFileSelector, extractExtent(masked, maskedEndOffset)) {
+		if ok {
 			allowedCalls[selector] = struct{}{}
 		}
 		return true
