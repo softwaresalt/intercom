@@ -38,8 +38,12 @@ base_commit: 4c36944
   * The evidence: a throwaway `go/parser` probe under `logs/` compared the
     full G-4 predicate with a fail-open variant that checks only `Args[0]` and
     `Args[2]`. Over every planned row the two showed **0 divergences**.
-  * Conditional rule: (a) classification-only is arguably yes. (b) caught by
-    test-first is **NO**, because a weak predicate passes every specified test.
+  * Conditional rule: (a) classification-only is **NO**. It is a coverage gap
+    (missing rows), not the classification of an existing input, and doubt
+    counts as not qualifying. The anchor tagged it yes, and Stage's first draft
+    said "arguably yes"; Copilot review on PR #103 corrected this. (b) caught
+    by test-first is **NO**, because a weak predicate passes every specified
+    test.
   * The operator's FAIL list names exactly this case: "a test that could pass
     while asserting the wrong thing" and "AC/requirement correctness a passing
     test would not expose". The anchor's verdict is also FAIL, so the gate is
