@@ -63,6 +63,9 @@ package writepath
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -368,21 +371,231 @@ func scanFile(root, relPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return scanText(relPath, gomask.MaskGoNonCode(text)), nil
+	return scanSource(relPath, text)
 }
 
-// scanSource is the source-level boundary for Go AST detection.
-//
-// This scaffold intentionally panics until task 049.002-T replaces it with
-// the parser-backed implementation. The task-specific harness command sets
-// WRITEPATH_HARNESS_TASK so each queued harness reports its own not-implemented
-// marker while the shipment is still in the pre-implementation phase.
-func scanSource(relPath, src string) ([]string, error) {
-	task := os.Getenv("WRITEPATH_HARNESS_TASK")
-	if task == "" {
-		task = "049.002-T"
+func runeByteOffsets(text string) []int {
+	offsets := make([]int, 0, utf8.RuneCountInString(text)+1)
+	for offset := range text {
+		offsets = append(offsets, offset)
 	}
-	panic(fmt.Sprintf("not implemented: %s: scanSource(%q, %d bytes)", task, relPath, len(src)))
+	return append(offsets, len(text))
+}
+
+func runeIndexForByteOffset(sourceByteOffset int, sourceRuneOffsets []int) (int, bool) {
+	runeIndex := sort.SearchInts(sourceRuneOffsets, sourceByteOffset)
+	if runeIndex >= len(sourceRuneOffsets) || sourceRuneOffsets[runeIndex] != sourceByteOffset {
+		return 0, false
+	}
+	return runeIndex, true
+}
+
+func maskedOffsetForSourceByte(sourceByteOffset int, sourceRuneOffsets, maskedRuneOffsets []int) (int, bool) {
+	runeIndex, ok := runeIndexForByteOffset(sourceByteOffset, sourceRuneOffsets)
+	if !ok || runeIndex >= len(maskedRuneOffsets) {
+		return 0, false
+	}
+	return maskedRuneOffsets[runeIndex], true
+}
+
+func physicalSourceOffset(file *token.File, pos token.Pos, sourceLen int) (int, bool) {
+	if file == nil || file.Size() != sourceLen || !pos.IsValid() || pos < file.Pos(0) || pos > file.Pos(file.Size()) {
+		return 0, false
+	}
+	position := file.PositionFor(pos, false)
+	if !position.IsValid() || position.Offset < 0 || position.Offset > sourceLen {
+		return 0, false
+	}
+	offset := file.Offset(pos)
+	if offset != position.Offset {
+		return 0, false
+	}
+	return offset, true
+}
+
+func lineNumberAtOffset(lineStarts []int, offset int) (int, bool) {
+	line := sort.Search(len(lineStarts), func(i int) bool {
+		return lineStarts[i] > offset
+	}) - 1
+	if line < 0 {
+		return 0, false
+	}
+	return line + 1, true
+}
+
+// scanSource scans unmasked, decoded Go source and fails closed on any parse
+// error. The whole-file mask supplies the legacy line boundaries and exposes
+// only struct-tag raw strings for the residual textual selector check.
+func scanSource(relPath, src string) ([]string, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, relPath, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
+	if err != nil {
+		return nil, fmt.Errorf("parse Go source %q: %w", relPath, err)
+	}
+
+	masked := gomask.MaskGoNonCode(src)
+	sourceRuneOffsets := runeByteOffsets(src)
+	maskedRuneOffsets := runeByteOffsets(masked)
+	if len(sourceRuneOffsets) != len(maskedRuneOffsets) {
+		return nil, fmt.Errorf("mask Go source %q: rune count changed", relPath)
+	}
+
+	lines := pysem.SplitLines(masked)
+	lineStarts := make([]int, len(lines))
+	cursor := 0
+	for i, line := range lines {
+		lineStarts[i] = cursor
+		next, ok := advanceCursor(masked, cursor, line)
+		if !ok {
+			return nil, fmt.Errorf("map masked lines in %q: lost synchronization at byte %d", relPath, cursor)
+		}
+		cursor = next
+	}
+	if cursor != len(masked) {
+		return nil, fmt.Errorf("map masked lines in %q: stopped at byte %d of %d", relPath, cursor, len(masked))
+	}
+
+	selectorIndexes := make(map[string]int, len(Selectors))
+	for i, selector := range Selectors {
+		selectorIndexes[selector] = i
+	}
+
+	allowedCalls := make(map[*ast.SelectorExpr]struct{})
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		qualifier, ok := selector.X.(*ast.Ident)
+		if !ok || qualifier.Name+"."+selector.Sel.Name != allowedCreateFileSelector {
+			return true
+		}
+
+		tf := fset.File(selector.Pos())
+		if tf == nil || tf.Size() != len(src) || selector.End() < tf.Pos(0) || selector.End() > tf.Pos(tf.Size()) {
+			return true
+		}
+		sourceEndOffset := tf.Offset(selector.End())
+		maskedEndOffset, ok := maskedOffsetForSourceByte(sourceEndOffset, sourceRuneOffsets, maskedRuneOffsets)
+		if ok && occurrenceAllowed(allowedCreateFileSelector, extractExtent(masked, maskedEndOffset)) {
+			allowedCalls[selector] = struct{}{}
+		}
+		return true
+	})
+
+	type findingKey struct {
+		line          int
+		selectorIndex int
+	}
+	findings := make(map[findingKey]struct{})
+	addFinding := func(maskedOffset, selectorIndex int) error {
+		line, ok := lineNumberAtOffset(lineStarts, maskedOffset)
+		if !ok {
+			return fmt.Errorf("map finding in %q: invalid masked byte offset %d", relPath, maskedOffset)
+		}
+		findings[findingKey{line: line, selectorIndex: selectorIndex}] = struct{}{}
+		return nil
+	}
+
+	var scanErr error
+	ast.Inspect(file, func(node ast.Node) bool {
+		if scanErr != nil {
+			return false
+		}
+		switch n := node.(type) {
+		case *ast.SelectorExpr:
+			qualifier, ok := n.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			selectorIndex, ok := selectorIndexes[qualifier.Name+"."+n.Sel.Name]
+			if !ok {
+				return true
+			}
+			if _, allowed := allowedCalls[n]; allowed {
+				return true
+			}
+			tf := fset.File(n.Pos())
+			sourceOffset, ok := physicalSourceOffset(tf, n.Pos(), len(src))
+			if !ok {
+				scanErr = fmt.Errorf("map selector position in %q: invalid token position", relPath)
+				return false
+			}
+			maskedOffset, ok := maskedOffsetForSourceByte(sourceOffset, sourceRuneOffsets, maskedRuneOffsets)
+			if !ok {
+				scanErr = fmt.Errorf("map selector position in %q: invalid source byte offset %d", relPath, sourceOffset)
+				return false
+			}
+			scanErr = addFinding(maskedOffset, selectorIndex)
+
+		case *ast.BasicLit:
+			if n.Kind != token.STRING || len(n.Value) < 2 || n.Value[0] != '`' || n.Value[len(n.Value)-1] != '`' {
+				return true
+			}
+			tf := fset.File(n.Pos())
+			sourceStart, ok := physicalSourceOffset(tf, n.Pos(), len(src))
+			if !ok {
+				scanErr = fmt.Errorf("map raw string in %q: invalid start position", relPath)
+				return false
+			}
+			sourceEnd, ok := physicalSourceOffset(tf, n.End(), len(src))
+			if !ok || sourceEnd-sourceStart < 2 || src[sourceStart] != '`' || src[sourceEnd-1] != '`' {
+				scanErr = fmt.Errorf("map raw string in %q: invalid end position", relPath)
+				return false
+			}
+			startRune, ok := runeIndexForByteOffset(sourceStart+1, sourceRuneOffsets)
+			if !ok {
+				scanErr = fmt.Errorf("map raw string in %q: invalid interior start", relPath)
+				return false
+			}
+			endRune, ok := runeIndexForByteOffset(sourceEnd-1, sourceRuneOffsets)
+			if !ok || endRune < startRune {
+				scanErr = fmt.Errorf("map raw string in %q: invalid interior end", relPath)
+				return false
+			}
+			maskedStart := maskedRuneOffsets[startRune]
+			maskedEnd := maskedRuneOffsets[endRune]
+			sourceInterior := src[sourceStart+1 : sourceEnd-1]
+			maskedInterior := masked[maskedStart:maskedEnd]
+			if sourceInterior != maskedInterior {
+				return true
+			}
+			for selectorIndex, selector := range Selectors {
+				for _, occurrence := range selectorOccurrences(maskedInterior, selector) {
+					if err := addFinding(maskedStart+occurrence, selectorIndex); err != nil {
+						scanErr = err
+						return false
+					}
+				}
+			}
+		}
+		return true
+	})
+	if scanErr != nil {
+		return nil, scanErr
+	}
+
+	ordered := make([]findingKey, 0, len(findings))
+	for finding := range findings {
+		ordered = append(ordered, finding)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].line != ordered[j].line {
+			return ordered[i].line < ordered[j].line
+		}
+		return ordered[i].selectorIndex < ordered[j].selectorIndex
+	})
+
+	result := make([]string, 0, len(ordered))
+	for _, finding := range ordered {
+		selector := Selectors[finding.selectorIndex]
+		result = append(result, fmt.Sprintf("%s:%d: write primitive %s found", relPath, finding.line, pysem.Repr(selector)))
+	}
+	return result, nil
 }
 
 // Result carries the ordered stdout/stderr text and process-style exit

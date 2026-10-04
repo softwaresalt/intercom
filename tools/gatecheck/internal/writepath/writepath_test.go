@@ -186,13 +186,16 @@ func TestFilebased_ReadTextAndScan_MatchGolden(t *testing.T) {
 				t.Fatalf("ReadText(%s) = %q, want %q", row.Name, got, row.TranslatedText)
 			}
 
-			findings := scanText(row.Name, gomask.MaskGoNonCode(got))
+			findings, err := scanSource(row.Name, got)
+			if err != nil {
+				t.Fatalf("scanSource(%s): %v", row.Name, err)
+			}
 			if len(findings) != len(row.Findings) {
-				t.Fatalf("scanText(%s) findings=%v, want %v", row.Name, findings, row.Findings)
+				t.Fatalf("scanSource(%s) findings=%v, want %v", row.Name, findings, row.Findings)
 			}
 			for i := range findings {
 				if findings[i] != row.Findings[i] {
-					t.Fatalf("scanText(%s) findings[%d]=%q, want %q", row.Name, i, findings[i], row.Findings[i])
+					t.Fatalf("scanSource(%s) findings[%d]=%q, want %q", row.Name, i, findings[i], row.Findings[i])
 				}
 			}
 		})
