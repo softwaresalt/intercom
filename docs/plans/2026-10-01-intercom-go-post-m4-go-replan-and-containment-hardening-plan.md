@@ -4628,15 +4628,17 @@ decision: OPERATOR-LIFT
 ## Harvest Record — Revision 7 (2026-10-03)
 
 The revision 7 harvest (049.007-T, the edges and the rev 7 bodies) was
-created in the rev 7 re-plan sessions. Under the hold, no harvest record was
-written until a gate passed (see "Gate outcome — FAIL (cycle limit
-reached)"). This record is written at the D-049-11 lift. Every mutation used
+created in the rev 7 re-plan sessions. No harvest record was written while
+the hold stood (see "Gate outcome — FAIL (cycle limit reached)"). No gate has
+passed since: round 6 FAIL stays the verdict of record, and no round 7 ran.
+This record is written now because the operator override D-049-11 lifted the
+hold. Every mutation used
 `C:\Tools\backlogit.exe` v1.11.0 with exit codes checked, followed by a
 read-back. Body edits used `--section name=value` only.
 
 | Plan unit | Backlog ID | Disposition |
 |---|---|---|
-| E (feature) | 049-F | **`blocked → queued`** by a direct `backlogit move 049-F --status queued` (exit 0). No `--force-gates` was used, and the move was not gate-rejected. The `hold` section is replaced with **HOLD LIFTED** (D-049-11). It states that every earlier hold, PROVISIONAL, do-not-claim, stays-blocked and re-gated-before-execution text in the item, and in any section of its tasks (description, acceptance-criteria, replan and round sections), is historical as to hold status. It also records the AC-E1.2 discharge. |
+| E (feature) | 049-F | **`blocked → queued`** by a direct `backlogit move 049-F --status queued` (exit 0). No `--force-gates` was used, and the move was not gate-rejected. The `hold` section is replaced with **HOLD LIFTED** (D-049-11). It states that every earlier hold, PROVISIONAL, do-not-claim, stays-blocked and re-gated-before-execution text in the item, and in any section of its tasks (description, acceptance-criteria, replan and round sections), is historical as to hold status. The description's "039-S is blocked by 031-S" and "Scope and gating are unchanged" gating phrases are historical too (031-S has shipped). It also records the AC-E1.2 discharge. |
 | E (shipment) | 039-S | `queued`. The `hold` section is replaced with HOLD LIFTED. It records eligibility, the new-session start by Ship, the implementation-time obligations and the execution order. Manifest read back: `049-F, 049.001-T, 049.002-T, 049.003-T, 049.004-T, 049.005-T, 049.006-T, 049.007-T`, which covers every rev 7 task. It depends on 031-S, which has shipped. |
 | E-T1 | 049.001-T | Status unchanged (`queued`, Ship's read-only verification half, D-049-6). The acceptance criteria gain a D-049-11 note: AC-E1.2's re-gate clause is discharged by the operator override, and Ship verifies that D-049-11 is recorded instead (pre-PR review GPTH-001/OPH-1). |
 | E-T2 | 049.002-T | An `implementation-verification` section is added (R4-3, R4-5, R5-4, R6-2 E-T2 half, R6-6), and the acceptance criteria gain **AC-E2.V**. AC-E2.1..AC-E2.7 already match the plan. |
@@ -4647,7 +4649,9 @@ read-back. Body edits used `--section name=value` only.
 | E-T7 | 049.007-T | Unchanged. AC-E7.1..AC-E7.3 match the plan. |
 
 **Edges** (unchanged; `A → B` means A depends on B, type `blocks`). The
-execution order is E-T2, E-T3, E-T4, E-T5, E-T7, E-T6:
+execution order is E-T1, E-T2, E-T3, E-T4, E-T5, E-T7, E-T6, which matches
+the 039-S order 049.001-T, 049.002-T, 049.003-T, 049.004-T, 049.005-T,
+049.007-T, 049.006-T:
 * 049.002-T → 049.001-T
 * 049.003-T → 049.002-T
 * 049.004-T → 049.002-T and 049.003-T

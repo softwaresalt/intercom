@@ -102,6 +102,19 @@ verification AC.
   with no findings. claude-opus-5.5 returned ADVISORY with one P3: the
   049-F row of the harvest record still described the narrow supersession
   wording. That row was fixed.
+* **Round 3** (both models, delta review at HEAD `263fd66`): both returned
+  PASS, with no findings. That is the Reviewed HEAD the PR opened with.
+
+## Copilot review (PR #104)
+
+* **Cycle 1** (HEAD `263fd66`): four in-scope comments (P-021 C1), all fixed
+  in the following commit:
+  * The memory review history was missing round 3.
+  * The harvest-record wording "until a gate passed" contradicted round 6
+    FAIL.
+  * The execution order omitted E-T1.
+  * The 049-F description's "039-S is blocked by 031-S" and "Scope and
+    gating are unchanged" phrases were not marked historical.
 
 ## Stash
 
