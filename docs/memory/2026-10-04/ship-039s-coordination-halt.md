@@ -5,7 +5,7 @@ agent: ship
 feature: 049-F
 shipment: 039-S
 mode: dark (P-017)
-status: resumed
+status: resolved
 ---
 
 # 039-S Ship handoff — concurrent executor coordination halt
@@ -108,3 +108,46 @@ commit-tracking mutation is not in Ship's allowed Backlog operations.
 The next task is 049.004-T. Shipment 039-S remains the sole active shipment on
 the existing feature branch and worktree. No PR, merge, or post-merge closure
 has occurred.
+
+## E-T4 acceptance halt
+
+At `2026-10-04T08:38:10Z`, E-T4's targeted harness and writepath tests passed,
+but the full `go test ./...` failed in `TestOracle_FixtureCorpus_Parity` for
+the new alias and split-selector fixtures. The oracle still discovers fixtures
+with a dynamic `filepath.Glob("scripts/testdata/writepath/*.go")`; AC-E2.6
+required its input set to remain the explicit frozen 19-name pre-E4 corpus.
+
+Correcting the oracle now would be a further edit to the D-T1a oracle after
+AC-E2.6's authorized single adaptation, which explicitly says to halt on any
+further oracle change (H-3). No oracle, source, backlog, commit, or PR change
+was made after this gate failure. The uncommitted E-T4 changes are limited to
+the scanner, golden JSON, and four authorized fixtures. Operator disposition
+is required before E-T4 can continue. The active checkpoint
+`checkpoint-20261004-073226.json` remains untouched.
+
+## Resolution (ORCH-D1)
+
+The apparent second Ship executor was the roster entry for this same Ship
+context. The earlier Ship contexts are idle and halted; this context is the
+sole 039-S executor. The coordination halt is resolved.
+
+The Orchestrator authorized completion of AC-E2.6 as an incomplete
+049.002-T requirement, not as a new oracle change. Corrective commit
+`aeb3313576f1b1e00b500d1aa532560699ff0a5e` freezes the exact 19 fixture names
+from `c04d975`, separately from E-T4. The 049.007 freeze guard was red before
+the edit and green afterward; targeted oracle tests, `gofmt -l .`,
+`go vet ./...`, `go test ./...`, and `go build ./...` passed.
+
+The active checkpoint `checkpoint-20261004-073226.json` still describes
+049.002-T at `f5a9b8e`. This continuation used verified live Git/backlog state
+and ORCH-D1 rather than restoring that stale checkpoint; it remains unresolved
+and must not be cleaned up without its owner-scoped disposition.
+
+E-T4 is complete on the original branch. Implementation commit
+`59bdd951ca55d6f29b653b0048b73b5f510ec2a0` and backlog archival commit
+`10e38c7c037850e8e52f2b16ad75ff8f5d4a67ea` are separate. The 049.002-T
+backlog commit-tracking field was not updated because Ship's Role Boundary
+does not authorize that unlisted backlog mutation; the corrective commit
+subject and this memory record preserve the association. The next task is
+049.005-T. The PR, adversarial review, Copilot, CI, merge, and post-merge
+closure gates remain outstanding.
