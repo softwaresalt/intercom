@@ -255,7 +255,9 @@ revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
 > Unit E is re-gated under `## Plan Review — Revision 7 (Unit E)`. The 049-F
 > STAGE HOLD lifts only on ADVISORY or better with no P0/P1. **Outcome: FAIL
 > at cycle 3, FAIL again at the operator-authorised round 4 (D-049-8), and
-> FAIL again at the operator-authorised round 5 (D-049-9). The hold is kept.**
+> FAIL again at the operator-authorised round 5 (D-049-9), and FAIL again at the
+> operator-authorised round 6 (D-049-10, where the conditional hold-lift rule
+> did not apply). The hold is kept.**
 >
 > 10. **Staging PR #99 review amendments (NOT re-gated).** Copilot's shadow
 >     review added `token.ASSIGN` and multi-name `var` binding coverage to E-T5, an import-path
@@ -295,6 +297,25 @@ revision 4. **Revision 5 harvests it into 030-S as A-T3a/A-T3b/A-T3c
 >     finding, and R4-3 clears it. Amendments **R5-1..R5-4** are applied as
 >     **un-gated amendments**. No round 6 is authorised, so **049-F stays
 >     `blocked` and 039-S stays on hold**. See "Round 5" under
+>     `## Plan Review — Revision 7 (Unit E)`.
+>
+> 13. **Round 6 (operator-authorised exception, D-049-10) — FAIL; the hold is
+>     kept.** The operator approved exactly one more round (round 6), which
+>     supersedes item 12's "no round 6" for that single round only. The
+>     approval came with a conditional rule: lift the hold if every verified
+>     P0/P1 is classification-only **and** mechanically caught by a
+>     test-first build. Round 6 returned:
+>     * gpt-5.6-sol (anchor): FAIL, GPT6-1 (P1);
+>     * claude-opus-5.5: ADVISORY, OP6-1 (P2), OP6-2..OP6-6 (P3);
+>     * gemini-3.8-flash: ADVISORY, GM6-1 (P2).
+>
+>     GPT6-1 is PRE5-1 re-raised: `Args[3]` and `Args[6]` have no rejection
+>     rows. Stage verified it with a throwaway parser probe: a predicate that
+>     skips those positions passes every planned row, with 0 divergences. A
+>     weak predicate therefore passes the specified tests, so condition (b)
+>     fails and the result is **FAIL**. Amendments **R6-1..R6-6** are applied
+>     as **un-gated amendments**. No round 7 is authorised, so **049-F stays
+>     `blocked` and 039-S stays on hold**. See "Round 6" under
 >     `## Plan Review — Revision 7 (Unit E)`.
 
 ---
@@ -2366,6 +2387,22 @@ E-T2 owns the G-1 re-anchoring of
 `retiredarch`'s writepath scan-loop pin: the `writePathMaskFlow` pin at
 `writepath_mask_test.go:35` is re-anchored on `scanSource`. Its
 canonical-mask and single-definition assertions are not weakened.
+* **Round-6 amendment R6-6 (OP6-6 P3; applied after round 6, NOT re-gated).**
+  Today the pin positively requires `scanText`. It returns false when
+  `scanText` is absent (`writepath_mask_test.go:51`). It also fails with "no
+  writepath source declares both scanFile and scanText" (`:300`). E-T3
+  deletes `scanText` but cannot edit `retiredarch`, so the pin that E-T2
+  re-anchors must not depend on `scanText` at all. It anchors on `scanSource`
+  calling `gomask.MaskGoNonCode` directly on its source parameter, and on that
+  masked result being consumed through `pysem.SplitLines`. `scanSource` masks
+  into a local variable rather than receiving masked text as a parameter, so
+  the `scanTextRangesParam` "second parameter" shape is not reused verbatim.
+* **Round-6 amendment R6-2, E-T2 half (OP6-2 P3; NOT re-gated).** When E-T2
+  re-points the golden row loop (`writepath_test.go:148`) to `scanSource`, it
+  also renames the `t.Fatalf` message prefixes `"scanText(%s) …"` at `:150`
+  and `:154` to `"scanSource(%s) …"`. Otherwise the AC-E3.3 `git grep`
+  (`\bscanText\(`) matches those string literals after E-T3 and cannot be
+  empty.
 
 **Acceptance criteria**
 * AC-E2.1 — The golden JSON is **byte-identical** (`selectors`,
@@ -2399,6 +2436,11 @@ canonical-mask and single-definition assertions are not weakened.
 
   The legacy implementation, the frozen 20 and every other expectation stay
   **unedited**. Any further oracle change HALTs (H-3).
+* AC-E2.7 (round 6, D-049-10; NOT re-gated) — The re-anchored `retiredarch`
+  pin has no positive dependency on `scanText`. It anchors on `scanSource`
+  masking its source parameter with `gomask.MaskGoNonCode` and consuming the
+  result through `pysem.SplitLines` (R6-6). The `writepath_test.go:150`/`:154`
+  message prefixes name `scanSource` (R6-2).
 
 ### E-T3 — 049.003-T: Port the allowance predicate onto `*ast.CallExpr`
 
@@ -2410,7 +2452,8 @@ the AC-D1.1–D1.3 test port below raise the size). Depends on E-T2.
   `writepath_extent_test.go`, all in `tools/gatecheck/internal/writepath/`.
   `writepath_extent_test.go` is required because it calls `extractExtent`
   (`:52`, `:93`, `:180`), `scanText` (`:109`, `:118`, `:185`, `:210`) and
-  `advanceCursor` (`:22`, `:158`, `:207`, `:226`). The package would not
+  `advanceCursor` (`:22`, `:158`, `:207`, `:226`, `:236`; `:236` added by
+  round-6 amendment R6-4, OP6-4). The package would not
   compile if E-T3 deleted those functions without it (rev 7 cycle 2, SB2-2).
   `writepath_test.go:384–512` is ported in the same commit (post-cycle-3
   amendment SB3-1/GPT3-1). That range covers the helpers `createFileCall`,
@@ -2457,7 +2500,19 @@ the deletions are removed in the same commit. For example, `unicode/utf8`
 (`writepath.go:72`) is used today only by `advanceCursor` (`:192–193`), unless
 the `scanSource` rune-index map uses it. `scanSource` is added to `writepath.go`
 in E-T2 (the production change is confined to that file), so the
-`gomask` import stays used at both boundaries.
+`gomask` import of `writepath.go` stays used at both boundaries.
+**Round-6 amendment R6-5 (OP6-5 P3; NOT re-gated).** That sentence covers
+`writepath.go` only. In `writepath_test.go`, E-T2 re-points `:148` to
+`scanSource`, and E-T3 drops the per-row and `createFileCall`
+`gomask.MaskGoNonCode` calls (R5-1). E-T3 also ports `:411` and `:499`/`:505`.
+After that, the `gomask` import of `writepath_test.go` (`:11`) is unused, and
+E-T3 removes it in the same commit. Leaving it in place is a compile error.
+`writepath_extent_test.go` keeps its `gomask` import, because the R4-4
+port computes the expected lines from `SplitLines` of the masked text.
+**Round-6 amendment R6-3 (OP6-3 P3; NOT re-gated).** The new AST allowance
+predicate must not reuse any name on the complete deletion list, because
+AC-E3.3's `git grep` would then match correct code. The name is, for example, `callAllowed`; any name that is not on the list
+is acceptable.
 * **Extent-test port (rev 7 cycle 2, SB2-2).** The Unit D extent contracts
   move to named AST tests in `writepath_extent_test.go`, in the same commit:
 
@@ -2468,7 +2523,7 @@ in E-T2 (the production change is confined to that file), so the
   | `TestExtractExtent_Classifications`, **non-parseable cases** (unbalanced EOF, unbalanced with no closer, mismatched closer, mismatched brace, form feed in code position, and — round-4 amendment R4-1, GPT4-1/OP4-2 — call after whitespace and newline, `os.Remove \t\n(a, b)` at `writepath_extent_test.go:82`: automatic semicolon insertion after `Remove` makes `(a, b)` a syntax error) — post-cycle-3 amendment GK3-1 | `TestScanSource_SyntaxErrorFailsClosed`: each case, wrapped in a function body, is a **parse error** under G-2. It returns the error with exit 1, yields no finding, and the partial AST is not scanned. That is a stricter fail-closed verdict, never a weaker one. The distinct `extentUnbalanced` and `extentMismatched` kinds are **not** preserved; they were masked-text artefacts. |
   | `TestScanText_ClassificationsKeepFindingText` (AC-D1.2, scan level), `TestScanText_OneFindingPerSelectorPerLine` | Re-routed through `scanSource`, with the same expected finding text and the same one-finding-per-(line, selector) rule, for the **parseable** inputs (`f := os.Remove` and `os.Remove(a)` inside a function body). The non-parseable inputs `os.Remove(a, (b` and `os.Remove(a, [b)` move to `TestScanSource_SyntaxErrorFailsClosed` (GK3-1). |
   | `TestLineReportsSelector_AllowedCallCannotHideWritingCall` (AC-D2.3, R4-P1-3; post-cycle-3 amendment SB3-1/GPT3-1) | `TestScanSource_AllowedCallCannotHideWritingCall`: the same three single-line cases, each wrapped as a parseable function body and run through `scanSource`. An allowed `syscall.CreateFile` alone gives no finding; allowed-then-writing and writing-then-allowed each give exactly one `syscall.CreateFile` finding on that line. The "allowance disabled" sub-case is deleted with `advanceCursor`, its only subject. |
-  | `TestFindSelector_LookaroundTable` (`writepath_test.go:161–182`; post-cycle-3 amendment GK3-2) | Same table, re-pointed at `selectorOccurrences` (want `len(...) > 0`). The lookaround boundary contract stays pinned on the retained `nextOccurrence`. |
+  | `TestFindSelector_LookaroundTable` (`writepath_test.go:161–182`; post-cycle-3 amendment GK3-2) | Same table, re-pointed at `selectorOccurrences` (want `len(...) > 0`). The lookaround boundary contract stays pinned on the retained `nextOccurrence`. The `t.Fatalf` prefix `"findSelector(%q, %q) …"` at `:180` is renamed to `"selectorOccurrences(%q, %q) …"` (round-6 amendment R6-2, E-T3 half, OP6-2). |
   | `TestCursor_MultiLineExtentAcrossSeparators` (AC-D1.3) | `TestScanSource_MultiLineCallAcrossSeparators`: a multi-line call whose lines are separated by `\f` or `\u2028` in **comment or string positions** maps every finding to the correct `pysem.SplitLines` line through the rune-index line table, including a hit on the final line with and without a trailing boundary. The same separators in **code position** are a parse error, so they fail closed with exit 1 (G-2, AC-E2.6 item 3). That is a stricter verdict, never a weaker one. **Round-4 amendment R4-4 (OP4-4):** separators in comments and interpreted strings are erased by the masker, so they cannot tell the `SplitLines` table apart from `go/token`'s `\n`-only lines. The test therefore adds one **discriminating case**: a visible raw-string struct tag containing `\u2028` (or `\f`), followed by a multi-line writing call. The expected finding lines come from `SplitLines` of the masked text. The test first asserts, as a precondition, that `fset.PositionFor(pos, false).Line` **differs** from each expected line, so the case cannot pass vacuously. |
   | `TestCursor_InvalidUTF8FailsClosed`, `TestCursor_LastLineBoundsCheck` | Deleted with `advanceCursor`, their only subject. Invalid UTF-8 still fails closed at `ReadText` (AC-D1a.1). Last-line mapping is pinned by the AC-D1.3 port above. |
 
@@ -2504,9 +2559,9 @@ in E-T2 (the production change is confined to that file), so the
       parses (Stage probe, round 5).
     * `:464`, `:465` and `:466` therefore stay **parseable predicate
       rejections** in the AST port. They pin, at the third argument
-      (`Args[2]`) only, the G-4 rule that STRING and CHAR `*ast.BasicLit`
-      arguments are not bare operands and are rejected (coverage at the other
-      generic positions is open pre-PR finding PRE5-1; spike G-4: a bare operand is an `*ast.Ident`, an
+      (`Args[2]`), the G-4 rule that STRING and CHAR `*ast.BasicLit`
+      arguments are not bare operands and are rejected (the other generic
+      positions are covered by round-6 amendment R6-1 below; spike G-4: a bare operand is an `*ast.Ident`, an
       INT/FLOAT/IMAG `*ast.BasicLit`, or a `*ast.SelectorExpr`,
       `*ast.UnaryExpr`, `*ast.StarExpr` or `*ast.BinaryExpr` built only from
       bare operands). They must **not** move to
@@ -2515,6 +2570,41 @@ in E-T2 (the production change is confined to that file), so the
       reproduce **exactly** `{:443, :444, :467, :468}` as the parse errors.
       Any other result (an extra parse error, or one of the four parsing) is
       an **H-2 HALT**, not a licence to move a row.
+  * **Round-6 amendment R6-1 (GPT6-1 P1 / OP6-1 P2 / GM6-1 P2, which closes
+    PRE5-1; applied after round 6, NOT re-gated). Positional coverage of the
+    bare-operand rule.**
+    * The ported table pins non-bare-operand rejection at `Args[0]` (call and
+      index, `:462`–`:463`) and at `Args[2]` (string, rune and raw string,
+      `:464`–`:466`) only. `Args[3]` and `Args[6]` are always `nil` and `0`.
+      A predicate that never checks `Args[3]` or `Args[6]` therefore passes
+      every specified row, and that would be a widening of D-2′ (INV-2).
+      Stage reproduced this in round 6. A throwaway `go/parser` program
+      compared a full G-4 predicate with one that checks only `Args[0]` and
+      `Args[2]`. The two gave 0 divergences over `:442`–`:469` and the
+      allowed control.
+    * E-T3 adds **nine** rows to the ported rejection table. Each is built
+      from unmasked source inside the R4-6 wrapper. Each changes exactly one
+      generic argument of `allowedCreateFileArgs`, and each must be
+      **rejected** (a `syscall.CreateFile` finding):
+
+      | Row | Argument |
+      |---|---|
+      | string at `Args[0]` | `"p"` |
+      | rune at `Args[0]` | `'p'` |
+      | call-valued at `Args[2]` | `name()` |
+      | string at `Args[3]` | `"sa"` |
+      | rune at `Args[3]` | `'s'` |
+      | call-valued at `Args[3]` | `name()` |
+      | string at `Args[6]` | `"t"` |
+      | rune at `Args[6]` | `'t'` |
+      | call-valued at `Args[6]` | `name()` |
+
+    * All nine rows **parse** (Stage probe, round 6). Each row fails against
+      a predicate that skips the bare-operand check at its position. These
+      rows are new, so the R5-1 parse-error
+      set over the existing rows stays exactly `{:443, :444, :467, :468}`. If
+      any new row fails to parse, that is an H-2 HALT, not a licence to drop
+      the row.
   * **Round-5 amendment R5-2 (OP5-2 P3; NOT re-gated).** AC-D2.1
     (`TestOccurrenceAllowed_ReparseWindowsCreateFile`, `writepath_test.go:402–425`)
     is carried as follows. The live-call sub-case is carried by
@@ -2553,14 +2643,18 @@ in E-T2 (the production change is confined to that file), so the
   import path `"syscall"`. Any widening HALTs (H-2 E). Every other argument
   must be a G-4 bare operand; STRING and CHAR `*ast.BasicLit` arguments are
   not bare operands and are rejected. The parseable `:464`–`:466` rows pin
-  this rejection at the third argument (`Args[2]`) only (R5-1); coverage at the
-  other generic positions is an open pre-PR finding (PRE5-1) for the next gate.
+  this rejection at the third argument (`Args[2]`). The nine round-6 R6-1
+  rows pin STRING and CHAR rejection at `Args[0]`, `Args[3]` and `Args[6]`,
+  and call-valued rejection at `Args[2]`, `Args[3]` and `Args[6]`. Together
+  with `:462`–`:463` at `Args[0]`, every generic position has a
+  non-bare-operand rejection row (closes PRE5-1).
 * AC-E3.3 (rev 7 cycle 2, SB2-2) — The AC-D1.1, AC-D1.2 and AC-D1.3 contracts
   are carried by the named AST tests in the port table, with unchanged cases
   and verdicts, or a stricter fail-closed verdict for code-position separators
   and the non-parseable extent cases (GK3-1, R4-1) and predicate rows (R4-2).
   The predicate rows are probed and ported from **unmasked** source, and the
-  probe reproduces exactly `{:443, :444, :467, :468}` (R5-1).
+  probe reproduces exactly `{:443, :444, :467, :468}` (R5-1). The nine R6-1
+  positional rows all parse and are rejected.
   AC-D1.3 includes the R4-4 discriminating raw-string case. The AC-D2.3 same-line contract is
   carried by `TestScanSource_AllowedCallCannotHideWritingCall` (SB3-1). After
   E-T3, every symbol in the complete deletion list has no definition and no
@@ -2570,6 +2664,11 @@ in E-T2 (the production change is confined to that file), so the
   to that package because the `retiredarch` mutation table embeds `scanText(`
   inside Go source strings (SB3-4). `go build ./...`, `go vet ./...` and
   `go test ./tools/gatecheck/...` pass.
+* AC-E3.4 (round 6, D-049-10; NOT re-gated) — The new AST allowance
+  predicate does not reuse any name on the deletion list (R6-3). The
+  `writepath_test.go` `gomask` import, which is unused after the R5-1 port, is
+  removed (R6-5). The `:180` message prefix names `selectorOccurrences`
+  (R6-2). With these, the AC-E3.3 grep is empty over correct code.
 
 ### E-T4 — 049.004-T (re-parented 034.006-T): Resolve named import aliases
 
@@ -4258,7 +4357,151 @@ citations against HEAD.
 
 | Finding | Disposition |
 |---|---|
-| **PRE5-1 (P2, gpt-5.6-sol)** — AC-E3.2 and 049.003-T claimed STRING/CHAR literals are rejected "at every position", pinned by `:464`–`:466`. Those rows only place the literal at `Args[2]`, so a predicate that validates only that position could pass the specified tests. | **Accepted.** The claim is narrowed in R5-1, AC-E3.2 and 049.003-T so that it no longer overstates what `:464`–`:466` pin. Adding table-driven literal cases at the other generic positions (`Args[0]`, `Args[3]`, `Args[6]`) would be a new test requirement in E-T3. It is **left open** for the next gate rather than applied here as another un-gated amendment. |
+| **PRE5-1 (P2, gpt-5.6-sol)** — AC-E3.2 and 049.003-T claimed STRING/CHAR literals are rejected "at every position", pinned by `:464`–`:466`. Those rows only place the literal at `Args[2]`, so a predicate that validates only that position could pass the specified tests. | **Accepted.** The claim is narrowed in R5-1, AC-E3.2 and 049.003-T so that it no longer overstates what `:464`–`:466` pin. Adding table-driven literal cases at the other generic positions (`Args[0]`, `Args[3]`, `Args[6]`) would be a new test requirement in E-T3. It is **left open** for the next gate rather than applied here as another un-gated amendment. *(Round 6: re-raised as GPT6-1 (P1) and the reason for the round-6 FAIL. Closed in the text by R6-1, un-gated; see Round 6 below.)* |
 | **PRE5-2 (P3, claude-opus-5.5)** — D-049-9 was called "the second exception to the 3-cycle cap", but D-030-6 (Unit A) was an earlier one | **Applied.** The wording now says "the second for the Unit E rev 7 gate, after D-049-8 (the third overall, after D-030-6)" here, in the deliberation D-049-9 row, and in the session memory. |
+
+### Round 6 (operator-authorised exception, D-049-10) — FAIL
+
+<!-- plan-review-attempt: 6 -->
+
+dispatch_mode: multi-agent
+decision: FAIL
+
+* **Authority (recorded verbatim).** At 2026-10-03T21:10-07:00 the operator
+  wrote: "I approve a sixth round of review; however, if the findings again
+  identify are all about how test inputs are classified and would be caught
+  anyway through test-first build, then lift the hold and let the code review
+  be the gate." This is **D-049-10**. It authorises **exactly one** round,
+  round 6, over rev 7 Unit E as amended by R4-1..R4-8 and R5-1..R5-4, plus a
+  conditional hold-lift rule that applies to round 6 only. **It does not
+  authorise a round 7.**
+* **Round-6 gate rule (D-049-10), applied in order:**
+  1. **PASS.** Every reviewer returns ADVISORY or better and no verified
+     P0/P1 is open. The hold lifts under the D-049-7 rule.
+  2. **CONDITIONAL LIFT.** Verified P0/P1s exist, but every one is (a)
+     classification-only and (b) mechanically caught by a test-first build.
+     (a) means it concerns only how test inputs or fixture rows are
+     classified. (b) means a mis-classification makes a test fail to compile
+     or fail at run time, so it cannot slip into a passing build.
+  3. **FAIL.** Any verified P0/P1 falls outside (a)+(b). That includes a
+     test that could pass while asserting the wrong thing, an AC that a
+     passing test would not expose, or a false-negative risk in write-path
+     detection. Any doubt counts as not qualifying.
+* **dispatch_mode:** multi-agent. Three reviewers on three model families
+  read the repository read-only from a brief under `logs/`. The brief scoped
+  them to:
+  * rev 7 Unit E as amended, including R4-*, R5-* and every prior
+    disposition, with the open PRE5-1;
+  * the spike document and its evidence;
+  * the 049-F, 049.001-T..049.007-T and 039-S bodies.
+
+  The brief required each reviewer to:
+  * parse-probe every classification input with `go/parser` from unmasked
+    source;
+  * check the R4-4 line discrimination against the real `gomask`;
+  * check lint against `.golangci.yml` at the E-T2 and E-T3 boundaries;
+  * tag every P0/P1 `classification-only` and `caught-by-test-first`.
+* **Reviewed HEAD:** every reviewer reported
+  `4c369448de039049e70158c9714bbeb0a2f9bb76`. `git diff 961b652 4c36944 --
+  tools/gatecheck` is empty (Stage re-ran it), so the `961b652` citations
+  still hold.
+
+| Reviewer | Route | Verdict | P0 | P1 | P2 | P3 |
+|---|---|---|---|---|---|---|
+| gpt-5.6-sol | **anchor** (openai / high) | **FAIL** | 0 | 1 (GPT6-1) | 0 | 0 |
+| claude-opus-5.5 | anthropic | ADVISORY | 0 | 0 | 1 (OP6-1) | 5 (OP6-2..OP6-6) |
+| gemini-3.8-flash | google | ADVISORY | 0 | 0 | 1 (GM6-1) | 0 |
+
+* gemini-3.8-flash returned a non-empty answer, so no grok-4.7 substitution
+  was needed. Its parse verdicts agree with Stage's, but some of its row labels
+  do not match the file. It puts the form-feed row at extent `:81` (it is
+  `:80`). It also labels predicate rows `:445`–`:463` "wrong package", "too
+  few args" and so on, whereas the file has six arguments, eight arguments,
+  the access variants and the rest. Its table is therefore weak evidence.
+* Every reviewer independently confirmed the rest of the R5-1 and earlier
+  claims:
+  * the unmasked parse-error set is exactly `{:443, :444, :467, :468}`;
+  * masked `:464`–`:466` do not parse;
+  * the extent and scan-level classifications are correct;
+  * the R4-4 `go/token` and `SplitLines` lines differ (10 vs 11, or 7 vs 8,
+    depending on the wrapper);
+  * the R4-3 `unparam` report appears before the edit and is gone after it.
+
+  The anchor and claude-opus-5.5 ran the lint check on scratch copies.
+
+**Stage mechanical verification of the P1 (at `4c36944`).** Stage wrote a
+throwaway `go/parser` program under `logs/round6-stage/` and deleted it after
+the session; it was never tracked. The program:
+* rebuilds every predicate row `writepath_test.go:442–469` from **unmasked**
+  source inside the R4-6 wrapper;
+* applies two allowance predicates to each parsed `*ast.CallExpr`:
+  * the full G-4 predicate: a bare-operand check at every generic position
+    `Args[0]`, `Args[2]`, `Args[3]` and `Args[6]`, plus the exact
+    access/disposition/flags checks, non-variadic, and 7 arguments;
+  * a **fail-open variant** that runs the bare-operand check only at
+    `Args[0]` and `Args[2]`.
+
+Results:
+* The parse errors are exactly `{:443, :444, :467, :468}`.
+* Over every specified row plus the allowed control, the two predicates give
+  **0 divergences**. A predicate that never examines `Args[3]` or `Args[6]`
+  therefore passes the whole planned table.
+* The candidate rows (STRING, CHAR or call-valued at `Args[3]` and `Args[6]`)
+  all parse, and each one separates the two predicates.
+* In the first run, a candidate call row failed to parse because of the
+  probe's own doubled `)`. That illustrates why every row must be probed.
+
+**P0/P1 disposition and the D-049-10 conditional-rule evaluation.**
+
+| Finding | Stage verification | (a) classification-only | (b) caught by test-first | Disposition |
+|---|---|---|---|---|
+| **GPT6-1 (P1, anchor) = OP6-1 (P2) = GM6-1 (P2)**: PRE5-1 is still open. AC-E3.2 requires every generic argument to be a G-4 bare operand, but the STRING/CHAR rows only exercise `Args[2]`. | **Confirmed** by the probe above. `Args[3]` and `Args[6]` have **no** non-bare-operand rejection row of any kind: they are always `nil` and `0`. Two reviewers rated it P2. Stage keeps the anchor's P1 for two reasons. First, the defect is a path to widening the D-2′ allowance (INV-2, H-2 E) that no specified test would expose. Second, the anchor's verdict is FAIL. Even at P2, rule 1 would not be met, because rule 1 requires every reviewer to return ADVISORY or better. | **Arguably yes.** The fix adds rows that expect a finding. The reviewer tagged it yes. | **No.** The defect is **missing** rows. A position-specific, fail-open predicate compiles and passes every planned test (0 divergences), so nothing in the red/green phase fails. The reviewer tagged it no. | **Does not qualify**, because (b) fails. It is also on the operator's FAIL list: an AC (AC-E3.2) whose violation a passing test would not expose, and a false-negative risk in write-path detection (an allowance widening suppresses a `syscall.CreateFile` finding). **Rule 3 → FAIL.** The same-surface fix is applied un-gated as **R6-1**. |
+
+**P2/P3 dispositions.** All are on the same contract surface (P-021 C1), so
+no stash capture was needed. All are applied as **un-gated amendments**.
+
+| Finding | Disposition |
+|---|---|
+| OP6-1 (P2), GM6-1 (P2) | Same defect as GPT6-1, so merged into **R6-1**. E-T3 adds nine parseable rejection rows: STRING and CHAR at `Args[0]`, `Args[3]` and `Args[6]`, and call-valued at `Args[2]`, `Args[3]` and `Args[6]`. AC-E3.2 and AC-E3.3 mirror them, and 049.003-T carries them in its `round6` section and ACs. PRE5-1 is closed in the text. |
+| OP6-2 (P3): AC-E3.3's grep matches the `t.Fatalf` strings `"scanText(%s) …"` (`writepath_test.go:150`, `:154`) and `"findSelector(%q, %q) …"` (`:180`) | **R6-2.** E-T2 renames `:150`/`:154` when it re-points `:148`, and E-T3 renames `:180` when it re-points the lookaround table. Added as AC-E2.7 and AC-E3.4. |
+| OP6-3 (P3): the new predicate is unnamed, so reusing `occurrenceAllowed` would trip the grep | **R6-3.** The new predicate must not reuse a deletion-list name such as `occurrenceAllowed`. A name that is not on the list, such as `callAllowed`, is acceptable. Added as AC-E3.4. |
+| OP6-4 (P3): the `advanceCursor` call at `writepath_extent_test.go:236` is missing from the call-site list | **R6-4.** `:236` is added. Stage confirmed it with `git grep`. |
+| OP6-5 (P3): the `gomask` import in `writepath_test.go` becomes unused after the R5-1 port, which is a compile error | **R6-5.** R5-3's "stays used" is scoped to `writepath.go`. E-T3 removes the `writepath_test.go:11` import, and `writepath_extent_test.go` keeps its own. Stage confirmed that every `gomask` use in `writepath_test.go` (`:148`, `:385`, `:411`, `:442`–`:444`, `:464`, `:499`, `:505`) is re-pointed or retired. Added as AC-E3.4. |
+| OP6-6 (P3): the `retiredarch` pin positively requires `scanText` (`writepath_mask_test.go:51`, `:300`), but E-T3 deletes `scanText` and cannot edit `retiredarch` | **R6-6.** The pin that E-T2 re-anchors anchors on `scanSource` masking its source parameter and consuming the result through `SplitLines`, with no positive `scanText` dependency. Added as AC-E2.7, and in 049.002-T. |
+
+**Gate outcome — FAIL; the 049-F STAGE HOLD is KEPT (D-049-10).**
+* The anchor returned FAIL, and Stage verified GPT6-1 as an open P1. GPT6-1
+  fails condition (b) of the operator's conditional rule, so neither PASS nor
+  CONDITIONAL LIFT applies. Under the doubt clause, the result is **FAIL**.
+* R6-1..R6-6 are applied as **un-gated amendments**. **No reviewer has
+  verified them.** D-049-10 covers round 6 only, so **no round 7 is
+  authorised**.
+* `049-F` stays `blocked` (it was not moved, and `--force-gates` was not
+  used). `039-S` stays on hold and **must not be claimed**. The Ship Step 0.5
+  `shipment-reconcile` pre-mode guard still classifies the blocked 049-F as a
+  status mismatch.
+* **Escalation (P-013.6).** The resolved escalation route is gpt-5.6-sol /
+  openai / high. The engram handoff surface is not available in this session,
+  so this is `ESCALATION_DEGRADED`, and Stage falls back to the operator halt.
+* **Pattern.** This is the second round in a row with exactly one verified P1,
+  and every round-6 finding is in the E-T2/E-T3 test-port detail. For the
+  first time in rev 7, every classification claim (parseability, masked vs
+  unmasked, line discrimination, the lint boundary) was independently
+  confirmed by all three reviewers. The remaining P1 is a **coverage** gap
+  (missing rows), not a classification error. That is exactly the class the
+  operator's conditional rule excludes. Further progress needs a **new,
+  recorded operator decision**, for example:
+  * accept R6-1 as written and lift the hold;
+  * authorise a round 7;
+  * amend the D-049-7 lift rule in some other way.
+
+  Stage does not choose.
+
+**Pre-PR review of this record** (staged diff pinned to `logs/round6-staged.patch`):
+
+| Reviewer | Verdict | Findings | Disposition |
+|---|---|---|---|
+| gpt-5.6-sol | PASS | none | — |
+| claude-opus-5.5 | ADVISORY | PRE6-1 (P3): the R6-3 example `callAllowed` read as a deletion-list name in 049.003-T and in the OP6-3 row | **Applied.** Both now say `occurrenceAllowed` is the forbidden example and `callAllowed` is an acceptable name. The reviewer confirmed every code citation, the R6-1 coverage claim, the section markers and the record integrity. |
 
 *Generated by Copilot*
