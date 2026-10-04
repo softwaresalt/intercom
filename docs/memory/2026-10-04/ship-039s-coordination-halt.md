@@ -85,7 +85,11 @@ built from the committed pre-change scanner. The five-file E-T2 boundary
 includes the `"x.go"` to `"y.go"` R4-3 literal already present in the committed
 harness scaffold; it was not changed again.
 
-The code and archived 049.001-T queue move are pending the E-T2 task commit and
-backlog traceability update. The next task is 049.003-T. Continue only within
-shipment 039-S and the existing feature branch. No PR, merge, or closure action
-has occurred.
+E-T2 was committed as `8aaafd71caabba9131d2833e421fc5726c6fe593`, together
+with the 049.001-T queue-to-archive move. Backlogit then moved 049.002-T to
+`done` and archived it; that queue-to-archive change is pending a follow-up
+commit. The commit SHA is recorded in the E-T2 task memory. The task's backlog
+`commit` field was not changed because that separate mutation is not listed in
+Ship's allowed Backlog operations. The next task is 049.003-T. Continue only
+within shipment 039-S and the existing feature branch. No PR, merge, or closure
+action has occurred.

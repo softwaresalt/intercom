@@ -6,15 +6,15 @@ feature: 049-F
 shipment: 039-S
 task: 049.002-T
 mode: dark (P-017)
-status: verified-pending-commit
+status: done
 ---
 
 ## Outcome
 
-The E-T2 AST scanner implementation is complete and locally verified. The
-current branch remains `feat/migrate-write-path-scanner-to-go-ast-post-m4-unit-e`
-at `f5a9b8e` before the task commit. Shipment 039-S and task 049.002-T are
-active; 049.001-T is done, with its queue-to-archive move awaiting commit.
+The E-T2 AST scanner implementation is complete and locally verified. Commit
+`8aaafd71caabba9131d2833e421fc5726c6fe593` contains the implementation and the
+049.001-T queue-to-archive move. Shipment 039-S remains active; 049.002-T is
+done and archived, while 049.001-T is done and archived.
 
 ## Implementation and acceptance evidence
 
@@ -66,8 +66,9 @@ The implementation changes are in `writepath.go`, `writepath_test.go`,
 committed harness supplies the fifth R4-3 file. The pending backlog move is
 `.backlogit/queue/049.001-T.md` to `.backlogit/archive/049.001-T.md`.
 
-Next, commit the E-T2 implementation with the 049.001-T archive move, mark
-049.002-T done and associate the commit through backlogit, then continue with
-049.003-T. Do not rerun `pre_claim` for the already-active shipment. Engram
-remains degraded and must not be retried; no PR, merge, or post-merge closure
-has occurred.
+Backlogit's `done` transition archived 049.002-T after the implementation
+commit; commit that queue-to-archive move with the next task's changes. The
+backlog `commit` field was not updated because that separate mutation is not
+listed in Ship's allowed Backlog operations. Continue with 049.003-T. Do not
+rerun `pre_claim` for the already-active shipment. Engram remains degraded and
+must not be retried; no PR, merge, or post-merge closure has occurred.
