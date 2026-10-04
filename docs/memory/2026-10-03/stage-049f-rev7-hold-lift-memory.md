@@ -98,6 +98,10 @@ verification AC.
     wrong direction. It is now written as an execution order.
   * **OPH-2 (P3).** The supersession sentences were too narrow. They now
     cover every section of the items.
+* **Round 2** (both models, HEAD `bfc79a2`): gpt-5.6-sol returned PASS,
+  with no findings. claude-opus-5.5 returned ADVISORY with one P3: the
+  049-F row of the harvest record still described the narrow supersession
+  wording. That row was fixed.
 
 ## Stash
 
