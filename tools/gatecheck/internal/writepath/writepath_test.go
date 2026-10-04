@@ -510,7 +510,7 @@ func TestCallExpr_AcceptsGBareOperands(t *testing.T) {
 		args string
 	}{
 		{"identifier and integer", allowedCreateFileArgs},
-		{"selector", "pkg.path, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
+		{"selector", "syscall.Open, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
 		{"unary", "p, 0, -offset, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
 		{"star", "p, 0, 0, *value, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
 		{"binary", "p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, left+right"},
@@ -518,6 +518,19 @@ func TestCallExpr_AcceptsGBareOperands(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			call, bindings := callExprForTest(t, `"syscall"`, "syscall.CreateFile("+tc.args+")")
+			if tc.name == "selector" && call != nil {
+				selector, ok := call.Args[0].(*ast.SelectorExpr)
+				if !ok {
+					t.Fatal("selector operand case did not parse as a selector")
+				}
+				qualifier, ok := selector.X.(*ast.Ident)
+				if !ok {
+					t.Fatal("selector operand qualifier is not an identifier")
+				}
+				if _, imported := bindings[qualifier.Name]; !imported {
+					t.Fatalf("selector operand qualifier %q is not imported", qualifier.Name)
+				}
+			}
 			if call == nil || !callAllowed(call, bindings) {
 				t.Errorf("call must be allowed: %s", tc.args)
 			}
