@@ -56,6 +56,13 @@ diff. An unmet obligation is an in-scope finding (P-021 C1), fixed before
 merge. Each owning task has an `implementation-verification` section and a
 verification AC.
 
+* **049.001-T (E-T1), AC-E1.2 note:** the clause "re-gated through
+  plan-review (ADVISORY or better, no P0/P1)" is **discharged** by D-049-11,
+  so AC-E1.4 does not halt on it. Ship verifies instead that D-049-11 is
+  recorded in the plan and in the deliberation §5 table. Every other clause
+  of AC-E1.1..AC-E1.3 still applies, including the spike document, the
+  re-plan citations and sizing, the spike worktree cleanup, and stash
+  1EEBECA5 being archived.
 * **049.002-T (E-T2), AC-E2.V:**
   * R4-3: the single `"x.go"` → `"y.go"` literal at
     `writepath_extent_test.go:118`, and `golangci-lint` reports 0 issues at
@@ -79,6 +86,18 @@ verification AC.
   * R6-2 (E-T3 half), R6-3, R6-4 and R6-5.
 * **049.005-T (E-T5), AC-E5.V:** R4-8, only compiling two-name `NewRoot`
   binding forms.
+
+## Pre-PR review (decision record and backlog only, not a plan re-review)
+
+* **Round 1** (gpt-5.6-sol and claude-opus-5.5, HEAD `51e27a1`): FAIL.
+  Three findings, all fixed:
+  * **GPTH-001/OPH-1 (P1).** 049.001-T's AC-E1.2 still required a
+    plan-review re-gate. Under AC-E1.4, Ship would have halted on the first
+    task. Fixed by recording the D-049-11 discharge in the AC-E1.2 note.
+  * **GPTH-002/OPH-3 (P3).** The Harvest Record's chain notation ran in the
+    wrong direction. It is now written as an execution order.
+  * **OPH-2 (P3).** The supersession sentences were too narrow. They now
+    cover every section of the items.
 
 ## Stash
 

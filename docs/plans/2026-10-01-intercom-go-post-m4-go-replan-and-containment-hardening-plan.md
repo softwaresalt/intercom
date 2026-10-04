@@ -2295,7 +2295,10 @@ answering, with evidence against the live corpus:
 
   None is left at complexity `high` without a recorded de-risking step. The
   re-plan was re-gated through plan-review (ADVISORY or better, no P0/P1),
-  and the 458F9385 fold-in decision is recorded.
+  and the 458F9385 fold-in decision is recorded. *(D-049-11: this re-gate
+  clause is discharged by the operator hold-lift override. No round 7 ran,
+  and the verdict of record stays round 6 FAIL. Ship checks instead that
+  D-049-11 is recorded; see "Operator hold-lift decision (D-049-11)".)*
 * AC-E1.3 — The spike worktree was cleaned up, or its findings handed off,
   before 039-S was claimed. Stash 1EEBECA5 is archived with a pointer to the
   spike document.
@@ -4573,6 +4576,16 @@ decision: OPERATOR-LIFT
     as it stood at `bba0534`.
   * It does not authorise Stage to claim or start 039-S. Ship starts 039-S
     in a new session that the operator opens manually.
+  * **Effect on AC-E1.2 (049.001-T).** AC-E1.2 requires that "the re-plan
+    was re-gated through plan-review (ADVISORY or better, no P0/P1)". D-049-11
+    **discharges that clause** by operator override, so AC-E1.4 does not
+    HALT on it. Ship verifies instead that D-049-11 is recorded here and in
+    the deliberation §5 table. Every other clause of AC-E1.1..AC-E1.3 still
+    applies. 049.001-T carries the same note in its acceptance criteria.
+  * **Hold wording elsewhere.** Earlier "stays blocked", STAGE HOLD,
+    PROVISIONAL and do-not-claim wording in 049-F, 039-S and the 049.00x-T
+    bodies is historical. The "NOT re-gated" wording stays true, and it is
+    the reason the obligations below exist.
 * **Implementation-time verification obligations.** Each un-gated amendment
   below becomes an obligation that Ship's TDD harness and the pre-PR
   adversarial code review **must** close against the implemented diff. An
@@ -4625,7 +4638,7 @@ read-back. Body edits used `--section name=value` only.
 |---|---|---|
 | E (feature) | 049-F | **`blocked → queued`** by a direct `backlogit move 049-F --status queued` (exit 0). No `--force-gates` was used, and the move was not gate-rejected. The `hold` section is replaced with **HOLD LIFTED** (D-049-11). It states that every earlier hold, PROVISIONAL and do-not-claim text in the item and in its tasks' round sections is historical. |
 | E (shipment) | 039-S | `queued`. The `hold` section is replaced with HOLD LIFTED. It records eligibility, the new-session start by Ship, the implementation-time obligations and the execution order. Manifest read back: `049-F, 049.001-T, 049.002-T, 049.003-T, 049.004-T, 049.005-T, 049.006-T, 049.007-T`, which covers every rev 7 task. It depends on 031-S, which has shipped. |
-| E-T1 | 049.001-T | Unchanged (`queued`, Ship's read-only verification half, D-049-6). |
+| E-T1 | 049.001-T | Status unchanged (`queued`, Ship's read-only verification half, D-049-6). The acceptance criteria gain a D-049-11 note: AC-E1.2's re-gate clause is discharged by the operator override, and Ship verifies that D-049-11 is recorded instead (pre-PR review GPTH-001/OPH-1). |
 | E-T2 | 049.002-T | An `implementation-verification` section is added (R4-3, R4-5, R5-4, R6-2 E-T2 half, R6-6), and the acceptance criteria gain **AC-E2.V**. AC-E2.1..AC-E2.7 already match the plan. |
 | E-T3 | 049.003-T | An `implementation-verification` section is added (R4-1, R4-2/R5-1, R4-4, R4-6, R4-7, R5-1..R5-3, R6-1..R6-5 E-T3 parts), with the R6-1 mutation check. The acceptance criteria gain **AC-E3.V**. AC-E3.1..AC-E3.4 already match the plan, including the nine R6-1 rows. |
 | E-T4 | 049.004-T | Unchanged. AC-E4.1/AC-E4.2 and the `replan` section match the plan. No R4-*/R5-*/R6-* amendment binds it. |
@@ -4633,8 +4646,8 @@ read-back. Body edits used `--section name=value` only.
 | E-T6 | 049.006-T | Unchanged. AC-E6.1/AC-E6.2 match the plan. |
 | E-T7 | 049.007-T | Unchanged. AC-E7.1..AC-E7.3 match the plan. |
 
-**Edges** (unchanged; `A → B` means A depends on B, type `blocks`). The chain
-is E-T2 → E-T3 → E-T4 → E-T5 → E-T7 → E-T6:
+**Edges** (unchanged; `A → B` means A depends on B, type `blocks`). The
+execution order is E-T2, E-T3, E-T4, E-T5, E-T7, E-T6:
 * 049.002-T → 049.001-T
 * 049.003-T → 049.002-T
 * 049.004-T → 049.002-T and 049.003-T
