@@ -371,6 +371,20 @@ func scanFile(root, relPath string) ([]string, error) {
 	return scanText(relPath, gomask.MaskGoNonCode(text)), nil
 }
 
+// scanSource is the source-level boundary for Go AST detection.
+//
+// This scaffold intentionally panics until task 049.002-T replaces it with
+// the parser-backed implementation. The task-specific harness command sets
+// WRITEPATH_HARNESS_TASK so each queued harness reports its own not-implemented
+// marker while the shipment is still in the pre-implementation phase.
+func scanSource(relPath, src string) ([]string, error) {
+	task := os.Getenv("WRITEPATH_HARNESS_TASK")
+	if task == "" {
+		task = "049.002-T"
+	}
+	panic(fmt.Sprintf("not implemented: %s: scanSource(%q, %d bytes)", task, relPath, len(src)))
+}
+
 // Result carries the ordered stdout/stderr text and process-style exit
 // code a single mode produced, mirroring writepath_golden.json's
 // stream_captures shape.

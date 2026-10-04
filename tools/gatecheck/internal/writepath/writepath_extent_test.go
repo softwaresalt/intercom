@@ -1,8 +1,11 @@
 package writepath
 
 import (
+	"go/parser"
+	"go/token"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -115,10 +118,10 @@ func TestScanText_ClassificationsKeepFindingText(t *testing.T) {
 // TestScanText_OneFindingPerSelectorPerLine pins that enumerating every
 // occurrence still emits at most one finding per (line, selector).
 func TestScanText_OneFindingPerSelectorPerLine(t *testing.T) {
-	got := scanText("x.go", "os.Remove(a); os.Remove(b); os.Rename(c, d)\nxos.Remove(e)")
+	got := scanText("y.go", "os.Remove(a); os.Remove(b); os.Rename(c, d)\nxos.Remove(e)")
 	want := []string{
-		"x.go:1: write primitive 'os.Remove' found",
-		"x.go:1: write primitive 'os.Rename' found",
+		"y.go:1: write primitive 'os.Remove' found",
+		"y.go:1: write primitive 'os.Rename' found",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("scanText = %q, want %q", got, want)
@@ -233,7 +236,48 @@ func TestCursor_LastLineBoundsCheck(t *testing.T) {
 			t.Errorf("%q: cursor ended at %d, want %d", text, cur, len(text))
 		}
 	}
+
 	if _, ok := advanceCursor("ab", 1, "bc"); ok {
 		t.Error("cursor accepted a line that runs past the end of the text")
 	}
+}
+
+// TestHarness_049003_ParseableMultilineRawTagPinsSplitLines is the
+// non-vacuous R4-4 line-mapping case. A visible raw-string struct tag carries
+// U+2028 before both the tag selector and a later call, so masked-text
+// SplitLines numbering differs from go/token's physical line positions.
+func TestHarness_049003_ParseableMultilineRawTagPinsSplitLines(t *testing.T) {
+	requireWritepathHarnessTask(t)
+	const relPath = "raw-tag-line-map.go"
+	source := "package p\nimport \"os\"\ntype S struct { F string `json:\"tag\u2028os.Remove\"` }\nfunc f() {\n_ = os.Remove(\"call\")\n}\n"
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, relPath, source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("discriminating fixture must parse: %v", err)
+	}
+	tokenFile := fset.File(file.Pos())
+	if tokenFile == nil {
+		t.Fatal("parser did not associate a token.File")
+	}
+	masked := gomask.MaskGoNonCode(source)
+	tagOffset := strings.Index(source, "os.Remove")
+	callOffset := strings.LastIndex(source, "os.Remove")
+	if tagOffset < 0 || callOffset <= tagOffset {
+		t.Fatal("fixture must contain the tag hit and a later call")
+	}
+	tagSplitLine := len(pysem.SplitLines(masked[:tagOffset] + "x"))
+	callSplitLine := len(pysem.SplitLines(masked[:callOffset] + "x"))
+	if tokenFile.Line(tokenFile.Pos(tagOffset)) == tagSplitLine ||
+		tokenFile.Line(tokenFile.Pos(callOffset)) == callSplitLine {
+		t.Fatal("raw-tag fixture is not discriminating: SplitLines and go/token lines must differ")
+	}
+	got, err := scanSourceForHarness(t, relPath, source)
+	if err != nil {
+		t.Fatalf("scanSource: %v", err)
+	}
+	want := []string{
+		relPath + ":" + strconv.Itoa(tagSplitLine) + ": write primitive 'os.Remove' found",
+		relPath + ":" + strconv.Itoa(callSplitLine) + ": write primitive 'os.Remove' found",
+	}
+	assertFindingsEqual(t, got, want)
 }
