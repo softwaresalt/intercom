@@ -18,7 +18,6 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -132,17 +131,31 @@ func oracleCompareFile(t *testing.T, root, relPath string) {
 
 func TestOracle_FixtureCorpus_Parity(t *testing.T) {
 	root := repoRoot(t)
-	matches, err := filepath.Glob(filepath.Join(root, "scripts", "testdata", "writepath", "*.go"))
-	if err != nil {
-		t.Fatalf("glob fixtures: %v", err)
+	fixtureDir := filepath.Join("scripts", "testdata", "writepath")
+	fixtures := []string{
+		"accept-clean.go",
+		"accept-mentions-in-comment.go",
+		"accept-non-tag-raw-string-selector.go",
+		"accept-syscall-createfile-metadata.go",
+		"reject-createtemp.go",
+		"reject-io-copyn-copybuffer.go",
+		"reject-link.go",
+		"reject-os-chown.go",
+		"reject-os-chtimes.go",
+		"reject-os-lchown.go",
+		"reject-os-mkdirtemp.go",
+		"reject-os-openroot.go",
+		"reject-os-root-type.go",
+		"reject-struct-tag-selector.go",
+		"reject-syscall-createfile-evasion.go",
+		"reject-syscall-createfile-write.go",
+		"reject-syscall-write.go",
+		"reject-tag-shaped-raw-string-expr.go",
+		"reject-writefile.go",
 	}
-	if len(matches) == 0 {
-		t.Fatal("oracle: no writepath fixtures discovered")
-	}
-	sort.Strings(matches)
-	for _, m := range matches {
-		rel := "scripts/testdata/writepath/" + filepath.Base(m)
-		t.Run(filepath.Base(m), func(t *testing.T) {
+	for _, name := range fixtures {
+		rel := filepath.ToSlash(filepath.Join(fixtureDir, name))
+		t.Run(name, func(t *testing.T) {
 			oracleCompareFile(t, root, rel)
 		})
 	}
