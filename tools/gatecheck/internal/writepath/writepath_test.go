@@ -619,10 +619,10 @@ func TestCallExpr_RejectionTable(t *testing.T) {
 		hasCreateCall bool
 	}{
 		{"non-call reference", `"syscall"`, "f := syscall.CreateFile", false, false},
-		{"unbalanced extent", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs, true, true},
-		{"mismatched extent", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + "])", true, true},
 		{"six arguments", `"syscall"`, "syscall.CreateFile(p, 0, 0, nil, " + open + ", " + flags + ")", false, true},
 		{"eight arguments", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + `, "x")`, false, true},
+		{"eight arguments with bare operands", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + ", q)", false, true},
+		{"composite literal final generic argument", `"syscall"`, "syscall.CreateFile(p, 0, 0, nil, " + open + ", " + flags + ", T{})", false, true},
 		{"access 0x0", `"syscall"`, callWith("0x0", open, flags), false, true},
 		{"access 00", `"syscall"`, callWith("00", open, flags), false, true},
 		{"access (0)", `"syscall"`, callWith("(0)", open, flags), false, true},
@@ -647,8 +647,6 @@ func TestCallExpr_RejectionTable(t *testing.T) {
 		{"tag-shaped raw string", `"syscall"`, "syscall.CreateFile(p, 0, `json:\"x\"`, nil, " + open + ", " + flags + ", 0)", false, true},
 		{"interpreted string argument", `"syscall"`, `syscall.CreateFile(p, 0, "rw", nil, ` + open + ", " + flags + ", 0)", false, true},
 		{"rune argument", `"syscall"`, "syscall.CreateFile(p, 0, 'x', nil, " + open + ", " + flags + ", 0)", false, true},
-		{"leading empty segment", `"syscall"`, "syscall.CreateFile(, 0, 0, nil, " + open + ", " + flags + ", 0)", true, true},
-		{"two trailing empty segments", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + ",,)", true, true},
 		{"empty call", `"syscall"`, "syscall.CreateFile()", false, true},
 		{"foreign package aliased syscall", `syscall "example.invalid/other"`, "syscall.CreateFile(" + allowedCreateFileArgs + ")", false, true},
 	}

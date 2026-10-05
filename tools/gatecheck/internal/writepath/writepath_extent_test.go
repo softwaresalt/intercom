@@ -75,20 +75,29 @@ func TestScanSource_OneFindingPerSelectorPerLine(t *testing.T) {
 // cannot turn malformed source into a partial scan.
 func TestScanSource_SyntaxErrorFailsClosed(t *testing.T) {
 	cases := []struct {
-		name string
-		body string
+		name    string
+		imports string
+		body    string
 	}{
-		{"unbalanced arguments", "os.Remove(a, (b"},
-		{"mismatched bracket", "os.Remove(a, [b)"},
-		{"mismatched brace", "os.Remove(a}"},
-		{"empty arguments", "os.Remove("},
-		{"newline inserts semicolon", "os.Remove \t\n(a, b)"},
-		{"form feed in code", "os.Remove\f(a)"},
-		{"line separator in code", "os.Remove(a,\u2028 os.Remove(b))"},
+		{"unbalanced arguments", "", "os.Remove(a, (b"},
+		{"mismatched bracket", "", "os.Remove(a, [b)"},
+		{"mismatched brace", "", "os.Remove(a}"},
+		{"empty arguments", "", "os.Remove("},
+		{"newline inserts semicolon", "", "os.Remove \t\n(a, b)"},
+		{"form feed in code", "", "os.Remove\f(a)"},
+		{"line separator in code", "", "os.Remove(a,\u2028 os.Remove(b))"},
+		{"unbalanced extent", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs},
+		{"mismatched extent", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + "])"},
+		{"leading empty segment", `"syscall"`, "syscall.CreateFile(, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)"},
+		{"two trailing empty segments", `"syscall"`, "syscall.CreateFile(" + allowedCreateFileArgs + ",,)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			source := wholeWritepathFile(t, tc.body)
+			imports := tc.imports
+			if imports == "" {
+				imports = `"os"`
+			}
+			source := wholeWritepathFileWithImports(t, imports, tc.body)
 			if _, err := parser.ParseFile(token.NewFileSet(), "syntax-error.go", source, parser.ParseComments|parser.AllErrors); err == nil {
 				t.Fatal("parser accepted a row required to fail closed")
 			}
@@ -133,8 +142,9 @@ func TestScanSource_MultiLineCallAcrossSeparators(t *testing.T) {
 			}
 			tagLine := len(pysem.SplitLines(masked[:tagOffset] + "x"))
 			callLine := len(pysem.SplitLines(masked[:callOffset] + "x"))
-			if tokenFile.Line(tokenFile.Pos(tagOffset)) == tagLine ||
-				tokenFile.Line(tokenFile.Pos(callOffset)) == callLine {
+			goTagLine := fset.PositionFor(tokenFile.Pos(tagOffset), false).Line
+			goCallLine := fset.PositionFor(tokenFile.Pos(callOffset), false).Line
+			if goTagLine == tagLine || goCallLine == callLine {
 				t.Fatal("raw-tag fixture is not discriminating: SplitLines and go/token lines must differ")
 			}
 
@@ -145,6 +155,40 @@ func TestScanSource_MultiLineCallAcrossSeparators(t *testing.T) {
 			want := []string{
 				"separators.go:" + strconv.Itoa(tagLine) + ": write primitive 'os.Remove' found",
 				"separators.go:" + strconv.Itoa(callLine) + ": write primitive 'os.Remove' found",
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("scanSource findings = %q, want %q", got, want)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name   string
+		suffix string
+	}{
+		{"without trailing newline", ""},
+		{"with trailing newline", "\n"},
+	} {
+		t.Run("final line/"+tc.name, func(t *testing.T) {
+			source := "package p\nimport \"os\"\nfunc f() { os.Remove() }" + tc.suffix
+			assertWrapperSelectorQualifiersImported(t, t.Name(), source)
+
+			masked := gomask.MaskGoNonCode(source)
+			offset := strings.Index(source, "os.Remove")
+			if offset < 0 {
+				t.Fatal("fixture must contain a final-line selector")
+			}
+			line := len(pysem.SplitLines(masked[:offset] + "x"))
+			if line != len(pysem.SplitLines(masked)) {
+				t.Fatalf("selector line = %d, want final SplitLines line %d", line, len(pysem.SplitLines(masked)))
+			}
+
+			got, err := scanSource("final-line.go", source)
+			if err != nil {
+				t.Fatalf("scanSource: %v", err)
+			}
+			want := []string{
+				"final-line.go:" + strconv.Itoa(line) + ": write primitive 'os.Remove' found",
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("scanSource findings = %q, want %q", got, want)
@@ -198,8 +242,9 @@ func TestHarness_049003_ParseableMultilineRawTagPinsSplitLines(t *testing.T) {
 	}
 	tagSplitLine := len(pysem.SplitLines(masked[:tagOffset] + "x"))
 	callSplitLine := len(pysem.SplitLines(masked[:callOffset] + "x"))
-	if tokenFile.Line(tokenFile.Pos(tagOffset)) == tagSplitLine ||
-		tokenFile.Line(tokenFile.Pos(callOffset)) == callSplitLine {
+	goTagLine := fset.PositionFor(tokenFile.Pos(tagOffset), false).Line
+	goCallLine := fset.PositionFor(tokenFile.Pos(callOffset), false).Line
+	if goTagLine == tagSplitLine || goCallLine == callSplitLine {
 		t.Fatal("raw-tag fixture is not discriminating: SplitLines and go/token lines must differ")
 	}
 	got, err := scanSource(relPath, source)
