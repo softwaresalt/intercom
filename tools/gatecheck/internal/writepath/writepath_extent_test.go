@@ -33,6 +33,7 @@ func TestScanSource_ClassificationsKeepFindingText(t *testing.T) {
 	}{
 		{"selector reference", "f := os.Remove"},
 		{"call", "os.Remove(a)"},
+		{"empty call", "os.Remove()"},
 		{"nested call", "os.Remove(inner(a, b))"},
 	}
 	for _, tc := range cases {
@@ -80,6 +81,7 @@ func TestScanSource_SyntaxErrorFailsClosed(t *testing.T) {
 		{"unbalanced arguments", "os.Remove(a, (b"},
 		{"mismatched bracket", "os.Remove(a, [b)"},
 		{"mismatched brace", "os.Remove(a}"},
+		{"empty arguments", "os.Remove("},
 		{"newline inserts semicolon", "os.Remove \t\n(a, b)"},
 		{"form feed in code", "os.Remove\f(a)"},
 		{"line separator in code", "os.Remove(a,\u2028 os.Remove(b))"},

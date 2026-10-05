@@ -1072,7 +1072,7 @@ func TestHarness_049003_ASTCallPolicy(t *testing.T) {
 		{
 			name:    "variadic call",
 			imports: `"syscall"`,
-			body:    selector + "(args...)",
+			body:    reject("p, 0, 0, nil, " + open + ", " + flags + ", args..."),
 		},
 		{
 			name:    "non-call reference",
