@@ -114,6 +114,8 @@ the complete writepath package tests, `gofmt -l .` (no output), `go vet ./...`,
 resolved the earlier shell-wrapper environment failure.
 
 The adversarial review of the full branch diff, including R4-1..R4-8,
-R5-1..R5-4, R6-1..R6-6, ORCH-D1, and ORCH-D2, is the next gate. No push or PR
-has been made. The checkpoint remains active until this resumed execution is
-confirmed and then resolved through backlogit.
+R5-1..R5-4, R6-1..R6-6, ORCH-D1, and ORCH-D2, is the next gate. After the
+corrected tree passed the full local gates, the checkpoint was resolved
+through backlogit at 2026-10-05T05:29:33Z. The code fix commit
+`3094761ae82a5c351d18e3380b7c8f839e374150` is tracked on 049.003-T. No push or
+PR has been made.
