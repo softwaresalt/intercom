@@ -119,3 +119,42 @@ corrected tree passed the full local gates, the checkpoint was resolved
 through backlogit at 2026-10-05T05:29:33Z. The code fix commit
 `3094761ae82a5c351d18e3380b7c8f839e374150` is tracked on 049.003-T. No push or
 PR has been made.
+
+## Final review disposition (2026-10-04)
+
+The fresh adversarial-review invocation dispatched three non-anchor reviewers
+and a separately requested `gpt-6.1-sol` anchor. The anchor model/reasoning
+effort was not attested, recorded as
+`TOOL_DEGRADED: anchor-review-model (reasoning effort unattested)`; the
+remaining pool had three reviewers across two reported tiers. The review
+returned `BLOCKED`, not because of a confirmed P0/P1 code defect, but because
+it could not attest the full committed branch diff and exact commit scope.
+The subsequent independent commit-scope audit confirmed ORCH-D1 (`aeb3313`)
+changed only the authorized exact 19-name oracle freeze, and ORCH-D2
+(`3094761`) changed only the two writepath test files; neither changed
+production code or the oracle in the final fix. A supplemental supporting-
+artifact review reported no significant issue, but did not provide enough
+patch-level evidence to override the adversarial report's full-diff limitation.
+
+P2/P3 out-of-scope findings were captured as threadless, pre-PR
+`DEFERRED SCOPE EXPANSION` stash entries (all provisional; Stage-owned
+deliberation and reprioritization). IDs:
+`4803163C`, `054266FE`, `D273B05C`, `F49AFAB5`, `2A1AD300`, `8EB14C19`,
+`D64DE59B`, `00404F0D`, `429DC24C`, `4C5C342E`, `295C9148`, `CD133E54`,
+`E606486E`, `CC2BB566`. Their payloads contain task `049.003-T`, feature
+`049-F`, shipment `039-S`, `PR=N/A` (pre-PR), `review-thread=N/A`
+(threadless), `requires deliberation=true`, and provisional priorities. The
+active/archived stash and existing memory/closure residual-risk records were
+searched before capture; no positively confirmed same-expansion entry was
+reused. The pre-existing deferred risks `C0D28448` and `FE2F02FF` concern
+different writepath contracts and were not treated as matches.
+
+No PR, Copilot request, push, or merge was performed. Local validation passed
+(`gofmt -l .` empty; `go vet ./...`; `go test ./...`; `go build ./...`).
+Topology gate passed; worktree remains on
+`feat/migrate-write-path-scanner-to-go-ast-post-m4-unit-e`. A low-confidence
+P2 reviewer observation about possible `Root.Resolve` receiver shadowing was
+not demonstrated and is not resolved by this run. The full-diff review
+readiness is BLOCKED, so stop before PR creation. Any later session must
+re-establish review readiness at its new HEAD and carry the 14 stash IDs into
+its residual-risk records before resolving those findings.
