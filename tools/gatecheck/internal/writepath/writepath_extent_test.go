@@ -12,8 +12,15 @@ import (
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
 
-func wholeWritepathFile(body string) string {
-	return "package p\nimport \"os\"\nfunc f() {\n" + body + "\n}\n"
+func wholeWritepathFile(t *testing.T, body string) string {
+	return wholeWritepathFileWithImports(t, `"os"`, body)
+}
+
+func wholeWritepathFileWithImports(t *testing.T, imports, body string) string {
+	t.Helper()
+	source := "package p\nimport " + imports + "\nfunc f() {\n" + body + "\n}\n"
+	assertWrapperSelectorQualifiersImported(t, t.Name(), source)
+	return source
 }
 
 // TestScanSource_ClassificationsKeepFindingText ports the parseable
@@ -30,7 +37,7 @@ func TestScanSource_ClassificationsKeepFindingText(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			source := wholeWritepathFile(tc.body)
+			source := wholeWritepathFile(t, tc.body)
 			got, err := scanSource("x.go", source)
 			if err != nil {
 				t.Fatalf("scanSource: %v", err)
@@ -48,7 +55,7 @@ func TestScanSource_ClassificationsKeepFindingText(t *testing.T) {
 // the AST scanner and a complete Go file wrapper.
 func TestScanSource_OneFindingPerSelectorPerLine(t *testing.T) {
 	body := "os.Remove(a); os.Remove(b); os.Rename(c, d)\nxos.Remove(e)"
-	source := wholeWritepathFile(body)
+	source := wholeWritepathFileWithImports(t, `("os"; xos "errors")`, body)
 	got, err := scanSource("y.go", source)
 	if err != nil {
 		t.Fatalf("scanSource: %v", err)
@@ -79,7 +86,7 @@ func TestScanSource_SyntaxErrorFailsClosed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			source := wholeWritepathFile(tc.body)
+			source := wholeWritepathFile(t, tc.body)
 			if _, err := parser.ParseFile(token.NewFileSet(), "syntax-error.go", source, parser.ParseComments|parser.AllErrors); err == nil {
 				t.Fatal("parser accepted a row required to fail closed")
 			}
@@ -110,6 +117,7 @@ func TestScanSource_MultiLineCallAcrossSeparators(t *testing.T) {
 			if err != nil {
 				t.Fatalf("discriminating fixture must parse: %v", err)
 			}
+			assertWrapperSelectorQualifiersImported(t, separator.name, source)
 			tokenFile := fset.File(file.Pos())
 			if tokenFile == nil {
 				t.Fatal("parser did not associate a token.File")
@@ -175,6 +183,7 @@ func TestHarness_049003_ParseableMultilineRawTagPinsSplitLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discriminating fixture must parse: %v", err)
 	}
+	assertWrapperSelectorQualifiersImported(t, t.Name(), source)
 	tokenFile := fset.File(file.Pos())
 	if tokenFile == nil {
 		t.Fatal("parser did not associate a token.File")

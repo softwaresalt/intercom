@@ -428,7 +428,7 @@ const allowedCreateFileArgs = "p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE
 
 func callExprForTest(t *testing.T, imports, body string) (*ast.CallExpr, map[string]string) {
 	t.Helper()
-	source := harnessWritepathFile(imports, body)
+	source := harnessWritepathFile(t, imports, body)
 	file, err := parser.ParseFile(token.NewFileSet(), "call-policy.go", source, parser.ParseComments|parser.AllErrors)
 	if err != nil {
 		t.Fatalf("parse call-policy.go: %v", err)
@@ -494,7 +494,7 @@ func TestCallExpr_ReparseWindowsCreateFile(t *testing.T) {
 		t.Error("the single-line allowed shape must be allowed")
 	}
 
-	source := harnessWritepathFile("(\n\"os\"\n\"syscall\"\n)", "os.Remove(p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)")
+	source := harnessWritepathFile(t, "(\n\"os\"\n\"syscall\"\n)", "os.Remove(p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)")
 	findings, err := scanSource("selector-key.go", source)
 	if err != nil {
 		t.Fatalf("scanSource(selector-key.go): %v", err)
@@ -656,7 +656,7 @@ func TestCallExpr_RejectionTable(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			relPath := "predicate-rejection.go"
-			source := harnessWritepathFile(tc.imports, tc.body)
+			source := harnessWritepathFile(t, tc.imports, tc.body)
 			file, parseErr := parser.ParseFile(token.NewFileSet(), relPath, source, parser.ParseComments|parser.AllErrors)
 			if (parseErr != nil) != tc.parseError {
 				t.Fatalf("parse error = %v, want parseError=%v", parseErr, tc.parseError)
@@ -717,7 +717,7 @@ func TestScanSource_AllowedCallCannotHideWritingCall(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			relPath := "same-line.go"
-			source := harnessWritepathFile(`"syscall"`, tc.line)
+			source := harnessWritepathFile(t, `"syscall"`, tc.line)
 			got, err := scanSource(relPath, source)
 			if err != nil {
 				t.Fatalf("scanSource: %v", err)
@@ -766,6 +766,7 @@ func TestHarness_049002_SyntaxErrorsFailClosed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			assertWrapperSelectorQualifiersImported(t, tc.name, tc.source)
 			file, parseErr := parser.ParseFile(token.NewFileSet(), "invalid.go", tc.source, parser.ParseComments|parser.AllErrors)
 			if parseErr == nil {
 				t.Fatal("test input unexpectedly parses")
@@ -788,6 +789,7 @@ func TestHarness_049002_LineDirectivePinsPosition(t *testing.T) {
 	requireWritepathHarnessTask(t)
 	const relPath = "line-map.go"
 	source := "//line deceptive.go:900\npackage p\nimport \"os\"\nfunc f() { _ = os.Remove(\"x\") }\n"
+	assertWrapperSelectorQualifiersImported(t, t.Name(), source)
 	got, err := scanSourceForHarness(t, relPath, source)
 	if err != nil {
 		t.Fatalf("scanSource: %v", err)
@@ -946,8 +948,40 @@ func astHasSelectorCall(node ast.Node, qualifier, name string) bool {
 	return found
 }
 
-func harnessWritepathFile(imports, body string) string {
-	return "package p\nimport " + imports + "\nfunc f() {\n" + body + "\n}\n"
+func harnessWritepathFile(t *testing.T, imports, body string) string {
+	t.Helper()
+	source := "package p\nimport " + imports + "\nfunc f() {\n" + body + "\n}\n"
+	assertWrapperSelectorQualifiersImported(t, t.Name(), source)
+	return source
+}
+
+func assertWrapperSelectorQualifiersImported(t *testing.T, rowName, source string) {
+	t.Helper()
+	file, parseErr := parser.ParseFile(token.NewFileSet(), rowName+".go", source, parser.ParseComments|parser.AllErrors)
+	if file == nil {
+		if parseErr == nil {
+			t.Errorf("wrapper row %q parsed without producing an AST", rowName)
+		}
+		return
+	}
+	bindings, err := importPathBindings(file)
+	if err != nil {
+		t.Fatalf("wrapper row %q importPathBindings: %v", rowName, err)
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		qualifier, ok := selector.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if _, imported := bindings[qualifier.Name]; !imported {
+			t.Errorf("wrapper row %q has SelectorExpr qualifier %q not declared in its imports", rowName, qualifier.Name)
+		}
+		return true
+	})
 }
 
 func harnessFixtureSource(t *testing.T, name string) string {
@@ -1009,7 +1043,7 @@ func TestHarness_049003_ASTCallPolicy(t *testing.T) {
 		{
 			name:     "allowed selector bare operand",
 			imports:  `"syscall"`,
-			body:     reject("pkg.path, 0, 0, nil, " + open + ", " + flags + ", 0"),
+			body:     reject("syscall.GENERIC_READ, 0, 0, nil, " + open + ", " + flags + ", 0"),
 			wantNone: true,
 		},
 		{
@@ -1140,7 +1174,7 @@ func TestHarness_049003_ASTCallPolicy(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			relPath := "ast-predicate.go"
-			source := harnessWritepathFile(tc.imports, tc.body)
+			source := harnessWritepathFile(t, tc.imports, tc.body)
 			if _, err := parser.ParseFile(token.NewFileSet(), relPath, source, parser.ParseComments|parser.AllErrors); err != nil {
 				t.Fatalf("parseable rejection/control case %q failed to parse: %v", tc.name, err)
 			}
@@ -1175,7 +1209,7 @@ func TestHarness_049003_ParserErrorSetPinsUnmaskedInputs(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			relPath := "unparseable-predicate.go"
-			source := harnessWritepathFile(`"syscall"`, tc.body)
+			source := harnessWritepathFile(t, `"syscall"`, tc.body)
 			if _, err := parser.ParseFile(token.NewFileSet(), relPath, source, parser.ParseComments|parser.AllErrors); err == nil {
 				t.Fatalf("probe case %q unexpectedly parses; expected the pinned R5-1 error set", tc.name)
 			}
@@ -1213,7 +1247,7 @@ func TestHarness_049003_R6_1PositionalRejections(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			args := append([]string(nil), parts...)
 			args[tc.index] = tc.replaced
-			source := harnessWritepathFile(`"syscall"`, "syscall.CreateFile("+strings.Join(args, ", ")+")")
+			source := harnessWritepathFile(t, `"syscall"`, "syscall.CreateFile("+strings.Join(args, ", ")+")")
 			file, err := parser.ParseFile(token.NewFileSet(), "r6-1.go", source, parser.ParseComments|parser.AllErrors)
 			if err != nil || file == nil {
 				t.Fatalf("R6-1 source for Args[%d] must parse, file=%v err=%v", tc.index, file != nil, err)
@@ -1246,7 +1280,7 @@ func TestHarness_049003_SameLineAllowanceCannotHideWrite(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			relPath := "same-line.go"
-			source := harnessWritepathFile(`"syscall"`, tc.body)
+			source := harnessWritepathFile(t, `"syscall"`, tc.body)
 			got, err := scanSourceForHarness(t, relPath, source)
 			if err != nil {
 				t.Fatalf("scanSource: %v", err)
