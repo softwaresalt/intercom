@@ -1468,7 +1468,7 @@ func TestHarness_049005_ResolveBeforePlainNewRootAssignment(t *testing.T) {
 	const source = `package harness
 import pathsafe "github.com/softwaresalt/intercom-go/internal/pathsafe"
 func write() {
-	var root *pathsafe.Root
+	var root pathsafe.Root
 	var err error
 	for {
 		root.Resolve("file")
