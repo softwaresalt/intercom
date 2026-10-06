@@ -1578,10 +1578,10 @@ func TestHarness_049007_ImportPathSelectorsFindExpectedPrimitives(t *testing.T) 
 		{
 			name: "reject-ioutil-write-primitives.go",
 			want: []string{
-				"scripts/testdata/writepath/reject-ioutil-write-primitives.go:5: write primitive 'unix.*' found",
-				"scripts/testdata/writepath/reject-ioutil-write-primitives.go:9: write primitive 'ioutil.WriteFile' found",
-				"scripts/testdata/writepath/reject-ioutil-write-primitives.go:10: write primitive 'ioutil.TempFile' found",
-				"scripts/testdata/writepath/reject-ioutil-write-primitives.go:11: write primitive 'ioutil.TempDir' found",
+				"scripts/testdata/writepath/reject-ioutil-write-primitives.go:6: write primitive 'unix.*' found",
+				"scripts/testdata/writepath/reject-ioutil-write-primitives.go:11: write primitive 'ioutil.WriteFile' found",
+				"scripts/testdata/writepath/reject-ioutil-write-primitives.go:12: write primitive 'ioutil.TempFile' found",
+				"scripts/testdata/writepath/reject-ioutil-write-primitives.go:13: write primitive 'ioutil.TempDir' found",
 			},
 		},
 		{
@@ -1782,10 +1782,10 @@ func TestHarness_049007_GoldenIsAdditiveAndKeepsTheD1aOracleFrozen(t *testing.T)
 
 	taskFixtures := map[string][]string{
 		"reject-ioutil-write-primitives.go": {
-			"scripts/testdata/writepath/reject-ioutil-write-primitives.go:5: write primitive 'unix.*' found",
-			"scripts/testdata/writepath/reject-ioutil-write-primitives.go:9: write primitive 'ioutil.WriteFile' found",
-			"scripts/testdata/writepath/reject-ioutil-write-primitives.go:10: write primitive 'ioutil.TempFile' found",
-			"scripts/testdata/writepath/reject-ioutil-write-primitives.go:11: write primitive 'ioutil.TempDir' found",
+			"scripts/testdata/writepath/reject-ioutil-write-primitives.go:6: write primitive 'unix.*' found",
+			"scripts/testdata/writepath/reject-ioutil-write-primitives.go:11: write primitive 'ioutil.WriteFile' found",
+			"scripts/testdata/writepath/reject-ioutil-write-primitives.go:12: write primitive 'ioutil.TempFile' found",
+			"scripts/testdata/writepath/reject-ioutil-write-primitives.go:13: write primitive 'ioutil.TempDir' found",
 		},
 		"reject-syscall-namespace-primitives.go": {
 			"scripts/testdata/writepath/reject-syscall-namespace-primitives.go:6: write primitive 'syscall.WriteFile' found",

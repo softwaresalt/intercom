@@ -1,8 +1,10 @@
 package p
 
-import "io/ioutil"
+import (
+	"io/ioutil"
 
-import . "golang.org/x/sys/unix"
+	. "golang.org/x/sys/unix"
+)
 
 // Keep the fixture calls on their expected physical lines.
 func ioutilPrimitives() {

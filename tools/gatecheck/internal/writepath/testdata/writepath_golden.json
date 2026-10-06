@@ -141,10 +141,10 @@
       "name": "reject-ioutil-write-primitives.go",
       "expect_rejected": true,
       "findings": [
-        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:5: write primitive 'unix.*' found",
-        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:9: write primitive 'ioutil.WriteFile' found",
-        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:10: write primitive 'ioutil.TempFile' found",
-        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:11: write primitive 'ioutil.TempDir' found"
+        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:6: write primitive 'unix.*' found",
+        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:11: write primitive 'ioutil.WriteFile' found",
+        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:12: write primitive 'ioutil.TempFile' found",
+        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:13: write primitive 'ioutil.TempDir' found"
       ]
     },
     {
