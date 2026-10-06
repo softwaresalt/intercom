@@ -25,9 +25,64 @@
     "os.OpenRoot",
     "os.Root",
     "io.CopyN",
-    "io.CopyBuffer"
+    "io.CopyBuffer",
+    "ioutil.WriteFile",
+    "ioutil.TempFile",
+    "ioutil.TempDir",
+    "syscall.WriteFile",
+    "syscall.Open",
+    "syscall.Unlink",
+    "syscall.Rename",
+    "syscall.Mkdir",
+    "syscall.Rmdir",
+    "syscall.CreateHardLink",
+    "syscall.DeleteFile",
+    "syscall.MoveFile",
+    "syscall.RemoveDirectory",
+    "syscall.CreateDirectory",
+    "syscall.CreateSymbolicLink",
+    "syscall.Truncate",
+    "syscall.Creat",
+    "windows.WriteFile",
+    "windows.CreateFile",
+    "windows.DeleteFile",
+    "windows.MoveFile",
+    "windows.MoveFileEx",
+    "windows.CreateDirectory",
+    "windows.RemoveDirectory",
+    "windows.CreateHardLink",
+    "windows.CreateSymbolicLink",
+    "windows.SetEndOfFile",
+    "windows.SetFileInformationByHandle",
+    "unix.Open",
+    "unix.Openat",
+    "unix.Openat2",
+    "unix.Creat",
+    "unix.Write",
+    "unix.Pwrite",
+    "unix.Unlink",
+    "unix.Unlinkat",
+    "unix.Rename",
+    "unix.Renameat",
+    "unix.Renameat2",
+    "unix.Mkdir",
+    "unix.Mkdirat",
+    "unix.Rmdir",
+    "unix.Link",
+    "unix.Linkat",
+    "unix.Symlink",
+    "unix.Symlinkat",
+    "unix.Truncate",
+    "unix.Ftruncate",
+    "unix.Chmod",
+    "unix.Fchmodat"
   ],
   "fixture_findings": [
+    {
+      "name": "accept-alias-copilot.go",
+      "expect_rejected": false,
+      "findings": []
+    },
     {
       "name": "accept-clean.go",
       "expect_rejected": false,
@@ -49,10 +104,29 @@
       "findings": []
     },
     {
+      "name": "accept-unrelated-resolve.go",
+      "expect_rejected": false,
+      "findings": []
+    },
+    {
+      "name": "reject-alias-os-writefile.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-alias-os-writefile.go:6: write primitive 'os.WriteFile' found"
+      ]
+    },
+    {
       "name": "reject-createtemp.go",
       "expect_rejected": true,
       "findings": [
         "scripts/testdata/writepath/reject-createtemp.go:11: write primitive 'os.CreateTemp' found"
+      ]
+    },
+    {
+      "name": "reject-dot-import-os.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-dot-import-os.go:3: write primitive 'os.*' found"
       ]
     },
     {
@@ -61,6 +135,16 @@
       "findings": [
         "scripts/testdata/writepath/reject-io-copyn-copybuffer.go:17: write primitive 'io.CopyN' found",
         "scripts/testdata/writepath/reject-io-copyn-copybuffer.go:20: write primitive 'io.CopyBuffer' found"
+      ]
+    },
+    {
+      "name": "reject-ioutil-write-primitives.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:6: write primitive 'unix.*' found",
+        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:11: write primitive 'ioutil.WriteFile' found",
+        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:12: write primitive 'ioutil.TempFile' found",
+        "scripts/testdata/writepath/reject-ioutil-write-primitives.go:13: write primitive 'ioutil.TempDir' found"
       ]
     },
     {
@@ -113,6 +197,23 @@
       ]
     },
     {
+      "name": "reject-resolve-first-caller.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-resolve-first-caller.go:10: write primitive 'pathsafe.Root.Resolve' found",
+        "scripts/testdata/writepath/reject-resolve-first-caller.go:21: write primitive 'pathsafe.Root.Resolve' found",
+        "scripts/testdata/writepath/reject-resolve-first-caller.go:30: write primitive 'pathsafe.Root.Resolve' found"
+      ]
+    },
+    {
+      "name": "reject-split-selector.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-split-selector.go:6: write primitive 'os.WriteFile' found",
+        "scripts/testdata/writepath/reject-split-selector.go:8: write primitive 'os.WriteFile' found"
+      ]
+    },
+    {
       "name": "reject-struct-tag-selector.go",
       "expect_rejected": true,
       "findings": [
@@ -140,10 +241,69 @@
       ]
     },
     {
+      "name": "reject-syscall-namespace-primitives.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:6: write primitive 'syscall.WriteFile' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:7: write primitive 'syscall.Open' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:8: write primitive 'syscall.Unlink' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:9: write primitive 'syscall.Rename' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:10: write primitive 'syscall.Mkdir' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:11: write primitive 'syscall.Rmdir' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:12: write primitive 'syscall.CreateHardLink' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:13: write primitive 'syscall.DeleteFile' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:14: write primitive 'syscall.MoveFile' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:15: write primitive 'syscall.RemoveDirectory' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:16: write primitive 'syscall.CreateDirectory' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:17: write primitive 'syscall.CreateSymbolicLink' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:18: write primitive 'syscall.Truncate' found",
+        "scripts/testdata/writepath/reject-syscall-namespace-primitives.go:19: write primitive 'syscall.Creat' found"
+      ]
+    },
+    {
       "name": "reject-syscall-write.go",
       "expect_rejected": true,
       "findings": [
         "scripts/testdata/writepath/reject-syscall-write.go:15: write primitive 'syscall.Write' found"
+      ]
+    },
+    {
+      "name": "reject-xsys-write-primitives.go",
+      "expect_rejected": true,
+      "findings": [
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:9: write primitive 'windows.WriteFile' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:10: write primitive 'windows.CreateFile' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:11: write primitive 'windows.DeleteFile' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:12: write primitive 'windows.MoveFile' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:13: write primitive 'windows.MoveFileEx' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:14: write primitive 'windows.CreateDirectory' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:15: write primitive 'windows.RemoveDirectory' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:16: write primitive 'windows.CreateHardLink' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:17: write primitive 'windows.CreateSymbolicLink' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:18: write primitive 'windows.SetEndOfFile' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:19: write primitive 'windows.SetFileInformationByHandle' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:23: write primitive 'unix.Open' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:24: write primitive 'unix.Openat' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:25: write primitive 'unix.Openat2' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:26: write primitive 'unix.Creat' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:27: write primitive 'unix.Write' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:28: write primitive 'unix.Pwrite' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:29: write primitive 'unix.Unlink' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:30: write primitive 'unix.Unlinkat' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:31: write primitive 'unix.Rename' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:32: write primitive 'unix.Renameat' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:33: write primitive 'unix.Renameat2' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:34: write primitive 'unix.Mkdir' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:35: write primitive 'unix.Mkdirat' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:36: write primitive 'unix.Rmdir' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:37: write primitive 'unix.Link' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:38: write primitive 'unix.Linkat' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:39: write primitive 'unix.Symlink' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:40: write primitive 'unix.Symlinkat' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:41: write primitive 'unix.Truncate' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:42: write primitive 'unix.Ftruncate' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:43: write primitive 'unix.Chmod' found",
+        "scripts/testdata/writepath/reject-xsys-write-primitives.go:44: write primitive 'unix.Fchmodat' found"
       ]
     },
     {
@@ -169,7 +329,7 @@
         "--self-test"
       ],
       "cwd": ".",
-      "stdout": "PASS accept-clean.go: clean as expected\nPASS accept-mentions-in-comment.go: clean as expected\nPASS accept-non-tag-raw-string-selector.go: clean as expected\nPASS accept-syscall-createfile-metadata.go: clean as expected\nPASS reject-createtemp.go: rejected as expected\nPASS reject-io-copyn-copybuffer.go: rejected as expected\nPASS reject-link.go: rejected as expected\nPASS reject-os-chown.go: rejected as expected\nPASS reject-os-chtimes.go: rejected as expected\nPASS reject-os-lchown.go: rejected as expected\nPASS reject-os-mkdirtemp.go: rejected as expected\nPASS reject-os-openroot.go: rejected as expected\nPASS reject-os-root-type.go: rejected as expected\nPASS reject-struct-tag-selector.go: rejected as expected\nPASS reject-syscall-createfile-evasion.go: rejected as expected\nPASS reject-syscall-createfile-write.go: rejected as expected\nPASS reject-syscall-write.go: rejected as expected\nPASS reject-tag-shaped-raw-string-expr.go: rejected as expected\nPASS reject-writefile.go: rejected as expected\nself-test passed: fixtures matched expectations and the tracked tree is clean\n",
+      "stdout": "PASS accept-alias-copilot.go: clean as expected\nPASS accept-clean.go: clean as expected\nPASS accept-mentions-in-comment.go: clean as expected\nPASS accept-non-tag-raw-string-selector.go: clean as expected\nPASS accept-syscall-createfile-metadata.go: clean as expected\nPASS accept-unrelated-resolve.go: clean as expected\nPASS reject-alias-os-writefile.go: rejected as expected\nPASS reject-createtemp.go: rejected as expected\nPASS reject-dot-import-os.go: rejected as expected\nPASS reject-io-copyn-copybuffer.go: rejected as expected\nPASS reject-ioutil-write-primitives.go: rejected as expected\nPASS reject-link.go: rejected as expected\nPASS reject-os-chown.go: rejected as expected\nPASS reject-os-chtimes.go: rejected as expected\nPASS reject-os-lchown.go: rejected as expected\nPASS reject-os-mkdirtemp.go: rejected as expected\nPASS reject-os-openroot.go: rejected as expected\nPASS reject-os-root-type.go: rejected as expected\nPASS reject-resolve-first-caller.go: rejected as expected\nPASS reject-split-selector.go: rejected as expected\nPASS reject-struct-tag-selector.go: rejected as expected\nPASS reject-syscall-createfile-evasion.go: rejected as expected\nPASS reject-syscall-createfile-write.go: rejected as expected\nPASS reject-syscall-namespace-primitives.go: rejected as expected\nPASS reject-syscall-write.go: rejected as expected\nPASS reject-tag-shaped-raw-string-expr.go: rejected as expected\nPASS reject-writefile.go: rejected as expected\nPASS reject-xsys-write-primitives.go: rejected as expected\nself-test passed: fixtures matched expectations and the tracked tree is clean\n",
       "stderr": "",
       "exit_code": 0
     },
@@ -180,7 +340,7 @@
         "--self-test-integrity"
       ],
       "cwd": ".",
-      "stdout": "PASS accept-clean.go: clean as expected\nPASS accept-mentions-in-comment.go: clean as expected\nPASS accept-non-tag-raw-string-selector.go: clean as expected\nPASS accept-syscall-createfile-metadata.go: clean as expected\nPASS reject-createtemp.go: rejected as expected\nPASS reject-io-copyn-copybuffer.go: rejected as expected\nPASS reject-link.go: rejected as expected\nPASS reject-os-chown.go: rejected as expected\nPASS reject-os-chtimes.go: rejected as expected\nPASS reject-os-lchown.go: rejected as expected\nPASS reject-os-mkdirtemp.go: rejected as expected\nPASS reject-os-openroot.go: rejected as expected\nPASS reject-os-root-type.go: rejected as expected\nPASS reject-struct-tag-selector.go: rejected as expected\nPASS reject-syscall-createfile-evasion.go: rejected as expected\nPASS reject-syscall-createfile-write.go: rejected as expected\nPASS reject-syscall-write.go: rejected as expected\nPASS reject-tag-shaped-raw-string-expr.go: rejected as expected\nPASS reject-writefile.go: rejected as expected\nself-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)\n",
+      "stdout": "PASS accept-alias-copilot.go: clean as expected\nPASS accept-clean.go: clean as expected\nPASS accept-mentions-in-comment.go: clean as expected\nPASS accept-non-tag-raw-string-selector.go: clean as expected\nPASS accept-syscall-createfile-metadata.go: clean as expected\nPASS accept-unrelated-resolve.go: clean as expected\nPASS reject-alias-os-writefile.go: rejected as expected\nPASS reject-createtemp.go: rejected as expected\nPASS reject-dot-import-os.go: rejected as expected\nPASS reject-io-copyn-copybuffer.go: rejected as expected\nPASS reject-ioutil-write-primitives.go: rejected as expected\nPASS reject-link.go: rejected as expected\nPASS reject-os-chown.go: rejected as expected\nPASS reject-os-chtimes.go: rejected as expected\nPASS reject-os-lchown.go: rejected as expected\nPASS reject-os-mkdirtemp.go: rejected as expected\nPASS reject-os-openroot.go: rejected as expected\nPASS reject-os-root-type.go: rejected as expected\nPASS reject-resolve-first-caller.go: rejected as expected\nPASS reject-split-selector.go: rejected as expected\nPASS reject-struct-tag-selector.go: rejected as expected\nPASS reject-syscall-createfile-evasion.go: rejected as expected\nPASS reject-syscall-createfile-write.go: rejected as expected\nPASS reject-syscall-namespace-primitives.go: rejected as expected\nPASS reject-syscall-write.go: rejected as expected\nPASS reject-tag-shaped-raw-string-expr.go: rejected as expected\nPASS reject-writefile.go: rejected as expected\nPASS reject-xsys-write-primitives.go: rejected as expected\nself-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)\n",
       "stderr": "",
       "exit_code": 0
     },

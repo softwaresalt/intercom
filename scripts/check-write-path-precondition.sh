@@ -21,8 +21,22 @@ set -euo pipefail
 #   sql.Open bbolt.Open os.CreateTemp os.MkdirTemp os.Link os.Chown
 #   os.Lchown os.Chtimes syscall.CreateFile syscall.Write os.OpenRoot
 #   os.Root io.CopyN io.CopyBuffer
-# (26 selectors, matching writepath.Selectors exactly; the last six were
-# appended by 034.004-T. syscall.CreateFile is reported unless the D-2'
+#   ioutil.WriteFile ioutil.TempFile ioutil.TempDir
+#   syscall.WriteFile syscall.Open syscall.Unlink syscall.Rename syscall.Mkdir
+#   syscall.Rmdir syscall.CreateHardLink syscall.DeleteFile syscall.MoveFile
+#   syscall.RemoveDirectory syscall.CreateDirectory syscall.CreateSymbolicLink
+#   syscall.Truncate syscall.Creat
+#   windows.WriteFile windows.CreateFile windows.DeleteFile windows.MoveFile
+#   windows.MoveFileEx windows.CreateDirectory windows.RemoveDirectory
+#   windows.CreateHardLink windows.CreateSymbolicLink windows.SetEndOfFile
+#   windows.SetFileInformationByHandle
+#   unix.Open unix.Openat unix.Openat2 unix.Creat unix.Write unix.Pwrite
+#   unix.Unlink unix.Unlinkat unix.Rename unix.Renameat unix.Renameat2
+#   unix.Mkdir unix.Mkdirat unix.Rmdir unix.Link unix.Linkat unix.Symlink
+#   unix.Symlinkat unix.Truncate unix.Ftruncate unix.Chmod unix.Fchmodat
+# (76 selectors, matching writepath.Selectors exactly. The first 20 were
+# ported from the retired Python list, six were appended by 034.004-T, and
+# the final 50 by 049.007-T. syscall.CreateFile is reported unless the D-2'
 # predicate proves the exact metadata-only reparse-probe call shape.)
 #
 # ACCEPTED RESIDUAL (recorded in the shipment plan): (*os.File).Write* is
@@ -31,20 +45,23 @@ set -euo pipefail
 # detector intentionally does not attempt it and relies on the
 # package-qualified constructors above instead.
 #
+# CLOSED RESIDUALS (Unit E):
+#   1. Named import aliases -- closed by 049.004-T and
+#      reject-alias-os-writefile.go.
+#   7. Selector split by a newline or comment -- closed by 049.002-T and
+#      pinned by 049.004-T's reject-split-selector.go.
+#
 # RESIDUAL EVASION SURFACE (034.007-T, AC-4.7 -- recorded, never silently
 # left unhandled):
-#   1. Named import aliases -- KNOWN OPEN, pending Unit E (feature 049-F,
-#      shipment 039-S). An aliased import of a write-capable package
-#      (import o "os" -> o.WriteFile(...), or an alias of database/sql /
-#      go.etcd.io/bbolt) is not detected.
 #   2. pathsafe.NewRoot receiver / Root.Resolve first-caller tracking --
-#      KNOWN OPEN, pending Unit E (feature 049-F, shipment 039-S). No
-#      tripwire exists. The pathsafe risk-register triggers ("forced the
-#      moment a real write path exists", root.go) and feature 038-F's
-#      "once a live caller exists" trigger stay awaited, not monitored.
-#   3. Dot-imports, blank imports, and local identifiers shadowing a
-#      package name (including a local syscall identifier, which the D-2'
-#      predicate trusts by spelling).
+#      same-function bindings are closed by 049.005-T and
+#      reject-resolve-first-caller.go. Cross-function flows, struct fields,
+#      package-level variables, and method values remain residuals.
+#   3. Dot imports of write-capable packages are reported at the import spec,
+#      closed by 049.004-T and reject-dot-import-os.go. Blank imports are
+#      inert. Local identifiers shadowing a package name (including a local
+#      syscall identifier, which the D-2' predicate trusts by spelling)
+#      remain residual.
 #   4. os.Root method calls and (*os.File).Write* (the latter recorded
 #      above).
 #   5. Undecidable or non-simple call shape -> rejected. A
@@ -57,28 +74,30 @@ set -euo pipefail
 #      false-positive surface: a future legitimate metadata-only call in
 #      such a shape trips the gate and needs an explicit, reviewed
 #      widening. It is never a silent hole.
-#   6. Write primitives outside the selector set are not detected:
-#      ioutil.WriteFile, ioutil.TempFile, ioutil.TempDir; syscall write and
-#      namespace calls other than syscall.CreateFile and syscall.Write
-#      (syscall.WriteFile, Open, Unlink, Rename, Mkdir, CreateHardLink,
-#      DeleteFile); and golang.org/x/sys/windows and golang.org/x/sys/unix
-#      equivalents. None occurs in internal/** or cmd/** at 9b299c8.
-#      Widening the selector set is out of D-031-2's scope and is tracked
-#      as stash entry 458F9385.
-#   7. Selector split by a newline or comment -- KNOWN OPEN, closed by
-#      Unit E's AST engine (feature 049-F). Go inserts no semicolon after
-#      ".", so "syscall." + newline + "CreateFile(...)" and
-#      "os./**/WriteFile(...)" are valid Go that gofmt preserves; after
-#      masking neither contains the contiguous selector text, so every
-#      selector is evaded.
+#   6. Write primitives outside the selector set are not detected. E-T7
+#      closes the 50 enumerated ioutil, syscall, x/sys/windows and x/sys/unix
+#      primitives in 049.007-T and fixtures reject-ioutil-write-primitives.go,
+#      reject-syscall-namespace-primitives.go and
+#      reject-xsys-write-primitives.go. The uncovered same-family remainder
+#      includes metadata and attribute writes
+#      (syscall.Chmod/Fchmod/Chown/Utimes/SetFileAttributes,
+#      unix.Fchmod/Chown/Fchown/Lchown/Utimes/Setxattr,
+#      windows.SetFileAttributes), positional and vector writes
+#      (syscall.Pwrite, unix.Writev/Pwritev), syscall.Ftruncate,
+#      syscall.Link/Symlink, unix.Mknod/Mknodat, and any other
+#      un-enumerated write-capable symbol in those packages. This remainder
+#      is deferred as stash entry C0D28448.
+#   8. Dynamic invocation via syscall.NewLazyDLL / LazyProc.Call,
+#      syscall.Syscall* and the golang.org/x/sys equivalents can reach any
+#      OS write API without a write-named selector. syscall.NewLazyDLL is
+#      live in production, so it cannot become a finding without an
+#      allowance design. It is outside Unit E and deferred as stash entry
+#      FE2F02FF.
 #
-# RESIDUAL-RISK STATEMENT: Until feature 049-F ships, this gate is a
-# qualified-selector tripwire, not a complete mechanical proof. Items 1, 2,
-# 6 and 7 are known open fail-open surfaces. At 9b299c8 there are zero
-# aliased write-capable imports, zero production Root.Resolve callers and
-# zero item-6 primitives in internal/**/cmd/**, so items 1, 2 and 6 are
-# not exploited today. None of the four is mechanically guarded. The
-# compensating control is human and agent PR review against this list.
+# RESIDUAL-RISK STATEMENT: This gate remains a narrow Go AST tripwire, not a
+# complete mechanical proof. Items 2, 4, 5, 6 and 8, plus local package-name
+# shadowing in item 3, remain residual surfaces. The compensating control is
+# human and agent PR review against this list.
 #
 # ANTI-GOAL: no TOCTOU/hardlink mitigation mechanism is added here. This
 # script only detects the FIRST write path arriving; it does not mitigate

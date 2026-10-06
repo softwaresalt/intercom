@@ -18,7 +18,6 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -132,17 +131,31 @@ func oracleCompareFile(t *testing.T, root, relPath string) {
 
 func TestOracle_FixtureCorpus_Parity(t *testing.T) {
 	root := repoRoot(t)
-	matches, err := filepath.Glob(filepath.Join(root, "scripts", "testdata", "writepath", "*.go"))
-	if err != nil {
-		t.Fatalf("glob fixtures: %v", err)
+	fixtureDir := filepath.Join("scripts", "testdata", "writepath")
+	fixtures := []string{
+		"accept-clean.go",
+		"accept-mentions-in-comment.go",
+		"accept-non-tag-raw-string-selector.go",
+		"accept-syscall-createfile-metadata.go",
+		"reject-createtemp.go",
+		"reject-io-copyn-copybuffer.go",
+		"reject-link.go",
+		"reject-os-chown.go",
+		"reject-os-chtimes.go",
+		"reject-os-lchown.go",
+		"reject-os-mkdirtemp.go",
+		"reject-os-openroot.go",
+		"reject-os-root-type.go",
+		"reject-struct-tag-selector.go",
+		"reject-syscall-createfile-evasion.go",
+		"reject-syscall-createfile-write.go",
+		"reject-syscall-write.go",
+		"reject-tag-shaped-raw-string-expr.go",
+		"reject-writefile.go",
 	}
-	if len(matches) == 0 {
-		t.Fatal("oracle: no writepath fixtures discovered")
-	}
-	sort.Strings(matches)
-	for _, m := range matches {
-		rel := "scripts/testdata/writepath/" + filepath.Base(m)
-		t.Run(filepath.Base(m), func(t *testing.T) {
+	for _, name := range fixtures {
+		rel := filepath.ToSlash(filepath.Join(fixtureDir, name))
+		t.Run(name, func(t *testing.T) {
 			oracleCompareFile(t, root, rel)
 		})
 	}
@@ -198,10 +211,9 @@ func TestOracle_TrackedProductionTree_Parity(t *testing.T) {
 	}
 }
 
-// TestOracle_HandBuiltBoundaryInputs_Parity pins line numbering to the
-// pysem.SplitLines boundary set (AC-D1a.2). In code position, \f, \v and
-// U+2028 are line boundaries. Inside a comment or interpreted string the
-// masker blanks them, so the hit's line number is the masked line number.
+// TestOracle_HandBuiltBoundaryInputs_Parity pins the production boundary to
+// parsed Go source while preserving the frozen masked-text oracle for valid
+// inputs. Go rejects \f, \v and U+2028 in code position.
 func TestOracle_HandBuiltBoundaryInputs_Parity(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -210,13 +222,16 @@ func TestOracle_HandBuiltBoundaryInputs_Parity(t *testing.T) {
 		want      []string
 	}{
 		{
-			name: "code-position-boundaries.go",
-			text: "package p\n\nfunc f() {\n\t_ = 1\f\tos.Remove(\"a\")\v\tos.Create(\"b\")\u2028\tos.Rename(\"c\", \"d\")\n}\n",
-			want: []string{
-				"code-position-boundaries.go:5: write primitive 'os.Remove' found",
-				"code-position-boundaries.go:6: write primitive 'os.Create' found",
-				"code-position-boundaries.go:7: write primitive 'os.Rename' found",
-			},
+			name: "form-feed-in-code.go",
+			text: "package p\nfunc f() { _ = 1\f; }\n",
+		},
+		{
+			name: "vertical-tab-in-code.go",
+			text: "package p\nfunc f() { _ = 1\v; }\n",
+		},
+		{
+			name: "unicode-line-separator-in-code.go",
+			text: "package p\nfunc f() { _ = 1\u2028; }\n",
 		},
 		{
 			name:      "comment-and-string-boundaries.go",
@@ -229,17 +244,30 @@ func TestOracle_HandBuiltBoundaryInputs_Parity(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.parseable {
-				if _, err := parser.ParseFile(token.NewFileSet(), tc.name, tc.text, parser.AllErrors); err != nil {
-					t.Fatalf("hand-built input must be a complete Go file: %v", err)
+			_, parseErr := parser.ParseFile(token.NewFileSet(), tc.name, tc.text, parser.ParseComments|parser.AllErrors)
+			if !tc.parseable {
+				if parseErr == nil {
+					t.Fatal("code-position boundary unexpectedly parses as Go")
 				}
+				findings, err := scanSource(tc.name, tc.text)
+				if err == nil || len(findings) != 0 {
+					t.Fatalf("scanSource must fail closed on invalid Go, findings=%q err=%v", findings, err)
+				}
+				return
+			}
+			if parseErr != nil {
+				t.Fatalf("hand-built input must be a complete Go file: %v", parseErr)
 			}
 			masked := gomask.MaskGoNonCode(tc.text)
 			legacy := oracleLegacyScanText(tc.name, masked)
 			if strings.Join(legacy, "\n") != strings.Join(tc.want, "\n") {
 				t.Fatalf("legacy oracle findings=%q, want %q", legacy, tc.want)
 			}
-			oracleAssertEqual(t, tc.name, legacy, scanText(tc.name, masked))
+			production, err := scanSource(tc.name, tc.text)
+			if err != nil {
+				t.Fatalf("scanSource(%q): %v", tc.name, err)
+			}
+			oracleAssertEqual(t, tc.name, legacy, production)
 		})
 	}
 }

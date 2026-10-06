@@ -12,30 +12,12 @@ import (
 	"testing"
 )
 
-// writePathMaskFlow reports whether file f declares writepath's scanFile and
-// scanText and, between them, the result of gomask.MaskGoNonCode reaches the
-// scan loop:
-//
-//   - scanText ranges, in a top-level statement, over pysem.SplitLines of its
-//     second parameter (pysem qualifier bound to pysemImportPath), never
-//     writes, redeclares, or takes the address of that parameter, and holds
-//     no other pysem.SplitLines selector at any depth;
-//   - scanFile calls scanText at least once, every such call passes a direct
-//     gomask.MaskGoNonCode call (qualifier bound to gomaskImportPath) as the
-//     second argument, and scanFile declares nothing named scanText;
-//   - no other reference to the identifier scanText exists in f (no call
-//     elsewhere, no alias, no method value, no argument use), so no
-//     production path scans text that skipped the canonical mask.
-//
-// It is the writepath half of the retired single-definition and canonical-
-// consumer assertions; TestScanGoConsumesCanonicalMask is the retiredarch
-// half. A package-level import or call count cannot prove this, because
-// scanFile could switch to a local clone while a dead helper keeps a
-// canonical call.
+// writePathMaskFlow verifies the canonical mask reaches scanSource's line
+// scan through unmasked ReadText output.
 func writePathMaskFlow(f *ast.File) (declared, flows bool) {
 	pkg := gomaskName(f)
 	ps := importName(f, pysemImportPath, "pysem")
-	var scanFile, scanText *ast.FuncDecl
+	var scanFile, scanSource *ast.FuncDecl
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok || fn.Recv != nil || fn.Body == nil {
@@ -44,25 +26,22 @@ func writePathMaskFlow(f *ast.File) (declared, flows bool) {
 		switch fn.Name.Name {
 		case "scanFile":
 			scanFile = fn
-		case "scanText":
-			scanText = fn
+		case "scanSource":
+			scanSource = fn
 		}
 	}
-	if scanFile == nil || scanText == nil {
+	if scanFile == nil || scanSource == nil {
 		return false, false
 	}
 	if pkg == "" || ps == "" {
 		return true, false
 	}
-	return true, scanTextRangesParam(scanText, ps) && scanFileMasks(f, scanFile, pkg)
+	return true, scanSourceConsumesMask(f, scanFile, scanSource, pkg, ps)
 }
 
-// scanTextRangesParam reports whether fn has a second parameter that a
-// top-level `range ps.SplitLines(param)` statement consumes and that fn never
-// writes, redeclares in a nested scope, or writes from a closure.
-func scanTextRangesParam(fn *ast.FuncDecl, ps string) bool {
+func scanSourceConsumesMask(f *ast.File, scanFile, scanSource *ast.FuncDecl, pkg, ps string) bool {
 	var params []string
-	for _, fld := range fn.Type.Params.List {
+	for _, fld := range scanSource.Type.Params.List {
 		for _, id := range fld.Names {
 			params = append(params, id.Name)
 		}
@@ -70,64 +49,155 @@ func scanTextRangesParam(fn *ast.FuncDecl, ps string) bool {
 	if len(params) < 2 || params[1] == "_" {
 		return false
 	}
-	p := params[1]
-	if len(writePositions(fn.Body, p)) > 0 || closureWrites(fn.Body, p) || nestedDecl(fn.Body, p) || declaresInBody(fn.Body, p) {
+	srcParam := params[1]
+	if len(writePositions(scanSource.Body, srcParam)) > 0 || closureWrites(scanSource.Body, srcParam) ||
+		nestedDecl(scanSource.Body, srcParam) || declaresInBody(scanSource.Body, srcParam) {
 		return false
 	}
-	ok := map[*ast.SelectorExpr]bool{}
-	for _, st := range fn.Body.List {
-		rs, isRange := st.(*ast.RangeStmt)
-		if !isRange || !isSelectorCall(rs.X, ps, "SplitLines") {
-			continue
-		}
-		call := rs.X.(*ast.CallExpr)
-		if arg, isIdent := call.Args[0].(*ast.Ident); isIdent && arg.Name == p {
-			ok[call.Fun.(*ast.SelectorExpr)] = true
-		}
-	}
-	return len(ok) > 0 && onlyListedSelectors(fn.Body, ps, "SplitLines", ok)
-}
 
-// scanFileMasks reports whether every reference to the identifier scanText in
-// f is either the scanText declaration's own name or the callee of a call
-// inside scanFile that passes a direct pkg.MaskGoNonCode call as its second
-// argument, at least one such call exists, and scanFile declares nothing
-// named scanText that could shadow the package function. Failing closed on
-// any other reference rejects aliases such as `var rawScan = scanText`, a
-// method value, or scanText passed as an argument, each of which would let
-// unmasked text reach the scan loop.
-func scanFileMasks(f *ast.File, scanFile *ast.FuncDecl, pkg string) bool {
-	if declaresInBody(scanFile.Body, "scanText") || fieldsDeclare(scanFile.Type.Params, "scanText") ||
-		fieldsDeclare(scanFile.Type.Results, "scanText") {
-		return false
-	}
-	allowed := map[*ast.Ident]bool{}
-	for _, d := range f.Decls {
-		if fn, isFn := d.(*ast.FuncDecl); isFn && fn.Recv == nil && fn.Name.Name == "scanText" {
-			allowed[fn.Name] = true
-		}
-	}
-	inside := 0
-	ast.Inspect(scanFile.Body, func(n ast.Node) bool {
-		call, isCall := n.(*ast.CallExpr)
-		if !isCall {
+	maskSelectors := map[*ast.SelectorExpr]bool{}
+	var maskCall *ast.CallExpr
+	maskCalls := 0
+	ast.Inspect(scanSource.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || !isSelectorCall(call, pkg, "MaskGoNonCode") {
 			return true
 		}
-		id, isIdent := ast.Unparen(call.Fun).(*ast.Ident)
-		if isIdent && id.Name == "scanText" && len(call.Args) == 2 && isSelectorCall(call.Args[1], pkg, "MaskGoNonCode") {
-			allowed[id] = true
-			inside++
+		maskSelectors[call.Fun.(*ast.SelectorExpr)] = true
+		maskCalls++
+		if arg, ok := call.Args[0].(*ast.Ident); ok && arg.Name == srcParam {
+			maskCall = call
 		}
 		return true
 	})
-	ok := true
-	ast.Inspect(f, func(n ast.Node) bool {
-		if id, isIdent := n.(*ast.Ident); isIdent && id.Name == "scanText" && !allowed[id] {
-			ok = false
+	if maskCalls != 1 || maskCall == nil || !onlyListedSelectors(scanSource.Body, pkg, "MaskGoNonCode", maskSelectors) {
+		return false
+	}
+
+	maskedName := ""
+	maskStatement := -1
+	for i, st := range scanSource.Body.List {
+		assign, ok := st.(*ast.AssignStmt)
+		if !ok || len(assign.Rhs) != 1 || assign.Rhs[0] != maskCall || len(assign.Lhs) != 1 || assign.Tok != token.DEFINE {
+			continue
 		}
-		return ok
+		id, ok := assign.Lhs[0].(*ast.Ident)
+		if ok && id.Name != "_" {
+			maskedName = id.Name
+			maskStatement = i
+		}
+	}
+	if maskedName == "" || len(writePositions(scanSource.Body, maskedName)) != 1 ||
+		closureWrites(scanSource.Body, maskedName) || nestedDecl(scanSource.Body, maskedName) {
+		return false
+	}
+
+	splitSelectors := map[*ast.SelectorExpr]bool{}
+	var splitCall *ast.CallExpr
+	splitCalls := 0
+	ast.Inspect(scanSource.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || !isSelectorCall(call, ps, "SplitLines") {
+			return true
+		}
+		splitSelectors[call.Fun.(*ast.SelectorExpr)] = true
+		splitCalls++
+		if arg, ok := call.Args[0].(*ast.Ident); ok && arg.Name == maskedName {
+			splitCall = call
+		}
+		return true
 	})
-	return ok && inside > 0
+	if splitCalls != 1 || splitCall == nil || !onlyListedSelectors(scanSource.Body, ps, "SplitLines", splitSelectors) {
+		return false
+	}
+
+	lineName := ""
+	splitStatement := -1
+	for i, st := range scanSource.Body.List {
+		assign, ok := st.(*ast.AssignStmt)
+		if !ok || len(assign.Rhs) != 1 || assign.Rhs[0] != splitCall || len(assign.Lhs) != 1 || assign.Tok != token.DEFINE {
+			continue
+		}
+		id, ok := assign.Lhs[0].(*ast.Ident)
+		if ok && id.Name != "_" {
+			lineName = id.Name
+			splitStatement = i
+		}
+	}
+	if lineName == "" || maskStatement >= splitStatement || len(writePositions(scanSource.Body, lineName)) != 1 ||
+		closureWrites(scanSource.Body, lineName) || nestedDecl(scanSource.Body, lineName) {
+		return false
+	}
+	hasLineRange := false
+	for i, st := range scanSource.Body.List {
+		rs, ok := st.(*ast.RangeStmt)
+		if !ok || i <= splitStatement {
+			continue
+		}
+		if id, ok := rs.X.(*ast.Ident); ok && id.Name == lineName {
+			hasLineRange = true
+		}
+	}
+	if !hasLineRange {
+		return false
+	}
+
+	if declaresInBody(scanFile.Body, "scanSource") || fieldsDeclare(scanFile.Type.Params, "scanSource") ||
+		fieldsDeclare(scanFile.Type.Results, "scanSource") ||
+		!onlyListedSelectors(scanFile.Body, pkg, "MaskGoNonCode", map[*ast.SelectorExpr]bool{}) {
+		return false
+	}
+	readNames := map[string]bool{}
+	readSelectors := map[*ast.SelectorExpr]bool{}
+	ast.Inspect(scanFile.Body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Rhs) != 1 || !isSelectorCall(assign.Rhs[0], ps, "ReadText") {
+			return true
+		}
+		call := assign.Rhs[0].(*ast.CallExpr)
+		readSelectors[call.Fun.(*ast.SelectorExpr)] = true
+		if len(assign.Lhs) > 0 {
+			if id, ok := assign.Lhs[0].(*ast.Ident); ok {
+				readNames[id.Name] = true
+			}
+		}
+		return true
+	})
+	if len(readNames) == 0 || !onlyListedSelectors(scanFile.Body, ps, "ReadText", readSelectors) {
+		return false
+	}
+
+	allowedRefs := map[*ast.Ident]bool{scanSource.Name: true}
+	calls := 0
+	ast.Inspect(scanFile.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		id, ok := call.Fun.(*ast.Ident)
+		if !ok || id.Name != "scanSource" || len(call.Args) != 2 {
+			return true
+		}
+		path, pathOK := call.Args[0].(*ast.Ident)
+		source, sourceOK := call.Args[1].(*ast.Ident)
+		if pathOK && path.Name == "relPath" && sourceOK && readNames[source.Name] {
+			allowedRefs[id] = true
+			calls++
+		}
+		return true
+	})
+	if calls != 1 {
+		return false
+	}
+
+	validRefs := true
+	ast.Inspect(f, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && id.Name == "scanSource" && !allowedRefs[id] {
+			validRefs = false
+		}
+		return validRefs
+	})
+	return validRefs
 }
 
 // declaresInBody reports whether body declares name with :=, var, or a
@@ -261,7 +331,7 @@ func TestMaskerDefinedExactlyOnce(t *testing.T) {
 
 // TestWritePathScanFileConsumesCanonicalMask pins the canonical masker to
 // writepath's scan path, and proves no other writepath source declares a
-// local masker or calls scanText.
+// local masker or references scanSource outside its authorized path.
 func TestWritePathScanFileConsumesCanonicalMask(t *testing.T) {
 	dir := filepath.Join("..", "writepath")
 	paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
@@ -285,77 +355,76 @@ func TestWritePathScanFileConsumesCanonicalMask(t *testing.T) {
 		if declared {
 			found = true
 			if !flows {
-				t.Errorf("%s: scanFile does not pass a gomask.MaskGoNonCode result to scanText's scan loop", p)
+				t.Errorf("%s: scanFile does not pass raw ReadText output through scanSource's canonical mask", p)
 			}
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok && id.Name == "scanText" {
-				t.Errorf("%s: scanText referenced outside the file that declares scanFile", p)
+			if id, ok := n.(*ast.Ident); ok && id.Name == "scanSource" {
+				t.Errorf("%s: scanSource referenced outside its authorized scan path", p)
 			}
 			return true
 		})
 	}
 	if !found {
-		t.Fatal("no writepath source declares both scanFile and scanText")
+		t.Fatal("no writepath source declares scanFile and scanSource")
 	}
 }
 
-// TestWritePathMaskFlow_Mutations proves writePathMaskFlow is red when the
-// writepath scan path stops consuming the canonical mask, and green on the
-// production shape.
+// TestWritePathMaskFlow_Mutations proves the writepath source pin rejects
+// paths that bypass or alter the canonical mask flow.
 func TestWritePathMaskFlow_Mutations(t *testing.T) {
 	const imp = "import \"" + gomaskImportPath + "\"\n"
 	const pimp = "import \"" + pysemImportPath + "\"\n"
-	const st = "func scanText(relPath, maskedText string) []string {\n\tfor range pysem.SplitLines(maskedText) {\n\t}\n\treturn nil\n}\n"
-	const sf = "func scanFile(root, relPath string) ([]string, error) {\n\ttext := read(root)\n\treturn scanText(relPath, gomask.MaskGoNonCode(text)), nil\n}\n"
+	const sourceFn = `func scanSource(relPath, src string) ([]string, error) {
+	masked := gomask.MaskGoNonCode(src)
+	lines := pysem.SplitLines(masked)
+	for range lines {
+	}
+	return nil, nil
+}
+`
+	const fileFn = `func scanFile(root, relPath string) ([]string, error) {
+	text, err := pysem.ReadText(root)
+	if err != nil {
+		return nil, err
+	}
+	return scanSource(relPath, text)
+}
+`
 	const head = "package p\n" + imp + pimp
 	cases := []struct {
 		name string
 		src  string
 		want bool
 	}{
-		{"production shape", head + st + sf, true},
+		{"production shape", head + sourceFn + fileFn, true},
 		{"canonical import under an alias",
-			"package p\nimport gm \"" + gomaskImportPath + "\"\n" + pimp + st + strings.Replace(sf, "gomask.", "gm.", 1), true},
-		{"local clone instead of canonical mask", head + st + strings.Replace(sf, "gomask.MaskGoNonCode(text)", "clone(text)", 1) +
-			"func dead(s string) { _ = gomask.MaskGoNonCode(s) }\n", false},
-		{"unmasked text scanned", head + st + strings.Replace(sf, "gomask.MaskGoNonCode(text)", "text", 1), false},
-		{"other package masker", head + st + strings.Replace(sf, "gomask.", "other.", 1), false},
-		{"foreign package imported as gomask", "package p\nimport gomask \"example.com/other\"\n" + pimp + st + sf, false},
-		{"canonical package not imported", "package p\n" + pimp + st + sf, false},
-		{"foreign package imported as pysem", "package p\n" + imp + "import pysem \"example.com/other\"\n" + st + sf, false},
-		{"mask bound to a variable first",
-			head + st + "func scanFile(root, relPath string) ([]string, error) {\n\tm := gomask.MaskGoNonCode(read(root))\n\treturn scanText(relPath, m), nil\n}\n", false},
-		{"second scanText call unmasked",
-			head + st + "func scanFile(root, relPath string) ([]string, error) {\n\ttext := read(root)\n\t_ = scanText(relPath, text)\n\treturn scanText(relPath, gomask.MaskGoNonCode(text)), nil\n}\n", false},
-		{"scanText called from another function", head + st + sf + "func raw(s string) []string { return scanText(\"x\", s) }\n", false},
-		{"scanFile never calls scanText",
-			head + st + "func scanFile(root, relPath string) ([]string, error) {\n\t_ = gomask.MaskGoNonCode(read(root))\n\treturn nil, nil\n}\n", false},
-		{"scanText shadowed in scanFile",
-			head + st + "func scanFile(root, relPath string) ([]string, error) {\n\tscanText := other\n\ttext := read(root)\n\treturn scanText(relPath, gomask.MaskGoNonCode(text)), nil\n}\n", false},
-		{"scanText ranges over the path, not the text",
-			head + strings.Replace(st, "SplitLines(maskedText)", "SplitLines(relPath)", 1) + sf, false},
-		{"scanText overwrites its masked parameter",
-			head + strings.Replace(st, "{\n\tfor", "{\n\tmaskedText = raw()\n\tfor", 1) + sf, false},
-		{"scanText takes the masked parameter's address",
-			head + strings.Replace(st, "{\n\tfor", "{\n\tclobber(&maskedText)\n\tfor", 1) + sf, false},
-		{"scanText shadows the masked parameter",
-			head + strings.Replace(st, "{\n\tfor", "{\n\tmaskedText := raw()\n\tfor", 1) + sf, false},
-		{"scanText closure writes the masked parameter",
-			head + strings.Replace(st, "{\n\tfor", "{\n\tf := func() { maskedText = raw() }\n\tf()\n\tfor", 1) + sf, false},
-		{"scan loop not top-level",
-			head + strings.Replace(strings.Replace(st, "\tfor range", "\t{\n\tfor range", 1), "\t}\n\treturn", "\t}\n\t}\n\treturn", 1) + sf, false},
-		{"scanText adds a second raw scan loop",
-			head + strings.Replace(st, "\treturn nil", "\tfor range pysem.SplitLines(raw()) {\n\t}\n\treturn nil", 1) + sf, false},
-		{"scanText binds SplitLines to a variable",
-			head + strings.Replace(st, "\treturn nil", "\tsl := pysem.SplitLines\n\t_ = sl(raw())\n\treturn nil", 1) + sf, false},
-		{"scanText bound to a package variable",
-			head + st + sf + "var rawScan = scanText\nfunc raw(s string) []string { return rawScan(\"x\", s) }\n", false},
-		{"scanText used as a value in scanFile",
-			head + st + "func scanFile(root, relPath string) ([]string, error) {\n\ttext := read(root)\n\tf := scanText\n\t_ = f(relPath, text)\n\treturn scanText(relPath, gomask.MaskGoNonCode(text)), nil\n}\n", false},
-		{"scanText passed as an argument",
-			head + st + sf + "func reg() { register(scanText) }\n", false},
+			"package p\nimport gm \"" + gomaskImportPath + "\"\n" + pimp + strings.Replace(sourceFn, "gomask.", "gm.", 1) + fileFn, true},
+		{"local clone instead of canonical mask", head + strings.Replace(sourceFn, "gomask.MaskGoNonCode(src)", "clone(src)", 1) + fileFn, false},
+		{"mask receives a different source", head + strings.Replace(sourceFn, "gomask.MaskGoNonCode(src)", "gomask.MaskGoNonCode(raw())", 1) + fileFn, false},
+		{"line scan bypasses the mask", head + strings.Replace(sourceFn, "SplitLines(masked)", "SplitLines(src)", 1) + fileFn, false},
+		{"other package masker", head + strings.Replace(sourceFn, "gomask.", "other.", 1) + fileFn, false},
+		{"foreign package imported as gomask", "package p\nimport gomask \"example.com/other\"\n" + pimp + sourceFn + fileFn, false},
+		{"canonical package not imported", "package p\n" + pimp + sourceFn + fileFn, false},
+		{"foreign package imported as pysem", "package p\n" + imp + "import pysem \"example.com/other\"\n" + sourceFn + fileFn, false},
+		{"mask moved to scanFile", head + strings.Replace(sourceFn, "SplitLines(masked)", "SplitLines(src)", 1) +
+			strings.Replace(fileFn, "return scanSource(relPath, text)", "masked := gomask.MaskGoNonCode(text)\n\treturn scanSource(relPath, masked)", 1), false},
+		{"second source call", head + sourceFn + strings.Replace(fileFn, "return scanSource(relPath, text)", "_ = scanSource(relPath, text)\n\treturn scanSource(relPath, text)", 1), false},
+		{"source called from another function", head + sourceFn + fileFn + "func raw(s string) { _ = scanSource(\"x\", s) }\n", false},
+		{"file never calls source", head + sourceFn + strings.Replace(fileFn, "return scanSource(relPath, text)", "return nil, nil", 1), false},
+		{"source shadowed in scanFile", head + sourceFn + strings.Replace(fileFn, "return scanSource(relPath, text)", "scanSource := other\n\treturn scanSource(relPath, text)", 1), false},
+		{"source parameter is reassigned", head + strings.Replace(sourceFn, "masked :=", "src = raw()\n\tmasked :=", 1) + fileFn, false},
+		{"masked text is reassigned", head + strings.Replace(sourceFn, "lines :=", "masked = raw()\n\tlines :=", 1) + fileFn, false},
+		{"masked text address escapes", head + strings.Replace(sourceFn, "lines :=", "clobber(&masked)\n\tlines :=", 1) + fileFn, false},
+		{"masked text is shadowed", head + strings.Replace(sourceFn, "lines :=", "masked := raw()\n\tlines :=", 1) + fileFn, false},
+		{"closure writes masked text", head + strings.Replace(sourceFn, "lines :=", "f := func() { masked = raw() }\n\tf()\n\tlines :=", 1) + fileFn, false},
+		{"loop ranges over different text", head + strings.Replace(sourceFn, "range lines", "range src", 1) + fileFn, false},
+		{"second SplitLines path", head + strings.Replace(sourceFn, "for range lines", "_ = pysem.SplitLines(src)\n\tfor range lines", 1) + fileFn, false},
+		{"SplitLines bound to a variable", head + strings.Replace(sourceFn, "for range lines", "sl := pysem.SplitLines\n\t_ = sl(masked)\n\tfor range lines", 1) + fileFn, false},
+		{"source bound to a package variable", head + sourceFn + fileFn + "var rawScan = scanSource\n", false},
+		{"source used as a value in scanFile", head + sourceFn + strings.Replace(fileFn, "return scanSource(relPath, text)", "f := scanSource\n\t_ = f(relPath, text)\n\treturn nil, nil", 1), false},
+		{"source passed as an argument", head + sourceFn + fileFn + "func reg() { register(scanSource) }\n", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -365,7 +434,7 @@ func TestWritePathMaskFlow_Mutations(t *testing.T) {
 			}
 			declared, flows := writePathMaskFlow(f)
 			if !declared {
-				t.Fatal("scanFile/scanText not found")
+				t.Fatal("scanFile/scanSource not found")
 			}
 			if flows != tc.want {
 				t.Errorf("writePathMaskFlow flows = %v, want %v", flows, tc.want)
