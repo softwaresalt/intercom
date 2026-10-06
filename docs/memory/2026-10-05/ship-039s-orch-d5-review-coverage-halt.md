@@ -241,19 +241,62 @@ depguard temporary fixture directories collided with the other linter
 processes. Those first attempts were not treated as source failures. The
 lint commands and depguard proof were rerun sequentially; all passed.
 
-### D6 mandated final delta review — pending
+### D6 mandated final delta review — complete
 
-`TOOL_DEGRADED: anchor-review-model (no coverage acknowledgement after 2 dispatches)`.
-Declared fallback: `claude-opus-5.5` (review the whole final D4/D5 + CI-fix
-delta). One final coverage round is authorized. The two non-anchor reviewers
-that previously acknowledged D4/D5 must each re-acknowledge those hunks and
-review the CI-fix hunks, with explicit hunk-header echoes. No other reviewer
-retry is authorized.
+`TOOL_DEGRADED: anchor-review-model (no coverage acknowledgement after 2
+dispatches)`. The declared fallback reviewer was `gpt-6-sol`, which reviewed
+the full D4/D5 + CI-fix delta. Two independent non-anchor reviewers
+(`claude-sonnet-5` and `claude-opus-5`) re-acknowledged the D4/D5 hunks and
+reviewed the CI-fix hunks. This was the one authorized final coverage round.
 
-At the time this amendment was written, the fix commit is complete and the
-backlog task trace is updated, but the separate chore commit for the pending
-stash captures and this halt memory, the push of the new commits, and the
-final delta review have not yet happened. PR #105 still has the prior head
-`36ed8362492823ba526e496c90f0f4a89666d94e` and still advertises `BLOCKED`.
-The final review must use the actual current HEAD after the separate chore
-commit and compare to `3c4235a866fc2227fb4bb7a75e1e1995f3af128f`.
+The diff partition is saved at ignored
+`logs/review/039-s/final-delta-orch-d6.diff`. The three reviewers each
+returned an explicit 7/7 per-file/hunk acknowledgement for:
+
+1. `scripts/testdata/writepath/harness/049.007/reject-ioutil-write-primitives.go`
+   `@@ -1,8 +1,10 @@`
+2. `scripts/testdata/writepath/reject-ioutil-write-primitives.go`
+   `@@ -1,8 +1,10 @@`
+3. `tools/gatecheck/internal/writepath/testdata/writepath_golden.json`
+   `@@ -141,10 +141,10 @@`
+4. `tools/gatecheck/internal/writepath/writepath.go`
+   `@@ -288,16 +288,36 @@ func pathsafeRootResolveSelectors(...)`
+5. `tools/gatecheck/internal/writepath/writepath_test.go`
+   `@@ -1441,6 +1441,73 @@ func TestHarness_049005_NewRootReceiversTripFirstCaller(...)`
+6. `tools/gatecheck/internal/writepath/writepath_test.go`
+   `@@ -1511,10 +1578,10 @@ func TestHarness_049007_ImportPathSelectorsFindExpectedPrimitives(...)`
+7. `tools/gatecheck/internal/writepath/writepath_test.go`
+   `@@ -1715,10 +1782,10 @@ func TestHarness_049007_GoldenIsAdditiveAndKeepsTheD1aOracleFrozen(...)`
+
+The unchanged baseline remains the 8aca231 review: 46 paths / 110 hunks.
+No reviewer identified a P0 or P1. The P2/P3 findings were classified and
+handled as residuals; no further source fix was authorized after this final
+coverage round:
+
+* Reused captures: `A0996E93` (same-name shadow precision),
+  `B061EE34` (parenthesized NewRoot initializer/qualifier),
+  `FC0EEE53` (exact finding attribution),
+  `D273B05C` (duplicated E-T7 expected findings),
+  `E7431D54` (document detector behavior),
+  `0D6502F3` (nested-parenthesis regression coverage),
+  `F49AFAB5` (duplicate staged/promoted fixtures), and
+  `0782DD33` (duplicated FuncLit boundary guards).
+* New capture-only entries, both read back successfully:
+  `D7AD5B2C` (optional `ast.Unparen` cleanup) and `0946D283` (fixture
+  comment clarification). Their payloads include the actual open PR `105`,
+  `review-thread=N/A`, and discovery fail-safe status because archived-stash
+  lookup is unavailable.
+* The closure-captured outer-root limitation remains the explicitly
+  documented cross-function residual in task `049.005-T` (residual item 2);
+  related existing test follow-up `43614FC7` is cited. The P3 provenance
+  recommendation is answered by the PR's explicit ORCH-D4/D5 operator
+  authorization disclosures. The fixture-line comment observation was also
+  rated P4 by another reviewer and is non-blocking.
+
+The code-delta review covers source HEAD
+`b5bf300470b46955e0dd06d2dc07d3a98b43a819`; that is the reviewed code state.
+The subsequent review follow-up capture/memory bookkeeping is non-source-only.
+PR #105 was pushed to that code HEAD and remains open. The P-014 incident is
+acknowledged and disclosed; the PR still may not merge until a current-HEAD
+`READY`/`READY_WITH_FOLLOWUPS` record is written with P0=0/P1=0, the full local
+build evidence, and explicit follow-up IDs.
