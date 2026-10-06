@@ -1441,6 +1441,73 @@ func TestHarness_049005_NewRootReceiversTripFirstCaller(t *testing.T) {
 	}
 }
 
+func TestHarness_049005_ParenthesizedNewRootResolveReceiver(t *testing.T) {
+	requireWritepathHarnessTask(t)
+	const source = `package harness
+import pathsafe "github.com/softwaresalt/intercom-go/internal/pathsafe"
+func write() {
+	root, err := pathsafe.NewRoot(".")
+	_ = err
+	(root).Resolve("file")
+}
+`
+	if _, err := parser.ParseFile(token.NewFileSet(), "parenthesized-resolve.go", source, parser.ParseComments|parser.AllErrors); err != nil {
+		t.Fatalf("parenthesized NewRoot fixture must parse: %v", err)
+	}
+	got, err := scanSourceForHarness(t, "parenthesized-resolve.go", source)
+	if err != nil {
+		t.Fatalf("scanSource(parenthesized-resolve.go): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("not implemented: 049.005-T: got %d findings for one parenthesized NewRoot-bound Resolve caller: %q", len(got), got)
+	}
+}
+
+func TestHarness_049005_ResolveBeforePlainNewRootAssignment(t *testing.T) {
+	requireWritepathHarnessTask(t)
+	const source = `package harness
+import pathsafe "github.com/softwaresalt/intercom-go/internal/pathsafe"
+func write() {
+	var root *pathsafe.Root
+	var err error
+	for {
+		root.Resolve("file")
+		break
+	}
+	root, err = pathsafe.NewRoot(".")
+	_ = err
+}
+`
+	if _, err := parser.ParseFile(token.NewFileSet(), "forward-newroot-assignment.go", source, parser.ParseComments|parser.AllErrors); err != nil {
+		t.Fatalf("forward NewRoot assignment fixture must parse: %v", err)
+	}
+	got, err := scanSourceForHarness(t, "forward-newroot-assignment.go", source)
+	if err != nil {
+		t.Fatalf("scanSource(forward-newroot-assignment.go): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("not implemented: 049.005-T: got %d findings for Resolve before a later NewRoot assignment: %q", len(got), got)
+	}
+}
+
+func TestHarness_049005_UnboundPathsafeRootResolveIsNotATrigger(t *testing.T) {
+	requireWritepathHarnessTask(t)
+	const source = `package harness
+import pathsafe "github.com/softwaresalt/intercom-go/internal/pathsafe"
+func write(root pathsafe.Root) {
+	root.Resolve("file")
+}
+`
+	if _, err := parser.ParseFile(token.NewFileSet(), "unbound-pathsafe-root.go", source, parser.ParseComments|parser.AllErrors); err != nil {
+		t.Fatalf("unbound pathsafe.Root fixture must parse: %v", err)
+	}
+	got, err := scanSourceForHarness(t, "unbound-pathsafe-root.go", source)
+	if err != nil {
+		t.Fatalf("scanSource(unbound-pathsafe-root.go): %v", err)
+	}
+	assertFindingsEqual(t, got, nil)
+}
+
 // TestHarness_049005_UnrelatedResolveIsNotATrigger is the negative control:
 // importing pathsafe does not turn an unrelated receiver's Resolve method
 // into a finding.

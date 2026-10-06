@@ -288,16 +288,36 @@ func pathsafeRootResolveSelectors(file *ast.File, bindings map[string]string) ma
 				if len(n.Names) == 2 && len(n.Values) == 1 {
 					bindNewRootReceiver(n.Names[0], n.Names[1], n.Values[0], bindings, roots)
 				}
+			}
+			return true
+		})
+
+		ast.Inspect(body, func(node ast.Node) bool {
+			if node == nil {
+				return true
+			}
+			if _, ok := node.(*ast.FuncLit); ok {
+				return false
+			}
+			switch n := node.(type) {
 			case *ast.CallExpr:
 				selector, ok := n.Fun.(*ast.SelectorExpr)
 				if !ok || selector.Sel.Name != "Resolve" {
 					break
 				}
-				receiver, ok := selector.X.(*ast.Ident)
+				receiver := selector.X
+				for {
+					parenthesized, ok := receiver.(*ast.ParenExpr)
+					if !ok {
+						break
+					}
+					receiver = parenthesized.X
+				}
+				receiverIdent, ok := receiver.(*ast.Ident)
 				if !ok {
 					break
 				}
-				if _, bound := roots[receiver.Name]; bound {
+				if _, bound := roots[receiverIdent.Name]; bound {
 					selectors[selector] = struct{}{}
 				}
 			}
