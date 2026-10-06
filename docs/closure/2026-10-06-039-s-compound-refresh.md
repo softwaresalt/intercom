@@ -40,8 +40,27 @@ tags:
   state but did not reclassify the earlier direct CLI invocation as
   skill-mediated.
 
-No other `docs/compound/` entry was found in scope. No consolidation,
-replacement, deletion, or new standalone learning was needed.
+### `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`
+
+- **Classification:** update.
+- **Evidence:** During 039-S closure, Ship directly invoked
+  `backlogit shipment ship 039-S`, bypassing the required
+  `classify-close-path` → binding-carrying `safe-close` sequence. ORCH-D9
+  accepted the archived state and prohibited reversal. The authoritative
+  post-mode report returned `PROCEED`; the separate read-only P-015
+  classifier returned `cascade`, qualifying `049-F` with no
+  out-of-manifest descendants. Neither post-hoc result supplies a
+  retroactive classification binding.
+- **Change:** Added the 039-S recurrence, the accepted no-reversal
+  disposition, the post-mode and classifier evidence, and the boundary on
+  what that evidence establishes. The entry now distinguishes terminal-state
+  verification from conformant pre-mutation skill execution.
+- **Traceability:** `.backlogit/reconcile/039-S-post-2026-10-06T07-24-42Z.md`
+  and `docs/closure/039-S-049-F-post-merge-closure.md`. ORCH-D9 accepted the
+  state; it did not erase the P-005 deviation.
+
+No consolidation, replacement, deletion, or new standalone learning was
+needed.
 
 ## Follow-up
 

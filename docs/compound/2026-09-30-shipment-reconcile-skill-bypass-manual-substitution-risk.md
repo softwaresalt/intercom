@@ -186,6 +186,32 @@ unaffected. This is a second data point for `D10D3AFC`. Until that lands, derive
 location from an actual filesystem probe (`Test-Path` on the queue and archive paths), never
 from an assumption in helper code. See `docs/closure/030-S-033-F-post-merge-closure.md`.
 
+**039-S recurrence and accepted terminal state (2026-10-06).** During 039-S
+post-merge closure (feature `049-F`, PR #105), Ship directly invoked
+`backlogit shipment ship 039-S`, bypassing the required
+`shipment-reconcile` `classify-close-path` → bound `safe-close` skill
+sequence. This was recorded as a P-005 deviation; the manual digest was not a
+skill-issued `CLASSIFICATION_BINDING`. ORCH-D9 accepted the already archived
+state and directed that it not be reversed; that disposition accepted the
+resulting state and did not make the direct invocation conformant.
+
+The Orchestrator required authoritative post-hoc verification. The
+`shipment-reconcile` post-mode report returned `PROCEED` and verified the
+shipment and every manifest item in the archive. A separate read-only
+P-015 machine classification returned `cascade`, with `049-F` as the
+qualifying feature and no out-of-manifest descendants. These checks verify
+the terminal state and fully-covered-root topology; they do not create a
+retroactive pre-close binding or repair the bypass. See
+`.backlogit/reconcile/039-S-post-2026-10-06T07-24-42Z.md` and
+`docs/closure/039-S-049-F-post-merge-closure.md`.
+
+**Learning reinforced.** A correct final archived state, post-mode
+`PROCEED`, and a read-only cascade classification are post-hoc evidence, not
+substitutes for invoking the bound `safe-close` mode before mutation. Do not
+reverse an accepted terminal state merely to disguise the procedural
+deviation; preserve and disclose both the deviation and the scope of the
+post-hoc evidence.
+
 **Probe-based location in 031-S (2026-10-02).** The 031-S close applied that rule. One
 session-local helper (uncommitted) resolved each member's location from file presence,
 and would fail closed with `RECONCILE_FAIL_SNAPSHOT_AMBIGUOUS` (both roots) or

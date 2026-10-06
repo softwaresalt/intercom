@@ -44,8 +44,8 @@ deployment manifests, or runtime release configuration.
 **Closure status: `READY_WITH_CONDITIONS`.** ORCH-D9 accepted the current
 archived backlog state and explicitly directed no reversal. The P-005
 process deviation is disclosed, not represented as conformant execution.
-P-020 compaction remains pending until the required `compact-context` call
-completes.
+P-020 compaction completed; the required `compact-context` call is recorded
+in the compaction report below and `compaction_status` is `done`.
 
 ## Merge and verification evidence
 
@@ -120,13 +120,14 @@ the installed telemetry surface was unavailable and had no CLI fallback.
 Stage's commit `ddf8817` implemented D-049-12 by normalizing
 `049.006-T` and `049.007-T` to terminal-relocation representation
 (`status: done` in `.backlogit/archive/`, without explicit archival
-provenance). The subsequent cascade now records both as explicit archival
-(`status: archived`, `archived_status: done`). These are equivalent
-`archived-completed(done)` representations. The cascade superseded the
+provenance). The subsequent cascade records both as explicit archival
+(`status: archived`, `archived_status: done`). Both representations express
+completed work, but their declared status and provenance differ; they are not
+interchangeable for snapshot or gate evaluation. The cascade superseded the
 D-049-12 representation without changing either task's completed outcome.
 Ship did not edit those task records.
 
-## ORCH-D1–D9 history and P-014 disclosure
+## ORCH-D1–D10 history and P-014 disclosure
 
 * **ORCH-D1:** the frozen oracle input correction was recorded; no later
   oracle change was made.
@@ -146,6 +147,12 @@ Ship did not edit those task records.
 * **ORCH-D9:** the Orchestrator accepted the current archived state, prohibited
   reversal, and directed this post-hoc reconciliation and explicit disclosure
   of the P-005 deviation.
+* **ORCH-D10:** the Orchestrator authorized a bounded closure-readiness
+  remediation: correct the compaction and D-049-12 wording, refresh the
+  incident-relevant compound learning with this shipment's evidence, and
+  require a diff-backed review with explicit hunk coverage before PR
+  readiness. The closure change is docs/backlog-only; full Go build
+  applicability is addressed in the closure PR readiness block.
 * **P-014 incident:** PR #105 was opened while the then-current local readiness
   was `BLOCKED`. The incident was acknowledged, disclosed in PR #105 and
   session memory, and no merge occurred until current-HEAD readiness and
