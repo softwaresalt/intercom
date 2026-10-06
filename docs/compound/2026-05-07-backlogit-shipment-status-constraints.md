@@ -45,17 +45,23 @@ narrower state machine.
 * Never attempt `backlogit move <shipment_id> --status shipped` (or any
   direct status mutation) on a shipment artifact — it will always fail with
   exit code 9 and the message above.
-* Use `backlogit shipment ship <shipment_id> --sha <merge_commit_sha>
-  --message <merge_commit_message> --author <merge_commit_author>` instead.
-  This is the **only** supported closure path for a shipment once its
-  manifest qualifies for cascade close (see the P-015 verified
-  fully-covered-root exception in the `shipment-reconcile` skill).
-* If the shipment's manifest does *not* qualify for the cascade exception
-  (a partial-feature shipment with unshipped siblings), use the
-  `shipment-reconcile` skill's Safe-Close Mode instead, which never calls
-  `backlogit shipment ship` and instead archives only the manifest's
-  explicit item IDs one at a time before closing the shipment record via
-  the reconcile skill's own verified sequence.
+* Ship MUST route shipment closure through the
+  `shipment-reconcile` skill boundary. First invoke
+  `mode: classify-close-path`; then invoke `mode: safe-close` with the
+  returned `CLASSIFICATION_BINDING`. An unbound safe-close invocation is
+  refused. When the bound result is `CASCADE` under P-015's
+  fully-covered-root exception, only the skill's Cascade Close
+  Sub-Procedure invokes `backlogit shipment ship <shipment_id> --sha
+  <merge_commit_sha> --message <merge_commit_message> --author
+  <merge_commit_author>`, revalidates the binding, and verifies the
+  cascade result. Ship MUST NOT call that CLI directly. The CLI command is
+  the engine-level cascade operation, not a Ship-level substitute for the
+  skill boundary.
+* If the classifier returns `SAFE_CLOSE` for a partial-feature shipment,
+  the same binding-carrying `mode: safe-close` invocation performs the
+  skill's single-artifact sequence, archiving only the manifest's explicit
+  item IDs before closing the shipment record. Do not infer the path from
+  the manifest shape or switch paths after classification.
 * A manifest item may be **relocated** to `.backlogit/archive/` (by file
   location) while still declaring `status: done` rather than
   `status: archived` — this is a distinct, valid intermediate state (e.g.
@@ -77,7 +83,10 @@ frontmatter reports `archived_status: shipped` and `commit: <merge_sha>`.
 
 Any Ship-agent template or skill assuming a generic `move --status shipped`
 path exists for shipment closure will hard-fail with exit code 9 on first
-use against a real backlogit installation. Always route shipment closure
-through `backlogit shipment ship` (cascade) or the `shipment-reconcile`
-skill's Safe-Close Mode (manual per-item archive) — never through the
-generic `move` command.
+use against a real backlogit installation. Keep the engine operation and
+agent invocation boundary distinct: Ship always uses the bound
+`shipment-reconcile` `classify-close-path` → `safe-close` sequence; only
+that skill may dispatch the cascade CLI for a verified `CASCADE` result.
+For `SAFE_CLOSE`, the skill performs the single-artifact archive sequence.
+Neither path uses the generic `move --status shipped` operation, and a
+manually recomputed digest is not a substitute for the skill-issued binding.

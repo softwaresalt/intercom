@@ -113,3 +113,45 @@ the P-005 process deviation. Do not push or open a closure PR based on the
 non-conformant close. Preserve this record; do not attempt to reverse the
 already completed shipment archival without an explicitly authorized,
 safe disposition.
+
+## ORCH-D9 resumption and closure work — 2026-10-06
+
+ORCH-D9 accepted the already archived state, prohibited reversal, and
+authorized autonomous continuation. The backlog index was synchronized
+(`backlogit sync`, 435 artifacts indexed). `backlogit doctor --format json`
+returned no findings.
+
+The authoritative `shipment-reconcile` `mode: post` procedure was run
+post-hoc. It returned `PROCEED`: the shipment and all eight manifest members
+are in `.backlogit/archive/`, and `git status -- .backlogit/archive/` showed
+no deletions. Its report is
+`.backlogit/reconcile/039-S-post-2026-10-06T07-24-42Z.md`.
+
+The installed read-only P-015 machine classifier
+`autoharness.gates.shipment_closure.classify_shipment_close_path` returned
+`cascade` / fully-covered-root for shipment `039-S`'s covering feature
+`049-F`, with
+no out-of-manifest descendants. This post-hoc classifier is not a
+pre-close binding and does not erase the earlier process deviation.
+
+Stage's D-049-12 terminal-relocation representations for `049.006-T` and
+`049.007-T` were superseded by explicit archival with
+`archived_status: done` during the cascade; both are equivalent
+archived-completed(done) states. Ship did not edit those task records.
+
+Compound refresh updated
+`docs/compound/2026-05-07-backlogit-shipment-status-constraints.md` to
+require the binding-carrying `shipment-reconcile` boundary. Its report is
+`docs/closure/2026-10-06-039-s-compound-refresh.md`. The operational
+post-merge closure artifact is
+`docs/closure/039-S-049-F-post-merge-closure.md`, with
+`closure_status: READY_WITH_CONDITIONS` and `compaction_status: pending`.
+The P-005 deviation, ORCH-D9 acceptance, D-049-12 representation change,
+P-014 incident, and tool/reviewer degradations are disclosed there.
+
+Current branch remains
+`post-merge/049-f-migrate-write-path-scanner-to-go-ast`. The reconciliation
+report, closure artifact, compound refresh report, and memory update are
+not yet committed. `compact-context target: all`, final backlog index sync,
+closure local review, push, closure PR, CI/Copilot/P-018/P-009/P-014/P-016
+gates, and closure PR merge remain pending. No closure PR has been opened.
