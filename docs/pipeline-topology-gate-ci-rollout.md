@@ -19,9 +19,11 @@ and the branch under CI. It is a detector at sync time, not a lock or a distribu
 checkout whose changes have not reached CI can still race.
 
 The repository variable `PIPELINE_TOPOLOGY_GATE_REQUIRED` controls whether a reported topology
-`BLOCK` fails the CI job. Leave it unset for advisory observation. Setting it to exactly `true`
-makes a gate `BLOCK` fail the step, job, and aggregate `ci gate` without requiring a workflow
-re-render. This is a staged enforcement control, not a change to the gate's own verdict.
+`BLOCK` fails the CI job. Leave it unset for advisory observation. Set it to `true` to make a
+gate `BLOCK` fail the step, job, and aggregate `ci gate` without requiring a workflow re-render.
+The workflow's GitHub Actions string comparison is case-insensitive, so case variants of `true`
+also select required enforcement. This is a staged enforcement control, not a change to the gate's
+own verdict.
 
 ## Staged advisory-to-required rollout
 

@@ -41,6 +41,9 @@ gate. The claim and immediate post-claim checks succeeded.
   blocked because it reported it could not certify the complete working-tree
   diff; current scope must be confirmed locally and a final current-HEAD
   readiness review recorded before PR.
+- During direct cross-document re-review, the rollout's summary also used
+  "exactly `true`". That in-scope wording was corrected to state the
+  case-insensitive comparison, matching both the workflow and runbook.
 - `go vet ./...` and `gofmt -l .` passed. The unmodified full test suite first
   hit its default 10-minute package timeout while Defender scanned fixture
   files; subsequent platform-specific failures were isolated to environment
