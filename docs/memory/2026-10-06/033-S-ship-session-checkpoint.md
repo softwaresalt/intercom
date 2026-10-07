@@ -1,6 +1,6 @@
 # Ship checkpoint — 033-S resumed execution
 
-- **Timestamp:** 2026-10-06 21:20 PDT
+- **Timestamp:** 2026-10-06, retry in progress
 - **Mode:** `DARK_MODE_ACTIVE`, scope restricted to shipment `033-S`
 - **Shipment / feature:** `033-S` / `036-F`
 - **Branch:** `feat/author-pipeline-topology-gate-documentation-plan-unit-9`
@@ -31,6 +31,16 @@ gate. The claim and immediate post-claim checks succeeded.
   `.autoharness/.gitignore:3` (`staging/`).
 - A task-specific runbook acceptance check passed after authoring
   `docs/pipeline-topology-gate.md`.
+- Consolidated acceptance checks passed for both CI references, required
+  headings, YAML frontmatter, repaired post-merge naming, no unverified
+  external selection glob, and the retention rule. The exact rollout heading
+  is `Threat Model & CODEOWNERS Hardening`.
+- The read-only Adversarial Review agent identified one P3 wording issue: the
+  CI toggle compares strings case-insensitively. The runbook was corrected to
+  match GitHub Actions semantics. The agent's overall readiness remained
+  blocked because it reported it could not certify the complete working-tree
+  diff; current scope must be confirmed locally and a final current-HEAD
+  readiness review recorded before PR.
 - `go vet ./...` and `gofmt -l .` passed. The unmodified full test suite first
   hit its default 10-minute package timeout while Defender scanned fixture
   files; subsequent platform-specific failures were isolated to environment
@@ -41,19 +51,22 @@ gate. The claim and immediate post-claim checks succeeded.
 ## Completed work at checkpoint
 
 - `036.001-T`: runbook drafted at the exact CI-referenced path; verification
-  passed. Task close and commit tracking remain to be recorded.
+  passed. Initial runbook and resolved-halt memory artifacts committed as
+  `4cedc9e`; retention subsection and case-insensitive toggle wording are
+  follow-up edits pending commit. Task close and commit tracking remain.
 - `036.002-T`: rollout doc drafted at the exact CI-referenced path with exact
-  heading `Threat Model & CODEOWNERS Hardening`; verification and task close
-  remain.
+  heading `Threat Model & CODEOWNERS Hardening`; acceptance verification
+  passed. Commit and task close remain.
 - `036.003-T`: verification passed; no underlying state was changed.
-- `036.004-T`: retention rule still needs to be added inside the runbook.
+- `036.004-T`: the retention rule is now in the runbook and the consolidated
+  acceptance check passed. Task close remains.
 
 ## Remaining
 
-Finish and verify the retention rule; complete the scoped tasks in dependency
-order; commit using explicit paths (including this checkpoint and the resolved
-halt memo); run final quality gates and required adversarial/local review; prepare
-the current-HEAD local readiness block; create and validate the PR including
-Copilot review/P-018 and CI; merge by merge commit only; then perform
-manifest-scoped post-merge closure on its own closure branch/PR. Do not touch
-other shipments, features, or stash entries.
+Complete the scoped tasks in dependency order; commit using explicit paths
+(including this checkpoint and the already-committed resolved halt memo); run
+final quality gates and required adversarial/local review; prepare the
+current-HEAD local readiness block; create and validate the PR including Copilot
+review/P-018 and CI; merge by merge commit only; then perform manifest-scoped
+post-merge closure on its own closure branch/PR. Do not touch other shipments,
+features, or stash entries.

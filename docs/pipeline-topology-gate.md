@@ -86,12 +86,15 @@ These are CI configuration/setup failures, not gate verdicts that the advisory t
 ## Advisory and required enforcement
 
 The repository variable **`PIPELINE_TOPOLOGY_GATE_REQUIRED`** controls whether a topology
-`BLOCK` fails the CI job:
+`BLOCK` fails the CI job. The workflow compares its value with the string `'true'` using
+GitHub Actions expression semantics, which compare strings case-insensitively:
 
-- **Unset or anything other than `true` (default advisory posture):** the topology-verdict step
-  reports its result, but `continue-on-error` allows the job to remain successful on a `BLOCK`.
-- **Exactly `true` (required posture):** a topology `BLOCK` fails the step and job, so the
-  aggregate `ci gate` fails.
+- **Unset or any value not equal to `true` ignoring case (default advisory posture):** the
+  topology-verdict step reports its result, but `continue-on-error` allows the job to remain
+  successful on a `BLOCK`.
+- **A value equal to `true` ignoring case (required posture):** a topology `BLOCK` fails the step
+  and job, so the aggregate `ci gate` fails. Setting lowercase `true` is the documented operator
+  setting; case variants also compare equal.
 
 This toggle changes the CI job's treatment of a gate verdict; it does not change the gate's own
 `PASS`/`BLOCK` result. It is scoped to the verdict step only. Checkout, dependency installation,
@@ -104,3 +107,11 @@ Use the shipped post-merge closure artifact naming convention when recording rel
 `docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md`. The shipment and covering-feature
 IDs make the closure record directly traceable to the release unit. This form is specific to
 post-merge closure; other closure-related reports can have different names.
+
+## Local diagnostics retention
+
+Keep transient local diagnostic output under an ignored workspace directory, not in the repository
+root. Keep maintained diagnostic tooling under `scripts/`; the root is not a scratch space and a
+tooling script must not be duplicated there. The existing `.autoharness/.gitignore` comment and
+`staging/` rule document the local staging boundary; retain that ignore configuration rather than
+adding generated diagnostic output to version control.
