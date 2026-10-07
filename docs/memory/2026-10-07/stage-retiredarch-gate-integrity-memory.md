@@ -1,10 +1,13 @@
 ---
-title: "Stage session — Harden retiredarch gate integrity (HALTED: plan-review escalation)"
+title: "Stage session — Harden retiredarch gate integrity (resumed: Option B split; shipment 040-S queued)"
 date: 2026-10-07
 agent: stage
-status: halted-escalation
+status: complete
+prior_status: halted-escalation
 branch: chore/stage-harden-retiredarch-gate-integrity
-plan: docs/plans/2026-10-07-intercom-go-retiredarch-gate-integrity-plan.md
+plan: docs/plans/2026-10-07-intercom-go-retiredarch-correctness-plan.md
+superseded_plan: docs/plans/2026-10-07-intercom-go-retiredarch-gate-integrity-plan.md
+shipment_id: 040-S
 deliberation: docs/decisions/2026-10-07-intercom-go-retiredarch-gate-integrity-deliberation.md
 ---
 
@@ -150,3 +153,44 @@ resolved_escalation_route:
 3. **(A):** write revision 4. Re-review needs explicit operator override of the cap,
    recorded in the plan.
 4. Stash the candidate entries above under whichever option is chosen.
+
+## Resumed session (2026-10-07, after the escalation halt)
+
+**Disposition.** Option B: split the batch. This was the operator/Orchestrator decision at
+about 14:30-07:00, recorded as D-RA-7 in the decision record. It was not a 4th review cycle.
+The old 14-unit plan is marked superseded and kept for history.
+
+* **Step 1.9 gate:** PASS on resume. The branch was unchanged and the diff touched only Stage
+  artifact roots.
+* **New stash entries:**
+  * 4537B2F6: HIGH bug, `git ls-files` without `-z`, select.go:33.
+  * D44D8BDF: LOW, cross-engine symlink containment.
+  * The duplicate scan was clean.
+* **Narrowed plan:** `docs/plans/2026-10-07-intercom-go-retiredarch-correctness-plan.md`.
+  It has 6 units (U1..U6) and covers 9FC28DB9, 990AFA71 and D7BF9F74. It was hardened inline
+  (PA-1..PA-7).
+* **Plan review (fresh 3-attempt cap):**
+  * Attempt 1 (rev 1): FAIL, with P1s AS-1, AS-2/G-1/CR-2 and CR-1.
+  * Attempt 2 (rev 2): ADVISORY with no P1. The advisories were folded into rev 3 in place.
+  * The rev-1 text was replaced in place: it was deleted before being re-read and never
+    committed. The attempt-1 record is kept in the plan.
+* **Harvest:**
+  * Feature 050-F.
+  * Tasks 050.001-T (U1, S), 050.002-T (U2, S), 050.003-T (U3, S), 050.004-T (U4, M),
+    050.005-T (U5, S), 050.006-T (U6, S).
+  * Complexity is recorded as prose, because the task type has no complexity field
+    (degradation flagged).
+* **DAG:** 050.002-T is blocked by 050.001-T. 050.005-T is blocked by 050.004-T.
+  050.006-T is blocked by 050.005-T. 050.003-T is independent.
+  * U4 and U5 land in one commit (ALP-2).
+* **Shipment:** 040-S is queued. It holds 050-F plus the 6 tasks in dependency order and was
+  verified with `shipment get`.
+* **Archived:** 9FC28DB9, 990AFA71 and D7BF9F74.
+* **Annotated (left active for re-deliberation with a bounded threat model; CODEOWNERS is
+  the alternative):** DC921AF6, 3750C37C and 0ECC1895.
+* **Compound:**
+  `docs/compound/2026-10-07-pin-canonical-text-maintenance-and-unbounded-ast-rule-review.md`.
+* **Accepted residuals:** R-A2a (git earlier on PATH, including inside the checkout or via
+  `$GITHUB_PATH`), R-A2b, R-A2c, R-A2d (= 4537B2F6), R-A2e (git < 2.32), R-A2f (lost
+  `safe.directory`), R-T1 (TOCTOU), R-L1 (local reparse placeholders), R-C1 (= D44D8BDF).
+* **Next:** Ship claims 040-S. The operator pushes this Stage branch and opens the staging PR.

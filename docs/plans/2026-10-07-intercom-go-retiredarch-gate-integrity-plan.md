@@ -1,7 +1,8 @@
 ---
 title: "Harden retiredarch gate integrity — implementation plan"
 source: "docs/decisions/2026-10-07-intercom-go-retiredarch-gate-integrity-deliberation.md"
-status: "reviewed"
+status: "superseded"
+superseded_by: "docs/plans/2026-10-07-intercom-go-retiredarch-correctness-plan.md"
 revision: 3
 stash_ids: ["3750C37C", "9FC28DB9", "0ECC1895", "DC921AF6", "D7BF9F74", "990AFA71"]
 package: "tools/gatecheck/internal/retiredarch"
@@ -9,6 +10,16 @@ base: "main@372ab38"
 ---
 
 # Harden retiredarch gate integrity — implementation plan
+
+> **SUPERSEDED (2026-10-07 ~14:30-07:00, D-RA-7).** This plan failed plan review three times
+> and was escalated. The operator/Orchestrator disposition is Option B, split the batch.
+> * **Shipment 1** (`9FC28DB9`, `990AFA71`, `D7BF9F74`) is re-planned narrowly in
+>   `docs/plans/2026-10-07-intercom-go-retiredarch-correctness-plan.md`. The `gitPathInside`
+>   guard is dropped.
+> * **Shipment 2** (`DC921AF6`, `3750C37C`, `0ECC1895`) returns to deliberation with a
+>   bounded threat model.
+>
+> This file is kept unchanged below this banner, for history. **Do not harvest it.**
 
 ## Revision History
 

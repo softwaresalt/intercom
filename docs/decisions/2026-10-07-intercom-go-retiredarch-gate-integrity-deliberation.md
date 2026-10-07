@@ -6,7 +6,9 @@ depth: "deep"
 decision_status: "decided"
 promoted_to: "plan"
 linked_artifacts:
-  - "docs/plans/2026-10-07-intercom-go-retiredarch-gate-integrity-plan.md"
+  - "docs/plans/2026-10-07-intercom-go-retiredarch-gate-integrity-plan.md"  # superseded (D-RA-7)
+  - "docs/plans/2026-10-07-intercom-go-retiredarch-correctness-plan.md"     # Shipment 1 (D-RA-7)
+  - "docs/compound/2026-10-07-pin-canonical-text-maintenance-and-unbounded-ast-rule-review.md"
 tags:
   - "retiredarch"
   - "gatecheck"
@@ -362,7 +364,109 @@ None blocking. The `(file, var)` initializer allowlist and per-file selector set
 by characterization at implementation time. A divergence from the candidate sets above is a
 HALT-and-return-to-Stage condition if it would add a write-, exec- or env-capable selector.
 
+## D-RA-7 — Escalation disposition: Option B, split the batch (operator/Orchestrator, 2026-10-07 ~14:30-07:00)
+
+**Provenance.** Plan review of the 14-unit plan (rev 3, RA-1..RA-14) failed three times, and
+Stage escalated and halted (see the Stage memory file). The Orchestrator, acting under
+operator delegation in autopilot, relayed the operator's instruction "let's go with the
+recommendation". Stage's recommended option was **B (split the batch)**, so B is the
+disposition. This is the **operator/Orchestrator disposition of the escalation**. It is
+**not** a fourth review cycle on the old plan. The rev-3 plan is marked `superseded` and kept
+unchanged below its banner, for history.
+
+**Shipment 1, planned and harvested now.** Stash `9FC28DB9` (TOML desync), `990AFA71`
+(symlink containment) and `D7BF9F74` (git environment isolation). The new plan is
+`docs/plans/2026-10-07-intercom-go-retiredarch-correctness-plan.md`, a new review unit with a
+fresh 3-attempt cap. It carries D-RA-1, D-RA-2 and D-RA-3 with these changes:
+
+* **D-RA-3 narrowed.** The inside-checkout exec-location guard (`gitPathInside`:
+  `filepath.Abs`/`EvalSymlinks` canonicalisation) is **dropped**. It caused all three
+  attempt-3 P1s on this surface:
+  * A3-P1-1: missing from the closed-world refreeze;
+  * A3-P1-2: `filepath.Abs` is reachable from the registered `runRetiredArch` and turns
+    `TestNoInitTimeProcessStateReads` red;
+  * G3-P1-1: a cross-volume `filepath.Rel` error on `windows-latest`.
+
+  What remains is env isolation, plus `cmd.Err != nil` and `!filepath.IsAbs(cmd.Path)`
+  fail-closed checks. Those use no process-state reads.
+* **Accepted residual: an in-checkout `git` binary (folded into R-A2a).** A `git` executable
+  inside the checkout, reached through an *absolute* PATH entry that names a checkout
+  directory, is not refused. Rationale:
+  * The PATH of the CI job is set by the workflow, not by the checkout. A PR that can put a
+    checkout directory on PATH can already edit `.github/workflows/**` or
+    `scripts/check-retired-architecture.sh`, so that vector is a self-modifying-PR vector.
+    That is the CODEOWNERS/branch-protection gap below, not a runner-level gap.
+  * Go's `exec.LookPath` already refuses the relative/current-directory resolution (`ErrDot`).
+    The `IsAbs` check covers `GODEBUG=execerrdot=0`.
+  * A correct inside-root test needs path canonicalisation, which conflicts with the
+    init-time process-state test, and cross-volume handling on Windows. That is complexity
+    that three review cycles could not make sound.
+* **9FC28DB9 correction.** The entry is *not* a false-clean bug. Per its own text, today's
+  behaviour is a **false-positive fail-closed** generic "TOML parse error". The false-clean
+  risk belongs to a naive fix, and the completeness oracle (D-RA-1) guards against it.
+* **Excluded.** The CLI-registration and declaration-index hardening (old RA-6..RA-14), and
+  everything else from `DC921AF6`, `3750C37C` and `0ECC1895`.
+
+**Shipment 2 is not planned now and returns to deliberation.** It covers `DC921AF6` (R-A1),
+`3750C37C` and `0ECC1895` (package closure and Windows env mutation). The entries stay
+**active** in the stash. Re-deliberation must start from a **bounded threat model**: an
+explicit attacker capability set, and which of those capabilities the gate is responsible
+for. It must not start from an open-ended list of AST rules. Three cycles showed that each
+new rule invites a new bypass (aliasing, `maps.Copy`, raw-string literals, `.s`/`.syso`
+files, bodyless funcs, blank-identifier index keys). That matches the 2026-10-01 denylist
+bypass-loop learning.
+
+* **Candidate alternative to record.** Required review through **CODEOWNERS on
+  `tools/gatecheck/**`**, instead of ever-stricter code rules.
+  * Today `.github/CODEOWNERS` is advisory metadata only. It covers workflows, the
+    constraints directory and `scripts/check-retired-architecture.sh`, but **not**
+    `tools/gatecheck/**`.
+  * Making it a control needs an operator action: enable "Require review from Code Owners"
+    on `main`.
+  * It also needs the CODEOWNERS risk R1 to be resolved first, which means provisioning an
+    approval path for unattended dark-factory PRs. Otherwise those PRs deadlock.
+  * Re-deliberation should weigh that control, plus a small pinned core, against further AST
+    rules.
+
+**New stash entries** (captured this session):
+
+* **HIGH bug.** `selectRepoPaths` runs `git ls-files` without `-z` (select.go:33), so paths
+  that git quotes (non-ASCII and others) under `cmd/`/`internal/` are silently never scanned.
+  This was R-A2d in attempt 3.
+  * **Kept out of Shipment 1.** It changes `selectRepoPaths`/`DefaultGitRunner` argv and
+    `pysem` splitting, which is the frozen selection contract. It is not the TOML engine
+    surface that `9FC28DB9` fixes, so it fails the "trivially within the same contract
+    surface" test.
+  * **Coupling.** Once `-z` lands, Shipment 1's `core.quotePath` contamination vectors no
+    longer distinguish contaminated from clean. That fix must replace them.
+* **LOW.** Cross-engine symlink containment for writepath, unignore and mergestrategy. This
+  is the D-RA-2 remainder.
+* The compound learning on maintaining pin canonical texts went to `docs/compound/` rather
+  than the stash.
+
+**Consumption.** Only `9FC28DB9`, `990AFA71` and `D7BF9F74` are consumed and archived at Step
+5.6. This supersedes the "All six are consumed" sentence in (B) above. `3750C37C`,
+`0ECC1895` and `DC921AF6` stay active. Their reconciliation outcomes in (B) remain valid.
+
+**Outcome (recorded at the end of the session, 2026-10-07).**
+
+* **Stash IDs:** the HIGH `-z` entry is **4537B2F6** and the LOW cross-engine entry is
+  **D44D8BDF**. The duplicate scan was clean for both.
+* **Annotations:** `stash edit` annotated DC921AF6, 3750C37C and 0ECC1895 with this
+  disposition.
+* **Plan-review cycle for the narrowed plan:** it is a fresh review unit.
+  * Attempt 1 (rev 1): FAIL.
+  * Attempt 2 (rev 2): ADVISORY with no P1. The advisories were folded into rev 3 in place.
+* **Harvest:** covering feature **050-F**, tasks **050.001-T..050.006-T** and queued shipment
+  **040-S**.
+* **Archived:** 9FC28DB9, 990AFA71 and D7BF9F74.
+* **Compound learning:**
+  `docs/compound/2026-10-07-pin-canonical-text-maintenance-and-unbounded-ast-rule-review.md`.
+
 ## Operator checkpoint
+
+**Superseded in part by D-RA-7.** Only D-RA-1..D-RA-3, as narrowed by D-RA-7, proceed to a plan.
+D-RA-4..D-RA-6 are not adopted, and Shipment 2 returns to deliberation.
 
 The recommended options D-RA-1..D-RA-6 were applied under the relayed approval. The operator
 can override any of them on the staging PR before Ship claims the shipment. The highest-impact
