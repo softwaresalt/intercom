@@ -18,7 +18,11 @@ deliberation: docs/decisions/2026-10-07-intercom-go-retiredarch-gate-integrity-d
 **Complete. Shipment 040-S is queued.** The session resumed under Option B (split), planned and
 reviewed the narrowed plan, and harvested 050-F. See "Resumed session" below.
 
-### Initial halt (historical)
+## Initial halt (historical, resolved)
+
+> **Resolved. Do not act on this section.** Everything from here to "Resumed session"
+> records the first, halted pass. The operator chose Option B, and the "Resumed session"
+> section below is the current record.
 
 The first pass **halted at Step 4: plan review**. Attempts 1, 2 and 3 on the original 14-unit
 plan all returned FAIL, which exhausted the two re-entry cycles. Per Stage policy, the
@@ -32,7 +36,7 @@ At the time of that halt:
 
 The operator's Option B disposition later superseded this state.
 
-## Session inputs
+### Session inputs
 
 * **Orchestrator `stage next`**, approved by the operator at 2026-10-07T13:55-07:00 ("let's go
   with the recommendation"). The approval was relayed by the Orchestrator.
@@ -48,7 +52,7 @@ The operator's Option B disposition later superseded this state.
 | `D7BF9F74` | — | RA-4, RA-5 |
 | `990AFA71` | — | RA-3 |
 
-## Steps completed
+### Steps completed (first pass)
 
 | Step | Outcome |
 |---|---|
@@ -65,7 +69,7 @@ The operator's Option B disposition later superseded this state.
 | 4 plan-review | Attempt 1 **FAIL** (6 personas). Attempt 2 **FAIL** (4). Attempt 3 **FAIL** (4): Arch 3 P1, Security 2 P1, Go 1 P1, Scope ADVISORY |
 | 5 / 5.5 / 5.6 | **Not run** (halted) |
 
-## Escalation payload (P-013.6 contract)
+### Escalation payload (P-013.6 contract)
 
 ```yaml
 threshold_kind: review_fix_cycles            # Stage plan-review re-entry cap
@@ -114,7 +118,7 @@ resolved_escalation_route:
   `docs/memory` document, which is ingested into engram context.
 * **No re-execution.** Stage does not run a fourth plan-review attempt (the circuit is open).
 
-## Operator decision required (choose one)
+### Operator decision (resolved: Option B chosen)
 
 * **(A) Authorize one extra revision cycle (revision 4).**
   * This overrides the review-cycle cap.
@@ -137,7 +141,7 @@ resolved_escalation_route:
 * **(C) Re-deliberate the whole batch.** Replace the escalating AST-freeze approach (D-RA-4,
   D-RA-5, D-RA-6) with a governance control plus a minimal pin, then re-plan.
 
-## Deferred and new candidate stash entries (not created; pending the operator decision)
+### Candidate stash entries at the halt (resolved: created as 4537B2F6 and D44D8BDF)
 
 * **Cross-engine symlink containment** (writepath/unignore/mergestrategy). Source: `990AFA71`,
   PR #83, `PRRT_kwDOTPuhps6nd8rH`. Low priority.
@@ -150,7 +154,7 @@ resolved_escalation_route:
 * **Compound-learning candidate:** maintaining pin canonical texts, and the observation that
   AST-rule trust roots invite unbounded adversarial review cycles.
 
-## Next steps on resume
+### Next steps on resume (resolved: Option B executed)
 
 1. The operator picks (A), (B) or (C).
 2. **(B):** re-run Stage from Step 2. Add a D-RA-7 split addendum, write a new plan for

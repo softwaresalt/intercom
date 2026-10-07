@@ -457,8 +457,10 @@ bypass-loop learning.
 * **Plan-review cycle for the narrowed plan:** it is a fresh review unit.
   * Attempt 1 (rev 1): FAIL.
   * Attempt 2 (rev 2): ADVISORY with no P1. The advisories were folded into rev 3 in place.
-* **Harvest:** covering feature **050-F**, tasks **050.001-T..050.006-T** and queued shipment
-  **040-S**.
+* **Harvest:** covering feature **050-F**, tasks **050.001-T**, **050.002-T**,
+  **050.003-T**, **050.004-T** and **050.006-T**, and queued shipment **040-S**.
+  * 050.005-T (U5) was folded into 050.004-T (U4+U5, ALP-2) after the PR #109 review, so
+    there is no task with that ID.
 * **Archived:** 9FC28DB9, 990AFA71 and D7BF9F74.
 * **Compound learning:**
   `docs/compound/2026-10-07-pin-canonical-text-maintenance-and-unbounded-ast-rule-review.md`.
