@@ -81,17 +81,22 @@ gate. The claim and immediate post-claim checks succeeded.
 ## Remaining
 
 PR #107 is open at `https://github.com/softwaresalt/intercom/pull/107` on this
-branch. CI passed for the initial HEAD `9407cc4`. Copilot review iteration 1
-completed on that HEAD and raised two comments (`4203545435` and `4203545487`)
-about the same inaccurate advisory-mode wrapper-failure claim in the runbook
-and rollout. Both are in-scope P-021 C1 corrections to the authorized toggle
-documentation; the two documents now explain that advisory `continue-on-error`
-applies to every nonzero exit from the wrapper step, while earlier checkout
-and dependency-installation steps remain hard failures. The corrected docs
-acceptance checks passed. Commit, push, replies citing that fix commit, and
-thread resolution are in progress; re-review the new HEAD, update the PR
-readiness block, and rerun Copilot/P-018 before any merge decision. The initial
-P-018 result was `WAITING_FOR_REVIEW`; no merge or post-merge closure has
-happened. Backlogit comments are advertised but have no CLI fallback, and MCP
-tools are unavailable here; do not invent a comment command. No other
-shipment, feature, or stash entry was touched.
+branch. Copilot review iteration 1 completed at `9407cc4` and raised two
+in-scope P-021 C1 documentation corrections (`4203545435` and `4203545487`)
+about advisory `continue-on-error` applying to the entire wrapper step. Both
+docs now explain that nonzero wrapper/configuration exits remain visible but
+are non-blocking in advisory mode, while checkout and pinned dependency
+installation are separate hard failures. Fix commit `43230ba` was pushed;
+replies citing it were posted, and both threads were resolved. Copilot review
+iteration 2 completed on `43230ba` with no new comments; the deterministic
+P-018 gate returned `SATISFIED`, and all required CI checks passed (code tests,
+lint, cross-compile, and security jobs skipped under the docs-only change
+filter; `ci gate`, topology, merge-strategy, and gitignore checks passed).
+The PR body readiness block covers `43230ba` and records `READY_WITH_FOLLOWUPS`
+with the explicit review-process residual note. Before merge, independently
+re-run the §1.9 readiness query, P-018 last-mile gate, and P-009/P-016 checks;
+then use only the normal merge-commit path authorized by the in-scope dark-mode
+activation. No merge or post-merge closure has happened. Backlogit comments
+are advertised but have no CLI fallback, and MCP tools are unavailable here;
+do not invent a comment command. No other shipment, feature, or stash entry
+was touched.
