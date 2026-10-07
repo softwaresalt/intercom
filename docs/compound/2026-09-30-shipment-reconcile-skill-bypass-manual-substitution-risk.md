@@ -141,6 +141,12 @@ same session that is making the claim. See
 `036-S-cascade-close-2026-10-01T02-25-49Z.md` for the full binding computation and the corrected
 disclosure.
 
+**Roll-up update (2026-10-06)**: the net assessment above covers the 035-S and 036-S
+occurrences. A third occurrence of the same root-cause category followed in 039-S, where the
+cascade primitive was again invoked directly with no conforming `mode: safe-close` call; that
+terminal state was accepted without reversal under ORCH-D9 and verified only post hoc. See
+"Recurred in 039-S" below. Stash `D10D3AFC` remains the structural remediation.
+
 ## Partially applied in 037-S (revalidation performed; tool enforcement still absent)
 
 037-S's post-merge closure (2026-10-01, closure PR #88; implementation PR #87) applied item 2 of the fix and prevention guidance.
@@ -186,9 +192,21 @@ unaffected. This is a second data point for `D10D3AFC`. Until that lands, derive
 location from an actual filesystem probe (`Test-Path` on the queue and archive paths), never
 from an assumption in helper code. See `docs/closure/030-S-033-F-post-merge-closure.md`.
 
-**039-S recurrence and accepted terminal state (2026-10-06).** During 039-S
-post-merge closure (feature `049-F`, PR #105), Ship directly invoked
-`backlogit shipment ship 039-S`, bypassing the required
+**Probe-based location in 031-S (2026-10-02).** The 031-S close applied that rule. One
+session-local helper (uncommitted) resolved each member's location from file presence,
+and would fail closed with `RECONCILE_FAIL_SNAPSHOT_AMBIGUOUS` (both roots) or
+`RECONCILE_FAIL_SNAPSHOT_MISSING` (neither root); all ten members resolved to `archive`.
+The probe mattered: with backlogit 1.11.0, the Step 6 a1 `move 034-F --status done` also
+relocated `034-F` from `.backlogit/queue/` to `.backlogit/archive/` while it still declared
+`status: done`. In 030-S, the a1 move of `033-F` left it in `queue`. A covering feature's
+post-a1 location is therefore not stable across shipments, and an assumed location would have
+been wrong in one case or the other. The binding encoded `034-F` as `done` / `archive`. See
+`docs/closure/031-S-034-F-post-merge-closure.md`. Stash `D10D3AFC` stays the durable fix.
+
+## Recurred in 039-S (direct cascade bypass; accepted terminal state, 2026-10-06)
+
+During 039-S post-merge closure (feature `049-F`, PR #105), Ship directly
+invoked `backlogit shipment ship 039-S`, bypassing the required
 `shipment-reconcile` `classify-close-path` → bound `safe-close` skill
 sequence. This was recorded as a P-005 deviation; the manual digest was not a
 skill-issued `CLASSIFICATION_BINDING`. ORCH-D9 accepted the already archived
@@ -211,14 +229,3 @@ substitutes for invoking the bound `safe-close` mode before mutation. Do not
 reverse an accepted terminal state merely to disguise the procedural
 deviation; preserve and disclose both the deviation and the scope of the
 post-hoc evidence.
-
-**Probe-based location in 031-S (2026-10-02).** The 031-S close applied that rule. One
-session-local helper (uncommitted) resolved each member's location from file presence,
-and would fail closed with `RECONCILE_FAIL_SNAPSHOT_AMBIGUOUS` (both roots) or
-`RECONCILE_FAIL_SNAPSHOT_MISSING` (neither root); all ten members resolved to `archive`.
-The probe mattered: with backlogit 1.11.0, the Step 6 a1 `move 034-F --status done` also
-relocated `034-F` from `.backlogit/queue/` to `.backlogit/archive/` while it still declared
-`status: done`. In 030-S, the a1 move of `033-F` left it in `queue`. A covering feature's
-post-a1 location is therefore not stable across shipments, and an assumed location would have
-been wrong in one case or the other. The binding encoded `034-F` as `done` / `archive`. See
-`docs/closure/031-S-034-F-post-merge-closure.md`. Stash `D10D3AFC` stays the durable fix.

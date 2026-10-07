@@ -136,8 +136,10 @@ pre-close binding and does not erase the earlier process deviation.
 
 Stage's D-049-12 terminal-relocation representations for `049.006-T` and
 `049.007-T` were superseded by explicit archival with
-`archived_status: done` during the cascade; both are equivalent
-archived-completed(done) states. Ship did not edit those task records.
+`archived_status: done` during the cascade. Both representations express
+completed work, but their declared status and provenance differ; they are not
+interchangeable for snapshot or gate evaluation. The cascade superseded the
+D-049-12 representation. Ship did not edit those task records.
 
 Compound refresh updated
 `docs/compound/2026-05-07-backlogit-shipment-status-constraints.md` to

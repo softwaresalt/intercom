@@ -127,7 +127,7 @@ interchangeable for snapshot or gate evaluation. The cascade superseded the
 D-049-12 representation without changing either task's completed outcome.
 Ship did not edit those task records.
 
-## ORCH-D1–D10 history and P-014 disclosure
+## ORCH-D1–D11 history and P-014 disclosure
 
 * **ORCH-D1:** the frozen oracle input correction was recorded; no later
   oracle change was made.
@@ -141,9 +141,11 @@ Ship did not edit those task records.
 * **ORCH-D6:** the authorized goimports CI remediation and final delta review
   completed; the anchor degradation and declared fallback are recorded above.
 * **ORCH-D7/D8:** Stage resolved the feature-completion S0 disposition through
-  D-049-12. Stage, not Ship, changed the two task representations in `ddf8817`;
-  the resulting cascade representation is equivalent for completed-archive
-  purposes.
+  D-049-12. Stage, not Ship, changed the two task representations in `ddf8817`.
+  The later cascade representation also expresses completed work, but its
+  declared status and provenance differ from D-049-12's; they are not
+  interchangeable for snapshot or gate evaluation, and the cascade superseded
+  the D-049-12 representation.
 * **ORCH-D9:** the Orchestrator accepted the current archived state, prohibited
   reversal, and directed this post-hoc reconciliation and explicit disclosure
   of the P-005 deviation.
@@ -153,6 +155,7 @@ Ship did not edit those task records.
   require a diff-backed review with explicit hunk coverage before PR
   readiness. The closure change is docs/backlog-only; full Go build
   applicability is addressed in the closure PR readiness block.
+* **ORCH-D11:** after the ORCH-D10 review halted on a P1, the Orchestrator authorized one final docs-only wording cycle to qualify the remaining D-049-12 representation claims, re-scope the 039-S compound recurrence, and fix the pre-mode report's dangling reference.
 * **P-014 incident:** PR #105 was opened while the then-current local readiness
   was `BLOCKED`. The incident was acknowledged, disclosed in PR #105 and
   session memory, and no merge occurred until current-HEAD readiness and
