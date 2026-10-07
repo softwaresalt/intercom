@@ -44,32 +44,40 @@ gate. The claim and immediate post-claim checks succeeded.
 - During direct cross-document re-review, the rollout's summary also used
   "exactly `true`". That in-scope wording was corrected to state the
   case-insensitive comparison, matching both the workflow and runbook.
-- `go vet ./...` and `gofmt -l .` passed. The unmodified full test suite first
-  hit its default 10-minute package timeout while Defender scanned fixture
-  files; subsequent platform-specific failures were isolated to environment
-  discovery (installed sidecars on `PATH`, Git Bash not initially selected).
-  Retried the full suite with the correct Git-for-Windows Bash/cygpath path and
-  `-timeout 30m`; it passed. `go build ./...` passed.
+- The corrected docs acceptance harness passed at HEAD `c0368a3`; it checked
+  both CI references, the exact rollout heading, case-insensitive toggle
+  guidance, runbook retention placement, the external-tool boundary, tracked
+  diagnostics, absent root duplicate, ignored staging sample, and `git
+  diff --check`.
+- The final local gates passed at `c0368a3`: `gofmt -l .` clean,
+  `go vet ./...`, `go test ./... -timeout 30m`, and `go build ./...`.
+  The full test run used a sanitized PATH that excluded the installed backlogit
+  and autoharness sidecar directories and added Git for Windows Bash/cygpath.
 
 ## Completed work at checkpoint
 
-- `036.001-T`: runbook drafted at the exact CI-referenced path; verification
-  passed. Initial runbook and resolved-halt memory artifacts committed as
-  `4cedc9e`; retention subsection and case-insensitive toggle wording are
-  follow-up edits pending commit. Task close and commit tracking remain.
-- `036.002-T`: rollout doc drafted at the exact CI-referenced path with exact
-  heading `Threat Model & CODEOWNERS Hardening`; acceptance verification
-  passed. Commit and task close remain.
-- `036.003-T`: verification passed; no underlying state was changed.
-- `036.004-T`: the retention rule is now in the runbook and the consolidated
-  acceptance check passed. Task close remains.
+- `036.001-T`: runbook at the CI-referenced path; acceptance passed; task
+  harness marked passing and task moved to done/archived, with `27fe682`
+  tracked.
+- `036.002-T`: rollout doc at the CI-referenced path with exact heading
+  `Threat Model & CODEOWNERS Hardening`; acceptance passed; task harness marked
+  passing and task moved to done/archived, with `c0368a3` tracked.
+- `036.003-T`: verification-only checks passed without moving or adding files;
+  harness marked passing and task moved to done/archived, with the verification
+  checkpoint commit `4cedc9e` tracked.
+- `036.004-T`: retention rule in the runbook; acceptance passed; task harness
+  marked passing and task moved to done/archived, with `27fe682` tracked.
+- Documentation/memory commits on the feature branch: `4cedc9e`, `bdacaed`,
+  `27fe682`, `c0368a3`. Shipment `033-S` and feature `036-F` remain active for
+  PR and post-merge closure. All task-state mutations are limited to the
+  shipment manifest and the four manifest tasks.
 
 ## Remaining
 
-Complete the scoped tasks in dependency order; commit using explicit paths
-(including this checkpoint and the already-committed resolved halt memo); run
-final quality gates and required adversarial/local review; prepare the
-current-HEAD local readiness block; create and validate the PR including Copilot
-review/P-018 and CI; merge by merge commit only; then perform manifest-scoped
-post-merge closure on its own closure branch/PR. Do not touch other shipments,
-features, or stash entries.
+Obtain a final current-HEAD report-only adversarial/local review, then create
+and validate the PR including Copilot review/P-018 and CI; merge by merge
+commit only; then perform manifest-scoped post-merge closure on its own
+closure branch/PR. No PR, push, Copilot request, P-018 verdict, merge, or
+closure work has happened. Backlogit comments are advertised but have no CLI
+fallback, and MCP tools are unavailable here; do not invent a comment command.
+No other shipment, feature, or stash entry was touched.
