@@ -86,9 +86,10 @@ frontmatter reports `archived_status: shipped` and `commit: <merge_sha>`.
 
 ## Compounding value
 
-Any Ship-agent template or skill assuming a generic `move --status shipped`
-path exists for shipment closure will hard-fail with exit code 9 on first
-use against a real backlogit installation. Keep the engine operation and
+Any Ship-agent template or skill that issues a generic `move --status shipped`
+directly for shipment closure, outside the skill's SAFE_CLOSE sequence,
+bypasses the reconcile boundary; in the original incident it hard-failed
+with exit code 9. Keep the engine operation and
 agent invocation boundary distinct: Ship always uses the bound
 `shipment-reconcile` `pre` → `classify-close-path` → `safe-close` → `post`
 sequence; only that skill may dispatch the cascade CLI for a verified
