@@ -81,7 +81,10 @@ with preserved `parent_id: 049-F`.
 ORCH-D9 directed a post-hoc, authoritative `shipment-reconcile` `mode: post`
 run. It returned `PROCEED`: the shipment record and every manifest item are
 present in `.backlogit/archive/`, and the P-007 archive deletion guard found
-no deletions. The report is
+no deletions. The run was read-only and non-mutating, and it ran outside the
+skill's Step 6 single-writer lock (the prior session's lock had been
+released), which the report discloses as a divergence from the Step 6
+sequence. The report is
 `.backlogit/reconcile/039-S-post-2026-10-06T07-24-42Z.md`.
 
 The installed read-only
