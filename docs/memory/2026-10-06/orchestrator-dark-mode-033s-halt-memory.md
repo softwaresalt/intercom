@@ -6,7 +6,7 @@ shipment: 033-S
 feature: 036-F
 ---
 
-# Orchestrator dark-mode run 033-S — halted at post-merge closure
+# Orchestrator dark-mode run 033-S — closure resumed by operator disposition
 
 ## Outcome
 
@@ -21,7 +21,7 @@ Ship closed 033-S with a direct `backlogit shipment ship` instead of `shipment-r
 
 ## Resumable state
 
-* Local branch `post-merge/036-f-author-pipeline-topology-gate-documentation` at `bc84ee3`. It has not been pushed and has no closure PR.
+* At the recorded resume point, local branch `post-merge/036-f-author-pipeline-topology-gate-documentation` was at `bc84ee3` and had no closure PR; resumed closure edits continue on this branch.
 * Closure record: `docs/closure/033-S-036-F-post-merge-closure.md`.
 * P-001: the next shipment routing remains held until the post-merge closure PR and required release-closure steps are complete. The operator disposition was acceptance as a recorded condition; no re-reconciliation or re-close is to be performed. Continue the scoped closure branch review and PR lifecycle.
 
