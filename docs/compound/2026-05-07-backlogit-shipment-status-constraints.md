@@ -42,13 +42,18 @@ narrower state machine.
 
 ## Resolution
 
-* Never attempt `backlogit move <shipment_id> --status shipped` (or any
-  direct status mutation) on a shipment artifact — it will always fail with
-  exit code 9 and the message above.
+* Ship must never attempt `backlogit move <shipment_id> --status shipped`
+  (or any direct status mutation) on a shipment artifact. In the original
+  incident it failed with exit code 9 and the message above; its only
+  sanctioned use is internal to the `shipment-reconcile` skill's SAFE_CLOSE
+  shipment-record close sequence.
 * Ship MUST route shipment closure through the
-  `shipment-reconcile` skill boundary. First invoke
-  `mode: classify-close-path`; then invoke `mode: safe-close` with the
-  returned `CLASSIFICATION_BINDING`. An unbound safe-close invocation is
+  `shipment-reconcile` skill boundary, holding the skill's single-writer
+  lock from `mode: pre` through `mode: post`. First invoke `mode: pre`
+  (`expected_status: done`) and continue only on its authoritative
+  `PROCEED`; then invoke `mode: classify-close-path`; then invoke
+  `mode: safe-close` with the returned `CLASSIFICATION_BINDING`; finally
+  invoke `mode: post`. An unbound safe-close invocation is
   refused. When the bound result is `CASCADE` under P-015's
   fully-covered-root exception, only the skill's Cascade Close
   Sub-Procedure invokes `backlogit shipment ship <shipment_id> --sha
@@ -85,8 +90,10 @@ Any Ship-agent template or skill assuming a generic `move --status shipped`
 path exists for shipment closure will hard-fail with exit code 9 on first
 use against a real backlogit installation. Keep the engine operation and
 agent invocation boundary distinct: Ship always uses the bound
-`shipment-reconcile` `classify-close-path` → `safe-close` sequence; only
-that skill may dispatch the cascade CLI for a verified `CASCADE` result.
-For `SAFE_CLOSE`, the skill performs the single-artifact archive sequence.
-Neither path uses the generic `move --status shipped` operation, and a
-manually recomputed digest is not a substitute for the skill-issued binding.
+`shipment-reconcile` `pre` → `classify-close-path` → `safe-close` → `post`
+sequence; only that skill may dispatch the cascade CLI for a verified
+`CASCADE` result. For `SAFE_CLOSE`, the skill performs the single-artifact
+archive sequence and closes the shipment record internally (generic
+`move --status shipped` on the shipment record only, verify, then archive).
+Ship must not invoke either primitive directly, and a manually recomputed
+digest is not a substitute for the skill-issued binding.
