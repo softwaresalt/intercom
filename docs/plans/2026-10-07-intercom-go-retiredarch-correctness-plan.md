@@ -135,7 +135,10 @@ Files: `retiredarch.go`, `retiredarch_test.go`. Size S | Complexity medium. Inde
   - Split `rel` on `/`. Reject an empty, `.` or `..` component as a containment violation. On Windows, also reject a component containing `\` or `:` (S2-3).
   - For each intermediate component, `os.Lstat(root/…prefix)` must report `IsDir()` with no `ModeSymlink|ModeIrregular`.
   - The final component must report `Mode().IsRegular()`.
-  - **Any Lstat error returns ok=true (fall through)**, so a deleted or unreadable tracked file still hits the existing `scanPath` read-error text (SB-3, ED-11 unchanged). Only type violations produce the new finding. Stdlib only (INV-5).
+  - **Lstat errors (PR #109 review amendment, aligned with D-RA-2 fail-closed):**
+    - Only an error where `errors.Is(err, fs.ErrNotExist)` returns ok=true (fall through). The path verifiably does not exist, so `scanPath` has nothing to read through and still emits the existing fail-closed read-error text for a deleted tracked file (SB-3, ED-11 unchanged).
+    - Any other Lstat error (permission, I/O and so on) returns `ok=false` with reason `lstat <prefix>: <err>`, because the component type was never verified.
+    - Type violations and unverified components produce the new finding. Stdlib only (`errors`, `io/fs`, `os`; INV-5).
 - In `runRepoScan`, when `!ok`, append the U3 synthetic finding (INV-2) and skip `scanPath` for that path.
 - Red scenarios (3), each building a temp git repo and using a GitRunner stub that returns the selected path list. The real index is not needed for containment.
   1. **Final-component link.**
@@ -150,6 +153,7 @@ Files: `retiredarch.go`, `retiredarch_test.go`. Size S | Complexity medium. Inde
      - `a//b.go`, `./a.go` and `../x.go` give `ok=false`.
      - On Windows, a component containing `\` or `:` gives `ok=false` (S2-3).
      - Plus one repo-scan characterization row: a selected but deleted file keeps the existing read-error text byte-for-byte.
+    - Plus one non-Windows row: an intermediate dir with mode `0o000` makes the child Lstat fail with a permission error, so the function returns `ok=false` with the `lstat` reason. Skip the row when `os.Geteuid()==0`, because root bypasses permission checks.
 
 ### U4 — Git env isolation and absolute-path guard in DefaultGitRunner (D7BF9F74)
 
@@ -257,7 +261,7 @@ Serial order: U1, U2, U3, U4+U5, U6.
 
 - D1 Fallback replaces, rather than merges with, the partial cursor findings (INV-4).
 - D2 The completeness oracle uses a multiset comparison and keeps cursor ordering for parity.
-- D3 Lstat errors fall through to the existing read path, so only type violations get the new text.
+- D3 (amended in the PR #109 review): only a not-exist Lstat error falls through to the existing read path. Any other Lstat error fails closed with the new text (D-RA-2).
 - D4 The env allow-list is `GIT_CEILING_DIRECTORIES` only. It is a stricter prefix-based superset of the `tools/gatecheck/internal/unignore/testutil_test.go` precedent (S4). Unlike that precedent, it does not append `GIT_TERMINAL_PROMPT=0` (SB2-1).
 - D5 The in-checkout git location guard is dropped (D-RA-7). Absolute-path refusal only.
 - D6 The fake git is the copied test binary plus `TestMain`. Stdlib only, launchable on both OSes.
