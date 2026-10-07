@@ -1,7 +1,7 @@
 ---
 title: "033-S / 036-F post-merge operational closure"
 description: "Post-merge release-readiness, shipment reconciliation, review evidence, and operational handoff for the pipeline-topology gate documentation."
-status: blocked
+status: complete
 tags:
   - closure
   - post-merge
@@ -14,13 +14,13 @@ feature: 036-F
 pr: 107
 merge_commit_sha: 246180d3215ba25d6372147790c2802e21d59dad
 compaction_status: done
-closure_status: BLOCKED
-releasability: BLOCKED
+closure_status: READY_WITH_CONDITIONS
+releasability: READY
 conditions:
   - id: p005-close-boundary-deviation
-    summary: "Ship invoked the successful backlogit shipment close directly instead of invoking shipment-reconcile mode:safe-close with its CLASSIFICATION_BINDING. No reconciliation lock was held during that mutation and no skill post-mode ran. Manual checks do not cure the deviation; operator/Orchestrator disposition is required. No structured P-005 event could be emitted: agent-intercom is unavailable and the configured backlogit_log_telemetry operation has no CLI fallback."
+    summary: "Ship invoked backlogit shipment ship directly instead of shipment-reconcile classify-close-path followed by binding-carrying safe-close; no reconciliation lock or skill post-mode ran. On 2026-10-07 the operator accepted this deviation as a recorded condition (Option 1). The Orchestrator verified exactly the six manifest records (033-S, 036-F, and 036.001-T–036.004-T) were archived, with no over-archival; the end state matches the P-015 fully-covered-root case. No rollback or re-close is authorized or attempted. No structured P-005 event could be emitted: agent-intercom is unavailable and backlogit_log_telemetry has no CLI fallback."
   - id: closure-review-not-complete
-    summary: "The multi-persona adversarial review could not retrieve the closure commit diff, so no closure readiness result exists. No closure PR, Copilot review, P-018 verdict, or closure CI result exists."
+    summary: "The earlier multi-persona review could not retrieve the closure commit diff. A fresh diff-backed local closure review and the closure PR lifecycle are pending; no closure PR, Copilot review, P-018 verdict, or closure CI result exists yet."
   - id: agent-intercom-unavailable
     summary: "Agent-intercom was unavailable; operator visibility and execution evidence were recorded in session output and repository artifacts."
 ---
@@ -36,18 +36,23 @@ This was a documentation-only developer-tooling change: no Intercom runtime
 surface, API, deployment configuration, data schema, or production release
 path changed.
 
-**Closure status: `BLOCKED`.** During backlog closure, Ship invoked
+**Closure status: `READY_WITH_CONDITIONS`.** During backlog closure, Ship invoked
 `backlogit shipment ship` directly instead of invoking the
 `shipment-reconcile` skill's binding-carrying `mode: safe-close`. No
 reconciliation lock was held during the successful mutation, and the skill's
 post-mode was not run. The observed final archive state does not cure this
-P-005 process deviation. No rollback or second close was attempted. The
-closure PR lifecycle is halted pending operator/Orchestrator disposition.
+P-005 process deviation. On 2026-10-07 the operator accepted it as a recorded
+condition (Option 1), after the Orchestrator verified that exactly the six
+manifest records were archived, with no over-archival, matching the P-015
+fully-covered-root end state. No rollback or second close was attempted; the
+backlog will not be re-closed. Closure PR work has resumed, with local review
+and PR readiness gates still to complete.
 
-No authoritative local readiness review exists for the closure branch: the
-multi-persona review could not retrieve the closure commit diff. No closure
-PR was created, and there is no closure-specific Copilot, P-018, CI, or merge
-result. Agent-intercom is unavailable. The structured P-005 telemetry
+The earlier multi-persona review could not retrieve the closure commit diff,
+so it did not produce an authoritative readiness result. A new diff-backed
+local review is pending. No closure PR has been created, and there is no
+closure-specific Copilot, P-018, CI, or merge result. Agent-intercom is
+unavailable. The structured P-005 telemetry
 operation could not be used: the configured `backlogit_log_telemetry`
 surface is MCP-only with no CLI fallback, and the available
 `autoharness telemetry event` command is task-context tool telemetry, not a
@@ -114,11 +119,13 @@ authoritative `CLOSED` or post-mode `PROCEED` result.
 
 The direct command's observed result had `returned_ids: []` and archived
 exactly the six observed artifacts: shipment `033-S`, feature `036-F`, and
-tasks `036.001-T`–`036.004-T`. Manual comparisons found no difference from
-the expected six-ID sets. Subsequent reads found all task `parent_id` values
-still `036-F`, the feature a root, and no archive deletions under P-007.
-These readbacks establish observed state only; they do not cure the process
-deviation or certify compliant shipment closure.
+tasks `036.001-T`–`036.004-T`. The Orchestrator separately verified that
+exactly these six manifest records were archived, with no over-archival.
+Subsequent reads found all task `parent_id` values still `036-F`, the feature
+a root, and no archive deletions under P-007. These readbacks establish the
+observed P-015 fully-covered-root end state and support the operator's
+recorded-condition disposition; they do not cure the process deviation or
+make the required skill procedure retroactively run.
 
 Final backlog provenance:
 
@@ -150,10 +157,11 @@ changes those runtime surfaces.
 * Keep the diagnostics retention rule in the runbook, not in
   autoharness-generated instruction files.
 * Do not modify the autoharness-generated CI workflow as part of these docs.
-* Shipment closure must continue through the bound `shipment-reconcile`
-  classification and close procedure. This run violated that invariant by
-  invoking the cascade directly; the resulting state is not evidence that
-  the required procedure ran.
+* Future shipment closure must continue through the bound
+  `shipment-reconcile` classification and close procedure. This run violated
+  that invariant by invoking the shipment close directly; the recorded
+  disposition accepts the deviation without claiming the required procedure
+  ran or authorizing a re-close.
 
 ## Pre-deploy audits and release path
 
@@ -200,12 +208,12 @@ documentation-only scope.
 Ship directly invoked `backlogit shipment ship` after reading a classifier
 result and manually computing a digest. The required skill boundary was
 bypassed: no skill-issued binding was carried into `mode: safe-close`, no
-reconciliation lock was held during the mutation, and no skill post-mode
-ran. Manual readbacks showed the six intended records archived with task
-containment preserved and no P-007 archive deletions. No rollback or second
-close was attempted. This deviation requires operator/Orchestrator
-disposition before any closure PR is created or the shipment is represented
-as closed.
+reconciliation lock was held during the mutation, and no skill post-mode ran.
+The Orchestrator verified that exactly the six manifest records were
+archived, with no over-archival, matching the P-015 fully-covered-root end
+state. On 2026-10-07 the operator accepted this process deviation as a
+recorded condition (Option 1). No rollback or re-close was attempted or
+authorized. This record does not claim the safe-close skill ran.
 
 ## Compound refresh
 
@@ -225,12 +233,13 @@ performed.
 
 ## Releasability
 
-**Status: `BLOCKED`.** The feature is merged and the backlog records are
-observed in the archive, but the required safe-close boundary was bypassed
-and its authoritative reconciliation sequence did not run. Closure review,
-closure PR checks, P-018, and closure CI are also incomplete. Do not present
-this release unit as closure-ready until the deviation is dispositioned and
-the required closure readiness gates are completed.
+**Status: `READY`.** This documentation-only shipment does not change a
+product runtime or deployment surface. The P-005 safe-close-boundary
+deviation remains disclosed as a condition in `closure_status`; the operator
+accepted it as recorded on 2026-10-07 after verification of the exact
+six-record P-015 end state. This acceptance does not certify compliant
+safe-close execution. The closure PR's local review, Copilot/P-018, CI, and
+merge gates must still pass before post-merge closure is complete.
 
 ## Compaction status
 
