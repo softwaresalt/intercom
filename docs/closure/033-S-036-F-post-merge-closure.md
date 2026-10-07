@@ -36,6 +36,11 @@ This was a documentation-only developer-tooling change: no Intercom runtime
 surface, API, deployment configuration, data schema, or production release
 path changed.
 
+The frontmatter `status: complete` marks this operational-closure record as
+finalized; it does not mean the separate closure PR has merged. That PR's
+review, Copilot/P-018, CI, and merge gates remain required before the closure
+workflow itself is complete.
+
 **Closure status: `READY_WITH_CONDITIONS`.** During backlog closure, Ship invoked
 `backlogit shipment ship` directly instead of invoking the
 `shipment-reconcile` skill's binding-carrying `mode: safe-close`. No
