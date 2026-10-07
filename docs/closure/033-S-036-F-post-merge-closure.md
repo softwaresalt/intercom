@@ -19,8 +19,6 @@ releasability: READY
 conditions:
   - id: p005-close-boundary-deviation
     summary: "Ship invoked backlogit shipment ship directly instead of shipment-reconcile classify-close-path followed by binding-carrying safe-close; no reconciliation lock or skill post-mode ran. On 2026-10-07 the operator accepted this deviation as a recorded condition (Option 1). The Orchestrator verified exactly the six manifest records (033-S, 036-F, and 036.001-T–036.004-T) were archived, with no over-archival; the end state matches the P-015 fully-covered-root case. No rollback or re-close is authorized or attempted. No structured P-005 event could be emitted: agent-intercom is unavailable and backlogit_log_telemetry has no CLI fallback."
-  - id: closure-review-not-complete
-    summary: "The earlier multi-persona review could not retrieve the closure commit diff. A fresh diff-backed local closure review and the closure PR lifecycle are pending; no closure PR, Copilot review, P-018 verdict, or closure CI result exists yet."
   - id: agent-intercom-unavailable
     summary: "Agent-intercom was unavailable; operator visibility and execution evidence were recorded in session output and repository artifacts."
 ---
@@ -50,13 +48,20 @@ P-005 process deviation. On 2026-10-07 the operator accepted it as a recorded
 condition (Option 1), after the Orchestrator verified that exactly the six
 manifest records were archived, with no over-archival, matching the P-015
 fully-covered-root end state. No rollback or second close was attempted; the
-backlog will not be re-closed. Closure PR work has resumed, with local review
-and PR readiness gates still to complete.
+backlog will not be re-closed. Closure PR work has resumed. A local full-diff
+review completed at HEAD `7d1f0dd`; the final PR readiness review must still
+cover the exact HEAD presented for the PR.
 
-The earlier multi-persona review could not retrieve the closure commit diff,
-so it did not produce an authoritative readiness result. A new diff-backed
-local review is pending. No closure PR has been created, and there is no
-closure-specific Copilot, P-018, CI, or merge result. Agent-intercom is
+The full-diff review at HEAD `7d1f0dd` used correctness, template-integrity,
+and scope perspectives. Correctness and template-integrity reviewers found
+no remaining findings after the status-field clarification. The scope
+reviewer raised a P1 concerning the six archived backlog records; that
+finding was adjudicated as in-scope because these are the exact manifest
+records from the completed 033-S closure, the operator confirmed there was no
+over-archival, and the operator explicitly prohibited further backlog
+mutation. The records remain unchanged. No unresolved P0/P1 or P-021
+deferred-scope finding remains. No closure PR has been created, and there is
+no closure-specific Copilot, P-018, CI, or merge result. Agent-intercom is
 unavailable. The structured P-005 telemetry
 operation could not be used: the configured `backlogit_log_telemetry`
 surface is MCP-only with no CLI fallback, and the available
@@ -243,8 +248,9 @@ product runtime or deployment surface. The P-005 safe-close-boundary
 deviation remains disclosed as a condition in `closure_status`; the operator
 accepted it as recorded on 2026-10-07 after verification of the exact
 six-record P-015 end state. This acceptance does not certify compliant
-safe-close execution. The closure PR's local review, Copilot/P-018, CI, and
-merge gates must still pass before post-merge closure is complete.
+safe-close execution. The final local readiness block must cover the exact
+HEAD presented for the closure PR, and the closure PR's Copilot/P-018, CI,
+and merge gates must pass before post-merge closure is complete.
 
 ## Compaction status
 
