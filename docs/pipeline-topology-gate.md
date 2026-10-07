@@ -61,8 +61,12 @@ Observable outcomes are:
 | Exit `2`, `invalid: true` (or CI text `INVALID`) | The invocation or gate configuration is invalid. | Correct the invocation or installed configuration; do not treat this as a topology pass. |
 
 The CI wrapper also emits an `::error::` message and exits nonzero if `autoharness` is missing,
-the backlog-root configuration is invalid or ambiguous, or another setup prerequisite fails.
-These are CI configuration/setup failures, not gate verdicts that the advisory toggle masks.
+the backlog-root configuration is invalid or ambiguous, or another wrapper prerequisite fails.
+These are wrapper/configuration failures, not topology verdicts. They remain visible in the logs,
+but the workflow's advisory `continue-on-error` is attached to the entire wrapper step, so it also
+allows these nonzero exits without failing the CI job. The required posture makes them fail the
+step and job. Checkout and pinned dependency-installation failures occur in earlier, separate
+steps and remain job failures in either posture.
 
 ## Operator remediation
 
@@ -96,10 +100,12 @@ GitHub Actions expression semantics, which compare strings case-insensitively:
   and job, so the aggregate `ci gate` fails. Setting lowercase `true` is the documented operator
   setting; case variants also compare equal.
 
-This toggle changes the CI job's treatment of a gate verdict; it does not change the gate's own
-`PASS`/`BLOCK` result. It is scoped to the verdict step only. Checkout, dependency installation,
-missing-tool, and other setup failures remain failures in either posture. Changing the repository
-variable takes effect without re-rendering the workflow.
+This toggle changes the CI job's treatment of nonzero exits from the wrapper step; it does not
+change the gate's own `PASS`/`BLOCK` result. In advisory mode, wrapper `BLOCK`, `INVALID`, missing
+tool, and wrapper-configuration/setup failures are reported but do not fail the job. In required
+mode, any such nonzero wrapper exit fails the step and job. Checkout and pinned dependency
+installation happen in separate earlier steps and remain failures in either posture. Changing
+the repository variable takes effect without re-rendering the workflow.
 
 ## Post-merge closure evidence
 

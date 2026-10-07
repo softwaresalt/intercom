@@ -32,8 +32,10 @@ own verdict.
    visible in the step output even though the CI job can proceed.
 2. **Triage before promotion.** For every `BLOCK`, retain its JSON output and reconcile the
    reported active-shipment or branch condition through the authorized shipment workflow. Treat
-   `INVALID`, missing-tool, ambiguous backlog-root, and setup failures as configuration defects,
-   not as advisory topology findings.
+   `INVALID`, missing-tool, ambiguous backlog-root, and wrapper setup failures as configuration
+   defects, not topology findings. They remain visible in logs; because the advisory
+   `continue-on-error` is attached to the entire wrapper step, these nonzero exits are also
+   non-blocking for the job until required enforcement is enabled.
 3. **Promote deliberately.** After the workspace owner confirms operators can diagnose and
    remediate the observed output, set repository variable `PIPELINE_TOPOLOGY_GATE_REQUIRED` to
    `true`. Keep the branch-protection requirement on the aggregate `ci gate` job, not an
@@ -43,10 +45,13 @@ own verdict.
    Revert the repository variable to an unset advisory posture if the required check exposes an
    operational blocker; record the reason and the follow-up before another promotion attempt.
 
-`continue-on-error` is scoped to the topology verdict only. Checkout, pinned dependency
-installation, entrypoint setup, invalid configuration, and missing `autoharness` remain failures
-regardless of the variable. This preserves the distinction between an advisory topology result
-and a broken CI control.
+`continue-on-error` is attached to the entire `bash scripts/ci-topology-check.sh` step, not only
+to a topology verdict. In advisory mode, a missing `autoharness` binary or invalid/ambiguous
+backlog configuration still emits a visible wrapper error, but its nonzero exit does not fail the
+job. Required mode makes any nonzero wrapper exit fail the step, job, and aggregate `ci gate`.
+Checkout and pinned dependency installation occur in earlier separate steps and remain hard
+failures in either posture. This distinction is important when promoting the toggle: advisory mode
+does not enforce wrapper/configuration failures.
 
 ## Threat Model & CODEOWNERS Hardening
 

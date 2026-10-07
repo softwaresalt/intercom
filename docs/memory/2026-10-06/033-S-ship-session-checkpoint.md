@@ -80,10 +80,18 @@ gate. The claim and immediate post-claim checks succeeded.
 
 ## Remaining
 
-Obtain a final current-HEAD report-only adversarial/local review, then create
-and validate the PR including Copilot review/P-018 and CI; merge by merge
-commit only; then perform manifest-scoped post-merge closure on its own
-closure branch/PR. No PR, push, Copilot request, P-018 verdict, merge, or
-closure work has happened. Backlogit comments are advertised but have no CLI
-fallback, and MCP tools are unavailable here; do not invent a comment command.
-No other shipment, feature, or stash entry was touched.
+PR #107 is open at `https://github.com/softwaresalt/intercom/pull/107` on this
+branch. CI passed for the initial HEAD `9407cc4`. Copilot review iteration 1
+completed on that HEAD and raised two comments (`4203545435` and `4203545487`)
+about the same inaccurate advisory-mode wrapper-failure claim in the runbook
+and rollout. Both are in-scope P-021 C1 corrections to the authorized toggle
+documentation; the two documents now explain that advisory `continue-on-error`
+applies to every nonzero exit from the wrapper step, while earlier checkout
+and dependency-installation steps remain hard failures. The corrected docs
+acceptance checks passed. Commit, push, replies citing that fix commit, and
+thread resolution are in progress; re-review the new HEAD, update the PR
+readiness block, and rerun Copilot/P-018 before any merge decision. The initial
+P-018 result was `WAITING_FOR_REVIEW`; no merge or post-merge closure has
+happened. Backlogit comments are advertised but have no CLI fallback, and MCP
+tools are unavailable here; do not invent a comment command. No other
+shipment, feature, or stash entry was touched.
