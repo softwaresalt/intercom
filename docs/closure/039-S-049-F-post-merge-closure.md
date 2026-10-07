@@ -179,9 +179,9 @@ runtime surfaces.
   documented residual cases remain deferred and unexpanded.
 * The frozen oracle and the independent `gomask` invariant remain unchanged.
 * CI continues to run the scanner with lint, tests, and build checks.
-* Shipment closure dispatch continues to go through the
-  binding-carrying `shipment-reconcile` skill boundary; Ship must not call the
-  cascade CLI directly.
+* Shipment closure dispatch must go through the binding-carrying
+  `shipment-reconcile` skill boundary (breached once in this closure; see the
+  P-005 deviation above); Ship must not call the cascade CLI directly.
 
 ## Pre-deploy audits and deployment path
 
