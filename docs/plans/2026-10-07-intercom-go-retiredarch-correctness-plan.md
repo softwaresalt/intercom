@@ -332,6 +332,7 @@ Mapped against `.github/instructions/constitution.instructions.md` (CR2-1).
 - Dependency edges: U2 blocked by U1; U5 blocked by U4; U6 blocked by U5.
 - Stash consumption: archive only 9FC28DB9, 990AFA71 and D7BF9F74 at Step 5.6. DC921AF6, 3750C37C, 0ECC1895, 4537B2F6 and D44D8BDF stay active.
 - Each task's acceptance criteria also include the full quality gates at its completion point (CR2-4). U4 is excepted; for U4 they move to U5. The deliberation's earlier Step 1(B) "archived at Step 5.6" line for all six is superseded by D-RA-7.
+- **Harvest amendment (PR #109 review, before the staging merge):** U4 and U5 are harvested as ONE task, 050.004-T. They had been split into 050.004-T and 050.005-T, but Ship runs full gates, commits and marks each task done before advancing, so a U4-only task could neither pass nor be committed under ALP-2. The task numbered 050.005-T was removed. 050.006-T (U6) is now blocked by 050.004-T. The merged task carries a documented size exception (L, ~2.5 h) because ALP-2 cannot be divided. The unit numbering U1..U6 in this plan is unchanged.
 
 ## Plan Review — attempt 1 (revision 1)
 

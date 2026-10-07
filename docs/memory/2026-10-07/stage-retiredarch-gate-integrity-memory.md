@@ -15,15 +15,22 @@ deliberation: docs/decisions/2026-10-07-intercom-go-retiredarch-gate-integrity-d
 
 ## Status
 
-**HALTED at Step 4: plan review.** Attempts 1, 2 and 3 all returned FAIL, which exhausts
-the two re-entry cycles. Per Stage policy, the escalation protocol (P-013.6) was invoked and
-the session halted for an operator decision.
+**Complete. Shipment 040-S is queued.** The session resumed under Option B (split), planned and
+reviewed the narrowed plan, and harvested 050-F. See "Resumed session" below.
 
-Because of the halt:
+### Initial halt (historical)
 
-* No harvest, shipment or stash archival happened.
-* No backlog item or shipment was created.
-* All six stash entries remain **active**.
+The first pass **halted at Step 4: plan review**. Attempts 1, 2 and 3 on the original 14-unit
+plan all returned FAIL, which exhausted the two re-entry cycles. Per Stage policy, the
+escalation protocol (P-013.6) was invoked and the session halted for an operator decision.
+
+At the time of that halt:
+
+* No harvest, shipment or stash archival had happened.
+* No backlog item or shipment had been created.
+* All six stash entries were still **active**.
+
+The operator's Option B disposition later superseded this state.
 
 ## Session inputs
 
@@ -176,15 +183,17 @@ The old 14-unit plan is marked superseded and kept for history.
     committed. The attempt-1 record is kept in the plan.
 * **Harvest:**
   * Feature 050-F.
-  * Tasks 050.001-T (U1, S), 050.002-T (U2, S), 050.003-T (U3, S), 050.004-T (U4, M),
-    050.005-T (U5, S), 050.006-T (U6, S).
+  * Tasks 050.001-T (U1, S), 050.002-T (U2, S), 050.003-T (U3, S), 050.004-T (U4+U5, L)
+    and 050.006-T (U6, S).
+  * U4 and U5 were first harvested separately, as 050.004-T and 050.005-T. They were merged
+    into 050.004-T after the PR #109 review: Ship's per-task gates cannot hold a
+    deliberately red, uncommittable U4-only task. 050.005-T was removed.
   * Complexity is recorded as prose, because the task type has no complexity field
     (degradation flagged).
-* **DAG:** 050.002-T is blocked by 050.001-T. 050.005-T is blocked by 050.004-T.
-  050.006-T is blocked by 050.005-T. 050.003-T is independent.
-  * U4 and U5 land in one commit (ALP-2).
-* **Shipment:** 040-S is queued. It holds 050-F plus the 6 tasks in dependency order and was
-  verified with `shipment get`.
+* **DAG:** 050.002-T is blocked by 050.001-T. 050.006-T is blocked by 050.004-T.
+  050.003-T is independent.
+  * 050.004-T is a single commit (ALP-2).
+* **Shipment:** 040-S is queued. It holds 050-F plus 5 tasks in dependency order.
 * **Archived:** 9FC28DB9, 990AFA71 and D7BF9F74.
 * **Annotated (left active for re-deliberation with a bounded threat model; CODEOWNERS is
   the alternative):** DC921AF6, 3750C37C and 0ECC1895.
