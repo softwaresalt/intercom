@@ -141,6 +141,12 @@ same session that is making the claim. See
 `036-S-cascade-close-2026-10-01T02-25-49Z.md` for the full binding computation and the corrected
 disclosure.
 
+**Roll-up update (2026-10-06)**: the net assessment above covers the 035-S and 036-S
+occurrences. A third occurrence of the same root-cause category followed in 039-S, where the
+cascade primitive was again invoked directly with no conforming `mode: safe-close` call; that
+terminal state was accepted without reversal under ORCH-D9 and verified only post hoc. See
+"Recurred in 039-S" below. Stash `D10D3AFC` remains the structural remediation.
+
 ## Partially applied in 037-S (revalidation performed; tool enforcement still absent)
 
 037-S's post-merge closure (2026-10-01, closure PR #88; implementation PR #87) applied item 2 of the fix and prevention guidance.
@@ -196,3 +202,30 @@ relocated `034-F` from `.backlogit/queue/` to `.backlogit/archive/` while it sti
 post-a1 location is therefore not stable across shipments, and an assumed location would have
 been wrong in one case or the other. The binding encoded `034-F` as `done` / `archive`. See
 `docs/closure/031-S-034-F-post-merge-closure.md`. Stash `D10D3AFC` stays the durable fix.
+
+## Recurred in 039-S (direct cascade bypass; accepted terminal state, 2026-10-06)
+
+During 039-S post-merge closure (feature `049-F`, PR #105), Ship directly
+invoked `backlogit shipment ship 039-S`, bypassing the required
+`shipment-reconcile` `classify-close-path` → bound `safe-close` skill
+sequence. This was recorded as a P-005 deviation; the manual digest was not a
+skill-issued `CLASSIFICATION_BINDING`. ORCH-D9 accepted the already archived
+state and directed that it not be reversed; that disposition accepted the
+resulting state and did not make the direct invocation conformant.
+
+The Orchestrator required authoritative post-hoc verification. The
+`shipment-reconcile` post-mode report returned `PROCEED` and verified the
+shipment and every manifest item in the archive. A separate read-only
+P-015 machine classification returned `cascade`, with `049-F` as the
+qualifying feature and no out-of-manifest descendants. These checks verify
+the terminal state and fully-covered-root topology; they do not create a
+retroactive pre-close binding or repair the bypass. See
+`.backlogit/reconcile/039-S-post-2026-10-06T07-24-42Z.md` and
+`docs/closure/039-S-049-F-post-merge-closure.md`.
+
+**Learning reinforced.** A correct final archived state, post-mode
+`PROCEED`, and a read-only cascade classification are post-hoc evidence, not
+substitutes for invoking the bound `safe-close` mode before mutation. Do not
+reverse an accepted terminal state merely to disguise the procedural
+deviation; preserve and disclose both the deviation and the scope of the
+post-hoc evidence.
