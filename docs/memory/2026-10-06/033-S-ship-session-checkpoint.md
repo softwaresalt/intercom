@@ -67,10 +67,16 @@ gate. The claim and immediate post-claim checks succeeded.
   checkpoint commit `4cedc9e` tracked.
 - `036.004-T`: retention rule in the runbook; acceptance passed; task harness
   marked passing and task moved to done/archived, with `27fe682` tracked.
-- Documentation/memory commits on the feature branch: `4cedc9e`, `bdacaed`,
-  `27fe682`, `c0368a3`. Shipment `033-S` and feature `036-F` remain active for
-  PR and post-merge closure. All task-state mutations are limited to the
-  shipment manifest and the four manifest tasks.
+- Commit trace: `4cedc9e` added the runbook and resolved-halt/checkpoint
+  records; `bdacaed` added the CI rollout document; `27fe682` added the
+  runbook retention rule and toggle clarification; `c0368a3` corrected the
+  rollout toggle clarification; `17235fb` recorded task completion/archive,
+  commit associations, and the updated checkpoint; `f69db34` recorded the
+  passing feature-level harness metadata. The task implementation commit
+  associations are also stored in each archived task artifact. Shipment
+  `033-S` and feature `036-F` remain active for PR and post-merge closure. All
+  task-state mutations are limited to the shipment manifest and its four
+  manifest tasks.
 
 ## Remaining
 
