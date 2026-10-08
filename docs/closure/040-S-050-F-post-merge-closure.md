@@ -1,6 +1,6 @@
 ---
 title: "040-S / 050-F post-merge operational closure"
-description: "Post-merge release-readiness, conforming bound cascade-close reconciliation, degradation disclosure, and operational handoff for the retiredarch TOML desync, symlink containment and git env isolation fixes."
+description: "Post-merge release-readiness, bound cascade-close reconciliation, degradation and deviation disclosure, and operational handoff for the retiredarch TOML desync, symlink containment and git env isolation fixes."
 status: ready_with_conditions
 tags:
   - closure
@@ -28,7 +28,7 @@ conditions:
     satisfied: true
     evidence: "docs/memory/compacted/2026-10-08-040-s-050-f-compacted.md, sections 'Review' (adversarial review with 4 models, 0 P0/P1) and 'Decisions and deviations' (ROUTING_DEGRADED); PR #112 body dark-mode disclosure"
   - id: p005-telemetry-unavailable
-    summary: "P-005 telemetry has no available sink or CLI fallback; P-005 events (Principle IV deviation) are recorded in-repo instead."
+    summary: "P-005 telemetry has no available sink or CLI fallback; P-005 events (the Principle IV out-of-workspace writes and the single-writer lock deviation) are recorded in-repo instead."
     satisfied: true
     evidence: "docs/archive/memory/2026-10-07/040-S-red-evidence.md, section 'Principle IV deviation (P-005 event, recorded at local review)'; docs/closure/040-S-050-F-post-merge-closure.md, section 'Risky action record'"
   - id: principle-iv-temp-binary
@@ -43,10 +43,14 @@ conditions:
     summary: "Two tests/integration start-script tests fail locally because a pre-existing engram daemon holds the workspace lock; unrelated to the diff and green in CI."
     satisfied: true
     evidence: "CI run 37738531082 (PR #112, all checks green) and default-branch CI run 37739247141 on 49ff6b9 (success); docs/memory/compacted/2026-10-08-040-s-050-f-compacted.md, section 'Verification'"
-  - id: file-lock-degraded
-    summary: "The shipment-reconcile single-writer lock was not acquired: file-lock scripts are not installed and the .{file}.lock name collides with backlogit's internal lock namespace; single-agent session."
+  - id: file-lock-not-acquired-deviation
+    summary: "Procedural deviation (disclosed, not remediated): shipment-reconcile requires the file-lock skill's single-writer lock on .backlogit/queue/040-S.md from pre-mode through post-mode for Ship Step 6, with no single-agent exemption. The bundled scripts exist at .github/skills/file-lock/scripts/ (the earlier 'not installed' statement was wrong: only the repo-root scripts/ path was checked), but the lock was not acquired. Tracked by the existing Stage-owned deferred entry 9F824B64 (make the lock satisfiable and reconcile it with concurrency.instructions.md); same deviation as the 035-S/036-S/037-S closures."
     satisfied: true
-    evidence: ".backlogit/reconcile/040-S-pre-2026-10-08T06-47-39Z.md ('Single-writer lock: LOCK_DEGRADED'); .backlogit/reconcile/040-S-post-2026-10-08T06-57Z.md, section '4. Lock release'"
+    evidence: ".backlogit/reconcile/040-S-pre-2026-10-08T06-47-39Z.md ('Single-writer lock: NOT ACQUIRED, procedural deviation'); stash entry 9F824B64 (DEFERRED SCOPE EXPANSION, active); docs/closure/040-S-050-F-post-merge-closure.md, section 'Risky action record'"
+  - id: principle-iv-temp-closure-helpers
+    summary: "Two more out-of-workspace writes occurred during the post-merge closure (constitution Principle IV / AGENTS.md CLI workspace containment): the classify/safe-close binding helper script %TEMP%\\binding040s.ps1, and the pre-cascade revert backup %TEMP%\\040s-preclose-backup\\ (639 files copied from .backlogit/queue and .backlogit/archive). Both are inert, were not deleted (deleting them would be a further out-of-workspace write), and are left for operator removal."
+    satisfied: true
+    evidence: ".backlogit/reconcile/040-S-classify-close-path-2026-10-08T06-49Z.md (helper script path); .backlogit/reconcile/040-S-safe-close-2026-10-08T06-54-43Z.md (pre-close backup); docs/closure/040-S-050-F-post-merge-closure.md, section 'Risky action record'"
   - id: deferred-scope-0d643be8
     summary: "Out-of-scope adversarial finding (runRepoScan exit 0 on empty repo-mode selection, pre-existing Python parity) is captured as Stage-owned stash 0D643BE8 per P-021 C2; not fixed in this shipment."
     satisfied: true
@@ -79,7 +83,7 @@ All five tasks (050.001-T, 050.002-T, 050.003-T, 050.004-T and 050.006-T) comple
 - **Default-branch CI.** Run 37739247141 on `49ff6b9`: success.
 - **Cross-platform.** AC-4b (`TestContainedRegularFile_UnreadableIntermediate_FailsClosed`, POSIX-only) passed on the Linux CI runner. It also passed locally under WSL2 (Linux 6.6.114.1, uid 1000, non-root) from a linux/amd64 test binary built from `3f2e71c`. That evidence is recorded in the PR #112 body, Local Review Readiness block, Follow-ups line.
 
-## Shipment reconciliation (conforming bound cascade close)
+## Shipment reconciliation (bound cascade close)
 
 | Step | Artifact | Result |
 |---|---|---|
@@ -92,7 +96,9 @@ All five tasks (050.001-T, 050.002-T, 050.003-T, 050.004-T and 050.006-T) comple
 | d post-mode | `.backlogit/reconcile/040-S-post-2026-10-08T06-57Z.md` | `PROCEED` |
 | e commit | `9b3ad77` | `chore: archive 040-S backlog artifacts` |
 
-This is the first closure in this repository to run the `shipment-reconcile` boundary as written. `backlogit shipment ship` ran only from inside the Cascade Close Sub-Procedure, and only after the bound classification was revalidated against a fresh snapshot.
+This is the first closure in this repository to run the bound classify → safe-close → Cascade Close Sub-Procedure path. `backlogit shipment ship` ran only from inside the Cascade Close Sub-Procedure, and only after the bound classification was revalidated against a fresh snapshot.
+
+It was **not** fully conforming. The mandated single-writer lock (`file-lock` skill, pre-mode through post-mode) was not acquired. That is a procedural deviation, tracked by the existing deferred entry 9F824B64.
 
 This differs from the direct-primitive deviations recorded at 035-S, 036-S, 039-S and 033-S. The method is captured in `docs/compound/2026-10-08-conforming-bound-cascade-close-procedure.md`.
 
@@ -161,7 +167,16 @@ The release path was merge-only. The checks after merge were:
 ## Risky action record
 
 - **Cascade close.** The cascade invocation is the destructive step of this closure. Before it ran, `.backlogit/queue/` and `.backlogit/archive/` were backed up (639 files), and it ran only after the binding revalidation matched. No revert was needed.
-- **Principle IV.** The first runtime-verification binary was written to `%TEMP%`, outside the workspace. Verification was re-run inside the workspace, and the P-005 event was recorded in the evidence log because the telemetry sink is unavailable. The operator may delete `%TEMP%\gatecheck-040s.exe` by hand; it is inert.
+- **Principle IV (three out-of-workspace writes).** The P-005 events are recorded here because the telemetry sink is unavailable.
+  - **Runtime-verification binary** `%TEMP%\gatecheck-040s.exe`. Written during the feature PR; verification was then re-run inside the workspace.
+  - **Binding helper script** `%TEMP%\binding040s.ps1`. Written during this closure; used for classify-close-path and the safe-close Step 0 recompute.
+  - **Pre-cascade backup** `%TEMP%\040s-preclose-backup\` (639 files). Written during this closure.
+
+  All three are inert. I did not delete them, because deletion would be a further out-of-workspace write. The operator may remove them by hand.
+- **Single-writer lock not acquired.** `shipment-reconcile` requires the `file-lock` skill lock for Ship Step 6 and has no single-agent exemption.
+  - The bundled scripts exist at `.github/skills/file-lock/scripts/`. The pre-mode report's original "not installed" statement was wrong (corrected in the report).
+  - The lock was not taken. Two factors weighed against it: the skill's `.{file}.lock` name shares backlogit's own internal lock-file namespace, and this was a single-agent session. Neither is an exemption the skill grants, so this is recorded as a procedural deviation.
+  - The fix is tracked by the existing Stage-owned deferred entry 9F824B64. This is the same deviation as the 035-S, 036-S and 037-S closures.
 
 ## Source artifact cleanup
 
@@ -187,7 +202,7 @@ The release path was merge-only. The checks after merge were:
 
 ## Releasability
 
-**Status: `READY_WITH_CONDITIONS`.** The conditions are the tool and environment degradations and the disclosed deviations listed in the frontmatter. Each one is satisfied with cited evidence. There are no unresolved P0/P1 findings, required CI is green on the PR and on `main`, and the shipment closed through the conforming bound cascade path.
+**Status: `READY_WITH_CONDITIONS`.** The conditions are the tool and environment degradations and the disclosed deviations listed in the frontmatter. Each one is satisfied with cited evidence. There are no unresolved P0/P1 findings, and required CI is green on the PR and on `main`. The shipment closed through the bound cascade path, with the single-writer-lock deviation disclosed above.
 
 ## Compaction status
 

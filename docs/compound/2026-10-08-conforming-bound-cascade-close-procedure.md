@@ -1,17 +1,23 @@
 ---
-title: "Conforming bound cascade close: classify, recompute, compare, then ship (and two closure gotchas)"
+title: "Bound cascade close: classify, recompute, compare, then ship (and closure gotchas)"
 date: 2026-10-08
 category: process
 tags: [shipment-reconcile, cascade-close, classification-binding, p-015, p-005, backlogit, git, powershell, 040-s]
 ---
 
-# Conforming bound cascade close: classify, recompute, compare, then ship
+# Bound cascade close: classify, recompute, compare, then ship
 
 ## Context
 
 Four consecutive closures deviated from the `shipment-reconcile` boundary: 035-S, 036-S, 039-S and 033-S. Each called `backlogit shipment ship` directly. Some computed a `CLASSIFICATION_BINDING` and some did not, but none recomputed it from a fresh snapshot at safe-close time and compared it before the mutation.
 
-040-S (PR #112, merge `49ff6b9`) is the first closure in this repository to run the procedure as written. The evidence is in `.backlogit/reconcile/040-S-classify-close-path-2026-10-08T06-49Z.md` and `040-S-safe-close-2026-10-08T06-54-43Z.md`.
+040-S (PR #112, merge `49ff6b9`) is the first closure in this repository to run the bound classify → recompute → compare → Cascade Close Sub-Procedure sequence. The evidence is in `.backlogit/reconcile/040-S-classify-close-path-2026-10-08T06-49Z.md` and `040-S-safe-close-2026-10-08T06-54-43Z.md`.
+
+It was not fully conforming:
+- It skipped the mandated `file-lock` single-writer lock (procedural deviation, tracked by 9F824B64).
+- It wrote the helper script and the backup outside the workspace (Principle IV).
+
+The gotchas below show how to avoid both.
 
 ## Practice
 
@@ -30,6 +36,13 @@ Four consecutive closures deviated from the `shipment-reconcile` boundary: 035-S
 
 ## Gotchas
 
+- **The lock scripts live under the skill, not the repo root.**
+  - The `file-lock` scripts are at `.github/skills/file-lock/scripts/acquire_lock.{ps1,sh}`. The Ship agent text cites `scripts/acquire_lock.ps1`, which does not exist here.
+  - Check the skill directory before declaring the lock unavailable.
+  - The skill grants no single-agent exemption for Ship Step 6. Skipping the lock is a deviation, not a degradation.
+- **Keep helpers and backups inside the workspace.**
+  - Write the binding helper script and the pre-cascade backup under a gitignored workspace path such as `dist/`, not `%TEMP%`.
+  - CLI workspace containment (Principle IV) forbids writes outside the working tree.
 - **PowerShell comma precedence.**
   - Inside an array literal, `"manifest=" + ($ids -join ',')` binds as `(prev, "manifest=") + …`. This silently splits the line and changes the digest.
   - Build canonical lines one statement at a time (`List[string].Add`).

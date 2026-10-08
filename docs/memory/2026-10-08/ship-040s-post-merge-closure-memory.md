@@ -29,7 +29,8 @@ status: closure-pr-pending
 
   This is not the direct-primitive deviation from 033-S and 039-S.
 - **Source artifact cleanup.** 050-F has no `source_stash_id` or `source_deliberation_id`, so the manifest-derived rule selected nothing. 9FC28DB9, 990AFA71 and D7BF9F74 were already archived by Stage at harvest. Nothing was archived discretionarily.
-- **Lock.** LOCK_DEGRADED: the file-lock scripts are absent, and the `.{file}.lock` name collides with backlogit's internal lock namespace. This was a single-agent session.
+- **Lock.** NOT ACQUIRED. This is a procedural deviation, tracked by 9F824B64. The scripts exist at `.github/skills/file-lock/scripts/`; the earlier "absent" claim checked only the repo-root `scripts/`, and Copilot corrected it on PR #113. The `.{file}.lock` name collides with backlogit's internal lock namespace, and this was a single-agent session, but neither is a skill-granted exemption.
+- **Principle IV (closure).** `%TEMP%\binding040s.ps1` and `%TEMP%\040s-preclose-backup\` (639 files) were written outside the workspace. Disclosed in the closure risky action record and left for operator removal.
 
 ## Next steps
 

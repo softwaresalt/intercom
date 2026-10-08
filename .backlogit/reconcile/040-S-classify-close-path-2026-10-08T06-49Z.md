@@ -3,7 +3,7 @@
 - **Shipment**: 040-S
 - **Mode**: classify-close-path (read-only).
   - Executed per the skill algorithm. This workspace's `autoharness` build has no `classify-close-path` CLI subcommand.
-  - Snapshot and binding were computed by a deterministic session script, `%TEMP%\binding040s.ps1`. It reads frontmatter from `.backlogit/queue/` and `.backlogit/archive/`.
+  - Snapshot and binding were computed by a deterministic session script, `%TEMP%\binding040s.ps1`. It reads frontmatter from `.backlogit/queue/` and `.backlogit/archive/`. Writing the script to `%TEMP%` was an out-of-workspace write (Principle IV), disclosed in the closure artifact's risky action record.
   - The serializer was validated by reproducing the 036-S precedent binding `b8ba3fba87bf4bfed1d9c237e075542dae43da2b92b9bef59afdc21b17daebd7` byte for byte from that report's recorded inputs.
 - **Classified at**: 2026-10-08T06:49Z (approximate; the binding was computed in the session immediately before the 06:50:14Z pre-close backup) (state after the a1 transition; 050-F moved to `done` and was auto-archived by backlogit)
 - **Base**: branch `post-merge/050-f-retiredarch-correctness` from `main@49ff6b92121f60f3dfa5d7eff15e0dc89cc81f22`
