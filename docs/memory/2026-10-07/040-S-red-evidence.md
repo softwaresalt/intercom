@@ -120,3 +120,29 @@ fixture) passes.
   - `unignore` and `writepath` each declare their own distinct DefaultGitRunner symbols, which this change does not touch.
   - `register_retired_arch.go:26` is the production wiring, i.e. the subject of the fix. It sets no GIT_*.
   - None of these differ from Stage's read, so there is no deviation and no HALT.
+## U4 (050.004-T, U4 half): reds against the parent
+
+- Platform: windows/amd64, go1.26.5, git 2.55.0.windows.5. Parent SHA: dc62233 (U3 head). select.go was unmodified. Command: `go test -run 'TestGitRunnerEnv|TestDefaultGitRunner'`, written in the order scenarios 2 and 3 first, then 1 (G-5).
+- Scenario 2 `TestDefaultGitRunnerIgnoresGitEnv`: the baseline `[cmd/x/main.go]` PASSED (it records 4537B2F6's quoted-path skip). Every vector was RED exactly as the plan predicted:
+  - (a) GIT_INDEX_FILE nonexistent → `[]`
+  - (b) GIT_LITERAL_PATHSPECS=1 → `[]`
+  - (c) GIT_CONFIG_COUNT/KEY_0/VALUE_0 core.quotePath=false → `["cmd/x/main.go" "internal/é.go"]`
+  - (d) GIT_CONFIG_PARAMETERS → adds `internal/é.go`
+  - (e) GIT_CONFIG_GLOBAL file → adds `internal/é.go`
+- Scenario 3 `TestDefaultGitRunnerRefusesRelativeGit`: RED. `DefaultGitRunner = ("cmd/x/main.go\n", <nil>)`, so the fake ran. The LookPath relative-path precondition held under PATH="." and GODEBUG=execerrdot=0.
+- AC-4 `TestDefaultGitRunnerMissingGitIsNotFound`: PASSES at the parent (characterization, SB2-2).
+- Scenario 1 `TestGitRunnerEnv`: COMPILE-RED at the parent (`undefined: gitRunnerEnv`).
+- Context: this host's agent session exports GIT_CONFIG_COUNT/KEY_0..2 (safe.bareRepository, credential.interactive, core.fsmonitor). That is a live example of the ambient leak U4 closes.
+## U5 (050.004-T, U5 half): staged freeze
+
+- Stage 1: refroze the canonicalDecls import and DefaultGitRunner texts verbatim from U4, and added `gitRunnerEnv: token.FUNC` to closedWorldDecls only. Pin tests (`-run 'Pin|Pathspec'`) passed, so the live tree is OK().
+- Stage 2: wrote `TestCheckPathspecPin_GitRunnerIsolation_Rejected`.
+  - Row (i), `"GIT_CONFIG_NOSYSTEM=1"` → `"=0"`: RED, `got {SelectFound:true GuardFound:true PathspecOK:true PrefixOK:true}`, because gitRunnerEnv was not yet frozen.
+  - Row (ii), `cmd.Env = gitRunnerEnv(os.Environ())` → `_ = gitRunnerEnv(os.Environ())`: PASS, as expected for a characterization row. It is already rejected through the frozen DefaultGitRunner text.
+- Stage 3: added the gitRunnerEnv text to canonicalDecls and "gitRunnerEnv" to pathspecFrozenDecls. prefixFrozenDecls and confinedIdentDecls are unchanged. Row (i) is now GREEN. The whole retiredarch package is green.
+- PA-2: writeMutatedCopy t.Fatal's unless each anchor occurs exactly once. Every pre-existing reject row ran green, so every anchor is still unique in the U4 select.go.
+- PA-3: no initstate file was touched.
+- Refreshed the stale comments: pin.go R-A2 residual (narrowed by D7BF9F74), and the envMutators comment.
+### U4+U5 gates and commit
+- Full gates: gofmt -l . is empty, vet=0, build=0, test=0.
+- ALP-2 single commit 3453ba4. `git show --stat` lists exactly pin.go, pin_test.go, select.go and select_test.go (PA-1).
