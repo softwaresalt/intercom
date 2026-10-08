@@ -497,3 +497,25 @@ func TestUniverseDeclNames_CoverCanonicalTexts(t *testing.T) {
 		t.Fatal("canonical texts must mention at least one universe identifier (non-vacuity)")
 	}
 }
+
+// TestCheckPathspecPin_GitRunnerIsolation_Rejected (U5 scenario 2;
+// D7BF9F74): weakening DefaultGitRunner's git-environment isolation is a
+// pin violation. Each row mutates one literal of a whole-package copy and
+// must leave SelectFound, GuardFound and PrefixOK true while clearing
+// PathspecOK, so a parse-error all-false result cannot pass (G2-2).
+// Row (i) is the gitRunnerEnv freeze; row (ii) is characterization, already
+// rejected through the frozen DefaultGitRunner text.
+func TestCheckPathspecPin_GitRunnerIsolation_Rejected(t *testing.T) {
+	rows := []struct{ name, old, new string }{
+		{"i_git_config_nosystem_weakened", `"GIT_CONFIG_NOSYSTEM=1"`, `"GIT_CONFIG_NOSYSTEM=0"`},
+		{"ii_cmd_env_assignment_dropped", "cmd.Env = gitRunnerEnv(os.Environ())", "_ = gitRunnerEnv(os.Environ())"},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			pin := checkPathspecPin(writeMutatedCopy(t, r.old, r.new))
+			if !pin.SelectFound || !pin.GuardFound || !pin.PrefixOK || pin.PathspecOK {
+				t.Fatalf("want SelectFound, GuardFound and PrefixOK true with PathspecOK false, got %+v", pin)
+			}
+		})
+	}
+}

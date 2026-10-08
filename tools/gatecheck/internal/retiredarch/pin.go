@@ -30,12 +30,16 @@
 //
 // Residuals (not enforced here): R-A1, runner wiring and downstream
 // dispatch outside the frozen surface (stash DC921AF6); R-A2, git
-// environment or configuration set outside this package (stash D7BF9F74);
-// R-A3, _test.go files are outside package closure; R-A4, out-of-model
-// attacks (cross-package linkname, reflect, unsafe elsewhere, binary
-// patching). A coordinated pin.go + select.go edit cannot be caught here:
-// A-T4's independent cmd/x/main.go probe is that control, backed by human
-// review of any pin.go diff.
+// environment or configuration set outside this package, narrowed by
+// D7BF9F74 (the frozen gitRunnerEnv now isolates DefaultGitRunner's child
+// from ambient GIT_* variables and global/system config, and the frozen
+// DefaultGitRunner refuses a non-absolute git, but repository-local config
+// such as .git/config and a git binary earlier on an absolute PATH entry
+// remain trusted); R-A3, _test.go files are outside package closure;
+// R-A4, out-of-model attacks (cross-package linkname, reflect, unsafe
+// elsewhere, binary patching). A coordinated pin.go + select.go edit
+// cannot be caught here: A-T4's independent cmd/x/main.go probe is that
+// control, backed by human review of any pin.go diff.
 //
 // H-11 (self-comparison caveat, gate-reliability plan §8): the expected
 // literal lists below (pathspecPinLiterals, prefixPinLiterals) are this
@@ -79,6 +83,7 @@ const canonicalDecls = `package retiredarch
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -93,6 +98,13 @@ func DefaultGitRunner(root string, pathspecs ...string) ([]byte, error) {
 	args := append([]string{"ls-files", "--"}, pathspecs...)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = root
+	cmd.Env = gitRunnerEnv(os.Environ())
+	if cmd.Err != nil {
+		return nil, cmd.Err
+	}
+	if !filepath.IsAbs(cmd.Path) {
+		return nil, fmt.Errorf("retiredarch: refusing non-absolute git path %q", cmd.Path)
+	}
 	var stdout, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderrBuf
@@ -103,6 +115,24 @@ func DefaultGitRunner(root string, pathspecs ...string) ([]byte, error) {
 		return nil, err
 	}
 	return stdout.Bytes(), nil
+}
+
+func gitRunnerEnv(environ []string) []string {
+	env := make([]string, 0, len(environ)+3)
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		folded := []byte(name)
+		for i, c := range folded {
+			if 'a' <= c && c <= 'z' {
+				folded[i] = c - ('a' - 'A')
+			}
+		}
+		if strings.HasPrefix(string(folded), "GIT_") && string(folded) != "GIT_CEILING_DIRECTORIES" {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 }
 
 type scanArm struct {
@@ -167,6 +197,7 @@ var closedWorldDecls = map[string]token.Token{
 	"import":             token.IMPORT,
 	"GitRunner":          token.TYPE,
 	"DefaultGitRunner":   token.FUNC,
+	"gitRunnerEnv":       token.FUNC,
 	"scanArm":            token.TYPE,
 	"scanScope":          token.VAR,
 	"shouldScanRepoPath": token.FUNC,
@@ -190,7 +221,7 @@ var confinedIdentDecls = map[string]bool{
 
 // pathspecFrozenDecls is the frozen set PathspecOK requires to be
 // token-equal to canonicalDecls.
-var pathspecFrozenDecls = []string{"import", "GitRunner", "DefaultGitRunner", "scanArm", "scanScope", "selectRepoPaths"}
+var pathspecFrozenDecls = []string{"import", "GitRunner", "DefaultGitRunner", "gitRunnerEnv", "scanArm", "scanScope", "selectRepoPaths"}
 
 // prefixFrozenDecls is the frozen set PrefixOK requires to be token-equal
 // to canonicalDecls (033.006-T).
@@ -221,8 +252,9 @@ var universeDeclNames = map[string]bool{
 }
 
 // envMutators are the os and syscall functions no file in select.go's
-// package may reference (round-4 SEC4-3): DefaultGitRunner inherits the
-// process environment.
+// package may reference (round-4 SEC4-3): DefaultGitRunner derives its
+// child's environment from the process environment through gitRunnerEnv,
+// so an in-package mutation of that environment must stay impossible.
 var envMutators = map[string]bool{"Setenv": true, "Unsetenv": true, "Clearenv": true}
 
 // armValues is one scan-scope arm's field values as read from the AST of
