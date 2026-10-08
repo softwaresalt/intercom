@@ -154,3 +154,13 @@ fixture) passes.
 - AC-2 `TestGitShowToplevelRefusesRelativeGit`: RED. It returned the fake's absolute path with a nil error, so the relative fake git was launched.
 ### U6 gates and commit
 - Full gates: gofmt -l . is empty, vet=0, build=0, test=0. Code commit e31a06c.
+
+## Runtime verification (head 4c62457)
+
+- `git --version`: 2.55.0.windows.5. The R-A2e floor is ≥ 2.32.
+- I built `go build -o %TEMP%\gatecheck-040s.exe ./tools/gatecheck` and ran it with `--root <checkout>`:
+  - `retired-arch --self-test`: exit 0. 64 PASS / 0 FAIL, ending with "self-test passed: fixtures matched expectations and the tracked tree is clean".
+  - `retired-arch --self-test-integrity`: exit 0. 64 PASS / 0 FAIL.
+  - `retired-arch` repo scan: exit 0 with no findings. The result is unchanged even though this host exports ambient GIT_CONFIG_COUNT/KEY_*.
+  - `bash scripts/check-retired-architecture.sh`: exit 0.
+- No tracked symlinks (no mode 120000 entries). CI jobs run directly on hosted runners with no `container:`, so residual R-A2f (safe.directory dropped) is not triggered.
