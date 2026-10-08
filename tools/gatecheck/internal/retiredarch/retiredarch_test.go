@@ -583,7 +583,7 @@ func TestConfigTomlExample_DualEngineAgreement_LiveCorpus(t *testing.T) {
 // needs no real git index (plan U3: containment is index-independent).
 func u3StubGit(paths ...string) GitRunner {
 	return func(root string, pathspecs ...string) ([]byte, error) {
-		return []byte(strings.Join(paths, "\n") + "\n"), nil
+		return lsFilesListing(paths...), nil
 	}
 }
 

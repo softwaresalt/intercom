@@ -14,6 +14,13 @@ import (
 	"testing"
 )
 
+func lsFilesListing(paths ...string) []byte {
+	if len(paths) == 0 {
+		return nil
+	}
+	return []byte(strings.Join(paths, "\n") + "\n")
+}
+
 func TestShouldScanRepoPath_Table(t *testing.T) {
 	cases := []struct {
 		path string
@@ -122,7 +129,7 @@ func TestSelectRepoPaths_FiltersAndSorts(t *testing.T) {
 		if len(pathspecs) != 3 || pathspecs[0] != "config.toml.example" || pathspecs[1] != "cmd/**" || pathspecs[2] != "internal/**" {
 			return nil, fmt.Errorf("unexpected pathspecs: %v", pathspecs)
 		}
-		return []byte("internal/z/a.go\ninternal/z/a_test.go\ncmd/x/y_test.go\nconfig.toml.example\ninternal/a/b.go\n"), nil
+		return lsFilesListing("internal/z/a.go", "internal/z/a_test.go", "cmd/x/y_test.go", "config.toml.example", "internal/a/b.go"), nil
 	}
 	got, err := selectRepoPaths("/root", git)
 	if err != nil {
