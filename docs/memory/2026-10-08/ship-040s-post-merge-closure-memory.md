@@ -22,7 +22,7 @@ status: closure-pr-pending
 
 ## Decisions
 
-- **Close path.** I ran a conforming bound cascade:
+- **Close path.** I ran a bound cascade. It was procedurally non-conforming because the single-writer lock was skipped (see **Lock** below):
   - classify-close-path issued binding `17bab11e…`;
   - safe-close Step 0 retook a fresh snapshot, recomputed, and matched;
   - the Cascade Close Sub-Procedure then ran the cascade.

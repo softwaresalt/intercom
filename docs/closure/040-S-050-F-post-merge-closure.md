@@ -100,7 +100,7 @@ This is the first closure in this repository to run the bound classify → safe-
 
 It was **not** fully conforming. The mandated single-writer lock (`file-lock` skill, pre-mode through post-mode) was not acquired. That is a procedural deviation, tracked by the existing deferred entry 9F824B64.
 
-This differs from the direct-primitive deviations recorded at 035-S, 036-S, 039-S and 033-S. The method is captured in `docs/compound/2026-10-08-conforming-bound-cascade-close-procedure.md`.
+This differs from the direct-primitive deviations recorded at 035-S, 036-S, 039-S and 033-S. The method is captured in `docs/compound/2026-10-08-bound-cascade-close-procedure.md`.
 
 ## Runtime surfaces and validator evidence
 
@@ -196,7 +196,7 @@ The release path was merge-only. The checks after merge were:
 
 ## Knowledge graduation
 
-- New compound learning: `docs/compound/2026-10-08-conforming-bound-cascade-close-procedure.md`. It covers the bound cascade method, the PowerShell binding-serialization precedence trap, and the atomic `git add` pathspec failure after backlogit stages the shipment rename.
+- New compound learning: `docs/compound/2026-10-08-bound-cascade-close-procedure.md`. It covers the bound cascade method, the PowerShell binding-serialization precedence trap, and the atomic `git add` pathspec failure after backlogit stages the shipment rename.
 - `docs/compound/2026-10-07-pin-canonical-text-maintenance-and-unbounded-ast-rule-review.md` was confirmed by this execution (staged freeze, ALP single commit), not superseded. No compound-refresh was needed.
 - No architecture, product-spec or design-doc change applies to this internal gate hardening.
 
