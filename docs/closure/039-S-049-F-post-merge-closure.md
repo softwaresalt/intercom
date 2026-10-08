@@ -19,16 +19,28 @@ releasability: READY_WITH_CONDITIONS
 conditions:
   - id: p005-direct-cascade-deviation
     summary: "Ship directly invoked backlogit shipment ship instead of the binding-carrying shipment-reconcile boundary; ORCH-D9 accepted the terminal state without reversal, and the deviation remains disclosed."
+    satisfied: true
+    evidence: "docs/closure/039-S-049-F-post-merge-closure.md, sections 'P-005 process deviation and ORCH-D9 disposition', 'ORCH-D1–D11 history and P-014 disclosure' (ORCH-D9 bullet), and 'Risky action record' (ORCH-D9 accepted the archived state and prohibited reversal; deviation disclosed in this artifact); deviation record .backlogit/reconcile/039-S-safe-close-2026-10-06T07-11-10Z.md (direct backlogit shipment ship invocation, marked NON-CONFORMANT); post-hoc shipment-reconcile post-mode report .backlogit/reconcile/039-S-post-2026-10-06T07-24-42Z.md returned PROCEED"
   - id: p005-telemetry-unavailable
     summary: "P-005 telemetry is unavailable through the installed MCP-only surface and has no CLI fallback."
+    satisfied: true
+    evidence: "docs/closure/039-S-049-F-post-merge-closure.md, section 'P-005 process deviation and ORCH-D9 disposition' (telemetry surface unavailable with no CLI fallback; deviation disclosed in this artifact instead); docs/archive/memory/2026-10-06/ship-039s-post-merge-closure-halt.md (no telemetry event emitted)"
   - id: engram-degraded
     summary: "Engram failed readiness three times; it was not restarted and indexed analysis was not relied upon."
+    satisfied: true
+    evidence: "docs/closure/039-S-049-F-post-merge-closure.md, section 'Releasability' (tool/reviewer degradations recorded as conditions); docs/archive/memory/2026-10-03/ship-039s-harness-checkpoint.md (targeted file reads declared as fallback); docs/archive/memory/2026-10-04/ship-039s-coordination-halt.md (degraded after three failures, not retried); docs/memory/compacted/2026-10-06-039-S-049-F-compacted.md ('Current continuation': engram degraded, not restarted)"
   - id: backlogit-mcp-degraded
     summary: "Backlogit MCP was unavailable; the configured backlogit CLI fallback succeeded."
+    satisfied: true
+    evidence: "docs/closure/039-S-049-F-post-merge-closure.md, sections 'Merge and verification evidence' (post-merge backlogit doctor --format json returned no findings) and 'Releasability' (tool/reviewer degradations recorded as conditions); docs/archive/memory/2026-10-05/ship-039s-orch-d4-adversarial-halt.md (MCP unavailable; CLI fallback and backlogit sync succeeded); docs/memory/compacted/2026-10-06-039-S-049-F-compacted.md ('Current continuation': backlogit MCP unavailable)"
   - id: intercom-unavailable
     summary: "Agent-intercom visibility is unavailable/decommissioned; operator-visible evidence is in this session and the PR."
+    satisfied: true
+    evidence: "docs/closure/039-S-049-F-post-merge-closure.md, section 'Releasability' (tool/reviewer degradations recorded as conditions); docs/archive/memory/2026-10-03/ship-039s-harness-checkpoint.md (agent-intercom not installed; chat-only visibility); docs/memory/compacted/2026-10-06-039-S-049-F-compacted.md ('Current continuation': agent-intercom unavailable); operator-visible record in feature PR #105 and this closure artifact"
   - id: anchor-review-degraded
     summary: "The anchor reviewer did not acknowledge coverage after two dispatches; gpt-6-sol was the declared fallback and the remaining reviewers acknowledged the covered delta."
+    satisfied: true
+    evidence: "docs/closure/039-S-049-F-post-merge-closure.md, sections 'Merge and verification evidence' (anchor degraded after two missing acknowledgements; gpt-6-sol declared fallback; three reviewers acknowledged the ORCH-D6 delta) and 'ORCH-D1–D11 history and P-014 disclosure' (ORCH-D6 bullet); docs/archive/memory/2026-10-05/ship-039s-orch-d5-review-coverage-halt.md, section 'D6 mandated final delta review — complete'"
 ---
 
 # Post-merge operational closure
