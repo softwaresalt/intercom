@@ -356,6 +356,18 @@ func walkDecodedValue(posixPath string, prefix []string, value interface{}, find
 // explicitly, before ever calling toml.Decode, to reproduce Python's
 // fail-closed behavior rather than BurntSushi's silent-accept.
 func scanTomlPrimary(path string) []string {
+	return scanTomlPrimaryWith(path, walkTable, func(posixPath string, prefix []string, value map[string]interface{}, _ *tomlCursor, findings *[]string) error {
+		return walkDecodedTOML(posixPath, prefix, value, findings)
+	})
+}
+
+// scanTomlPrimaryWith is scanTomlPrimary with its two walks injected.
+// Production always passes walkTable (the ordered cursor walk) and
+// walkDecodedTOML adapted by a cursor-ignoring closure (the deterministic
+// fallback walk). The parameters exist only so tests can substitute a
+// faulty walk or a failing fallback (plan U2 scenarios 1-3); they are not
+// an extension point.
+func scanTomlPrimaryWith(path string, walk, fallback func(string, []string, map[string]interface{}, *tomlCursor, *[]string) error) []string {
 	posixPath := filepath.ToSlash(path)
 	text, err := pysem.ReadText(path)
 	if err != nil {
@@ -376,7 +388,7 @@ func scanTomlPrimary(path string) []string {
 
 	var findings []string
 	cursor := &tomlCursor{keys: meta.Keys()}
-	if err := walkTable(posixPath, nil, data, cursor, &findings); err != nil {
+	if err := walk(posixPath, nil, data, cursor, &findings); err != nil {
 		// A cursor-desync error is an internal invariant violation of
 		// this port's ordering algorithm, not a TOML content problem
 		// (some legal shapes, e.g. non-contiguous sibling tables, defeat
@@ -384,11 +396,43 @@ func scanTomlPrimary(path string) []string {
 		// let the deterministic fallback walk decide (INV-4: the fallback
 		// is authoritative whenever the cursor walk errors). A fallback
 		// failure still fails closed with the parse-error format.
-		var fallback []string
-		if ferr := walkDecodedTOML(posixPath, nil, data, &fallback); ferr != nil {
+		var fallbackFindings []string
+		if ferr := fallback(posixPath, nil, data, cursor, &fallbackFindings); ferr != nil {
 			return []string{fmt.Sprintf("%s: TOML parse error (fail-closed): %v", posixPath, ferr)}
 		}
-		return fallback
+		return fallbackFindings
+	}
+
+	// Completeness oracle (plan U2, R2): the cursor walk succeeded, but a
+	// latent cursor bug could still have dropped or invented a finding
+	// without desyncing. Re-derive the findings with the independent
+	// fallback walk and require the same multiset. Cursor order is kept
+	// on agreement (Python insertion-order parity).
+	var oracleFindings []string
+	if err := fallback(posixPath, nil, data, cursor, &oracleFindings); err != nil {
+		return []string{fmt.Sprintf("%s: TOML parse error (fail-closed): %v", posixPath, err)}
+	}
+	if !sameFindingMultiset(findings, oracleFindings) {
+		return []string{fmt.Sprintf("%s: TOML completeness check failed: cursor walk omitted or invented findings (fail-closed)", posixPath)}
 	}
 	return findings
+}
+
+// sameFindingMultiset reports whether a and b contain the same finding
+// strings with the same multiplicities, ignoring order.
+func sameFindingMultiset(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, s := range a {
+		counts[s]++
+	}
+	for _, s := range b {
+		counts[s]--
+		if counts[s] < 0 {
+			return false
+		}
+	}
+	return true
 }

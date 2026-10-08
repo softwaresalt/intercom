@@ -1,6 +1,7 @@
 package retiredarch
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -361,4 +362,56 @@ func TestWalkDecodedTOML_UnexpectedType_FailsClosed(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestScanTomlPrimaryWith_CompletenessOracle is U2 (AC-1..AC-3): on the
+// cursor walk's success path the fallback walk runs as a completeness
+// oracle, so a cursor walk that drops or invents a finding, or a fallback
+// that fails, fails closed instead of returning the cursor findings.
+func TestScanTomlPrimaryWith_CompletenessOracle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "two.toml")
+	if err := os.WriteFile(path, []byte("channel_id = 1\nteam_id = 2\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	posix := filepath.ToSlash(path)
+	if got := scanTomlPrimary(path); len(got) != 2 {
+		t.Fatalf("precondition: scanTomlPrimary = %q, want 2 findings", got)
+	}
+	fallback := func(p string, prefix []string, v map[string]interface{}, _ *tomlCursor, f *[]string) error {
+		return walkDecodedTOML(p, prefix, v, f)
+	}
+	completeness := []string{posix + ": TOML completeness check failed: cursor walk omitted or invented findings (fail-closed)"}
+
+	t.Run("walker-drops-a-finding", func(t *testing.T) {
+		drop := func(p string, prefix []string, v map[string]interface{}, c *tomlCursor, f *[]string) error {
+			err := walkTable(p, prefix, v, c, f)
+			if len(*f) > 0 {
+				*f = (*f)[:len(*f)-1]
+			}
+			return err
+		}
+		if got := scanTomlPrimaryWith(path, drop, fallback); !reflect.DeepEqual(got, completeness) {
+			t.Fatalf("scanTomlPrimaryWith(drop) = %q, want %q", got, completeness)
+		}
+	})
+	t.Run("walker-invents-a-finding", func(t *testing.T) {
+		invent := func(p string, prefix []string, v map[string]interface{}, c *tomlCursor, f *[]string) error {
+			err := walkTable(p, prefix, v, c, f)
+			*f = append(*f, p+": retired token 'acp' in TOML key path 'acp' (segment 'acp') (via sequence model)")
+			return err
+		}
+		if got := scanTomlPrimaryWith(path, invent, fallback); !reflect.DeepEqual(got, completeness) {
+			t.Fatalf("scanTomlPrimaryWith(invent) = %q, want %q", got, completeness)
+		}
+	})
+	t.Run("fallback-errors", func(t *testing.T) {
+		failing := func(string, []string, map[string]interface{}, *tomlCursor, *[]string) error {
+			return errors.New("injected fallback failure")
+		}
+		want := []string{posix + ": TOML parse error (fail-closed): injected fallback failure"}
+		if got := scanTomlPrimaryWith(path, walkTable, failing); !reflect.DeepEqual(got, want) {
+			t.Fatalf("scanTomlPrimaryWith(failing fallback) = %q, want %q", got, want)
+		}
+	})
 }
