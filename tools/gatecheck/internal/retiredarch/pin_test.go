@@ -519,3 +519,50 @@ func TestCheckPathspecPin_GitRunnerIsolation_Rejected(t *testing.T) {
 		})
 	}
 }
+
+// TestGitShowToplevelIgnoresGitEnv (U6 scenario 1, AC-1; D7BF9F74): a
+// decoy GIT_DIR/GIT_WORK_TREE in the gate's environment must not redirect
+// the pin's repository-root resolution. The expected value is derived by
+// gitShowToplevel itself before the decoy env is set, which sidesteps 8.3
+// short-path, symlinked-tmp and case differences between t.TempDir() and
+// git's own output (G2-3).
+func TestGitShowToplevelIgnoresGitEnv(t *testing.T) {
+	repoR, repoD := t.TempDir(), t.TempDir()
+	sub := filepath.Join(repoR, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixtureGit(t, repoR, "init", "-q")
+	fixtureGit(t, repoD, "init", "-q")
+	want, err := gitShowToplevel(sub)
+	if err != nil {
+		t.Fatalf("gitShowToplevel(R/sub) without decoy env: %v", err)
+	}
+	decoy, err := gitShowToplevel(repoD)
+	if err != nil {
+		t.Fatalf("gitShowToplevel(D) without decoy env: %v", err)
+	}
+	if want == decoy {
+		t.Fatalf("fixture error: R and D resolve to the same root %q", want)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(repoD, ".git"))
+	t.Setenv("GIT_WORK_TREE", repoD)
+	got, err := gitShowToplevel(sub)
+	if err != nil || got != want {
+		t.Fatalf("gitShowToplevel(R/sub) with decoy GIT_DIR/GIT_WORK_TREE = (%q, %v), want (%q, nil); decoy root is %q", got, err, want, decoy)
+	}
+}
+
+// TestGitShowToplevelRefusesRelativeGit (U6 scenario 2, AC-2): when PATH
+// lookup resolves git to a relative path, gitShowToplevel refuses it before
+// launching anything. t.Chdir is required because gitShowToplevel sets no
+// cmd.Dir.
+func TestGitShowToplevelRefusesRelativeGit(t *testing.T) {
+	fakeRoot := t.TempDir()
+	dir, marker := setupRelativeFakeGit(t, fakeRoot+"\n")
+	got, err := gitShowToplevel(dir)
+	if err == nil || !strings.Contains(err.Error(), "non-absolute") {
+		t.Fatalf("gitShowToplevel = (%q, %v), want an error containing \"non-absolute\"", got, err)
+	}
+	assertFakeGitNotRun(t, marker)
+}

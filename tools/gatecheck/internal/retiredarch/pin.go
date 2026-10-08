@@ -734,9 +734,20 @@ func containsAll(haystack []string, wanted []string) bool {
 }
 
 // gitShowToplevel runs `git -C dir rev-parse --show-toplevel` and returns
-// the trimmed result, or an error.
+// the trimmed result, or an error. Like DefaultGitRunner (D7BF9F74), the
+// child runs with gitRunnerEnv's isolated environment, so an ambient
+// GIT_DIR/GIT_WORK_TREE cannot redirect the pin to another repository; a
+// LookPath failure is reported first, and a git that PATH resolved to a
+// non-absolute path is refused before it is launched.
 func gitShowToplevel(dir string) (string, error) {
 	cmd := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")
+	cmd.Env = gitRunnerEnv(os.Environ())
+	if cmd.Err != nil {
+		return "", fmt.Errorf("git rev-parse --show-toplevel: %w", cmd.Err)
+	}
+	if !filepath.IsAbs(cmd.Path) {
+		return "", fmt.Errorf("git rev-parse --show-toplevel: refusing non-absolute git path %q", cmd.Path)
+	}
 	var stdout, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderrBuf
