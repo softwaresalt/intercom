@@ -91,3 +91,32 @@ Command: `go test ./tools/gatecheck/internal/retiredarch/ -run TestScanTomlPrima
 All three rows pass; the whole retiredarch package (golden/ordering tests
 unchanged, so the oracle agrees with the cursor walk on every golden
 fixture) passes.
+
+## U3 (050.003-T) — component-wise Lstat containment
+
+- Platform: windows/amd64, go1.26.5. Parent SHA: 7ff578f (U2 head). The red was run with an unwired `containedRegularFile` stub that returns (true, ""), so `runRepoScan` behaves exactly as at the parent.
+- AC-1 `TestRunRepoScan_FinalComponentSymlink_FailsClosed`: RED, `Code = 0, want 1 (stderr="")`. os.Symlink succeeded on this host, so the row was observed rather than skipped.
+- AC-2 `TestRunRepoScan_FinalComponentJunction_FailsClosed`: RED. The stderr held the parent's directory read-error text `...internal/x.go: read ...\internal\x.go: Incorrect function. (fail-closed synthetic finding)` instead of the U3 text.
+- AC-3 `TestRunRepoScan_IntermediateLink_FailsClosed` (junction made with `cmd /c mklink /J`): RED, `Code = 0, want 1 (stderr="")`.
+- AC-4 `TestContainedRegularFile_RejectsMalformedComponents`: RED. Every row returned (true, ""): `a//b.go`, `./a.go`, `../x.go`, `a/`, the empty string, and on Windows `a\b.go`, `c:x.go`, `a/b:c.go`.
+- AC-4 characterization `TestRunRepoScan_DeletedFile_KeepsReadErrorText`: PASSES at the parent, as expected. It pins the byte-for-byte read-error text.
+- `TestContainedRegularFile_AcceptsRegularAndMissing`: PASSES at the parent. It pins the ok=true outcomes.
+- AC-4b `TestContainedRegularFile_UnreadableIntermediate_FailsClosed`: SKIPPED on Windows by design (POSIX permission bits only). It runs on the Linux CI runner, so it carries HEAD-only evidence (PA-4).
+
+### U3 gates
+- Full gates at the U3 head: gofmt -l . is empty, vet=0, build=0, test=0. Git Bash is first on PATH.
+- No tracked symlinks fall inside the scan scope (`git ls-files -s` shows no 120000 entries), so a repo scan of the real checkout is unaffected.
+
+## U4+U5 (050.004-T) PA-7 inventory precheck: MATCH
+
+- `git grep -n -E 'GIT_[A-Z_]+|DefaultGitRunner|gitShowToplevel'` over `tools/gatecheck` and `scripts/check-retired-architecture.sh` returns 78 lines at HEAD and 78 lines at Stage's read base main@372ab38. `Compare-Object` finds zero differences, including line numbers.
+- Classification:
+  - `check_retired_architecture_wrapper_test.go:228` sets GIT_CEILING_DIRECTORIES → kept (allow-listed).
+  - `ciwiring_retire_test.go:313-335` and `unignore/testutil_test.go:44-99` build their own child envs → unaffected.
+  - The retiredarch tests (`retiredarch_test.go`, `selftest_selection_test.go`, `select_test.go`) call DefaultGitRunner on the real checkout and set no GIT_* → dropped-safe.
+- Lines that matched but are not setters or callers:
+  - `pin_test.go:425` is a static reject-row fixture string in `TestCheckPathspecPin_PackageClosure_RejectTable`. It is parsed, never executed.
+  - `unignore/git.go:42` is a comment.
+  - `unignore` and `writepath` each declare their own distinct DefaultGitRunner symbols, which this change does not touch.
+  - `register_retired_arch.go:26` is the production wiring, i.e. the subject of the fix. It sets no GIT_*.
+  - None of these differ from Stage's read, so there is no deviation and no HALT.
