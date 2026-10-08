@@ -2,8 +2,8 @@
 // scan_path and select_repo_paths from the M4-deleted retired_arch module.
 //
 // The scan-scope surface of this file (the imports, GitRunner,
-// DefaultGitRunner, scanArm, scanScope, shouldScanRepoPath and
-// selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
+// DefaultGitRunner, gitRunnerEnv, scanArm, scanScope, shouldScanRepoPath
+// and selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
 // these declarations as frozen. Edit them only together with pin.go's
 // independent expectation, in the same commit; otherwise the pin fails
 // closed. scanScope is the single permitted home for the scope literals.
@@ -188,8 +188,8 @@ func scanPath(path string) []string {
 // from scanScope, in declaration order; it restates no scope literal.
 //
 // The scan-scope surface of this file (the imports, GitRunner,
-// DefaultGitRunner, scanArm, scanScope, shouldScanRepoPath and
-// selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
+// DefaultGitRunner, gitRunnerEnv, scanArm, scanScope, shouldScanRepoPath
+// and selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
 // these declarations as frozen. Edit them only together with pin.go's
 // independent expectation, in the same commit; otherwise the pin fails
 // closed. scanScope is the single permitted home for the scope literals.

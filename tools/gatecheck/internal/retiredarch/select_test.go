@@ -323,8 +323,8 @@ func TestMain(m *testing.M) {
 }
 
 // copyFakeGit copies the running test binary to dir/git (git.exe on
-// Windows) with mode 0o755 and returns the copy's path (plan G2-1).
-func copyFakeGit(t *testing.T, dir string) string {
+// Windows) with mode 0o755 (plan G2-1).
+func copyFakeGit(t *testing.T, dir string) {
 	t.Helper()
 	self, err := os.Executable()
 	if err != nil {
@@ -342,7 +342,6 @@ func copyFakeGit(t *testing.T, dir string) string {
 	if err := os.WriteFile(dst, data, 0o755); err != nil {
 		t.Fatalf("write fake git: %v", err)
 	}
-	return dst
 }
 
 // setupRelativeFakeGit puts a fake git in a fresh directory, makes it the
@@ -490,6 +489,8 @@ func TestGitRunnerEnv(t *testing.T) {
 		"git_dir=/decoy/.git",
 		"Git_Index_File=/decoy/index",
 		"GIT_CEILING_DIRECTORIES=/ceiling",
+		"Git_Ceiling_Directories=/ceiling2",
+		"git_ceiling_directories=/ceiling3",
 		`=C:=C:\x`,
 		"GITX=1",
 		"GIT_CONFIG_GLOBAL=/decoy/gitconfig",
@@ -499,6 +500,8 @@ func TestGitRunnerEnv(t *testing.T) {
 	want := []string{
 		"PATH=/usr/bin",
 		"GIT_CEILING_DIRECTORIES=/ceiling",
+		"Git_Ceiling_Directories=/ceiling2",
+		"git_ceiling_directories=/ceiling3",
 		`=C:=C:\x`,
 		"GITX=1",
 		"HOME=/home/u",

@@ -500,7 +500,8 @@ func TestUniverseDeclNames_CoverCanonicalTexts(t *testing.T) {
 
 // TestCheckPathspecPin_GitRunnerIsolation_Rejected (U5 scenario 2;
 // D7BF9F74): weakening DefaultGitRunner's git-environment isolation is a
-// pin violation. Each row mutates one literal of a whole-package copy and
+// pin violation. Each row mutates one literal of the package copy's
+// select.go (writeMutatedCopy) and
 // must leave SelectFound, GuardFound and PrefixOK true while clearing
 // PathspecOK, so a parse-error all-false result cannot pass (G2-2).
 // Row (i) is the gitRunnerEnv freeze; row (ii) is characterization, already

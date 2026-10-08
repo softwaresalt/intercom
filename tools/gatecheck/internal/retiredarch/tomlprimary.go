@@ -24,10 +24,12 @@
 //
 // Some legal shapes (non-contiguous sibling tables, a table reopened after
 // an interleaved unrelated table) still defeat the lockstep cursor. For
-// those, and only those, scanTomlPrimary falls back to walkDecodedTOML, a
-// deterministic bytewise-sorted walk of the decoded tree (plan U1, INV-4);
-// sorting is confined to that fallback and never applied to the cursor
-// walk's success path.
+// those, scanTomlPrimary falls back to walkDecodedTOML, a deterministic
+// bytewise-sorted walk of the decoded tree (plan U1, INV-4), and returns
+// its findings. On the cursor walk's success path walkDecodedTOML also
+// runs as a completeness oracle (plan U2): its findings are compared as a
+// multiset only, so its sort order never reaches the success path's
+// output, which keeps the cursor walk's declaration order.
 package retiredarch
 
 import (
@@ -276,16 +278,19 @@ func walkValue(posixPath string, prefix []string, value interface{}, cursor *tom
 	}
 }
 
-// walkDecodedTOML is the deterministic fallback walk (plan U1, INV-4) used
-// whenever the lockstep cursor walk (walkTable) reports a cursor desync.
+// walkDecodedTOML is the deterministic fallback walk (plan U1, INV-4) whose
+// findings are returned whenever the lockstep cursor walk (walkTable)
+// reports a cursor desync, and the completeness oracle (plan U2) that
+// re-derives the findings on the cursor walk's success path.
 // It needs no MetaData.Keys() cursor: it visits every key of one decoded
 // table instance exactly once, in bytewise-sorted key order, reporting it
 // via the same key-path-only predicate walkTable uses
 // (matchesForbiddenParts(composeTomlParts(keyPath))) and the same finding
 // text (reportTomlKey), then recurses into the key's value. Sorting makes
-// the result deterministic; it is only ever used when the cursor walk
-// could not recover the document's declaration order, so the Python
-// insertion-order parity of the success path is untouched.
+// the result deterministic; its order is only ever output when the cursor
+// walk could not recover the document's declaration order (the oracle
+// compares multisets), so the Python insertion-order parity of the
+// success path is untouched.
 func walkDecodedTOML(posixPath string, prefix []string, value map[string]interface{}, findings *[]string) error {
 	keys := make([]string, 0, len(value))
 	for key := range value {
@@ -395,9 +400,11 @@ func scanTomlPrimaryWith(path string, walk, fallback func(string, []string, map[
 		// the lockstep cursor). Discard the partial cursor findings and
 		// let the deterministic fallback walk decide (INV-4: the fallback
 		// is authoritative whenever the cursor walk errors). A fallback
-		// failure still fails closed with the parse-error format.
+		// failure still fails closed with the parse-error format. The
+		// fallback never receives the (already consumed) cursor: it is
+		// cursor-free by contract, so it gets nil.
 		var fallbackFindings []string
-		if ferr := fallback(posixPath, nil, data, cursor, &fallbackFindings); ferr != nil {
+		if ferr := fallback(posixPath, nil, data, nil, &fallbackFindings); ferr != nil {
 			return []string{fmt.Sprintf("%s: TOML parse error (fail-closed): %v", posixPath, ferr)}
 		}
 		return fallbackFindings
@@ -409,7 +416,7 @@ func scanTomlPrimaryWith(path string, walk, fallback func(string, []string, map[
 	// fallback walk and require the same multiset. Cursor order is kept
 	// on agreement (Python insertion-order parity).
 	var oracleFindings []string
-	if err := fallback(posixPath, nil, data, cursor, &oracleFindings); err != nil {
+	if err := fallback(posixPath, nil, data, nil, &oracleFindings); err != nil {
 		return []string{fmt.Sprintf("%s: TOML parse error (fail-closed): %v", posixPath, err)}
 	}
 	if !sameFindingMultiset(findings, oracleFindings) {

@@ -67,7 +67,7 @@ timeout because a pre-existing engram daemon (pid 40120, started 20:38
 local) held the workspace lock. Re-run with `-count=1`: ok (25.3s).
 Unrelated to retiredarch.
 
-## U2 (050.002-T) — parent `HEAD` after U1 bookkeeping (code parent `7b58fdc`)
+## U2 (050.002-T) — parent `a8af27e` (U1 bookkeeping head; code parent `7b58fdc`). Platform: windows/amd64, go1.26.5
 
 ### Seam-only step (AC-4)
 
@@ -136,7 +136,7 @@ fixture) passes.
 ## U5 (050.004-T, U5 half): staged freeze
 
 - Stage 1: refroze the canonicalDecls import and DefaultGitRunner texts verbatim from U4, and added `gitRunnerEnv: token.FUNC` to closedWorldDecls only. Pin tests (`-run 'Pin|Pathspec'`) passed, so the live tree is OK().
-- Stage 2: wrote `TestCheckPathspecPin_GitRunnerIsolation_Rejected`.
+- Stage 2: wrote `TestCheckPathspecPin_GitRunnerIsolation_Rejected`. Command: `go test ./tools/gatecheck/internal/retiredarch/ -run TestCheckPathspecPin_GitRunnerIsolation_Rejected`, parent dc62233 + the Stage 1 working tree.
   - Row (i), `"GIT_CONFIG_NOSYSTEM=1"` → `"=0"`: RED, `got {SelectFound:true GuardFound:true PathspecOK:true PrefixOK:true}`, because gitRunnerEnv was not yet frozen.
   - Row (ii), `cmd.Env = gitRunnerEnv(os.Environ())` → `_ = gitRunnerEnv(os.Environ())`: PASS, as expected for a characterization row. It is already rejected through the frozen DefaultGitRunner text.
 - Stage 3: added the gitRunnerEnv text to canonicalDecls and "gitRunnerEnv" to pathspecFrozenDecls. prefixFrozenDecls and confinedIdentDecls are unchanged. Row (i) is now GREEN. The whole retiredarch package is green.
@@ -149,7 +149,7 @@ fixture) passes.
 
 ## U6 (050.006-T): reds against the parent
 
-- Platform: windows/amd64, go1.26.5. Parent SHA: 8474553 (ALP-2 bookkeeping head; code parent 3453ba4).
+- Platform: windows/amd64, go1.26.5. Parent SHA: 8474553 (ALP-2 bookkeeping head; code parent 3453ba4). Command: `go test ./tools/gatecheck/internal/retiredarch/ -run 'TestGitShowToplevel'`.
 - AC-1 `TestGitShowToplevelIgnoresGitEnv`: RED. With decoy GIT_DIR/GIT_WORK_TREE set, the call returned D's root `.../002` where R's root `.../001` was expected. The expected value was derived first without the decoy env (G2-3).
 - AC-2 `TestGitShowToplevelRefusesRelativeGit`: RED. It returned the fake's absolute path with a nil error, so the relative fake git was launched.
 ### U6 gates and commit
@@ -164,3 +164,38 @@ fixture) passes.
   - `retired-arch` repo scan: exit 0 with no findings. The result is unchanged even though this host exports ambient GIT_CONFIG_COUNT/KEY_*.
   - `bash scripts/check-retired-architecture.sh`: exit 0.
 - No tracked symlinks (no mode 120000 entries). CI jobs run directly on hosted runners with no `container:`, so residual R-A2f (safe.directory dropped) is not triggered.
+### Principle IV deviation (P-005 event, recorded at local review)
+
+- The runtime-verification binary above was built to `%TEMP%\gatecheck-040s.exe`, which is outside the workspace (constitution Principle IV, CLI workspace containment). The Constitution Reviewer flagged it as a P2. P-005 event: `violation_policy: Principle IV`, `gate: Ship runtime verification`, `action: re-run inside the workspace`.
+- I did not delete the stray `%TEMP%` binary. Deleting it would be a second write outside the cwd. The operator may remove `%TEMP%\gatecheck-040s.exe` by hand; it is inert.
+- Re-run inside the workspace: `go build -o dist/gatecheck-040s.exe ./tools/gatecheck` (`dist/` is gitignored, `.gitignore:35`). At head ba5080d plus the review-fix working tree, with `--root <checkout>`:
+  - `retired-arch --self-test`: exit 0, 64 PASS / 0 FAIL.
+  - `retired-arch --self-test-integrity`: exit 0.
+  - `retired-arch` repo scan: exit 0.
+  - `bash scripts/check-retired-architecture.sh`: exit 0.
+
+## L2-3 stdlib and dependency citations (GOROOT `C:\Program Files\Go`, go1.26.5)
+
+- Relative-git refusal (U4 scenario 3, U6 AC-2): `os/exec/lp_windows.go:156-160` and `os/exec/lp_unix.go:69-72`. Under `GODEBUG=execerrdot=0`, `LookPath` returns a relative path with a nil error instead of `ErrDot`. That is why DefaultGitRunner and gitShowToplevel refuse a non-absolute `cmd.Path` explicitly.
+- `cmd.Env` semantics (U4/U6): `os/exec/exec.go:171-172` (`Env []string`). A non-nil Env replaces the inherited environment wholesale. `exec.go:179-188`: `Dir` may add PWD, which is not a GIT_* variable.
+- Junction and irregular-file detection (U3): `os/types_windows.go:209` and `:245` set `ModeSymlink` for symlinks and mount points (junctions). `:222-227` set `ModeIrregular` for other reparse points. `os/types.go:52` defines `ModeIrregular`. That is why containedRegularFile rejects intermediates that are not IsDir or carry the Symlink or Irregular bit, and requires `IsRegular()` for the final component.
+- Decoded TOML type set (U1 walkDecodedValue): `github.com/BurntSushi/toml` v1.6.0 `decode.go:85-105` maps TOML values to Go values, and `decode.go:287` decodes into `interface{}` as map[string]interface{}, []map[string]interface{}, []interface{}, string, int64, float64, bool or time.Time. Any other type fails closed.
+
+## Local review fix cycle 1 (head ba5080d → review-fix commit)
+
+- Reviews over f50dba4..ba5080d (Go, Correctness, Security, Maintainability, Constitution, and Adversarial with 4 models) found 0 P0 and 0 P1.
+- Fixed in scope:
+  - tomlprimary.go file header and walkDecodedTOML doc now describe its role as the completeness oracle.
+  - The fallback is passed a nil cursor (the cursor is already consumed, and the fallback is cursor-free by contract).
+  - New row `desync-and-fallback-errors` in `TestScanTomlPrimaryWith_CompletenessOracle`. It is RED against ba5080d, where the fallback received the non-nil consumed cursor, and GREEN after the fix.
+  - Removed the duplicate test helper `sameMultiset` in favour of the production `sameFindingMultiset`.
+  - The select.go frozen-surface comments now list gitRunnerEnv.
+  - The pin.go confinedIdentDecls comment explains why gitRunnerEnv is excluded.
+  - The pin_test.go comment now says the mutated copy is select.go only.
+  - copyFakeGit's unused return value was dropped.
+  - Mixed-case `Git_Ceiling_Directories` and `git_ceiling_directories` keep rows were added to TestGitRunnerEnv.
+- Deferred: adversarial #1 (runRepoScan returns exit 0 on an empty selection in repo mode; pre-existing, Python parity) is captured as stash **0D643BE8** (DEFERRED SCOPE EXPANSION, P-021 C2).
+- Declined with rationale:
+  - Adversarial #3: findings are dropped on a completeness failure, which is plan U2 design. The fail-closed single finding is intentional.
+  - Adversarial #5: the U6 test vectors are GIT_DIR and GIT_WORK_TREE only. The config-variable stripping is covered by TestGitRunnerEnv and TestDefaultGitRunnerIgnoresGitEnv through the shared gitRunnerEnv.
+- Open: AC-4b `TestContainedRegularFile_UnreadableIntermediate_FailsClosed` HEAD evidence comes from the Linux CI run on the PR. The run is cited in the PR readiness block.

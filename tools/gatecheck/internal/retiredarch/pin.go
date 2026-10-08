@@ -208,7 +208,10 @@ var closedWorldDecls = map[string]token.Token{
 
 // confinedIdentDecls are the §A-CANON declaration names, the only
 // declarations of select.go in which the identifiers scanScope and scanArm
-// may occur (fixed from 033.005-T onward).
+// may occur (fixed from 033.005-T onward). gitRunnerEnv (040-S U5) is
+// deliberately absent: it is frozen through canonicalDecls and
+// pathspecFrozenDecls but has no reason to mention scanScope or scanArm,
+// so it gets no confinement exemption.
 var confinedIdentDecls = map[string]bool{
 	"import":             true,
 	"GitRunner":          true,

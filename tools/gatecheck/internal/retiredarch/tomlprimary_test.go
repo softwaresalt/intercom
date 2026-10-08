@@ -314,30 +314,11 @@ func TestWalkDecodedTOML_MatchesWalkTable_DesyncFree(t *testing.T) {
 			if len(cursorFindings) < row.min {
 				t.Fatalf("walkTable findings = %q, want at least %d (row is vacuous)", cursorFindings, row.min)
 			}
-			if !sameMultiset(cursorFindings, fallbackFindings) {
+			if !sameFindingMultiset(cursorFindings, fallbackFindings) {
 				t.Fatalf("multiset mismatch:\n walkTable       = %q\n walkDecodedTOML = %q", cursorFindings, fallbackFindings)
 			}
 		})
 	}
-}
-
-// sameMultiset reports whether a and b hold the same strings with the
-// same multiplicities, ignoring order.
-func sameMultiset(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	counts := make(map[string]int, len(a))
-	for _, s := range a {
-		counts[s]++
-	}
-	for _, s := range b {
-		counts[s]--
-		if counts[s] < 0 {
-			return false
-		}
-	}
-	return true
 }
 
 // TestWalkDecodedTOML_UnexpectedType_FailsClosed is U1 scenario 3 (AC-3):
@@ -412,6 +393,30 @@ func TestScanTomlPrimaryWith_CompletenessOracle(t *testing.T) {
 		want := []string{posix + ": TOML parse error (fail-closed): injected fallback failure"}
 		if got := scanTomlPrimaryWith(path, walkTable, failing); !reflect.DeepEqual(got, want) {
 			t.Fatalf("scanTomlPrimaryWith(failing fallback) = %q, want %q", got, want)
+		}
+	})
+	// Review-fix (040-S local review): the desync path's own fallback
+	// failure must also fail closed with exactly the parse-error finding,
+	// discarding the cursor walk's partial findings, and the fallback must
+	// be handed a nil cursor (it is cursor-free by contract).
+	t.Run("desync-and-fallback-errors", func(t *testing.T) {
+		desync := func(p string, prefix []string, v map[string]interface{}, c *tomlCursor, f *[]string) error {
+			_ = walkTable(p, prefix, v, c, f)
+			return errors.New("retiredarch: TOML cursor desync: injected")
+		}
+		var gotCursor *tomlCursor
+		calls := 0
+		failing := func(_ string, _ []string, _ map[string]interface{}, c *tomlCursor, _ *[]string) error {
+			calls++
+			gotCursor = c
+			return errors.New("injected fallback failure")
+		}
+		want := []string{posix + ": TOML parse error (fail-closed): injected fallback failure"}
+		if got := scanTomlPrimaryWith(path, desync, failing); !reflect.DeepEqual(got, want) {
+			t.Fatalf("scanTomlPrimaryWith(desync, failing fallback) = %q, want %q", got, want)
+		}
+		if calls != 1 || gotCursor != nil {
+			t.Fatalf("fallback calls = %d, cursor = %v; want exactly 1 call with a nil cursor", calls, gotCursor)
 		}
 	})
 }
