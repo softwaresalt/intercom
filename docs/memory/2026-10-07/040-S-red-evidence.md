@@ -146,3 +146,11 @@ fixture) passes.
 ### U4+U5 gates and commit
 - Full gates: gofmt -l . is empty, vet=0, build=0, test=0.
 - ALP-2 single commit 3453ba4. `git show --stat` lists exactly pin.go, pin_test.go, select.go and select_test.go (PA-1).
+
+## U6 (050.006-T): reds against the parent
+
+- Platform: windows/amd64, go1.26.5. Parent SHA: 8474553 (ALP-2 bookkeeping head; code parent 3453ba4).
+- AC-1 `TestGitShowToplevelIgnoresGitEnv`: RED. With decoy GIT_DIR/GIT_WORK_TREE set, the call returned D's root `.../002` where R's root `.../001` was expected. The expected value was derived first without the decoy env (G2-3).
+- AC-2 `TestGitShowToplevelRefusesRelativeGit`: RED. It returned the fake's absolute path with a nil error, so the relative fake git was launched.
+### U6 gates and commit
+- Full gates: gofmt -l . is empty, vet=0, build=0, test=0. Code commit e31a06c.
