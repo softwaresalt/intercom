@@ -52,6 +52,7 @@ config.toml
 .pr-comments.json
 .copilot-tracking/pr/**/pr-reference.xml
 *.code-workspace
+.github/copilot/
 
 # Directories
 bin/
