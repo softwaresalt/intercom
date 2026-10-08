@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -291,4 +294,225 @@ func isGitTrackedFile(t *testing.T, root, relPath string) bool {
 		return false
 	}
 	return true
+}
+
+// TestMain doubles as a natively launchable fake git (U4/U6 helper; plan
+// S2-1, AS-2/G-1). copyFakeGit copies this test binary to dir/git(.exe);
+// when that copy is launched git-style (os.Args[1] is "ls-files" or "-C")
+// with RETIREDARCH_FAKE_GIT=1, it writes the RETIREDARCH_FAKE_GIT_MARKER
+// file, prints RETIREDARCH_FAKE_GIT_OUT and exits 0 before any test flag
+// parsing. A stray exported RETIREDARCH_FAKE_GIT=1 seen with test-style
+// arguments exits 2 instead, so it can never turn the package suite into a
+// silent no-op.
+func TestMain(m *testing.M) {
+	if os.Getenv("RETIREDARCH_FAKE_GIT") == "1" {
+		if len(os.Args) > 1 && (os.Args[1] == "ls-files" || os.Args[1] == "-C") {
+			if marker := os.Getenv("RETIREDARCH_FAKE_GIT_MARKER"); marker != "" {
+				if err := os.WriteFile(marker, []byte("fake git ran\n"), 0o644); err != nil {
+					fmt.Fprintf(os.Stderr, "fake git: write marker: %v\n", err)
+					os.Exit(3)
+				}
+			}
+			fmt.Print(os.Getenv("RETIREDARCH_FAKE_GIT_OUT"))
+			os.Exit(0)
+		}
+		fmt.Fprintln(os.Stderr, "retiredarch tests: RETIREDARCH_FAKE_GIT=1 is set but the binary was invoked test-style; refusing to run the suite as a silent no-op")
+		os.Exit(2)
+	}
+	os.Exit(m.Run())
+}
+
+// copyFakeGit copies the running test binary to dir/git (git.exe on
+// Windows) with mode 0o755 (plan G2-1).
+func copyFakeGit(t *testing.T, dir string) {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	data, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatalf("read test binary: %v", err)
+	}
+	name := "git"
+	if runtime.GOOS == "windows" {
+		name = "git.exe"
+	}
+	dst := filepath.Join(dir, name)
+	if err := os.WriteFile(dst, data, 0o755); err != nil {
+		t.Fatalf("write fake git: %v", err)
+	}
+}
+
+// setupRelativeFakeGit puts a fake git in a fresh directory, makes it the
+// working directory, and sets PATH="." with GODEBUG=execerrdot=0 so that
+// exec.LookPath("git") resolves to a RELATIVE path with a nil error (plan
+// G-3; precondition asserted). It returns the directory and the absolute
+// marker path the fake writes if it is ever launched.
+func setupRelativeFakeGit(t *testing.T, out string) (dir, marker string) {
+	t.Helper()
+	dir = t.TempDir()
+	copyFakeGit(t, dir)
+	marker = filepath.Join(t.TempDir(), "fake-git-ran")
+	t.Chdir(dir)
+	t.Setenv("PATH", ".")
+	t.Setenv("GODEBUG", "execerrdot=0")
+	t.Setenv("RETIREDARCH_FAKE_GIT", "1")
+	t.Setenv("RETIREDARCH_FAKE_GIT_MARKER", marker)
+	t.Setenv("RETIREDARCH_FAKE_GIT_OUT", out)
+	if p, err := exec.LookPath("git"); err != nil || filepath.IsAbs(p) {
+		t.Fatalf("precondition: exec.LookPath(\"git\") = (%q, %v), want a relative path and a nil error", p, err)
+	}
+	return dir, marker
+}
+
+// assertFakeGitNotRun fails the test if the fake git wrote its marker.
+func assertFakeGitNotRun(t *testing.T, marker string) {
+	t.Helper()
+	if _, err := os.Stat(marker); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the relative fake git was launched (marker stat err = %v)", err)
+	}
+}
+
+// fixtureGit runs real git for test-fixture construction only, with every
+// ambient GIT_* variable removed and global/system config isolated, so the
+// fixture is identical on every machine. It deliberately does not use the
+// code under test.
+func fixtureGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	base := []string{"-c", "user.name=retiredarch-test", "-c", "user.email=retiredarch-test@example.invalid", "-c", "commit.gpgsign=false"}
+	cmd := exec.Command("git", append(base, args...)...)
+	cmd.Dir = dir
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fixture git %v: %v: %s", args, err, out)
+	}
+}
+
+// TestDefaultGitRunnerIgnoresGitEnv (U4 scenario 2, AC-2): GIT_*
+// variables in the gate's own environment must not change which files
+// DefaultGitRunner selects. The baseline records 4537B2F6's known
+// quoted-path skip: internal/<e-acute>.go is printed quoted by git and is
+// therefore not selected. When 4537B2F6 lands it must update this
+// baseline and replace vectors (c)-(e).
+func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
+	root := t.TempDir()
+	for rel, body := range map[string]string{
+		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
+		"internal/\u00e9.go": "package internal\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fixtureGit(t, root, "init", "-q")
+	fixtureGit(t, root, "add", "-A")
+	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
+
+	want := []string{"cmd/x/main.go"}
+	baseline, err := selectRepoPaths(root, DefaultGitRunner)
+	if err != nil || !slices.Equal(baseline, want) {
+		t.Fatalf("baseline selection = (%q, %v), want (%q, nil)", baseline, err, want)
+	}
+
+	globalCfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(globalCfg, []byte("[core]\n\tquotePath = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vectors := []struct {
+		name string
+		env  map[string]string
+	}{
+		{"a_GIT_INDEX_FILE_nonexistent", map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")}},
+		{"b_GIT_LITERAL_PATHSPECS", map[string]string{"GIT_LITERAL_PATHSPECS": "1"}},
+		{"c_GIT_CONFIG_COUNT_quotePath", map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.quotePath", "GIT_CONFIG_VALUE_0": "false"}},
+		{"d_GIT_CONFIG_PARAMETERS_quotePath", map[string]string{"GIT_CONFIG_PARAMETERS": "'core.quotepath'='false'"}},
+		{"e_GIT_CONFIG_GLOBAL_quotePath", map[string]string{"GIT_CONFIG_GLOBAL": globalCfg}},
+	}
+	for _, v := range vectors {
+		t.Run(v.name, func(t *testing.T) {
+			// Set only now, after the fixture repo is fully built (G2-7).
+			for k, val := range v.env {
+				t.Setenv(k, val)
+			}
+			got, err := selectRepoPaths(root, DefaultGitRunner)
+			if err != nil || !slices.Equal(got, want) {
+				t.Fatalf("selection with %v = (%q, %v), want (%q, nil)", v.env, got, err, want)
+			}
+		})
+	}
+}
+
+// TestDefaultGitRunnerRefusesRelativeGit (U4 scenario 3, AC-3): when PATH
+// lookup resolves git to a relative path (here PATH="." with
+// GODEBUG=execerrdot=0), DefaultGitRunner refuses it before launching
+// anything.
+func TestDefaultGitRunnerRefusesRelativeGit(t *testing.T) {
+	dir, marker := setupRelativeFakeGit(t, "cmd/x/main.go\n")
+	out, err := DefaultGitRunner(dir, "cmd/")
+	if err == nil || !strings.Contains(err.Error(), "non-absolute") {
+		t.Fatalf("DefaultGitRunner = (%q, %v), want an error containing \"non-absolute\"", out, err)
+	}
+	assertFakeGitNotRun(t, marker)
+}
+
+// TestDefaultGitRunnerMissingGitIsNotFound (U4 AC-4, characterization;
+// SB2-2): with no git reachable at all, cmd.Err is reported first, so the
+// error is exec.ErrNotFound and never the non-absolute refusal.
+func TestDefaultGitRunnerMissingGitIsNotFound(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("PATH", "")
+	_, err := DefaultGitRunner(dir, "cmd/")
+	if !errors.Is(err, exec.ErrNotFound) || strings.Contains(fmt.Sprint(err), "non-absolute") {
+		t.Fatalf("DefaultGitRunner err = %v, want exec.ErrNotFound without \"non-absolute\"", err)
+	}
+}
+
+// TestGitRunnerEnv (U4 scenario 1, AC-1): the pure environment filter.
+func TestGitRunnerEnv(t *testing.T) {
+	in := []string{
+		"PATH=/usr/bin",
+		"git_dir=/decoy/.git",
+		"Git_Index_File=/decoy/index",
+		"GIT_CEILING_DIRECTORIES=/ceiling",
+		"Git_Ceiling_Directories=/ceiling2",
+		"git_ceiling_directories=/ceiling3",
+		`=C:=C:\x`,
+		"GITX=1",
+		"GIT_CONFIG_GLOBAL=/decoy/gitconfig",
+		"HOME=/home/u",
+		"GIT_CONFIG_NOSYSTEM=0",
+	}
+	want := []string{
+		"PATH=/usr/bin",
+		"GIT_CEILING_DIRECTORIES=/ceiling",
+		"Git_Ceiling_Directories=/ceiling2",
+		"git_ceiling_directories=/ceiling3",
+		`=C:=C:\x`,
+		"GITX=1",
+		"HOME=/home/u",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_CONFIG_SYSTEM=" + os.DevNull,
+	}
+	if got := gitRunnerEnv(in); !slices.Equal(got, want) {
+		t.Fatalf("gitRunnerEnv =\n%q\nwant\n%q", got, want)
+	}
+	if got := gitRunnerEnv(nil); !slices.Equal(got, want[len(want)-3:]) {
+		t.Fatalf("gitRunnerEnv(nil) = %q, want only the three appended entries", got)
+	}
 }

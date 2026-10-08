@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -573,5 +575,174 @@ func TestConfigTomlExample_DualEngineAgreement_LiveCorpus(t *testing.T) {
 	}
 	if (len(primary) > 0) != (len(fallback) > 0) {
 		t.Fatalf("dual-engine disagreement on config.toml.example: primary=%v fallback=%v", primary, fallback)
+	}
+}
+
+// u3StubGit returns a GitRunner that ignores the pathspecs and reports
+// exactly the given repo-relative paths, so a U3 containment scenario
+// needs no real git index (plan U3: containment is index-independent).
+func u3StubGit(paths ...string) GitRunner {
+	return func(root string, pathspecs ...string) ([]byte, error) {
+		return []byte(strings.Join(paths, "\n") + "\n"), nil
+	}
+}
+
+// u3CleanGo is a retired-token-free Go source body: read through a link,
+// it scans clean, which is exactly why the parent's Code 0 is the red.
+const u3CleanGo = "package x\n\nfunc Clean() {}\n"
+
+// u3Junction creates a Windows directory junction via plain argv (no
+// embedded quotes; plan G-2). It fails the test if mklink fails.
+func u3Junction(t *testing.T, link, target string) {
+	t.Helper()
+	out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
+	if err != nil {
+		t.Fatalf("mklink /J %s %s: %v: %s", link, target, err, out)
+	}
+}
+
+// u3MustContain asserts a repo scan failed closed with the U3 synthetic
+// finding for rel.
+func u3MustContain(t *testing.T, res Result, root, rel string) {
+	t.Helper()
+	want := filepath.ToSlash(filepath.Join(root, filepath.FromSlash(rel))) + ": not a contained regular file: "
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, want) || !strings.Contains(res.Stderr, "(fail-closed synthetic finding)") {
+		t.Fatalf("stderr = %q, want the U3 finding prefix %q", res.Stderr, want)
+	}
+}
+
+// TestRunRepoScan_FinalComponentSymlink_FailsClosed (U3 AC-1): a selected
+// internal/x.go that is a symlink to a clean file outside root must not be
+// read through.
+func TestRunRepoScan_FinalComponentSymlink_FailsClosed(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	target := filepath.Join(outside, "x.go")
+	if err := os.WriteFile(target, []byte(u3CleanGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "internal", "x.go")); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("os.Symlink unavailable on Windows without privilege: %v", err)
+		}
+		t.Fatalf("os.Symlink: %v", err)
+	}
+	u3MustContain(t, runRepoScan(root, u3StubGit("internal/x.go")), root, "internal/x.go")
+}
+
+// TestRunRepoScan_FinalComponentJunction_FailsClosed (U3 AC-2, Windows):
+// a selected internal/x.go that is a junction to an outside directory
+// yields the U3 text instead of the parent's directory read-error text.
+func TestRunRepoScan_FinalComponentJunction_FailsClosed(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("directory junctions are Windows-only")
+	}
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	u3Junction(t, filepath.Join(root, "internal", "x.go"), outside)
+	u3MustContain(t, runRepoScan(root, u3StubGit("internal/x.go")), root, "internal/x.go")
+}
+
+// TestRunRepoScan_IntermediateLink_FailsClosed (U3 AC-3): an intermediate
+// internal/d that is a symlink (Unix) or a junction (Windows) to an
+// outside directory holding clean y.go must not be traversed.
+func TestRunRepoScan_IntermediateLink_FailsClosed(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "y.go"), []byte(u3CleanGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "internal", "d")
+	if runtime.GOOS == "windows" {
+		u3Junction(t, link, outside)
+	} else if err := os.Symlink(outside, link); err != nil {
+		t.Fatalf("os.Symlink: %v", err)
+	}
+	u3MustContain(t, runRepoScan(root, u3StubGit("internal/d/y.go")), root, "internal/d/y.go")
+}
+
+// TestContainedRegularFile_RejectsMalformedComponents (U3 AC-4): these
+// rel shapes never pass shouldScanRepoPath, so they are direct unit rows.
+func TestContainedRegularFile_RejectsMalformedComponents(t *testing.T) {
+	root := t.TempDir()
+	rows := []string{"a//b.go", "./a.go", "../x.go", "a/", ""}
+	if runtime.GOOS == "windows" {
+		rows = append(rows, `a\b.go`, "c:x.go", "a/b:c.go")
+	}
+	for _, rel := range rows {
+		if ok, reason := containedRegularFile(root, rel); ok || reason == "" {
+			t.Errorf("containedRegularFile(%q) = (%v, %q), want (false, non-empty reason)", rel, ok, reason)
+		}
+	}
+}
+
+// TestContainedRegularFile_AcceptsRegularAndMissing pins the two ok=true
+// outcomes: a real regular file under real directories, and a path that
+// verifiably does not exist (fs.ErrNotExist falls through to scanPath).
+func TestContainedRegularFile_AcceptsRegularAndMissing(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal", "d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "d", "y.go"), []byte(u3CleanGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"internal/d/y.go", "internal/gone.go", "internal/nodir/gone.go"} {
+		if ok, reason := containedRegularFile(root, rel); !ok {
+			t.Errorf("containedRegularFile(%q) = (false, %q), want ok", rel, reason)
+		}
+	}
+}
+
+// TestRunRepoScan_DeletedFile_KeepsReadErrorText (U3 AC-4
+// characterization): a selected-but-deleted file keeps the existing
+// scanPath read-error text byte-for-byte (SB-3, ED-11 unchanged).
+func TestRunRepoScan_DeletedFile_KeepsReadErrorText(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res := runRepoScan(root, u3StubGit("internal/gone.go"))
+	want := strings.Join(scanPath(filepath.Join(root, "internal", "gone.go")), "\n") + "\n"
+	if res.Code != 1 || res.Stderr != want {
+		t.Fatalf("got (Code=%d, stderr=%q), want (1, %q)", res.Code, res.Stderr, want)
+	}
+	if strings.Contains(res.Stderr, "not a contained regular file") {
+		t.Fatalf("deleted file must not produce the U3 text: %q", res.Stderr)
+	}
+}
+
+// TestContainedRegularFile_UnreadableIntermediate_FailsClosed (U3 AC-4b,
+// non-Windows): a 0o000 intermediate directory makes the child Lstat fail
+// with a permission error; that is not fs.ErrNotExist, so the component
+// type was never verified and the check fails closed with an lstat reason.
+func TestContainedRegularFile_UnreadableIntermediate_FailsClosed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not gate Lstat on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permission checks")
+	}
+	root := t.TempDir()
+	locked := filepath.Join(root, "internal")
+	if err := os.MkdirAll(filepath.Join(locked, "d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	ok, reason := containedRegularFile(root, "internal/d/y.go")
+	if ok || !strings.HasPrefix(reason, "lstat internal/d: ") {
+		t.Fatalf("containedRegularFile = (%v, %q), want (false, \"lstat internal/d: ...\")", ok, reason)
 	}
 }

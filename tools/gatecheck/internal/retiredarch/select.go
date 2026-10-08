@@ -2,8 +2,8 @@
 // scan_path and select_repo_paths from the M4-deleted retired_arch module.
 //
 // The scan-scope surface of this file (the imports, GitRunner,
-// DefaultGitRunner, scanArm, scanScope, shouldScanRepoPath and
-// selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
+// DefaultGitRunner, gitRunnerEnv, scanArm, scanScope, shouldScanRepoPath
+// and selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
 // these declarations as frozen. Edit them only together with pin.go's
 // independent expectation, in the same commit; otherwise the pin fails
 // closed. scanScope is the single permitted home for the scope literals.
@@ -12,6 +12,7 @@ package retiredarch
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -29,10 +30,23 @@ type GitRunner func(root string, pathspecs ...string) ([]byte, error)
 
 // DefaultGitRunner is the production GitRunner: it shells out to
 // `git ls-files -- <pathspecs...>` with root as the working directory.
+//
+// The child runs with gitRunnerEnv's isolated environment (D7BF9F74), so
+// ambient GIT_* variables and global/system git config cannot change the
+// selection. A LookPath failure (cmd.Err) is reported first, and a git
+// that PATH resolved to a non-absolute path is refused before it is
+// launched.
 func DefaultGitRunner(root string, pathspecs ...string) ([]byte, error) {
 	args := append([]string{"ls-files", "--"}, pathspecs...)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = root
+	cmd.Env = gitRunnerEnv(os.Environ())
+	if cmd.Err != nil {
+		return nil, cmd.Err
+	}
+	if !filepath.IsAbs(cmd.Path) {
+		return nil, fmt.Errorf("retiredarch: refusing non-absolute git path %q", cmd.Path)
+	}
 	var stdout, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderrBuf
@@ -43,6 +57,30 @@ func DefaultGitRunner(root string, pathspecs ...string) ([]byte, error) {
 		return nil, err
 	}
 	return stdout.Bytes(), nil
+}
+
+// gitRunnerEnv returns the environment for a gate-owned git child process
+// (D7BF9F74): environ with every entry whose name (the text before the
+// first '=', ASCII-case-folded) starts with GIT_ removed, except
+// GIT_CEILING_DIRECTORIES, followed by GIT_CONFIG_NOSYSTEM=1 and
+// GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM pointed at os.DevNull. Windows
+// "=C:"-style per-drive entries have an empty name and are kept.
+func gitRunnerEnv(environ []string) []string {
+	env := make([]string, 0, len(environ)+3)
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		folded := []byte(name)
+		for i, c := range folded {
+			if 'a' <= c && c <= 'z' {
+				folded[i] = c - ('a' - 'A')
+			}
+		}
+		if strings.HasPrefix(string(folded), "GIT_") && string(folded) != "GIT_CEILING_DIRECTORIES" {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 }
 
 // scanArm is one arm of the retired-architecture scan scope. pathspec is
@@ -150,8 +188,8 @@ func scanPath(path string) []string {
 // from scanScope, in declaration order; it restates no scope literal.
 //
 // The scan-scope surface of this file (the imports, GitRunner,
-// DefaultGitRunner, scanArm, scanScope, shouldScanRepoPath and
-// selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
+// DefaultGitRunner, gitRunnerEnv, scanArm, scanScope, shouldScanRepoPath
+// and selectRepoPaths) is pinned by pin.go (M2-T8; D-030-4, D-030-6). Treat
 // these declarations as frozen. Edit them only together with pin.go's
 // independent expectation, in the same commit; otherwise the pin fails
 // closed. scanScope is the single permitted home for the scope literals.

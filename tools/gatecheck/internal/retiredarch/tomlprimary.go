@@ -21,12 +21,23 @@
 // shapes (reopened tables via dotted-header continuation, arrays of
 // tables, nested arrays of tables, inline tables inside plain arrays,
 // mixed scalar/table arrays) and is documented inline at each function.
+//
+// Some legal shapes (non-contiguous sibling tables, a table reopened after
+// an interleaved unrelated table) still defeat the lockstep cursor. For
+// those, scanTomlPrimary falls back to walkDecodedTOML, a deterministic
+// bytewise-sorted walk of the decoded tree (plan U1, INV-4), and returns
+// its findings. On the cursor walk's success path walkDecodedTOML also
+// runs as a completeness oracle (plan U2): its findings are compared as a
+// multiset only, so its sort order never reaches the success path's
+// output, which keeps the cursor walk's declaration order.
 package retiredarch
 
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -267,6 +278,73 @@ func walkValue(posixPath string, prefix []string, value interface{}, cursor *tom
 	}
 }
 
+// walkDecodedTOML is the deterministic fallback walk (plan U1, INV-4) whose
+// findings are returned whenever the lockstep cursor walk (walkTable)
+// reports a cursor desync, and the completeness oracle (plan U2) that
+// re-derives the findings on the cursor walk's success path.
+// It needs no MetaData.Keys() cursor: it visits every key of one decoded
+// table instance exactly once, in bytewise-sorted key order, reporting it
+// via the same key-path-only predicate walkTable uses
+// (matchesForbiddenParts(composeTomlParts(keyPath))) and the same finding
+// text (reportTomlKey), then recurses into the key's value. Sorting makes
+// the result deterministic; its order is only ever output when the cursor
+// walk could not recover the document's declaration order (the oracle
+// compares multisets), so the Python insertion-order parity of the
+// success path is untouched.
+func walkDecodedTOML(posixPath string, prefix []string, value map[string]interface{}, findings *[]string) error {
+	keys := make([]string, 0, len(value))
+	for key := range value {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		keyPath := make([]string, len(prefix)+1)
+		copy(keyPath, prefix)
+		keyPath[len(prefix)] = key
+		if token, model, matched := matchesForbiddenParts(composeTomlParts(keyPath)); matched {
+			*findings = append(*findings, reportTomlKey(posixPath, keyPath, key, token, model))
+		}
+		if err := walkDecodedValue(posixPath, keyPath, value[key], findings); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walkDecodedValue is walkDecodedTOML's explicit type switch over
+// BurntSushi/toml v1.6.0's complete decoded type set. A table recurses; an
+// array-of-tables walks each element with the SAME prefix (as
+// walkArrayOfTables does); a plain array walks each element with the same
+// prefix (as walkArray does), recursing into nested tables and arrays.
+// The scalar set (string, int64, float64, bool, time.Time -- every TOML
+// date/time kind decodes to time.Time) is a no-op. Anything else is not a
+// type this engine can produce, so the walk fails closed instead of
+// silently skipping a subtree.
+func walkDecodedValue(posixPath string, prefix []string, value interface{}, findings *[]string) error {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return walkDecodedTOML(posixPath, prefix, v, findings)
+	case []map[string]interface{}:
+		for _, elem := range v {
+			if err := walkDecodedTOML(posixPath, prefix, elem, findings); err != nil {
+				return err
+			}
+		}
+		return nil
+	case []interface{}:
+		for _, elem := range v {
+			if err := walkDecodedValue(posixPath, prefix, elem, findings); err != nil {
+				return err
+			}
+		}
+		return nil
+	case string, int64, float64, bool, time.Time:
+		return nil
+	default:
+		return fmt.Errorf("retiredarch: TOML fallback walk: unexpected decoded type %T at %v", value, prefix)
+	}
+}
+
 // scanTomlPrimary ports scan_toml_with_tomllib. Python's implementation
 // wraps BOTH the file read (path.read_text) and the parse
 // (tomllib.loads) in one `except Exception` and formats any failure
@@ -283,6 +361,18 @@ func walkValue(posixPath string, prefix []string, value interface{}, cursor *tom
 // explicitly, before ever calling toml.Decode, to reproduce Python's
 // fail-closed behavior rather than BurntSushi's silent-accept.
 func scanTomlPrimary(path string) []string {
+	return scanTomlPrimaryWith(path, walkTable, func(posixPath string, prefix []string, value map[string]interface{}, _ *tomlCursor, findings *[]string) error {
+		return walkDecodedTOML(posixPath, prefix, value, findings)
+	})
+}
+
+// scanTomlPrimaryWith is scanTomlPrimary with its two walks injected.
+// Production always passes walkTable (the ordered cursor walk) and
+// walkDecodedTOML adapted by a cursor-ignoring closure (the deterministic
+// fallback walk). The parameters exist only so tests can substitute a
+// faulty walk or a failing fallback (plan U2 scenarios 1-3); they are not
+// an extension point.
+func scanTomlPrimaryWith(path string, walk, fallback func(string, []string, map[string]interface{}, *tomlCursor, *[]string) error) []string {
 	posixPath := filepath.ToSlash(path)
 	text, err := pysem.ReadText(path)
 	if err != nil {
@@ -303,11 +393,53 @@ func scanTomlPrimary(path string) []string {
 
 	var findings []string
 	cursor := &tomlCursor{keys: meta.Keys()}
-	if err := walkTable(posixPath, nil, data, cursor, &findings); err != nil {
+	if err := walk(posixPath, nil, data, cursor, &findings); err != nil {
 		// A cursor-desync error is an internal invariant violation of
-		// this port's ordering algorithm, not a TOML content problem;
-		// still fail closed rather than silently under-reporting.
+		// this port's ordering algorithm, not a TOML content problem
+		// (some legal shapes, e.g. non-contiguous sibling tables, defeat
+		// the lockstep cursor). Discard the partial cursor findings and
+		// let the deterministic fallback walk decide (INV-4: the fallback
+		// is authoritative whenever the cursor walk errors). A fallback
+		// failure still fails closed with the parse-error format. The
+		// fallback never receives the (already consumed) cursor: it is
+		// cursor-free by contract, so it gets nil.
+		var fallbackFindings []string
+		if ferr := fallback(posixPath, nil, data, nil, &fallbackFindings); ferr != nil {
+			return []string{fmt.Sprintf("%s: TOML parse error (fail-closed): %v", posixPath, ferr)}
+		}
+		return fallbackFindings
+	}
+
+	// Completeness oracle (plan U2, R2): the cursor walk succeeded, but a
+	// latent cursor bug could still have dropped or invented a finding
+	// without desyncing. Re-derive the findings with the independent
+	// fallback walk and require the same multiset. Cursor order is kept
+	// on agreement (Python insertion-order parity).
+	var oracleFindings []string
+	if err := fallback(posixPath, nil, data, nil, &oracleFindings); err != nil {
 		return []string{fmt.Sprintf("%s: TOML parse error (fail-closed): %v", posixPath, err)}
 	}
+	if !sameFindingMultiset(findings, oracleFindings) {
+		return []string{fmt.Sprintf("%s: TOML completeness check failed: cursor walk omitted or invented findings (fail-closed)", posixPath)}
+	}
 	return findings
+}
+
+// sameFindingMultiset reports whether a and b contain the same finding
+// strings with the same multiplicities, ignoring order.
+func sameFindingMultiset(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, s := range a {
+		counts[s]++
+	}
+	for _, s := range b {
+		counts[s]--
+		if counts[s] < 0 {
+			return false
+		}
+	}
+	return true
 }

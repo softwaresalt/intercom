@@ -13,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -595,7 +597,15 @@ func runRepoScan(root string, git GitRunner) Result {
 
 	var findings []string
 	for _, rel := range relPaths {
-		findings = append(findings, scanPath(filepath.Join(root, filepath.FromSlash(rel)))...)
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		// U3 (990AFA71): never read a selected path through a symlink,
+		// junction or other non-regular component; report it as a
+		// fail-closed synthetic finding instead (INV-2).
+		if ok, reason := containedRegularFile(root, rel); !ok {
+			findings = append(findings, fmt.Sprintf("%s: not a contained regular file: %s (fail-closed synthetic finding)", filepath.ToSlash(path), reason))
+			continue
+		}
+		findings = append(findings, scanPath(path)...)
 	}
 
 	if len(findings) > 0 {
@@ -685,4 +695,59 @@ func runSelfTestAssertions(root string, git GitRunner, stdout, stderr io.Writer)
 		return 1
 	}
 	return 0
+}
+
+// containedRegularFile is the U3 (990AFA71) containment check run before a
+// selected repo path is read. It walks rel ('/'-separated, exactly as
+// `git ls-files` prints it) one component at a time with os.Lstat, which
+// never follows a link. Every intermediate component must be a real
+// directory (no ModeSymlink, no ModeIrregular: a Windows junction reports
+// ModeIrregular under Go >= 1.23), and the final component must be a
+// regular file. An empty, "." or ".." component, or on Windows a component
+// that contains '\' or ':', is a containment violation in its own right.
+//
+// Only an Lstat error that satisfies errors.Is(err, fs.ErrNotExist) returns
+// ok=true. That path verifiably does not exist, so scanPath has nothing to
+// read through and still emits its existing fail-closed read-error text for
+// a deleted tracked file (SB-3, ED-11 unchanged). Any other Lstat error
+// (permission, I/O) means the component type was never verified, so it
+// fails closed with an "lstat <prefix>: <err>" reason (D-RA-2). Stdlib
+// only; no filepath.Abs or filepath.EvalSymlinks (INV-5).
+func containedRegularFile(root, rel string) (bool, string) {
+	parts := strings.Split(rel, "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return false, fmt.Sprintf("invalid path component %q in %q", part, rel)
+		}
+		if runtime.GOOS == "windows" && strings.ContainsAny(part, `\:`) {
+			return false, fmt.Sprintf("invalid path component %q in %q", part, rel)
+		}
+	}
+	current := root
+	for i, part := range parts {
+		current = filepath.Join(current, part)
+		prefix := strings.Join(parts[:i+1], "/")
+		info, err := os.Lstat(current)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return true, ""
+			}
+			var pathErr *fs.PathError
+			if errors.As(err, &pathErr) {
+				err = pathErr.Err
+			}
+			return false, fmt.Sprintf("lstat %s: %v", prefix, err)
+		}
+		mode := info.Mode()
+		if i < len(parts)-1 {
+			if !mode.IsDir() || mode&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
+				return false, fmt.Sprintf("%s is not a real directory (mode %v)", prefix, mode)
+			}
+			continue
+		}
+		if !mode.IsRegular() {
+			return false, fmt.Sprintf("%s is not a regular file (mode %v)", prefix, mode)
+		}
+	}
+	return true, ""
 }
