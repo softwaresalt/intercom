@@ -47,6 +47,10 @@ conditions:
     summary: "Procedural deviation (disclosed, not remediated): shipment-reconcile requires the file-lock skill's single-writer lock on .backlogit/queue/040-S.md from pre-mode through post-mode for Ship Step 6, with no single-agent exemption. The bundled scripts exist at .github/skills/file-lock/scripts/ (the earlier 'not installed' statement was wrong: only the repo-root scripts/ path was checked), but the lock was not acquired. Tracked by the existing Stage-owned deferred entry 9F824B64 (make the lock satisfiable and reconcile it with concurrency.instructions.md); same deviation as the 035-S/036-S/037-S closures."
     satisfied: true
     evidence: ".backlogit/reconcile/040-S-pre-2026-10-08T06-47-39Z.md ('Single-writer lock: NOT ACQUIRED, procedural deviation'); stash entry 9F824B64 (DEFERRED SCOPE EXPANSION, active); docs/closure/040-S-050-F-post-merge-closure.md, section 'Risky action record'"
+  - id: safe-close-not-tool-enforced
+    summary: "Process deviation (disclosed, not remediated): there is no invokable shipment-reconcile safe-close CLI/gate, so the safe-close Step 0 recompute-and-compare was agent-executed with a session-local helper (fresh snapshot, binding 17bab11e... MATCH) and backlogit shipment ship was then invoked directly by the agent. Same residual as 037-S; tracked by the active Stage-owned deferred entry D10D3AFC."
+    satisfied: true
+    evidence: ".backlogit/reconcile/040-S-classify-close-path-2026-10-08T06-49Z.md (issued binding); .backlogit/reconcile/040-S-safe-close-2026-10-08T06-54-43Z.md ('Close path: manually revalidated, not tool-enforced'; Step 0 MATCH; returned_ids [], two-set gate and parent_id checks); stash entry D10D3AFC (DEFERRED SCOPE EXPANSION, active)"
   - id: principle-iv-temp-closure-helpers
     summary: "Two more out-of-workspace writes occurred during the post-merge closure (constitution Principle IV / AGENTS.md CLI workspace containment): the classify/safe-close binding helper script %TEMP%\\binding040s.ps1, and the pre-cascade revert backup %TEMP%\\040s-preclose-backup\\ (639 files copied from .backlogit/queue and .backlogit/archive). Both are inert, were not deleted (deleting them would be a further out-of-workspace write), and are left for operator removal."
     satisfied: true
@@ -91,16 +95,21 @@ All five tasks (050.001-T, 050.002-T, 050.003-T, 050.004-T and 050.006-T) comple
 | a1 covering-feature gate | S4: all five conditions held | `050-F` `active -> done` (auto-archived, still declares `done`) |
 | a pre-mode (`expected_status: done`) | `.backlogit/reconcile/040-S-pre-2026-10-08T06-47-39Z.md` | `PROCEED` |
 | b classify-close-path | `.backlogit/reconcile/040-S-classify-close-path-2026-10-08T06-49Z.md` | `CASCADE` / `FULLY_COVERED_ROOT`, binding `17bab11e9114840724e3f4928c0e0ab939d4f49be7de89c354e51dd12359d182` |
-| b safe-close (bound) | `.backlogit/reconcile/040-S-safe-close-2026-10-08T06-54-43Z.md` | Step 0 fresh recompute **MATCH** → Cascade Close Sub-Procedure; `returned_ids: []`; both two-set differences empty; `parent_id` preserved; `CLOSED` |
+| b safe-close (bound, manual) | `.backlogit/reconcile/040-S-safe-close-2026-10-08T06-54-43Z.md` | agent-executed Step 0 fresh recompute **MATCH** → direct `backlogit shipment ship` (not tool-enforced, D10D3AFC); `returned_ids: []`; both two-set differences empty; `parent_id` preserved; `CLOSED` |
 | c P-007 | `git status -- .backlogit/archive/` | no deletions |
 | d post-mode | `.backlogit/reconcile/040-S-post-2026-10-08T06-57Z.md` | `PROCEED` |
 | e commit | `9b3ad77` | `chore: archive 040-S backlog artifacts` |
 
-This is the first closure in this repository to run the bound classify → safe-close → Cascade Close Sub-Procedure path. `backlogit shipment ship` ran only from inside the Cascade Close Sub-Procedure, and only after the bound classification was revalidated against a fresh snapshot.
+The close was **manually revalidated, not tool-enforced**.
+- There is no executable `safe-close` CLI or gate (stash D10D3AFC, still active, Stage-owned). The agent therefore followed the `shipment-reconcile` prose by hand.
+- A session-local helper recomputed the binding from a fresh snapshot, and it matched the issued binding.
+- Only then did the agent invoke `backlogit shipment ship` directly as a CLI call.
+
+This is the same manual approach first recorded at 037-S. The binding recompute and match are real evidence, but they are not an atomic tool-enforced boundary.
 
 It was **not** fully conforming. The mandated single-writer lock (`file-lock` skill, pre-mode through post-mode) was not acquired. That is a procedural deviation, tracked by the existing deferred entry 9F824B64.
 
-This differs from the direct-primitive deviations recorded at 035-S, 036-S, 039-S and 033-S. The method is captured in `docs/compound/2026-10-08-bound-cascade-close-procedure.md`.
+Compared with 035-S, 036-S, 039-S and 033-S, where the primitive ran with no fresh recompute-and-compare, the gap is narrowed but not closed. The manual method is captured in `docs/compound/2026-10-08-bound-cascade-close-procedure.md`.
 
 ## Runtime surfaces and validator evidence
 
@@ -202,7 +211,7 @@ The release path was merge-only. The checks after merge were:
 
 ## Releasability
 
-**Status: `READY_WITH_CONDITIONS`.** The conditions are the tool and environment degradations and the disclosed deviations listed in the frontmatter. Each one is satisfied with cited evidence. There are no unresolved P0/P1 findings, and required CI is green on the PR and on `main`. The shipment closed through the bound cascade path, with the single-writer-lock deviation disclosed above.
+**Status: `READY_WITH_CONDITIONS`.** The conditions are the tool and environment degradations and the disclosed deviations listed in the frontmatter. Each one is satisfied with cited evidence. There are no unresolved P0/P1 findings, and required CI is green on the PR and on `main`. The shipment closed through a manually revalidated bound cascade. Two closure-protocol deviations are disclosed above as conditions: the cascade was not tool-enforced (D10D3AFC), and the single-writer lock was not acquired (9F824B64).
 
 ## Compaction status
 

@@ -9,9 +9,12 @@ tags: [shipment-reconcile, cascade-close, classification-binding, p-015, p-005, 
 
 ## Context
 
-Four consecutive closures deviated from the `shipment-reconcile` boundary: 035-S, 036-S, 039-S and 033-S. Each called `backlogit shipment ship` directly. Some computed a `CLASSIFICATION_BINDING` and some did not, but none recomputed it from a fresh snapshot at safe-close time and compared it before the mutation.
+No executable `shipment-reconcile` `safe-close` CLI or gate exists here (stash D10D3AFC, active). Every closure therefore applies the skill prose by hand and invokes `backlogit shipment ship` directly.
+- 035-S, 036-S, 039-S and 033-S did so without a fresh-snapshot recompute-and-compare.
+- 037-S added a manual recompute-and-compare before the call.
+- 040-S (PR #112, merge `49ff6b9`) is another manual application of the 037-S approach: the binding was recomputed from a fresh snapshot, matched, and the primitive was then called directly. It is not tool-enforced.
 
-040-S (PR #112, merge `49ff6b9`) is the first closure in this repository to run the bound classify → recompute → compare → Cascade Close Sub-Procedure sequence. The evidence is in `.backlogit/reconcile/040-S-classify-close-path-2026-10-08T06-49Z.md` and `040-S-safe-close-2026-10-08T06-54-43Z.md`.
+The evidence is in `.backlogit/reconcile/040-S-classify-close-path-2026-10-08T06-49Z.md` and `040-S-safe-close-2026-10-08T06-54-43Z.md`.
 
 It was not fully conforming:
 - It skipped the mandated `file-lock` single-writer lock (procedural deviation, tracked by 9F824B64).
@@ -30,7 +33,7 @@ The gotchas below show how to avoid both.
    - Check the linked deliberations: `source_deliberation_id` plus the `\b(?:DL\d+|[0-9]+(?:\.[0-9]+)*-DL)\b` scan. A docs-path reference is not a match.
    - Compute the v1 binding, and **validate the serializer by reproducing a known precedent digest** (036-S `b8ba3fba…`) before trusting it.
 4. **safe-close Step 0.** Retake the snapshot fresh, recompute, and compare against the supplied binding.
-   - Only on MATCH, enter the Cascade Close Sub-Procedure and run `backlogit shipment ship <id> --sha <merge> --message <subject> --author <author>`.
+   - Only on MATCH, follow the Cascade Close Sub-Procedure steps and run `backlogit shipment ship <id> --sha <merge> --message <subject> --author <author>`. Because there is no `safe-close` tool (D10D3AFC), this is a direct, agent-executed call: disclose it as not tool-enforced.
    - Then verify that `returned_ids == []`, that both two-set differences are empty, and that every `parent_id` is preserved.
 5. Back up `.backlogit/queue` and `.backlogit/archive` before the cascade so a revert is possible. The cascade took about 4.5 minutes for 7 records.
 
