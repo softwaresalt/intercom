@@ -66,3 +66,28 @@ environmental flake: `tests/integration`
 timeout because a pre-existing engram daemon (pid 40120, started 20:38
 local) held the workspace lock. Re-run with `-count=1`: ok (25.3s).
 Unrelated to retiredarch.
+
+## U2 (050.002-T) — parent `HEAD` after U1 bookkeeping (code parent `7b58fdc`)
+
+### Seam-only step (AC-4)
+
+`scanTomlPrimary` became a wrapper over `scanTomlPrimaryWith(path, walk,
+fallback)` with pass-through behaviour (no oracle). Existing tomlprimary
+tests green: `go test ./tools/gatecheck/internal/retiredarch/ -run 'TestScanTomlPrimary|TestWalkDecoded'` ok.
+
+### Scenarios 1-3 — RED (against the seam-only step)
+
+Command: `go test ./tools/gatecheck/internal/retiredarch/ -run TestScanTomlPrimaryWith_CompletenessOracle`
+
+- `walker-drops-a-finding`: got the single surviving cursor finding
+  (`'channel_id'`), want the completeness finding.
+- `walker-invents-a-finding`: got 3 findings (two real + invented `'acp'`),
+  want the completeness finding.
+- `fallback-errors`: got the two cursor findings, want
+  `TOML parse error (fail-closed): injected fallback failure`.
+
+### Oracle — GREEN
+
+All three rows pass; the whole retiredarch package (golden/ordering tests
+unchanged, so the oracle agrees with the cursor walk on every golden
+fixture) passes.
