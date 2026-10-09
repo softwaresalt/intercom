@@ -12,13 +12,28 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
 
+// lsFilesListing is the fake `git ls-files -z` listing: each path is
+// NUL-terminated. U1 centralised this helper; U2 flipped the runner format
+// from newline to NUL here, in one place.
 func lsFilesListing(paths ...string) []byte {
 	if len(paths) == 0 {
 		return nil
 	}
-	return []byte(strings.Join(paths, "\n") + "\n")
+	return []byte(strings.Join(paths, "\x00") + "\x00")
+}
+
+// u2NULListing is an explicit NUL fixture for the U2 contract tests. It stays
+// a literal, separate spelling of the NUL format so the contract rows do not
+// depend on the shared helper.
+func u2NULListing(paths ...string) []byte {
+	if len(paths) == 0 {
+		return nil
+	}
+	return []byte(strings.Join(paths, "\x00") + "\x00")
 }
 
 func TestShouldScanRepoPath_Table(t *testing.T) {
@@ -143,6 +158,107 @@ func TestSelectRepoPaths_FiltersAndSorts(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("selectRepoPaths[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestNULListing_PreservesSpecialNames(t *testing.T) {
+	listing := u2NULListing(
+		"internal/\u00e9.go",
+		`internal/q"uote.go`,
+		`internal/back\slash.go`,
+		"cmd/x/main.go",
+	)
+	git := func(root string, pathspecs ...string) ([]byte, error) {
+		return listing, nil
+	}
+
+	got, err := selectRepoPaths("/root", git)
+	if err != nil {
+		t.Fatalf("selectRepoPaths: %v", err)
+	}
+	want := []string{
+		"cmd/x/main.go",
+		`internal/back\slash.go`,
+		`internal/q"uote.go`,
+		"internal/\u00e9.go",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("selectRepoPaths = %q, want %q", got, want)
+	}
+
+	gotInternal, err := expectedInternalRepoPaths("/root", git)
+	if err != nil {
+		t.Fatalf("expectedInternalRepoPaths: %v", err)
+	}
+	wantInternal := []string{
+		`internal/back\slash.go`,
+		`internal/q"uote.go`,
+		"internal/\u00e9.go",
+	}
+	if !slices.Equal(gotInternal, wantInternal) {
+		t.Fatalf("expectedInternalRepoPaths = %q, want %q", gotInternal, wantInternal)
+	}
+}
+
+func TestSelectRepoPaths_BadListing_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name        string
+		listing     []byte
+		escapedPath string
+	}{
+		{name: "newline listing", listing: []byte("internal/a.go\n")},
+		{name: "empty record", listing: []byte("internal/a.go\x00\x00")},
+		{name: "lone NUL", listing: []byte("\x00")},
+		{
+			name:        "control character",
+			listing:     u2NULListing("internal/a\nb.go"),
+			escapedPath: "internal/a\nb.go",
+		},
+		{
+			name:        "Unicode line separator",
+			listing:     u2NULListing("internal/a\u2028b.go"),
+			escapedPath: "internal/a\u2028b.go",
+		},
+		{
+			name:        "ESC",
+			listing:     u2NULListing("internal/a\x1bb.go"),
+			escapedPath: "internal/a\x1bb.go",
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			git := func(root string, pathspecs ...string) ([]byte, error) {
+				return tc.listing, nil
+			}
+			_, err := selectRepoPaths("/root", git)
+			if err == nil {
+				t.Fatal("selectRepoPaths error = nil, want fail-closed error")
+			}
+			if tc.escapedPath == "" {
+				return
+			}
+			if want := fmt.Sprintf("%q", tc.escapedPath); !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not contain escaped path %q", err, want)
+			}
+			for _, r := range tc.escapedPath {
+				if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
+					if strings.ContainsRune(err.Error(), r) {
+						t.Errorf("error %q contains raw control or line separator %U", err, r)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSelectRepoPaths_InvalidUTF8_ErrInvalidUTF8(t *testing.T) {
+	git := func(root string, pathspecs ...string) ([]byte, error) {
+		return []byte{0xff, 0}, nil
+	}
+	_, err := selectRepoPaths("/root", git)
+	if !errors.Is(err, pysem.ErrInvalidUTF8) {
+		t.Fatalf("selectRepoPaths error = %v, want pysem.ErrInvalidUTF8", err)
 	}
 }
 
@@ -405,12 +521,45 @@ func fixtureGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// TestDefaultGitRunnerIgnoresGitEnv (U4 scenario 2, AC-2): GIT_*
+// TestRunRepoScan_NonASCIIPath_IsScanned_RealGit is U2 bug evidence: real
+// git quotes a non-ASCII tracked filename in the parent's newline output,
+// so the parent silently omits this retired token and exits zero.
+func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
+	root := t.TempDir()
+	for rel, body := range map[string]string{
+		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
+		"internal/\u00e9.go": "package internal\n\ntype TeamIDs []string\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fixtureGit(t, root, "init", "-q")
+	fixtureGit(t, root, "add", "-A")
+	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
+
+	res := runRepoScan(root, DefaultGitRunner)
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 because the tracked non-ASCII path contains a retired token (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.Contains(filepath.ToSlash(res.Stderr), "internal/\u00e9.go") {
+		t.Fatalf("stderr = %q, want it to name internal/é.go", res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, "TeamIDs") {
+		t.Fatalf("stderr = %q, want it to report the copied retired TeamIDs token", res.Stderr)
+	}
+}
+
+// TestDefaultGitRunnerIgnoresGitEnv (U2 baseline; U4 scenario 2, AC-2): GIT_*
 // variables in the gate's own environment must not change which files
-// DefaultGitRunner selects. The baseline records 4537B2F6's known
-// quoted-path skip: internal/<e-acute>.go is printed quoted by git and is
-// therefore not selected. When 4537B2F6 lands it must update this
-// baseline and replace vectors (c)-(e).
+// DefaultGitRunner selects. The baseline includes internal/<e-acute>.go: under
+// `ls-files -z` git prints it unquoted, so it is selected (4537B2F6 fixed).
+// Vectors (c)-(e) are the parent's quotePath vectors; under -z they are
+// non-distinguishing, and U6 replaces them with liveness-controlled vectors.
 func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	root := t.TempDir()
 	for rel, body := range map[string]string{
@@ -429,7 +578,7 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	fixtureGit(t, root, "add", "-A")
 	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
 
-	want := []string{"cmd/x/main.go"}
+	want := []string{"cmd/x/main.go", "internal/\u00e9.go"}
 	baseline, err := selectRepoPaths(root, DefaultGitRunner)
 	if err != nil || !slices.Equal(baseline, want) {
 		t.Fatalf("baseline selection = (%q, %v), want (%q, nil)", baseline, err, want)

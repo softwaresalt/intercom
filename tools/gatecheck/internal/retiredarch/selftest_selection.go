@@ -9,9 +9,11 @@
 package retiredarch
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
@@ -81,12 +83,21 @@ func expectedInternalRepoPaths(root string, git GitRunner) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	listing, err := pysem.GitText(out)
-	if err != nil {
-		return nil, err
+	if !utf8.Valid(out) {
+		return nil, pysem.ErrInvalidUTF8
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	if !bytes.HasSuffix(out, []byte{0}) {
+		return nil, fmt.Errorf("listing is not NUL-terminated")
 	}
 	var expected []string
-	for _, path := range pysem.SplitLines(listing) {
+	for _, rec := range bytes.Split(out[:len(out)-1], []byte{0}) {
+		if len(rec) == 0 {
+			return nil, fmt.Errorf("listing has an empty record")
+		}
+		path := string(rec)
 		if !strings.HasPrefix(path, "internal/") {
 			continue
 		}

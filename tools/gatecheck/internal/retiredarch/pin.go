@@ -88,6 +88,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
@@ -95,7 +96,7 @@ import (
 type GitRunner func(root string, pathspecs ...string) ([]byte, error)
 
 func DefaultGitRunner(root string, pathspecs ...string) ([]byte, error) {
-	args := append([]string{"ls-files", "--"}, pathspecs...)
+	args := append([]string{"ls-files", "-z", "--"}, pathspecs...)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = root
 	cmd.Env = gitRunnerEnv(os.Environ())
@@ -175,12 +176,25 @@ func selectRepoPaths(root string, git GitRunner) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	listing, err := pysem.GitText(out)
-	if err != nil {
-		return nil, err
+	if !utf8.Valid(out) {
+		return nil, pysem.ErrInvalidUTF8
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	if out[len(out)-1] != 0 {
+		return nil, fmt.Errorf("output is not NUL-terminated")
 	}
 	var selected []string
-	for _, path := range pysem.SplitLines(listing) {
+	for _, path := range strings.Split(string(out[:len(out)-1]), "\x00") {
+		if path == "" {
+			return nil, fmt.Errorf("output has an empty record")
+		}
+		for _, r := range path {
+			if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
+				return nil, fmt.Errorf("path %q contains a control or line-separator character", path)
+			}
+		}
 		if shouldScanRepoPath(path) {
 			selected = append(selected, path)
 		}
