@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
@@ -34,6 +36,102 @@ func repoRoot(t *testing.T) string {
 		t.Fatalf("filepath.Abs: %v", err)
 	}
 	return root
+}
+
+func u4StubGit(paths ...string) GitRunner {
+	return func(root string) ([]byte, error) {
+		return []byte(strings.Join(paths, "\n") + "\n"), nil
+	}
+}
+
+const u4CleanGo = "package x\n\nfunc Clean() {}\n"
+
+func u4CreateSymlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+			t.Skipf("Windows symlink privilege unavailable; Linux CI lint job must run this case: %v", err)
+		}
+		t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+	}
+}
+
+func u4Junction(t *testing.T, link, target string) {
+	t.Helper()
+	out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
+	if err != nil {
+		t.Fatalf("mklink /J %s %s: %v: %s", link, target, err, out)
+	}
+}
+
+func u4MustFailClosed(t *testing.T, res Result, rel string) {
+	t.Helper()
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+	}
+	want := "::error::" + rel + ": not a contained regular file: "
+	if !strings.Contains(res.Stderr, want) {
+		t.Fatalf("stderr = %q, want it to contain %q", res.Stderr, want)
+	}
+}
+
+func TestRunRepoScan_FinalComponentSymlink_FailsClosed(t *testing.T) {
+	temp := t.TempDir()
+	root := filepath.Join(temp, "repo")
+	outside := filepath.Join(temp, "outside")
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(outside, "x.go")
+	if err := os.WriteFile(target, []byte(u4CleanGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	u4CreateSymlink(t, target, filepath.Join(root, "internal", "x.go"))
+
+	u4MustFailClosed(t, runRepoScan(root, u4StubGit("internal/x.go")), "internal/x.go")
+}
+
+func TestRunRepoScan_IntermediateJunctionOrSymlink_FailsClosed(t *testing.T) {
+	temp := t.TempDir()
+	root := filepath.Join(temp, "repo")
+	outside := filepath.Join(temp, "outside")
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "y.go"), []byte(u4CleanGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "internal", "d")
+	if runtime.GOOS == "windows" {
+		u4Junction(t, link, outside)
+	} else {
+		u4CreateSymlink(t, outside, link)
+	}
+
+	u4MustFailClosed(t, runRepoScan(root, u4StubGit("internal/d/y.go")), "internal/d/y.go")
+}
+
+func TestRunRepoScan_DeletedTrackedFile_KeepsReadError(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const rel = "internal/gone.go"
+	_, readErr := scanFile(root, rel)
+	if readErr == nil {
+		t.Fatal("scanFile for deleted tracked path returned nil error")
+	}
+	want := errorLine(rel, readErr)
+	res := runRepoScan(root, u4StubGit(rel))
+	if res.Code != 1 || res.Stderr != want {
+		t.Fatalf("got (Code=%d, stderr=%q), want (1, %q)", res.Code, res.Stderr, want)
+	}
 }
 
 func requireWritepathHarnessTask(t *testing.T) {

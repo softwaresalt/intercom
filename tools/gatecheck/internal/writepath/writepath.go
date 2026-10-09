@@ -74,15 +74,18 @@ package writepath
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -764,10 +767,64 @@ func errorLine(context string, err error) string {
 	return fmt.Sprintf("::error::%s: %v\n", context, err)
 }
 
+// containedRegularFile reports whether rel, a repo-relative '/'-separated path
+// exactly as `git ls-files` prints it, names a regular file reached without
+// following a link (D44D8BDF, writepath arm). It is a semantic copy of
+// retiredarch's containedRegularFile (retiredarch U3, 990AFA71). It is copied,
+// not shared, because each gate package keeps its own surface (D-BA-3,
+// 5A8EC1BC). The walk uses os.Lstat one component at a time. Every
+// intermediate component must be a real directory (no ModeSymlink and no
+// ModeIrregular, so a Windows junction is rejected), and the final component
+// must be regular. An empty, "." or ".." component, or on Windows a component
+// containing '\' or ':', is a containment violation. Only fs.ErrNotExist
+// returns ok=true, so a deleted tracked file keeps the existing read-error
+// text. Any other Lstat error fails closed. The *fs.PathError wrapper is
+// stripped so CI logs show only repo-relative prefixes (SEC-4). Stdlib only:
+// no filepath.Abs and no filepath.EvalSymlinks.
+func containedRegularFile(root, rel string) (bool, string) {
+	parts := strings.Split(rel, "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return false, fmt.Sprintf("invalid path component %q in %q", part, rel)
+		}
+		if runtime.GOOS == "windows" && strings.ContainsAny(part, `\:`) {
+			return false, fmt.Sprintf("invalid path component %q in %q", part, rel)
+		}
+	}
+	current := root
+	for i, part := range parts {
+		current = filepath.Join(current, part)
+		prefix := strings.Join(parts[:i+1], "/")
+		info, err := os.Lstat(current)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return true, ""
+			}
+			var pathErr *fs.PathError
+			if errors.As(err, &pathErr) {
+				err = pathErr.Err
+			}
+			return false, fmt.Sprintf("lstat %s: %v", prefix, err)
+		}
+		mode := info.Mode()
+		if i < len(parts)-1 {
+			if !mode.IsDir() || mode&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
+				return false, fmt.Sprintf("%s is not a real directory (mode %v)", prefix, mode)
+			}
+			continue
+		}
+		if !mode.IsRegular() {
+			return false, fmt.Sprintf("%s is not a regular file (mode %v)", prefix, mode)
+		}
+	}
+	return true, ""
+}
+
 // runRepoScan performs the repo-mode invariant scan: enumerate every
 // tracked internal/**, cmd/** Go source (via git, injectable), scan each,
-// and fail closed on a git error, a per-file read/decode error (ED-2), any
-// finding, or an empty selection (ED-7).
+// and fail closed on a git error, a per-file read/decode error (ED-2), a
+// selected path that is not a contained regular file (D44D8BDF: a symlink or
+// junction is never followed), any finding, or an empty selection (ED-7).
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)
 	if err != nil {
@@ -797,11 +854,14 @@ func runRepoScan(root string, git GitRunner) Result {
 
 	var findings []string
 	for _, rel := range relPaths {
-		fs, err := scanFile(root, rel)
+		if ok, reason := containedRegularFile(root, rel); !ok {
+			return Result{Stderr: errorLine(rel, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
+		}
+		fileFindings, err := scanFile(root, rel)
 		if err != nil {
 			return Result{Stderr: errorLine(rel, err), Code: 1}
 		}
-		findings = append(findings, fs...)
+		findings = append(findings, fileFindings...)
 	}
 
 	if len(findings) > 0 {
