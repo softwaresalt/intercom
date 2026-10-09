@@ -554,12 +554,11 @@ func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
 	}
 }
 
-// TestDefaultGitRunnerIgnoresGitEnv (U2 baseline; U4 scenario 2, AC-2): GIT_*
-// variables in the gate's own environment must not change which files
-// DefaultGitRunner selects. The baseline includes internal/<e-acute>.go: under
-// `ls-files -z` git prints it unquoted, so it is selected (4537B2F6 fixed).
-// Vectors (c)-(e) are the parent's quotePath vectors; under -z they are
-// non-distinguishing, and U6 replaces them with liveness-controlled vectors.
+// TestDefaultGitRunnerIgnoresGitEnv (U2/U6): GIT_* variables in the
+// gate's own environment must not change which files DefaultGitRunner
+// selects. The fixed expected baseline includes the non-ASCII path; the
+// per-vector comparison is against the observed baseline so U6's
+// isolation characterization remains green independently of U2.
 func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	root := t.TempDir()
 	for rel, body := range map[string]string{
@@ -580,33 +579,102 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 
 	want := []string{"cmd/x/main.go", "internal/\u00e9.go"}
 	baseline, err := selectRepoPaths(root, DefaultGitRunner)
-	if err != nil || !slices.Equal(baseline, want) {
-		t.Fatalf("baseline selection = (%q, %v), want (%q, nil)", baseline, err, want)
+	if err != nil {
+		t.Fatalf("baseline selection error = %v", err)
+	}
+	if !slices.Equal(baseline, want) {
+		t.Errorf("baseline selection = %q, want %q", baseline, want)
 	}
 
 	globalCfg := filepath.Join(t.TempDir(), "gitconfig")
-	if err := os.WriteFile(globalCfg, []byte("[core]\n\tquotePath = false\n"), 0o644); err != nil {
+	if err := os.WriteFile(globalCfg, []byte("[core\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	vectors := []struct {
-		name string
-		env  map[string]string
+		name       string
+		env        map[string]string
+		minorFloor int
+		live       bool
 	}{
-		{"a_GIT_INDEX_FILE_nonexistent", map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")}},
-		{"b_GIT_LITERAL_PATHSPECS", map[string]string{"GIT_LITERAL_PATHSPECS": "1"}},
-		{"c_GIT_CONFIG_COUNT_quotePath", map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.quotePath", "GIT_CONFIG_VALUE_0": "false"}},
-		{"d_GIT_CONFIG_PARAMETERS_quotePath", map[string]string{"GIT_CONFIG_PARAMETERS": "'core.quotepath'='false'"}},
-		{"e_GIT_CONFIG_GLOBAL_quotePath", map[string]string{"GIT_CONFIG_GLOBAL": globalCfg}},
+		{
+			name: "a_GIT_INDEX_FILE_nonexistent",
+			env:  map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")},
+		},
+		{
+			name: "b_GIT_LITERAL_PATHSPECS",
+			env:  map[string]string{"GIT_LITERAL_PATHSPECS": "1"},
+		},
+		{
+			name:       "c_GIT_CONFIG_COUNT_missing_key",
+			env:        map[string]string{"GIT_CONFIG_COUNT": "1"},
+			minorFloor: 31,
+			live:       true,
+		},
+		{
+			name: "d_GIT_CONFIG_PARAMETERS_malformed",
+			env:  map[string]string{"GIT_CONFIG_PARAMETERS": "not-a-valid-config"},
+			live: true,
+		},
+		{
+			name:       "e_GIT_CONFIG_GLOBAL_malformed",
+			env:        map[string]string{"GIT_CONFIG_GLOBAL": globalCfg},
+			minorFloor: 32,
+			live:       true,
+		},
 	}
+	versionOut, err := exec.Command("git", "--version").Output()
+	if err != nil {
+		t.Fatalf("git --version: %v", err)
+	}
+	versionFields := strings.Fields(string(versionOut))
+	if len(versionFields) < 3 {
+		t.Fatalf("git --version output = %q, want a version number", versionOut)
+	}
+	var gitMajor, gitMinor int
+	if _, err := fmt.Sscanf(versionFields[2], "%d.%d", &gitMajor, &gitMinor); err != nil {
+		t.Fatalf("parse git version %q: %v", versionFields[2], err)
+	}
+
 	for _, v := range vectors {
 		t.Run(v.name, func(t *testing.T) {
+			if v.minorFloor > 0 && (gitMajor < 2 || (gitMajor == 2 && gitMinor < v.minorFloor)) {
+				t.Skipf("requires Git 2.%d or later; running Git %s", v.minorFloor, versionFields[2])
+			}
 			// Set only now, after the fixture repo is fully built (G2-7).
 			for k, val := range v.env {
 				t.Setenv(k, val)
 			}
+			if v.live {
+				var controlEnv []string
+				for _, kv := range os.Environ() {
+					name, _, _ := strings.Cut(kv, "=")
+					if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+						continue
+					}
+					controlEnv = append(controlEnv, kv)
+				}
+				controlEnv = append(controlEnv, "GIT_CONFIG_NOSYSTEM=1")
+				if _, setByVector := v.env["GIT_CONFIG_GLOBAL"]; !setByVector {
+					controlEnv = append(controlEnv, "GIT_CONFIG_GLOBAL="+os.DevNull)
+				}
+				for k, val := range v.env {
+					controlEnv = append(controlEnv, k+"="+val)
+				}
+				control := exec.Command("git", "ls-files", "-z", "--", "cmd/**", "internal/**")
+				control.Dir = root
+				control.Env = controlEnv
+				if out, controlErr := control.CombinedOutput(); controlErr == nil {
+					t.Fatalf("liveness control for %v exited successfully, want non-zero (output %q)", v.env, out)
+				} else {
+					var exitErr *exec.ExitError
+					if !errors.As(controlErr, &exitErr) || exitErr.ExitCode() == 0 {
+						t.Fatalf("liveness control for %v did not exit non-zero: %v (output %q)", v.env, controlErr, out)
+					}
+				}
+			}
 			got, err := selectRepoPaths(root, DefaultGitRunner)
-			if err != nil || !slices.Equal(got, want) {
-				t.Fatalf("selection with %v = (%q, %v), want (%q, nil)", v.env, got, err, want)
+			if err != nil || !slices.Equal(got, baseline) {
+				t.Errorf("selection with %v = (%q, %v), want baseline (%q)", v.env, got, err, baseline)
 			}
 		})
 	}
