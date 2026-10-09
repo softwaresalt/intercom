@@ -41,7 +41,7 @@ conditions:
     satisfied: true
     evidence: "PR #117 and PR #116 timelines (review_requested reviewer Copilot, actor softwaresalt); autoharness gate copilot-review verdicts SATISFIED for e1b3013 (PR #117) and a885182 (PR #116); section 'Copilot review'"
   - id: h0-comment-scope-extension
-    summary: "The H0 hotfix was specified as a one-line pin change. It also carries a 4-line comment-only note in go.mod, because rule 4 of docs/decisions/2026-09-04-go-toolchain-pin-maintenance-note.md requires the inline comment to change whenever the toolchain line changes. No directive, dependency, or go.sum change was made. The comment was also corrected once for a Copilot finding (mime/multipart)."
+    summary: "The H0 hotfix was specified as a one-line pin change. It also carries a 6-line comment-only note in go.mod, because rule 4 of docs/decisions/2026-09-04-go-toolchain-pin-maintenance-note.md requires the inline comment to change whenever the toolchain line changes. No directive, dependency, or go.sum change was made. The comment was also corrected once for a Copilot finding (mime/multipart)."
     satisfied: true
     evidence: "PR #117 body 'Changes'; commits e90e9df and e1b3013 (comment-only); go mod tidy -diff clean; this artifact, section 'H0 hotfix'"
   - id: safe-close-agent-executed-binding
@@ -90,7 +90,7 @@ All six tasks completed red-first with recorded evidence: 051.001-T (characteriz
 
 Between the 041-S review and merge, the required CI `security` and `ci gate` jobs failed on Go standard-library advisories GO-2026-6603, GO-2026-6607, GO-2026-6608, GO-2026-6611, GO-2026-6612, GO-2026-6613, and GO-2026-6617, all fixed in go1.26.9 and found on go1.26.8. The Orchestrator amended scope with a hotfix ordered before this shipment.
 
-- **PR #117** (`fix/go-toolchain-1-26-9`, merge `b3b147c85485a07a420a0b4c654059affaa38062`): `go.mod` `toolchain go1.26.5` to `go1.26.9`, plus a 4-line comment-only note (see condition `h0-comment-scope-extension`). The final reviewed head was `e1b3013`. `security` passed on the Linux runner with `go: downloading go1.26.9` and "No vulnerabilities found."
+- **PR #117** (`fix/go-toolchain-1-26-9`, merge `b3b147c85485a07a420a0b4c654059affaa38062`): `go.mod` `toolchain go1.26.5` to `go1.26.9`, plus a 6-line comment-only note (see condition `h0-comment-scope-extension`). The final reviewed head was `e1b3013`. `security` passed on the Linux runner with `go: downloading go1.26.9` and "No vulnerabilities found."
 - **Stash 0B6CCE5A** (critical, toolchain blocker) is resolved by PR #117 and remains active until Stage archives it.
 - **Review of H0:** multi-lens read-only review (correctness, security, maintainability): READY_WITH_FOLLOWUPS, P0 0, P1 0. An independent challenge by gpt-6.1-sol: DECISION_SOUND_WITH_CAVEATS. Copilot round 1 (one comment, the GO-2026-6608 package list) was fixed and resolved. Its delta review was READY.
 - Two P-021 P3 deferred entries from the H0 review were captured: `06CE25E5` (stale pin wording in the decision note and historical `internal/pathsafe` comments) and `78A78926` (whether gatecheck helper builds that force `GOTOOLCHAIN=local` should also use the patched toolchain).
@@ -181,5 +181,5 @@ Between the 041-S review and merge, the required CI `security` and `ci gate` job
 
 ## Releasability
 
-- **Closure status:** `READY_WITH_CONDITIONS`. Conditions are listed in the frontmatter. Each one carries evidence. The only unsatisfied condition (`stage-archive-0b6cce5a`) is a Stage hand-off and does not block release.
+- **Closure status:** `READY_WITH_CONDITIONS`. Conditions are listed in the frontmatter, and each carries evidence. One condition is unsatisfied and blocks closure acceptance: `cascade-evidence-record-missing`. The closure-evidence gate rejects this artifact until the operator waives that condition or an autoharness cascade-evidence record is produced. Until then, closure-gated routing holds the next shipment (P-001 + P-020). The release itself is not blocked: this is a dev-tooling change with CI green on the final head. `stage-archive-0b6cce5a` is satisfied as a hand-off record; Stage performs the archival.
 - **Releasability:** `READY_WITH_CONDITIONS` for the dev-tooling change set.
