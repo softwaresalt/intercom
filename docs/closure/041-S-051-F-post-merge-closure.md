@@ -165,7 +165,7 @@ Between the 041-S review and merge, the required CI `security` and `ci gate` job
 ## Risky action record
 
 - `backlogit move 051-F --status done` (a1, covering feature). Effect: 051-F moved queue to archive. Approval: operator pre-authorized closure. Result: exit 0, re-read `done`.
-- `backlogit shipment ship 041-S --sha fcc61f3...` (bound CASCADE close on the P-015 fully-covered-root path). Approval: the classify-close-path verdict CASCADE with binding bf1fbbe3... Result: CLOSED, `returned_ids []`, gate PASS. Revert path if needed: `git restore .backlogit/queue .backlogit/archive` on the closure branch, then `git revert` of commit `b0859bb`.
+- `backlogit shipment ship 041-S --sha fcc61f3...` (direct CASCADE close on the P-015 fully-covered-root path, after agent-side classification; the CLI takes no classification_binding). Approval: the classify-close-path verdict CASCADE with binding bf1fbbe3... Result: CLOSED, `returned_ids []`, gate PASS. Revert path if needed: `git restore .backlogit/queue .backlogit/archive` on the closure branch, then `git revert` of commit `b0859bb`.
 - Stash edits: stash entries are only appended (`0B6CCE5A`, `06CE25E5`, `78A78926`). No stash entry was edited or archived by Ship.
 - `git checkout -- .backlogit/stash.jsonl` on the H0 branch (working-tree only, uncommitted entry restored byte-for-byte from backup on the 041-S branch and checked by line-set comparison; 71 lines, unique IDs).
 

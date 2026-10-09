@@ -40,12 +40,16 @@ Verification that held up:
 * Check each advisory's fixed-in version on `vuln.go.dev` and in the CI log before choosing the target patch.
 * Confirm the remedy in CI, not only locally. The `security` job log must show `go: downloading go1.26.9` and
   `No vulnerabilities found.`
-* A `go.mod` `toolchain` bump has no behavior effect when the `go` directive is unchanged: `GODEBUG` defaults are
-  keyed off the `go` line, and the language floor stays `1.24`.
+* A patch-level toolchain bump is not behavior-neutral. It changes standard-library behavior, which is the purpose of a
+  security fix, and it needs the usual regression run. What stays tied to the `go` directive is the language-version
+  semantics and the version-keyed `GODEBUG` defaults, so the `go 1.24` line does not change with this kind of bump.
 
 ## 3. Branch switching with dirty backlog files
 
 When the working tree has an uncommitted backlog file (here `.backlogit/stash.jsonl`) that differs between the
-current branch and the target, `git checkout` aborts. Back the file up byte-for-byte outside the repo, verify SHA-256
-hashes, drop only that file's working-tree edit, switch, and restore by line-set comparison (lines in the backup
-that are not in HEAD) so no entry is lost or duplicated.
+current branch and the target, `git checkout` aborts. Do not discard operator state to get past this. Preferred order:
+
+* Stage a reversible copy first: `git stash push -- <path>` for a tracked file, or a byte-for-byte copy inside the
+  gitignored `logs/` directory (keep backups in the workspace, not outside it), with SHA-256 hashes recorded.
+* Get operator approval before any `git checkout --` or reset that discards a working-tree edit.
+* Restore by line-set comparison (lines in the backup that are not in HEAD), so no entry is lost or duplicated.
