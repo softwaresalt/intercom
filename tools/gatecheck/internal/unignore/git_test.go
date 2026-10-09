@@ -5,7 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -53,6 +55,47 @@ func TestRootGitignoreTextAt_HEAD_ReadsDiskDirectly(t *testing.T) {
 	}
 	if text != "foo\nbar\n" {
 		t.Fatalf("got %q, want %q", text, "foo\nbar\n")
+	}
+}
+
+func TestRootGitignoreTextAt_HEAD_SymlinkGitignore_Errors(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "secret-target")
+	if err := os.WriteFile(target, []byte("secret/\n"), 0o644); err != nil {
+		t.Fatalf("write symlink target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, ".gitignore")); err != nil {
+		if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+			t.Skipf("Windows symlink privilege unavailable; Linux CI gitignore-append-only job must run this case: %v", err)
+		}
+		t.Fatalf("os.Symlink: %v", err)
+	}
+
+	text, err := rootGitignoreTextAt(dir, "HEAD", DefaultGitRunner)
+	if err == nil {
+		t.Fatalf("expected symlinked root .gitignore to fail closed, got text %q", text)
+	}
+	if text != "" {
+		t.Fatalf("text = %q, want empty alongside the error", text)
+	}
+}
+
+// TestRootGitignoreTextAt_HEAD_DirectoryGitignore_Errors is
+// characterization: os.ReadFile already rejects a directory on the parent.
+func TestRootGitignoreTextAt_HEAD_DirectoryGitignore_Errors(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
+		t.Fatalf("create directory .gitignore: %v", err)
+	}
+	text, err := rootGitignoreTextAt(dir, "HEAD", DefaultGitRunner)
+	if err == nil {
+		t.Fatalf("expected directory root .gitignore to error, got text %q", text)
+	}
+	if text != "" {
+		t.Fatalf("text = %q, want empty alongside the error", text)
+	}
+	if !strings.Contains(err.Error(), ".gitignore") {
+		t.Fatalf("error %q does not name .gitignore", err)
 	}
 }
 

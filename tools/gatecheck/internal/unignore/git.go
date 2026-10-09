@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,14 +87,27 @@ func exitCode(err error) int {
 // any other failure returns a non-nil error. Failing closed at this point
 // of use keeps the merge-blocking regression check from passing vacuously
 // on an empty baseline, independent of the upstream `git diff` guard in
-// runDifferentialCheck.
+// runDifferentialCheck. On the HEAD ref the root .gitignore is read from the
+// working tree only after an os.Lstat check: a symlink, a Windows junction, or
+// any other non-regular file fails closed (D44D8BDF, unignore arm), so the
+// check never reads text through a link. A TOCTOU gap between the Lstat and
+// the ReadFile is accepted, as in retiredarch (local, non-adversarial CI
+// checkout).
 func rootGitignoreTextAt(repoDir, ref string, git GitRunner) (string, error) {
 	if ref == "HEAD" {
-		data, err := os.ReadFile(filepath.Join(repoDir, ".gitignore"))
+		gitignorePath := filepath.Join(repoDir, ".gitignore")
+		info, err := os.Lstat(gitignorePath)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				return "", nil
 			}
+			return "", fmt.Errorf("::error::unignore: lstat root .gitignore: %w", err)
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("::error::unignore: root .gitignore is not a regular file (mode %v)", info.Mode())
+		}
+		data, err := os.ReadFile(gitignorePath)
+		if err != nil {
 			return "", err
 		}
 		text, convErr := pysem.GitText(data)
