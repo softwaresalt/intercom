@@ -588,11 +588,15 @@ func sortedKeys(set map[string]bool) []string {
 // fail closed (an ::error::-free plain findings dump to stderr, exit 1,
 // matching Python's `print(..., file=sys.stderr); raise SystemExit(1)`
 // exactly -- no ::error:: prefix here, unlike a git/read error) if any
-// finding turns up.
+// finding turns up. An empty selection (no in-scope tracked path, 0D643BE8)
+// also fails closed with an ::error:: line rather than passing silently.
 func runRepoScan(root string, git GitRunner) Result {
 	relPaths, err := selectRepoPaths(root, git)
 	if err != nil {
 		return Result{Stderr: fmt.Sprintf("::error::git ls-files: %v\n", err), Code: 1}
+	}
+	if len(relPaths) == 0 {
+		return Result{Stderr: "::error::retired-arch repo scan selected no files under config.toml.example, cmd/** or internal/** (fail-closed)\n", Code: 1}
 	}
 
 	var findings []string
@@ -712,7 +716,9 @@ func runSelfTestAssertions(root string, git GitRunner, stdout, stderr io.Writer)
 // a deleted tracked file (SB-3, ED-11 unchanged). Any other Lstat error
 // (permission, I/O) means the component type was never verified, so it
 // fails closed with an "lstat <prefix>: <err>" reason (D-RA-2). Stdlib
-// only; no filepath.Abs or filepath.EvalSymlinks (INV-5).
+// only; no filepath.Abs or filepath.EvalSymlinks (INV-5). A writepath copy
+// exists (writepath.containedRegularFile, D-BA-3, 5A8EC1BC). The two bodies
+// are identical; keep them in sync by hand.
 func containedRegularFile(root, rel string) (bool, string) {
 	parts := strings.Split(rel, "/")
 	for _, part := range parts {

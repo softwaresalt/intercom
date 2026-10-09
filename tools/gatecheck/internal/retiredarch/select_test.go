@@ -12,7 +12,19 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
+
+// lsFilesListing is the fake `git ls-files -z` listing: each path is
+// NUL-terminated. U1 centralised this helper and U2 flipped the runner format
+// from newline to NUL here, in one place.
+func lsFilesListing(paths ...string) []byte {
+	if len(paths) == 0 {
+		return nil
+	}
+	return []byte(strings.Join(paths, "\x00") + "\x00")
+}
 
 func TestShouldScanRepoPath_Table(t *testing.T) {
 	cases := []struct {
@@ -122,7 +134,7 @@ func TestSelectRepoPaths_FiltersAndSorts(t *testing.T) {
 		if len(pathspecs) != 3 || pathspecs[0] != "config.toml.example" || pathspecs[1] != "cmd/**" || pathspecs[2] != "internal/**" {
 			return nil, fmt.Errorf("unexpected pathspecs: %v", pathspecs)
 		}
-		return []byte("internal/z/a.go\ninternal/z/a_test.go\ncmd/x/y_test.go\nconfig.toml.example\ninternal/a/b.go\n"), nil
+		return lsFilesListing("internal/z/a.go", "internal/z/a_test.go", "cmd/x/y_test.go", "config.toml.example", "internal/a/b.go"), nil
 	}
 	got, err := selectRepoPaths("/root", git)
 	if err != nil {
@@ -136,6 +148,159 @@ func TestSelectRepoPaths_FiltersAndSorts(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("selectRepoPaths[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestNULListing_PreservesSpecialNames(t *testing.T) {
+	listing := lsFilesListing(
+		"internal/\u00e9.go",
+		`internal/q"uote.go`,
+		`internal/back\slash.go`,
+		"cmd/x/main.go",
+	)
+	git := func(root string, pathspecs ...string) ([]byte, error) {
+		return listing, nil
+	}
+
+	got, err := selectRepoPaths("/root", git)
+	if err != nil {
+		t.Fatalf("selectRepoPaths: %v", err)
+	}
+	want := []string{
+		"cmd/x/main.go",
+		`internal/back\slash.go`,
+		`internal/q"uote.go`,
+		"internal/\u00e9.go",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("selectRepoPaths = %q, want %q", got, want)
+	}
+
+	gotInternal, err := expectedInternalRepoPaths("/root", git)
+	if err != nil {
+		t.Fatalf("expectedInternalRepoPaths: %v", err)
+	}
+	wantInternal := []string{
+		`internal/back\slash.go`,
+		`internal/q"uote.go`,
+		"internal/\u00e9.go",
+	}
+	if !slices.Equal(gotInternal, wantInternal) {
+		t.Fatalf("expectedInternalRepoPaths = %q, want %q", gotInternal, wantInternal)
+	}
+}
+
+func TestSelectRepoPaths_BadListing_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name        string
+		listing     []byte
+		escapedPath string
+	}{
+		{name: "newline listing", listing: []byte("internal/a.go\n")},
+		{name: "empty record", listing: []byte("internal/a.go\x00\x00")},
+		{name: "lone NUL", listing: []byte("\x00")},
+		{
+			name:        "control character",
+			listing:     lsFilesListing("internal/a\nb.go"),
+			escapedPath: "internal/a\nb.go",
+		},
+		{
+			name:        "Unicode line separator",
+			listing:     lsFilesListing("internal/a\u2028b.go"),
+			escapedPath: "internal/a\u2028b.go",
+		},
+		{
+			name:        "ESC",
+			listing:     lsFilesListing("internal/a\x1bb.go"),
+			escapedPath: "internal/a\x1bb.go",
+		},
+		{
+			name:        "DEL",
+			listing:     lsFilesListing("internal/a\x7fb.go"),
+			escapedPath: "internal/a\x7fb.go",
+		},
+		{
+			name:        "NEL U+0085",
+			listing:     lsFilesListing("internal/a\u0085b.go"),
+			escapedPath: "internal/a\u0085b.go",
+		},
+		{
+			name:        "paragraph separator U+2029",
+			listing:     lsFilesListing("internal/a\u2029b.go"),
+			escapedPath: "internal/a\u2029b.go",
+		},
+		{
+			name:        "information separator 0x1c",
+			listing:     lsFilesListing("internal/a\x1cb.go"),
+			escapedPath: "internal/a\x1cb.go",
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			git := func(root string, pathspecs ...string) ([]byte, error) {
+				return tc.listing, nil
+			}
+			_, err := selectRepoPaths("/root", git)
+			if err == nil {
+				t.Fatal("selectRepoPaths error = nil, want fail-closed error")
+			}
+			if tc.escapedPath == "" {
+				return
+			}
+			if want := fmt.Sprintf("%q", tc.escapedPath); !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not contain escaped path %q", err, want)
+			}
+			for _, r := range tc.escapedPath {
+				if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
+					if strings.ContainsRune(err.Error(), r) {
+						t.Errorf("error %q contains raw control or line separator %U", err, r)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSelectRepoPaths_InvalidUTF8_ErrInvalidUTF8(t *testing.T) {
+	git := func(root string, pathspecs ...string) ([]byte, error) {
+		return []byte{0xff, 0}, nil
+	}
+	_, err := selectRepoPaths("/root", git)
+	if !errors.Is(err, pysem.ErrInvalidUTF8) {
+		t.Fatalf("selectRepoPaths error = %v, want pysem.ErrInvalidUTF8", err)
+	}
+}
+
+// TestExpectedInternalRepoPaths_MalformedListing_FailsClosed covers the
+// oracle's structural fail-closed branches: UTF-8, NUL termination, and empty
+// records. The oracle deliberately does not replicate the control-character
+// rejection; selectRepoPaths rejects such listings first, so the self-test
+// still fails closed (plan SECTION CANON notes).
+func TestExpectedInternalRepoPaths_MalformedListing_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name    string
+		listing []byte
+		want    error
+	}{
+		{name: "newline listing", listing: []byte("internal/a.go\n")},
+		{name: "empty record", listing: []byte("internal/a.go\x00\x00")},
+		{name: "lone NUL", listing: []byte("\x00")},
+		{name: "invalid UTF-8", listing: []byte{0xff, 0}, want: pysem.ErrInvalidUTF8},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			git := func(root string, pathspecs ...string) ([]byte, error) {
+				return tc.listing, nil
+			}
+			got, err := expectedInternalRepoPaths("/root", git)
+			if err == nil {
+				t.Fatalf("expectedInternalRepoPaths = %q, want fail-closed error", got)
+			}
+			if tc.want != nil && !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -398,12 +563,44 @@ func fixtureGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// TestDefaultGitRunnerIgnoresGitEnv (U4 scenario 2, AC-2): GIT_*
-// variables in the gate's own environment must not change which files
-// DefaultGitRunner selects. The baseline records 4537B2F6's known
-// quoted-path skip: internal/<e-acute>.go is printed quoted by git and is
-// therefore not selected. When 4537B2F6 lands it must update this
-// baseline and replace vectors (c)-(e).
+// TestRunRepoScan_NonASCIIPath_IsScanned_RealGit is U2 bug evidence: real
+// git quotes a non-ASCII tracked filename in the parent's newline output,
+// so the parent silently omits this retired token and exits zero.
+func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
+	root := t.TempDir()
+	for rel, body := range map[string]string{
+		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
+		"internal/\u00e9.go": "package internal\n\ntype TeamIDs []string\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fixtureGit(t, root, "init", "-q")
+	fixtureGit(t, root, "add", "-A")
+	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
+
+	res := runRepoScan(root, DefaultGitRunner)
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 because the tracked non-ASCII path contains a retired token (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.Contains(filepath.ToSlash(res.Stderr), "internal/\u00e9.go") {
+		t.Fatalf("stderr = %q, want it to name internal/é.go", res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, "TeamIDs") {
+		t.Fatalf("stderr = %q, want it to report the copied retired TeamIDs token", res.Stderr)
+	}
+}
+
+// TestDefaultGitRunnerIgnoresGitEnv (U2/U6): GIT_* variables in the
+// gate's own environment must not change which files DefaultGitRunner
+// selects. The fixed expected baseline includes the non-ASCII path; the
+// per-vector comparison is against the observed baseline so U6's
+// isolation characterization remains green independently of U2.
 func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	root := t.TempDir()
 	for rel, body := range map[string]string{
@@ -422,35 +619,119 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	fixtureGit(t, root, "add", "-A")
 	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
 
-	want := []string{"cmd/x/main.go"}
+	want := []string{"cmd/x/main.go", "internal/\u00e9.go"}
 	baseline, err := selectRepoPaths(root, DefaultGitRunner)
-	if err != nil || !slices.Equal(baseline, want) {
-		t.Fatalf("baseline selection = (%q, %v), want (%q, nil)", baseline, err, want)
+	if err != nil {
+		t.Fatalf("baseline selection error = %v", err)
+	}
+	if !slices.Equal(baseline, want) {
+		t.Errorf("baseline selection = %q, want %q", baseline, want)
 	}
 
 	globalCfg := filepath.Join(t.TempDir(), "gitconfig")
-	if err := os.WriteFile(globalCfg, []byte("[core]\n\tquotePath = false\n"), 0o644); err != nil {
+	if err := os.WriteFile(globalCfg, []byte("[core\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	vectors := []struct {
-		name string
-		env  map[string]string
+		name       string
+		env        map[string]string
+		minorFloor int
+		live       bool
 	}{
-		{"a_GIT_INDEX_FILE_nonexistent", map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")}},
-		{"b_GIT_LITERAL_PATHSPECS", map[string]string{"GIT_LITERAL_PATHSPECS": "1"}},
-		{"c_GIT_CONFIG_COUNT_quotePath", map[string]string{"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.quotePath", "GIT_CONFIG_VALUE_0": "false"}},
-		{"d_GIT_CONFIG_PARAMETERS_quotePath", map[string]string{"GIT_CONFIG_PARAMETERS": "'core.quotepath'='false'"}},
-		{"e_GIT_CONFIG_GLOBAL_quotePath", map[string]string{"GIT_CONFIG_GLOBAL": globalCfg}},
+		{
+			name: "a_GIT_INDEX_FILE_nonexistent",
+			env:  map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")},
+		},
+		{
+			name: "b_GIT_LITERAL_PATHSPECS",
+			env:  map[string]string{"GIT_LITERAL_PATHSPECS": "1"},
+		},
+		{
+			name:       "c_GIT_CONFIG_COUNT_missing_key",
+			env:        map[string]string{"GIT_CONFIG_COUNT": "1"},
+			minorFloor: 31,
+			live:       true,
+		},
+		{
+			name: "d_GIT_CONFIG_PARAMETERS_malformed",
+			env:  map[string]string{"GIT_CONFIG_PARAMETERS": "not-a-valid-config"},
+			live: true,
+		},
+		{
+			name:       "e_GIT_CONFIG_GLOBAL_malformed",
+			env:        map[string]string{"GIT_CONFIG_GLOBAL": globalCfg},
+			minorFloor: 32,
+			live:       true,
+		},
+	}
+	versionOut, err := exec.Command("git", "--version").Output()
+	if err != nil {
+		t.Fatalf("git --version: %v", err)
+	}
+	versionFields := strings.Fields(string(versionOut))
+	if len(versionFields) < 3 {
+		t.Fatalf("git --version output = %q, want a version number", versionOut)
+	}
+	var gitMajor, gitMinor int
+	if _, err := fmt.Sscanf(versionFields[2], "%d.%d", &gitMajor, &gitMinor); err != nil {
+		t.Fatalf("parse git version %q: %v", versionFields[2], err)
+	}
+
+	// livenessControl runs `git ls-files -z` under the control environment:
+	// every GIT_* entry is stripped, NOSYSTEM and GLOBAL are pinned, and only
+	// the given vector is added. A nil vector is the control without it.
+	livenessControl := func(t *testing.T, vector map[string]string) error {
+		t.Helper()
+		var controlEnv []string
+		for _, kv := range os.Environ() {
+			name, _, _ := strings.Cut(kv, "=")
+			if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+				continue
+			}
+			controlEnv = append(controlEnv, kv)
+		}
+		controlEnv = append(controlEnv, "GIT_CONFIG_NOSYSTEM=1")
+		if _, setByVector := vector["GIT_CONFIG_GLOBAL"]; !setByVector {
+			controlEnv = append(controlEnv, "GIT_CONFIG_GLOBAL="+os.DevNull)
+		}
+		for k, val := range vector {
+			controlEnv = append(controlEnv, k+"="+val)
+		}
+		control := exec.Command("git", "ls-files", "-z", "--", "cmd/**", "internal/**")
+		control.Dir = root
+		control.Env = controlEnv
+		if out, err := control.CombinedOutput(); err != nil {
+			return fmt.Errorf("%w (output %q)", err, out)
+		}
+		return nil
 	}
 	for _, v := range vectors {
 		t.Run(v.name, func(t *testing.T) {
+			if v.minorFloor > 0 && (gitMajor < 2 || (gitMajor == 2 && gitMinor < v.minorFloor)) {
+				t.Skipf("requires Git 2.%d or later; running Git %s", v.minorFloor, versionFields[2])
+			}
 			// Set only now, after the fixture repo is fully built (G2-7).
 			for k, val := range v.env {
 				t.Setenv(k, val)
 			}
+			if v.live {
+				if err := livenessControl(t, v.env); err == nil {
+					t.Fatalf("liveness control for %v exited successfully, want non-zero", v.env)
+				} else {
+					var exitErr *exec.ExitError
+					if !errors.As(err, &exitErr) || exitErr.ExitCode() == 0 {
+						t.Fatalf("liveness control for %v did not exit non-zero: %v", v.env, err)
+					}
+				}
+				// Causal half: the same control without the vector must
+				// succeed, so the non-zero exit is caused by the vector.
+				if err := livenessControl(t, nil); err != nil {
+					t.Fatalf("liveness control without the vector must exit 0: %v", err)
+				}
+			}
 			got, err := selectRepoPaths(root, DefaultGitRunner)
-			if err != nil || !slices.Equal(got, want) {
-				t.Fatalf("selection with %v = (%q, %v), want (%q, nil)", v.env, got, err, want)
+			if err != nil || !slices.Equal(got, baseline) {
+				t.Errorf("selection with %v = (%q, %v), want baseline (%q)", v.env, got, err, baseline)
 			}
 		})
 	}

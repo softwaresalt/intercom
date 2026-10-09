@@ -17,19 +17,24 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
 
-// GitRunner runs `git ls-files -- <pathspecs...>` rooted at root and
-// returns its raw stdout bytes, or an error if the process could not be
-// started or exited non-zero. It is injectable so tests can simulate a
-// missing/failing git without depending on the real repository tree
-// (mirrors writepath.GitRunner's shape/contract exactly).
+// GitRunner runs `git ls-files -z -- <pathspecs...>` rooted at root and
+// returns its raw stdout bytes (NUL-terminated records), or an error if the
+// process could not be started or exited non-zero. It is injectable so tests
+// can simulate a missing/failing git without depending on the real repository
+// tree. Its signature matches writepath.GitRunner, but writepath's listing is
+// newline-separated and not -z (deferred entry B83F53BB), so the two outputs
+// differ.
 type GitRunner func(root string, pathspecs ...string) ([]byte, error)
 
 // DefaultGitRunner is the production GitRunner: it shells out to
-// `git ls-files -- <pathspecs...>` with root as the working directory.
+// `git ls-files -z -- <pathspecs...>` with root as the working directory. The
+// -z flag makes git emit NUL-terminated, unquoted paths, so quoted and
+// non-ASCII tracked paths are never dropped (4537B2F6).
 //
 // The child runs with gitRunnerEnv's isolated environment (D7BF9F74), so
 // ambient GIT_* variables and global/system git config cannot change the
@@ -37,7 +42,7 @@ type GitRunner func(root string, pathspecs ...string) ([]byte, error)
 // that PATH resolved to a non-absolute path is refused before it is
 // launched.
 func DefaultGitRunner(root string, pathspecs ...string) ([]byte, error) {
-	args := append([]string{"ls-files", "--"}, pathspecs...)
+	args := append([]string{"ls-files", "-z", "--"}, pathspecs...)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = root
 	cmd.Env = gitRunnerEnv(os.Environ())
@@ -202,12 +207,25 @@ func selectRepoPaths(root string, git GitRunner) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	listing, err := pysem.GitText(out)
-	if err != nil {
-		return nil, err
+	if !utf8.Valid(out) {
+		return nil, pysem.ErrInvalidUTF8
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	if out[len(out)-1] != 0 {
+		return nil, fmt.Errorf("output is not NUL-terminated")
 	}
 	var selected []string
-	for _, path := range pysem.SplitLines(listing) {
+	for _, path := range strings.Split(string(out[:len(out)-1]), "\x00") {
+		if path == "" {
+			return nil, fmt.Errorf("output has an empty record")
+		}
+		for _, r := range path {
+			if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
+				return nil, fmt.Errorf("path %q contains a control or line-separator character", path)
+			}
+		}
 		if shouldScanRepoPath(path) {
 			selected = append(selected, path)
 		}
