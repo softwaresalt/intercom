@@ -1,7 +1,7 @@
 # Ship H0 toolchain hotfix: deferred captures (P-021)
 
 - Hotfix PR: #117 (branch fix/go-toolchain-1-26-9, commit e90e9df, base origin/main 7e6c688).
-- These two P-021 C2 captures were created with acklogit stash add on the hotfix branch and removed from its tree so the PR carries no backlog churn. Their exact JSONL records are preserved below. Persist them unchanged (same IDs, no new entries) into .backlogit/stash.jsonl on the 041-S branch in the closure backlog commit.
+- These two P-021 C2 captures were created with backlogit stash add on the hotfix branch and removed from its tree so the PR carries no backlog churn. Their exact JSONL records are preserved below. Persist them unchanged (same IDs, no new entries) into .backlogit/stash.jsonl on the 041-S branch in the closure backlog commit.
 
 ## Stash records (append verbatim, one per line)
 
