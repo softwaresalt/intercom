@@ -273,8 +273,10 @@ func TestSelectRepoPaths_InvalidUTF8_ErrInvalidUTF8(t *testing.T) {
 }
 
 // TestExpectedInternalRepoPaths_MalformedListing_FailsClosed covers the
-// independent oracle's own fail-closed branches: it must not accept a listing
-// that selectRepoPaths rejects.
+// oracle's structural fail-closed branches: UTF-8, NUL termination, and empty
+// records. The oracle deliberately does not replicate the control-character
+// rejection; selectRepoPaths rejects such listings first, so the self-test
+// still fails closed (plan SECTION CANON notes).
 func TestExpectedInternalRepoPaths_MalformedListing_FailsClosed(t *testing.T) {
 	cases := []struct {
 		name    string
