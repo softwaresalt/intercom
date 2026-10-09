@@ -780,7 +780,9 @@ func errorLine(context string, err error) string {
 // returns ok=true, so a deleted tracked file keeps the existing read-error
 // text. Any other Lstat error fails closed. The *fs.PathError wrapper is
 // stripped so CI logs show only repo-relative prefixes (SEC-4). Stdlib only:
-// no filepath.Abs and no filepath.EvalSymlinks.
+// no filepath.Abs and no filepath.EvalSymlinks. A retiredarch copy exists
+// (retiredarch.containedRegularFile): keep the two in sync by hand, because a
+// fix to one must be checked against the other.
 func containedRegularFile(root, rel string) (bool, string) {
 	parts := strings.Split(rel, "/")
 	for _, part := range parts {

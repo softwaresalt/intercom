@@ -50,7 +50,7 @@ func u4CreateSymlink(t *testing.T, target, link string) {
 	t.Helper()
 	if err := os.Symlink(target, link); err != nil {
 		if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
-			t.Skipf("Windows symlink privilege unavailable; Linux CI lint job must run this case: %v", err)
+			t.Skipf("Windows symlink privilege unavailable; Linux CI expensive job (go test -race ./...) must run this case: %v", err)
 		}
 		t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
 	}
@@ -132,6 +132,81 @@ func TestRunRepoScan_DeletedTrackedFile_KeepsReadError(t *testing.T) {
 	if res.Code != 1 || res.Stderr != want {
 		t.Fatalf("got (Code=%d, stderr=%q), want (1, %q)", res.Code, res.Stderr, want)
 	}
+}
+
+// TestContainedRegularFile_RejectsMalformedComponents covers the copy's lexical
+// rejections directly: these rel shapes never pass shouldScanRepoPath, so only
+// a direct call reaches them.
+func TestContainedRegularFile_RejectsMalformedComponents(t *testing.T) {
+	root := t.TempDir()
+	rows := []string{"a//b.go", "./a.go", "../x.go", "a/", ""}
+	if runtime.GOOS == "windows" {
+		rows = append(rows, `a\b.go`, "c:x.go", "a/b:c.go")
+	}
+	for _, rel := range rows {
+		if ok, reason := containedRegularFile(root, rel); ok || reason == "" {
+			t.Errorf("containedRegularFile(%q) = (%v, %q), want (false, non-empty reason)", rel, ok, reason)
+		}
+	}
+}
+
+// TestContainedRegularFile_AcceptsRegularAndMissing pins the two ok outcomes:
+// a regular file under real directories, and a path that verifiably does not
+// exist (fs.ErrNotExist keeps the existing read-error text).
+func TestContainedRegularFile_AcceptsRegularAndMissing(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal", "d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "d", "y.go"), []byte(u4CleanGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"internal/d/y.go", "internal/gone.go", "internal/nodir/gone.go"} {
+		if ok, reason := containedRegularFile(root, rel); !ok {
+			t.Errorf("containedRegularFile(%q) = (false, %q), want ok", rel, reason)
+		}
+	}
+}
+
+// TestContainedRegularFile_RegularFileIntermediate_FailsClosed: a regular file
+// where a directory component belongs is rejected by the intermediate-directory
+// rule before any read.
+func TestContainedRegularFile_RegularFileIntermediate_FailsClosed(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "d"), []byte(u4CleanGo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ok, reason := containedRegularFile(root, "internal/d/y.go")
+	if ok || !strings.HasPrefix(reason, "internal/d is not a real directory") {
+		t.Fatalf("containedRegularFile = (%v, %q), want (false, \"internal/d is not a real directory ...\")", ok, reason)
+	}
+}
+
+// TestRunRepoScan_FinalDirectoryLink_FailsClosed: the final component is a link
+// (a junction on Windows, which needs no privilege; a symlink elsewhere) that
+// resolves to a directory. Lstat reports it as non-regular, so it fails closed.
+// The intermediate-only tests above do not reach this shape.
+func TestRunRepoScan_FinalDirectoryLink_FailsClosed(t *testing.T) {
+	temp := t.TempDir()
+	root := filepath.Join(temp, "repo")
+	outside := filepath.Join(temp, "outside")
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "internal", "x.go")
+	if runtime.GOOS == "windows" {
+		u4Junction(t, link, outside)
+	} else {
+		u4CreateSymlink(t, outside, link)
+	}
+
+	u4MustFailClosed(t, runRepoScan(root, u4StubGit("internal/x.go")), "internal/x.go")
 }
 
 func requireWritepathHarnessTask(t *testing.T) {

@@ -716,7 +716,9 @@ func runSelfTestAssertions(root string, git GitRunner, stdout, stderr io.Writer)
 // a deleted tracked file (SB-3, ED-11 unchanged). Any other Lstat error
 // (permission, I/O) means the component type was never verified, so it
 // fails closed with an "lstat <prefix>: <err>" reason (D-RA-2). Stdlib
-// only; no filepath.Abs or filepath.EvalSymlinks (INV-5).
+// only; no filepath.Abs or filepath.EvalSymlinks (INV-5). A writepath copy
+// exists (writepath.containedRegularFile, D-BA-3, 5A8EC1BC): keep the two in
+// sync by hand. Their control flow differs by design.
 func containedRegularFile(root, rel string) (bool, string) {
 	parts := strings.Split(rel, "/")
 	for _, part := range parts {

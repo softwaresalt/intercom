@@ -17,19 +17,9 @@ import (
 )
 
 // lsFilesListing is the fake `git ls-files -z` listing: each path is
-// NUL-terminated. U1 centralised this helper; U2 flipped the runner format
+// NUL-terminated. U1 centralised this helper and U2 flipped the runner format
 // from newline to NUL here, in one place.
 func lsFilesListing(paths ...string) []byte {
-	if len(paths) == 0 {
-		return nil
-	}
-	return []byte(strings.Join(paths, "\x00") + "\x00")
-}
-
-// u2NULListing is an explicit NUL fixture for the U2 contract tests. It stays
-// a literal, separate spelling of the NUL format so the contract rows do not
-// depend on the shared helper.
-func u2NULListing(paths ...string) []byte {
 	if len(paths) == 0 {
 		return nil
 	}
@@ -162,7 +152,7 @@ func TestSelectRepoPaths_FiltersAndSorts(t *testing.T) {
 }
 
 func TestNULListing_PreservesSpecialNames(t *testing.T) {
-	listing := u2NULListing(
+	listing := lsFilesListing(
 		"internal/\u00e9.go",
 		`internal/q"uote.go`,
 		`internal/back\slash.go`,
@@ -211,18 +201,38 @@ func TestSelectRepoPaths_BadListing_FailsClosed(t *testing.T) {
 		{name: "lone NUL", listing: []byte("\x00")},
 		{
 			name:        "control character",
-			listing:     u2NULListing("internal/a\nb.go"),
+			listing:     lsFilesListing("internal/a\nb.go"),
 			escapedPath: "internal/a\nb.go",
 		},
 		{
 			name:        "Unicode line separator",
-			listing:     u2NULListing("internal/a\u2028b.go"),
+			listing:     lsFilesListing("internal/a\u2028b.go"),
 			escapedPath: "internal/a\u2028b.go",
 		},
 		{
 			name:        "ESC",
-			listing:     u2NULListing("internal/a\x1bb.go"),
+			listing:     lsFilesListing("internal/a\x1bb.go"),
 			escapedPath: "internal/a\x1bb.go",
+		},
+		{
+			name:        "DEL",
+			listing:     lsFilesListing("internal/a\x7fb.go"),
+			escapedPath: "internal/a\x7fb.go",
+		},
+		{
+			name:        "NEL U+0085",
+			listing:     lsFilesListing("internal/a\u0085b.go"),
+			escapedPath: "internal/a\u0085b.go",
+		},
+		{
+			name:        "paragraph separator U+2029",
+			listing:     lsFilesListing("internal/a\u2029b.go"),
+			escapedPath: "internal/a\u2029b.go",
+		},
+		{
+			name:        "information separator 0x1c",
+			listing:     lsFilesListing("internal/a\x1cb.go"),
+			escapedPath: "internal/a\x1cb.go",
 		},
 	}
 	for _, tc := range cases {
@@ -259,6 +269,36 @@ func TestSelectRepoPaths_InvalidUTF8_ErrInvalidUTF8(t *testing.T) {
 	_, err := selectRepoPaths("/root", git)
 	if !errors.Is(err, pysem.ErrInvalidUTF8) {
 		t.Fatalf("selectRepoPaths error = %v, want pysem.ErrInvalidUTF8", err)
+	}
+}
+
+// TestExpectedInternalRepoPaths_MalformedListing_FailsClosed covers the
+// independent oracle's own fail-closed branches: it must not accept a listing
+// that selectRepoPaths rejects.
+func TestExpectedInternalRepoPaths_MalformedListing_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name    string
+		listing []byte
+		want    error
+	}{
+		{name: "newline listing", listing: []byte("internal/a.go\n")},
+		{name: "empty record", listing: []byte("internal/a.go\x00\x00")},
+		{name: "lone NUL", listing: []byte("\x00")},
+		{name: "invalid UTF-8", listing: []byte{0xff, 0}, want: pysem.ErrInvalidUTF8},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			git := func(root string, pathspecs ...string) ([]byte, error) {
+				return tc.listing, nil
+			}
+			got, err := expectedInternalRepoPaths("/root", git)
+			if err == nil {
+				t.Fatalf("expectedInternalRepoPaths = %q, want fail-closed error", got)
+			}
+			if tc.want != nil && !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -635,6 +675,34 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 		t.Fatalf("parse git version %q: %v", versionFields[2], err)
 	}
 
+	// livenessControl runs `git ls-files -z` under the control environment:
+	// every GIT_* entry is stripped, NOSYSTEM and GLOBAL are pinned, and only
+	// the given vector is added. A nil vector is the control without it.
+	livenessControl := func(t *testing.T, vector map[string]string) error {
+		t.Helper()
+		var controlEnv []string
+		for _, kv := range os.Environ() {
+			name, _, _ := strings.Cut(kv, "=")
+			if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+				continue
+			}
+			controlEnv = append(controlEnv, kv)
+		}
+		controlEnv = append(controlEnv, "GIT_CONFIG_NOSYSTEM=1")
+		if _, setByVector := vector["GIT_CONFIG_GLOBAL"]; !setByVector {
+			controlEnv = append(controlEnv, "GIT_CONFIG_GLOBAL="+os.DevNull)
+		}
+		for k, val := range vector {
+			controlEnv = append(controlEnv, k+"="+val)
+		}
+		control := exec.Command("git", "ls-files", "-z", "--", "cmd/**", "internal/**")
+		control.Dir = root
+		control.Env = controlEnv
+		if out, err := control.CombinedOutput(); err != nil {
+			return fmt.Errorf("%w (output %q)", err, out)
+		}
+		return nil
+	}
 	for _, v := range vectors {
 		t.Run(v.name, func(t *testing.T) {
 			if v.minorFloor > 0 && (gitMajor < 2 || (gitMajor == 2 && gitMinor < v.minorFloor)) {
@@ -645,31 +713,18 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 				t.Setenv(k, val)
 			}
 			if v.live {
-				var controlEnv []string
-				for _, kv := range os.Environ() {
-					name, _, _ := strings.Cut(kv, "=")
-					if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
-						continue
-					}
-					controlEnv = append(controlEnv, kv)
-				}
-				controlEnv = append(controlEnv, "GIT_CONFIG_NOSYSTEM=1")
-				if _, setByVector := v.env["GIT_CONFIG_GLOBAL"]; !setByVector {
-					controlEnv = append(controlEnv, "GIT_CONFIG_GLOBAL="+os.DevNull)
-				}
-				for k, val := range v.env {
-					controlEnv = append(controlEnv, k+"="+val)
-				}
-				control := exec.Command("git", "ls-files", "-z", "--", "cmd/**", "internal/**")
-				control.Dir = root
-				control.Env = controlEnv
-				if out, controlErr := control.CombinedOutput(); controlErr == nil {
-					t.Fatalf("liveness control for %v exited successfully, want non-zero (output %q)", v.env, out)
+				if err := livenessControl(t, v.env); err == nil {
+					t.Fatalf("liveness control for %v exited successfully, want non-zero", v.env)
 				} else {
 					var exitErr *exec.ExitError
-					if !errors.As(controlErr, &exitErr) || exitErr.ExitCode() == 0 {
-						t.Fatalf("liveness control for %v did not exit non-zero: %v (output %q)", v.env, controlErr, out)
+					if !errors.As(err, &exitErr) || exitErr.ExitCode() == 0 {
+						t.Fatalf("liveness control for %v did not exit non-zero: %v", v.env, err)
 					}
+				}
+				// Causal half: the same control without the vector must
+				// succeed, so the non-zero exit is caused by the vector.
+				if err := livenessControl(t, nil); err != nil {
+					t.Fatalf("liveness control without the vector must exit 0: %v", err)
 				}
 			}
 			got, err := selectRepoPaths(root, DefaultGitRunner)

@@ -73,11 +73,13 @@ func pyStrList(items []string) string {
 }
 
 // expectedInternalRepoPaths ports expected_internal_repo_paths: an
-// INDEPENDENTLY re-derived expected internal/** selection set (its own
-// `git ls-files -- internal/**` call plus its own inline filter), used by
-// the "selection structural inclusion" assertion below to prove
-// selectRepoPaths' real behavior against a second, independently-written
-// implementation of the same three filter rules -- not a self-comparison.
+// INDEPENDENTLY re-derived expected internal/** selection set. It runs its own
+// `git ls-files -z -- internal/**` call through the injected GitRunner and
+// applies its own bytes-based NUL parse and its own inline filter, which the
+// "selection structural inclusion" assertion below compares against
+// selectRepoPaths. INDEPENDENT ORACLE: do not make this call selectRepoPaths
+// and do not extract a shared parser. A shared parser turns that assertion
+// into a self-comparison (H-11, see pin.go).
 func expectedInternalRepoPaths(root string, git GitRunner) ([]string, error) {
 	out, err := git(root, "internal/**")
 	if err != nil {

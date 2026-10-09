@@ -26,6 +26,17 @@ import (
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
 
+// unwrapPathError strips the *fs.PathError wrapper so a printed filesystem
+// error carries only the operation's errno, never the absolute repo path
+// (SEC-4, as in the containment copies).
+func unwrapPathError(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
+}
+
 // GitRunner runs `git <args...>` rooted at dir, feeding stdin (nil for
 // none) on the child process's standard input, and returns its raw stdout
 // and stderr bytes, or an error if the process could not be started. A
@@ -101,14 +112,14 @@ func rootGitignoreTextAt(repoDir, ref string, git GitRunner) (string, error) {
 			if errors.Is(err, fs.ErrNotExist) {
 				return "", nil
 			}
-			return "", fmt.Errorf("::error::unignore: lstat root .gitignore: %w", err)
+			return "", fmt.Errorf("::error::unignore: lstat root .gitignore: %w", unwrapPathError(err))
 		}
 		if !info.Mode().IsRegular() {
 			return "", fmt.Errorf("::error::unignore: root .gitignore is not a regular file (mode %v)", info.Mode())
 		}
 		data, err := os.ReadFile(gitignorePath)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("::error::unignore: read root .gitignore: %w", unwrapPathError(err))
 		}
 		text, convErr := pysem.GitText(data)
 		if convErr != nil {

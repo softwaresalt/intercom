@@ -66,7 +66,7 @@ func TestRootGitignoreTextAt_HEAD_SymlinkGitignore_Errors(t *testing.T) {
 	}
 	if err := os.Symlink(target, filepath.Join(dir, ".gitignore")); err != nil {
 		if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
-			t.Skipf("Windows symlink privilege unavailable; Linux CI gitignore-append-only job must run this case: %v", err)
+			t.Skipf("Windows symlink privilege unavailable; Linux CI expensive job (go test -race ./...) must run this case: %v", err)
 		}
 		t.Fatalf("os.Symlink: %v", err)
 	}
@@ -80,8 +80,9 @@ func TestRootGitignoreTextAt_HEAD_SymlinkGitignore_Errors(t *testing.T) {
 	}
 }
 
-// TestRootGitignoreTextAt_HEAD_DirectoryGitignore_Errors is
-// characterization: os.ReadFile already rejects a directory on the parent.
+// TestRootGitignoreTextAt_HEAD_DirectoryGitignore_Errors pins the
+// non-regular-file rejection (D44D8BDF, unignore arm) for a directory
+// .gitignore: the Lstat check must reject it before ReadFile runs.
 func TestRootGitignoreTextAt_HEAD_DirectoryGitignore_Errors(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
@@ -96,6 +97,9 @@ func TestRootGitignoreTextAt_HEAD_DirectoryGitignore_Errors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), ".gitignore") {
 		t.Fatalf("error %q does not name .gitignore", err)
+	}
+	if !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("error %q does not report the non-regular-file rejection", err)
 	}
 }
 
