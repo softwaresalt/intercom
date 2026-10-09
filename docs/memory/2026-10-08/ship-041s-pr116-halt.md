@@ -1,5 +1,7 @@
 # Ship session memory: 041-S / 051-F, PR #116 halted pre-merge
 
+> **Status update (2026-10-09, supersedes the state sections below).** H0 hotfix PR #117 merged as `b3b147c` (go.mod toolchain `go1.26.9`; `security` and `ci gate` green on `e1b3013`). The stash entries `0B6CCE5A`, `06CE25E5`, and `78A78926`, and this memory file, were committed on `feat/041-s-gatecheck-batch-a-correctness` in `3a62ec8`, so they are no longer uncommitted. The branch then merged `origin/main` (merge `6dc7b02`), so PR #116 HEAD moves to the newest commit on the branch. The "Uncommitted local state", "Resume instructions", and "Decision: no merge" sections describe the pre-hotfix state only. Do not re-append `0B6CCE5A`: `.backlogit/stash.jsonl` already contains it exactly once.
+
 ## Session state
 
 - **Shipment:** `041-S` (active). **Feature:** `051-F` (active). All six tasks are done.
