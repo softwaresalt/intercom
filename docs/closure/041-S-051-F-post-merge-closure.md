@@ -1,6 +1,6 @@
 ---
 title: "041-S / 051-F post-merge operational closure"
-description: "Post-merge release-readiness, bound cascade-close reconciliation, the H0 toolchain security hotfix that unblocked the merge, and disclosure of every procedural deviation for the gatecheck batch A correctness fixes."
+description: "Post-merge release-readiness, cascade-close reconciliation, the H0 toolchain security hotfix that unblocked the merge, and disclosure of every procedural deviation for the gatecheck batch A correctness fixes."
 status: ready_with_conditions
 tags:
   - closure
@@ -45,7 +45,7 @@ conditions:
     satisfied: true
     evidence: "PR #117 body 'Changes'; commits e90e9df and e1b3013 (comment-only); go mod tidy -diff clean; this artifact, section 'H0 hotfix'"
   - id: safe-close-agent-executed-binding
-    summary: "Process residual (disclosed, not remediated): there is no invokable shipment-reconcile safe-close CLI or gate (tracker D10D3AFC). The classify-close-path verdict and its CLASSIFICATION_BINDING were computed by the agent with an inline PowerShell hash (not a tool-enforced recompute), and the bound cascade primitive was invoked directly via `backlogit shipment ship` on the P-015 fully-covered-root path. The same residual was disclosed for 030-S and 040-S."
+    summary: "Process residual (disclosed, not remediated): there is no invokable shipment-reconcile safe-close CLI or gate (tracker D10D3AFC). The classify-close-path verdict and its CLASSIFICATION_BINDING were computed by the agent with an inline PowerShell hash (not a tool-enforced recompute), and the cascade primitive was invoked directly after agent-side classification via `backlogit shipment ship` on the P-015 fully-covered-root path. The same residual was disclosed for 030-S and 040-S."
     satisfied: true
     evidence: ".backlogit/reconcile/041-S-cascade-close-2026-10-09T07-08-04Z.md (verdict, binding bf1fbbe3695127bdb364522fca44d7c99d9fa51ceafdea7c9dbb2fc8bde05c27, engine line, gate evaluation); stash entry D10D3AFC (active, Stage-owned)"
   - id: covering-feature-archived-on-done-move
