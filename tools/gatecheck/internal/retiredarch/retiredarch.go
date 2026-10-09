@@ -588,11 +588,15 @@ func sortedKeys(set map[string]bool) []string {
 // fail closed (an ::error::-free plain findings dump to stderr, exit 1,
 // matching Python's `print(..., file=sys.stderr); raise SystemExit(1)`
 // exactly -- no ::error:: prefix here, unlike a git/read error) if any
-// finding turns up.
+// finding turns up. An empty selection (no in-scope tracked path, 0D643BE8)
+// also fails closed with an ::error:: line rather than passing silently.
 func runRepoScan(root string, git GitRunner) Result {
 	relPaths, err := selectRepoPaths(root, git)
 	if err != nil {
 		return Result{Stderr: fmt.Sprintf("::error::git ls-files: %v\n", err), Code: 1}
+	}
+	if len(relPaths) == 0 {
+		return Result{Stderr: "::error::retired-arch repo scan selected no files under config.toml.example, cmd/** or internal/** (fail-closed)\n", Code: 1}
 	}
 
 	var findings []string

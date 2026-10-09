@@ -578,6 +578,34 @@ func TestConfigTomlExample_DualEngineAgreement_LiveCorpus(t *testing.T) {
 	}
 }
 
+func TestRunRepoScan_EmptySelection_FailsClosed(t *testing.T) {
+	res := runRepoScan(t.TempDir(), u3StubGit())
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.HasPrefix(res.Stderr, "::error::") ||
+		!strings.Contains(res.Stderr, "retired-arch repo scan selected no files") ||
+		!strings.HasSuffix(res.Stderr, "\n") {
+		t.Fatalf("stderr = %q, want a newline-terminated ::error:: for empty selection", res.Stderr)
+	}
+}
+
+func TestRunRepoScan_OnlyOutOfScopePaths_FailsClosed(t *testing.T) {
+	res := runRepoScan(t.TempDir(), u3StubGit(
+		"internal/a_test.go",
+		"internal/x/testdata/y.go",
+		"docs/readme.md",
+	))
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.HasPrefix(res.Stderr, "::error::") ||
+		!strings.Contains(res.Stderr, "retired-arch repo scan selected no files") ||
+		!strings.HasSuffix(res.Stderr, "\n") {
+		t.Fatalf("stderr = %q, want a newline-terminated ::error:: for empty in-scope selection", res.Stderr)
+	}
+}
+
 // u3StubGit returns a GitRunner that ignores the pathspecs and reports
 // exactly the given repo-relative paths, so a U3 containment scenario
 // needs no real git index (plan U3: containment is index-independent).
