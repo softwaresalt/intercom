@@ -241,7 +241,8 @@ from the staging probe (git 2.55, `git ls-files -z -- cmd/** internal/**`):
   flagged a one-letter difference as a review hazard). It returns selected paths in the **order
   git printed them**. It does not re-sort, so finding order and the goldens stay unchanged.
 * **Failure modes** (each returns an error, never a skip):
-  * a scanned record that is not valid UTF-8 returns `pysem.ErrInvalidUTF8` (error identity
+  * a scanned record that is not valid UTF-8 returns an error wrapping `pysem.ErrInvalidUTF8` with
+    the `%q` path (`fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)`; `errors.Is` identity
     preserved; the `runRepoScan` context string `git ls-files output` is unchanged). A record that
     `shouldScan` rejects is never read or echoed, so it is not judged (plan-review SCOPE-F3: a
     whole-listing check would hard-fail the gate on an unscanned non-UTF-8 name, the same false
@@ -277,8 +278,9 @@ character`. The rune set is `< 0x20`, `0x7f`, `0x85`, `0x2028`, `0x2029`, the sa
   (fixture names in the self-test, `errorLine`'s `%v` tail with parser errors or raw git stderr,
   the absolute path inside the unwrapped `ReadText` error) are captured as a separate stash
   entry (plan-review SEC-2, SEC-3).
-* **Bounded rule set (2026-10-01 learning).** The rune set equals retiredarch's set plus the
-  `SplitLines` boundaries. A denylist over an open grammar does not converge, so any extension (C1
+* **Bounded rule set (2026-10-01 learning).** The rune set equals retiredarch's set exactly; the
+  `SplitLines` boundaries U+001C..U+001E are already inside `< 0x20`, so nothing is added to it. A
+  denylist over an open grammar does not converge, so any extension (C1
   controls, bidi overrides) routes to `31F33EFE` and the output-sink entry, not to this decision.
 * **Parity note.** `31F33EFE` is retained and un-pulled: its retiredarch decision remains its own.
   This decision supplies the writepath precedent, and the operator may override to Option A at
@@ -321,9 +323,12 @@ character`. The rune set is `< 0x20`, `0x7f`, `0x85`, `0x2028`, `0x2029`, the sa
 * **Why not the mandatory-liveness design.** An earlier draft added a per-vector liveness control
   (stash `C8827920`'s idea) and two more vectors (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_COUNT`).
   Plan-review (SCOPE-F2) showed that this ports an operator-excluded entry and that the observed
-  red at the parent already proves each vector is live when written. The `GLOBAL`/`COUNT`
-  channels are covered by the pure filter table (the pins are in the slice) and by (c), which
-  exercises the same `GIT_*` prefix filter. `C8827920` stays active for the retiredarch table.
+  red at the parent already proves each vector is live when written. The `GIT_CONFIG_GLOBAL` pin is
+  covered by the pure filter table's replaced-entry row. The `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`
+  channel is covered by the generic `GIT_` prefix rule, **not independently observed** (no table
+  row and no vector exercises it; (c) exercises the same prefix rule through
+  `GIT_CONFIG_PARAMETERS`). No table row is added for it, because the table must stay identical to
+  retiredarch's. `C8827920` stays active for the retiredarch table.
 * **Pure filter test.** A table test of `gitRunnerEnv`, identical to retiredarch's so that drift
   fails a test (case-insensitive prefix, `GIT_CEILING_DIRECTORIES` kept in any case, Windows `=C:`
   per-drive entries kept, a `GITX` lookalike kept, the three appended entries, `nil` input).
@@ -359,7 +364,13 @@ character`. The rune set is `< 0x20`, `0x7f`, `0x85`, `0x2028`, `0x2029`, the sa
   (no `PASS <name>` line; either skipped or failed with the containment text). The TOCTOU between
   the `Lstat` walk and the read is an accepted residual, as in retiredarch U3 and 051.004-T.
   Symlink creation skips **only** on the Windows privilege error (`u4CreateSymlink` already does
-  this); the Linux CI job runs rows (1) and (2).
+  this); the Linux CI job runs every row. **Red evidence for the one production call (the plan, U4,
+  is authoritative for the final row set and the evidence rules):** the linked-ancestor row (3,
+  a junction on an unprivileged Windows host) and the directory-link row (2) are observed red
+  locally; row (1)'s red comes from WSL or Developer Mode when available and is otherwise disclosed
+  (it may SKIP on an unprivileged Windows host if the skip is recorded); there is no standalone
+  `test:` push to CI, because `ci.yml` sets `cancel-in-progress: true` and a second commit would
+  break the single-commit revert.
 
 ### D-BW-4: sequencing, atomicity, and the frozen oracle
 

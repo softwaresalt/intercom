@@ -130,12 +130,19 @@ bent, why, simpler alternative rejected, mitigation):**
   * *Alternative rejected:* inventing a red.
   * *Mitigation:* Ship labels them harness-ready on "green before and after, same test count", and
     labels the tightened assertions and regression guards as characterization in the evidence.
+  * *Precedent (so Ship's harness step does not halt on a green-on-arrival U1 or U5):* Batch A
+    recorded this same exception as its own EX-2
+    (`docs/plans/2026-10-08-intercom-go-gatecheck-batch-a-correctness-plan.md`; the Batch A
+    deliberation states the same green-on-arrival labelling rule), and its characterization tasks
+    051.001-T and 051.006-T (shipment 041-S) were labelled `harness-ready` and shipped as
+    green-on-arrival characterization tasks, with no red claimed. A green-on-arrival harness result
+    is the **expected** outcome for U1 and U5, never a halt.
 * **EX-3, U2 exceeds the 2-hour bounds.**
-  * *Principle bent:* the 2-hour rule: about 9 functions (production: `DefaultGitRunner`,
-    `runRepoScan`, the new helper; tests: two helper flips, `fixtureGit`, three tests) against fewer
-    than 5; about 3 scenarios by the counting convention (a real-git proof, helper-level rows,
-    runner-level rows) with roughly 20 rows; test infrastructure with production code (Width
-    Isolation).
+  * *Principle bent:* the 2-hour rule: about 10 functions (production: `DefaultGitRunner`,
+    `runRepoScan`, the new helper; tests: two helper flips, `fixtureGit`, `hermeticGitEnv`, three
+    tests) against fewer than 5; about 3 scenarios by the counting convention (a real-git proof,
+    helper-level rows, runner-level rows) with roughly 20 rows; test infrastructure with production
+    code (Width Isolation).
   * *Why:* the runner-format flip, the strict parse, the selected-path rules, and the real-git proof
     (`fixtureGit`, which travels with its first consumer) are one atomic behaviour. A split leaves a
     commit with stale fakes or a known raw-byte echo.
@@ -354,7 +361,7 @@ source and keep CLI text ASCII.
     			continue // by design: never read or echoed
     		}
     		if !utf8.ValidString(p) {
-    			return nil, pysem.ErrInvalidUTF8
+    			return nil, fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)
     		}
     		for _, r := range p {
     			if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
@@ -370,6 +377,13 @@ source and keep CLI text ASCII.
     The rune set is identical to retiredarch's (`< 0x20`, `0x7f`, `0x85`, `0x2028`, `0x2029`); the
     `SplitLines` boundaries U+001C..U+001E are already inside `< 0x20`. Any extension (C1 controls,
     bidi overrides) routes to stash `31F33EFE` and `EDC18D59`, not to this plan.
+
+    The invalid-UTF-8 error is **wrapped with the `%q` path** so the log names the offending record
+    without echoing raw bytes; `errors.Is(err, pysem.ErrInvalidUTF8)` and every planned row below
+    still pass (INV-D). **Ship adds a code comment on `scannedPathsFromListing`** noting that
+    writepath judges UTF-8 validity and control/separator runes only for the records it will scan,
+    whereas retiredarch's `selectRepoPaths` judges every listed record (the asymmetry tracked by
+    stash `31F33EFE`); cite the stash ID, not a unit tag (`4995F8C3`).
   * `runRepoScan`: replace the `pysem.GitText` + `SplitLines` block (`:835-848`) with
     `relPaths, err := scannedPathsFromListing(out)`; on error return
     `Result{Stderr: errorLine("git ls-files output", err), Code: 1}`. The ED-7 guard, the
@@ -398,8 +412,10 @@ source and keep CLI text ASCII.
 * **Posture.** Test-first, staged with a **compiling stub** so every red is behavioural, never an
   `undefined:` compile failure:
   1. At the parent, add a stub `scannedPathsFromListing` that returns
-     `nil, errors.New("unimplemented")` (it is not committed), plus the tests and helper flips, and
-     run them. Observe the reds below.
+     `nil, errors.New("unimplemented")` (it is not committed) **and that also declares the two
+     sentinels `errListingNotTerminated` and `errListingEmptyRecord`** (test (a) references both by
+     name; without them the red is an `undefined:` compile failure, which this plan forbids), plus
+     the tests and helper flips, and run them. Observe the reds below.
   2. Apply the real `writepath.go` change.
   3. Run all green; commit once.
 
@@ -480,13 +496,16 @@ kind" column separates *bug-evidence*, *new-contract* and *characterization*:
 
 | # | Test | Red kind | Detail |
 |---|---|---|---|
-| e1 | `TestDefaultGitRunnerIgnoresGitEnv` | **bug-evidence for vector (a)**; new-contract for (b), (c) | A real-git fixture repo (full Go files with a `package` clause) tracks a clean `cmd/x/main.go`, a clean `internal/ok.go`, a violating `internal/bad.go` (for example `os.Remove`) and `internal/\u00e9.go`. **Baseline** = the scrubbed `git ls-files -z -- cmd/** internal/**` stdout bytes; the test first asserts the baseline names all four files (a vacuous baseline cannot pass). **Each vector is its own `t.Run` subtest** that calls `hermeticGitEnv(t)` first and then sets only that vector with `t.Setenv`, **after** the repo and the alternate index are built (vectors are never cumulative). A **no-vector subtest** asserts `DefaultGitRunner(root)` returns bytes equal to the baseline (green at the parent and after: the causal control). For every vector the oracle is: `DefaultGitRunner(root)` returns `err == nil` and bytes **equal to the baseline**. Never compare the exit `Code` alone. **(a)** `GIT_INDEX_FILE` = an alternate index listing only `cmd/x/main.go`, created with `fixtureGitEnv`. At the parent the bytes differ, and `runRepoScan(root, DefaultGitRunner)` returns **Code 0** although tracked `internal/bad.go` holds a write primitive; after, the baseline, and Code 1 with a stderr finding `write primitive 'os.Remove' found` for `internal/bad.go`. **(b)** `GIT_LITERAL_PATHSPECS=1`: the parent returns an empty listing. **(c)** `GIT_CONFIG_PARAMETERS=not-a-valid-config`: the parent runner errors |
+| e1 | `TestDefaultGitRunnerIgnoresGitEnv` | **bug-evidence for vector (a)**; new-contract for (b), (c) | A real-git fixture repo (full Go files with a `package` clause) tracks a clean `cmd/x/main.go`, a clean `internal/ok.go`, a violating `internal/bad.go` (for example `os.Remove`) and `internal/\u00e9.go`. **Baseline** = the scrubbed `git ls-files -z -- internal/** cmd/**` stdout bytes (the runner's pathspec order); the test first asserts the baseline names all four files (a vacuous baseline cannot pass). **Each vector is its own `t.Run` subtest** that calls `hermeticGitEnv(t)` first and then sets only that vector with `t.Setenv`, **after** the repo and the alternate index are built (vectors are never cumulative). A **no-vector subtest** asserts `DefaultGitRunner(root)` returns bytes equal to the baseline (green at the parent and after: the causal control). For every vector the oracle is: `DefaultGitRunner(root)` returns `err == nil` and bytes **equal to the baseline**. Never compare the exit `Code` alone. **(a)** `GIT_INDEX_FILE` = an alternate index listing only `cmd/x/main.go`, created with `fixtureGitEnv`. At the parent the bytes differ, and `runRepoScan(root, DefaultGitRunner)` returns **Code 0** although tracked `internal/bad.go` holds a write primitive; after, the baseline, and Code 1 with a stderr finding `write primitive 'os.Remove' found` for `internal/bad.go`. **(b)** `GIT_LITERAL_PATHSPECS=1`: the parent returns an empty listing. **(c)** `GIT_CONFIG_PARAMETERS=not-a-valid-config`: the parent runner errors |
 | e2 | `TestGitRunnerEnv` | new-contract (red through the identity stub) | A pure table, **identical to retiredarch's** so drift fails a test: lower/mixed-case `git_dir` and `Git_Index_File` dropped; `GIT_CEILING_DIRECTORIES`, `Git_Ceiling_Directories` and `git_ceiling_directories` kept; `=C:=C:\x` kept; `GITX=1` kept; `GIT_CONFIG_NOSYSTEM=0` and `GIT_CONFIG_GLOBAL=...` replaced; the three appended entries last; `nil` input yields just the three entries |
 
 * **Why three vectors, not five.** The parent-red proves each vector is live when written. The
-  GLOBAL/COUNT channels are covered by the pure table (the pins are in the slice) and by (c), the
-  same `GIT_*` prefix filter. The mandatory-liveness-control design in stash `C8827920` is **not**
-  adopted here; it stays with that entry for the retiredarch table.
+  `GIT_CONFIG_GLOBAL` pin is covered by the pure table's replaced-entry row. The
+  `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` channel is covered by the generic `GIT_` prefix rule, **not
+  independently observed**: no table row and no vector exercises it, and (c) exercises the same
+  prefix rule through `GIT_CONFIG_PARAMETERS`. Do not add a COUNT/KEY row to the table: it would
+  break the identical-to-retiredarch invariant. The mandatory-liveness-control design in stash
+  `C8827920` is **not** adopted here; it stays with that entry for the retiredarch table.
 * **Test hygiene.** A missing `git`, or an unparseable `git --version`, is `t.Fatalf`, never a skip.
   Failure messages and the PR evidence never print `os.Environ()` or `GIT_CONFIG_VALUE_*` (agent
   hosts use them for credential headers). Extra environment entries are applied after the scrub and
@@ -544,9 +563,12 @@ kind" column separates *bug-evidence*, *new-contract* and *characterization*:
 
   Symlink creation skips **only** on the Windows privilege error (`u4CreateSymlink` already does
   this), so row 1 skips on an unprivileged Windows host; rows 2 and 3 use a junction there and never
-  skip. The Linux CI job runs all three. Row 3 relies on the same ancestor detection that
+  skip. The Linux CI job runs all three (the skip is guarded by `runtime.GOOS == "windows"`, so
+  Linux cannot skip row 1). Row 3 relies on the same ancestor detection that
   051.004-T's `TestRunRepoScan_IntermediateJunctionOrSymlink_FailsClosed` already exercises, so its
-  red is observable on an unprivileged Windows dev host. Record where each red was observed.
+  red is observable on an unprivileged Windows dev host. Record where each red was observed. On such
+  a host, rows 2 and 3 are the P-004 red evidence for U4's one production call, and row 1's red
+  comes from a symlink-capable host (WSL, Developer Mode) when one exists (AC1).
 
   **Windows classification (optional trace, no AC).** A reviewer read the local toolchain's
   `$GOROOT/src/os/types_windows.go` and found a mount point is `ModeIrregular` only (not `IsDir()`,
@@ -556,20 +578,31 @@ kind" column separates *bug-evidence*, *new-contract* and *characterization*:
   cover a Windows directory symlink, or mark that behaviour as unverified; no assertion depends on
   it.
 * **AC:**
-  1. Rows 1 and 3 are OBSERVED red at the parent (row 3 on Windows by junction, row 1 wherever a
-     symlink can be created). If no symlink-capable local host exists, use WSL or Developer Mode
-     **in the same checkout** (no second clone or worktree). If CI is the only option, push the
-     `test:` commit **alone**, record the failing run URL as the red evidence, then push the fix;
-     this consumes fix-ci budget and is disclosed in the PR body. Otherwise halt under P-005. Row 2
-     is red wherever a directory link can be created. All rows green after.
+  1. **Red evidence (P-004) for U4's one production call.** Row 3 (a linked ancestor; bug-evidence;
+     a junction on an unprivileged Windows host, a symlink elsewhere) and row 2 (a leaf directory
+     link; red wherever a directory link can be created) are OBSERVED red at the parent, before the
+     production change, and green after. Row 1 (the leaf file symlink; bug-evidence) is observed
+     red from a symlink-capable local host **in the same checkout** (WSL, Developer Mode; no second
+     clone or worktree) when one exists. When it cannot be (an unprivileged Windows host skips it
+     with Errno 1314), record that in the task evidence and the PR body: rows 2 and 3 stand as the
+     red evidence for the same one-line production change, and row 1 must pass un-skipped on the
+     Linux CI test step. **Do not push a standalone `test:` commit to CI for U4:** `ci.yml` sets
+     `cancel-in-progress: true` per workflow and ref, so a fix pushed while that run is in flight
+     cancels the red run and leaves no evidence, and a second commit would break U4's
+     single-commit revert. If neither row 2 nor row 3 can be observed red (no directory link can be
+     created on any local host), halt under P-005.
   2. `TestRun_SelfTest*_MatchesGolden` unchanged (this covers regular fixtures and the `harness/`
      subdirectory); `scanFile`/`scanSource` unchanged; `retiredarch` mask-flow and
      `initstate_test.go` green. Regression guards.
   3. On the live tree, `go run ./tools/gatecheck write-path --root . --self-test-integrity` and
      `go run ./tools/gatecheck write-path --root . --self-test` exit 0. Regression guard.
   4. The PR body includes a **local** `go test -v -run TestRunFixtureSelfTest_LinkedFixture
-     ./tools/gatecheck/internal/writepath` run showing the rows as PASS, not SKIP (the CI test step
-     has no `-v`, so CI cannot show subtest verdicts; adding one is out of scope).
+     ./tools/gatecheck/internal/writepath` run showing rows 2 and 3 as PASS, never SKIP (they use a
+     junction on Windows). Row 1 also shows PASS, **except** on an unprivileged Windows host, where
+     it may show SKIP (Errno 1314) provided the skip line is recorded verbatim in the task
+     evidence together with where row 1 passed (a WSL or Developer-Mode run, or the Linux CI test
+     step, which cannot skip it). The CI test step has no `-v`, so CI cannot show subtest verdicts;
+     adding one is out of scope.
   5. `gofmt`, `go vet`, `go build ./...`, `go test -count=1 ./tools/gatecheck/...` clean;
      `goimports` and `golangci-lint` clean when installed.
 * **Size / complexity:** S / low.
@@ -640,7 +673,7 @@ See the deliberation for the full options tables.
 | RK-1 | A test fake still emits newline listings after U2 and passes for the wrong reason | low / high | The strict parser rejects a non-NUL-terminated listing; U1 centralises fakes and tightens two assertions to name the path; the matrix check is repeated at U2 |
 | RK-2 | The frozen-oracle edit is treated as an H-3 violation | low / medium | Recorded as a single authorized adaptation (D-BW-4, INV-G) with the exact replacement header written out; stop and report if the diff exceeds the decode block and the header paragraph |
 | RK-3 | An env vector is non-live on the CI git version | low / medium | Each vector is observed red at the parent; the baseline is asserted non-vacuous; bytes are compared, not exit codes |
-| RK-4 | Symlink tests skip on unprivileged Windows, so a red is never observed locally | high / low | Junction rows run unprivileged on Windows; Linux CI runs the symlink rows; record where each red was observed |
+| RK-4 | Symlink tests skip on unprivileged Windows, so a red is never observed locally | high / low | Junction rows run unprivileged on Windows and are U4's red evidence (rows 2 and 3); row 1's red comes from WSL or Developer Mode, or is disclosed as unobserved; Linux CI runs the symlink rows; record where each red was observed |
 | RK-5 | A U2-U4 change breaks the mask-flow pin | low / high | No edit to `scanFile`/`scanSource` (INV-A); the pin tests are in every AC |
 | RK-6 | Isolation breaks the gate on a runner or host with an injected global `safe.directory` | low / medium | The retired-architecture gate already runs in the same CI job and checkout with the same isolation (PRs #112, #116) and passes; the first CI run on the Ship PR is the validation window. If live-tree tests fail on the Ship host, inspect the injected keys with `git config --show-origin`, treat it as an environment issue, and do not loosen the scrub |
 | RK-7 | Path bytes reach CI logs unescaped (workflow-command injection) | low / medium | D-BW-1a: scanned paths with control/separator runes fail closed with `%q`; test (b) asserts no raw control byte. Other sinks are captured separately |
@@ -660,7 +693,8 @@ See the deliberation for the full options tables.
   `git` binary's `-z` output and its config-channel behaviour, and a written authorization for the
   frozen-oracle edit (given by the staging-PR approval).
 * **High runtime, rollout or rollback risk: ABSENT.** CI-only tooling; each task is a
-  single-commit revert.
+  single-commit revert (a U2 or U3 that used the blocked-path CI fallback is two commits, reverted
+  together).
 
 Requires plan hardening: yes
 
@@ -671,13 +705,15 @@ Requires plan hardening: yes
 | U1 | none (tests) | `go test -count=1 ./tools/gatecheck/...`, same test count | task notes |
 | U2 | `gatecheck write-path` CLI (repo, `--self-test`, `--self-test-integrity`); the CI write-path steps; the wrapper `scripts/check-write-path-precondition.sh` | Live tree exits 0; `--self-test-integrity` golden unchanged; real-git non-ASCII red then green (d) | PR body red/green evidence |
 | U3 | same CLI, wrapper and CI steps | Live tree exits 0; each vector red then green; (a) false-clean red then green | PR body evidence including the git version (no environment dump) |
-| U4 | `gatecheck write-path --self-test-integrity` and CI | Live tree exits 0; rows 1 and 3 red then green; a local `go test -v` run shows the rows as PASS | PR body evidence (OS where each red was observed) |
+| U4 | `gatecheck write-path --self-test-integrity` and CI | Live tree exits 0; rows 2 and 3 red then green locally (row 1's red from a symlink-capable host when one exists); a local `go test -v` run shows the rows as PASS (row 1 SKIP is permitted on an unprivileged Windows host if recorded, U4 AC4) | PR body evidence (OS where each red was observed) |
 | U5 | none (comment) | `go test ./tools/gatecheck/internal/retiredarch/...` green | task notes |
 
 * **Rollback trigger.** Any of the write-path CI steps failing on `main` after the merge with a
   non-finding error. Revert the offending task's commit in reverse dependency order: U5 and U3
   before U2; U4 at any time. U1 (characterization) may stay, because reverting U2 restores the
-  newline-format helpers it flipped.
+  newline-format helpers it flipped. A unit that used the blocked-path CI fallback (a standalone
+  `test:` commit, then the fix) is two commits: revert **both**, the fix first and then its `test:`
+  commit, because reverting only the fix leaves a red test on `main`.
 * **Validation window.** The first CI run on the Ship PR and the first run on `main` after the
   merge. Record the `WRITE_PATH_GATE_ADVISORY` repository-variable value in the PR evidence (unset
   or any non-`true` value means the verdict step is blocking).
@@ -790,15 +826,22 @@ in the security job; those two are CI-only.
   before U1, and require "no new failures versus the parent baseline" instead of a literal green.
   The Linux CI `test` and race jobs are authoritative.
 * On an unprivileged Windows host the file-symlink row (U4 row 1) skips; the junction rows do not.
+  Record the SKIP line in the task evidence (U4 AC4) and take row 1's pass from a WSL run or the
+  Linux CI test step.
 
 **Blocked-path handling:**
 
 * If a U2-U4 red cannot be observed on the dev host (for example, symlinks unavailable), use a
   symlink-capable local run (WSL, Developer Mode) **in the same checkout**; never a second clone or
-  worktree. If CI is the only option, push the `test:` commit alone, record the failing run URL as
-  the red evidence, then push the fix; this consumes fix-ci budget and is disclosed in the PR body.
-  Otherwise halt under P-005. A recorded green-only run is not acceptable for a required
-  bug-evidence red.
+  worktree. **U4 never uses a CI fallback:** its rows 2 and 3 are red on any host that can create a
+  directory link (U4 AC1). For U2 and U3, whose reds need only a real `git` and an environment
+  variable and so are observable on any dev host, a CI fallback is the last resort: push the
+  `test:` commit alone, **wait for that CI run to finish red** (`ci.yml` sets `cancel-in-progress:
+  true` per workflow and ref, so pushing the fix while it is in flight cancels the red run and
+  leaves no evidence), record the failing run URL as the red evidence, then push the fix; this
+  consumes fix-ci budget and is disclosed in the PR body. That unit is then **two commits**, and
+  its rollback reverts both (see Rollback). Otherwise halt under P-005. A recorded green-only run is
+  not acceptable for a required bug-evidence red.
 * If a pin or retiredarch test fails after a writepath change, stop and report: never weaken the pin,
   and never edit `scanFile`/`scanSource` to satisfy it.
 
@@ -809,6 +852,8 @@ retired-architecture gate). A red from any of them after merge triggers the roll
 **Rollback:**
 
 * Each unit is a single-commit revert. Order: U5 and U3 before U2; U4 at any time; U1 may stay.
+  The exception is a unit that used the blocked-path CI fallback (U2 or U3 only): it is two
+  commits, so revert **both**, the fix first and then its `test:` commit.
 * There is no data, config or schema state to restore.
 
 **Operator checkpoints (override at staging-PR review, before Ship claims the shipment):**
@@ -826,6 +871,20 @@ retired-architecture gate). A red from any of them after merge triggers the roll
    evidence only"). The note records evidence only; the trigger-extension suggestion stays in this
    plan (RK-9) for the operator to act on.
 5. The Ship PR needs the operator's normal merge-commit approval (constitution XI).
+6. **The deferred wrapper-root surface (stash `DBE25DF5`, medium, kind bug; the deferral stands
+   under P-021 C1).** R4 isolates the `git ls-files` child **for a given root**. The wrapper's root
+   discovery (`scripts/check-write-path-precondition.sh:150`, `ROOT="$(git rev-parse
+   --show-toplevel)"`, unscrubbed) and ED-7, which detects only an *empty* selection
+   (`writepath.go:850-855`), are not changed by this shipment, so ambient `GIT_DIR` or
+   `GIT_WORK_TREE` can still point the gate at a wrong or partial tree and pass.
+   **Override option:** if the operator wants this closed, direct Stage to stage it as a
+   **separate, future task** (not a change to 042-S, whose six members stay as they are) that
+   anchors `ROOT` to `GATECHECK_SRC` (already derived by the sourced
+   `scripts/lib/gatecheck-run.sh:32`) or scrubs the `rev-parse` environment. It is a cross-engine
+   change and must be coordinated with retiredarch's wrapper, which has the same unscrubbed
+   discovery (`scripts/check-retired-architecture.sh:198`, `git -C "${GATECHECK_SRC}" rev-parse
+   --show-toplevel`). A per-arm `internal/` plus `cmd/` non-empty guard is only a non-vacuity
+   heuristic, not proof of root identity (plan-review AS-5), so it is deliberated there, not here.
 
 **Review-gate capability risks:** plan review must emit literal `dispatch_mode:` and `decision:`
 markers. If parallel subagent dispatch is unavailable, the fallback must be declared in the plan
@@ -882,7 +941,7 @@ carries the strict-safety action record, verification, rollback and operator che
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
 | CON-F1 / SCOPE-N1 | P2 | U4 exceeds the scenario bound with no exception; EX-3/EX-4 understate counts | Counting convention stated; EX-1/EX-3/EX-4 counts corrected with the function bound and Width Isolation; **EX-5** recorded for U4 in four-part form; U4 trimmed (control row and separate Windows sub-row dropped) |
-| CON-F2 | P2 | The CI red-observation fallback would not observe a red; same-checkout rule; TMPDIR wording | Fallback defined: push the `test:` commit alone, record the failing run URL, then push the fix (consumes fix-ci budget); local routes must use the same checkout; Principle IV now a decision (no TMPDIR redirect into the checkout; `logs/` for captures) |
+| CON-F2 | P2 | The CI red-observation fallback would not observe a red; same-checkout rule; TMPDIR wording | Fallback defined: push the `test:` commit alone, record the failing run URL, then push the fix (consumes fix-ci budget); local routes must use the same checkout; Principle IV now a decision (no TMPDIR redirect into the checkout; `logs/` for captures). **Refined by the 2026-10-10 adversarial-review remediation (M-1):** U4 no longer uses a CI fallback; for U2/U3 the red run must finish before the fix is pushed and the unit's rollback reverts both commits |
 | CON-F3 | P2 | Principle VIII mapping inconsistent with the grading | U1 now in careful mode with named pause points (PA-2 authorization, first real runner change); the U5 edit declared a freeze-scope deviation |
 | GO-N1 / CON-F7 / SEC-N4 | P2 / P3 / P3 | e1 not hermetic; no no-vector control through the runner | Shared `hermeticGitEnv(t)` called first in (d) and in every e1 subtest; each vector is its own `t.Run`; a no-vector subtest asserts the runner bytes equal the baseline |
 | ARCH-AS4 | P2 | The planned oracle decoder validates the whole listing, conflicting with D-BW-1a's tolerance of unscanned invalid-UTF-8 names | `decodeLsFilesListing` frames records only (no UTF-8 policy); the oracle applies `shouldScan` afterwards; a tolerance row is in test (a) |
@@ -910,6 +969,26 @@ carries the strict-safety action record, verification, rollback and operator che
 | SEC-N5 | P3 | Nothing compares production selection with an independent decode on the live tree | Declined: the oracle and goldens cover scanning, test (d) covers the under-selection class with real git, and a fourth test would add a scenario to an over-budget unit |
 | LRN-L2-6 | P3 | Premises rest on one-time staging measurements | U2 AC6: re-measure the counts and `git --version` at the Ship base |
 | LRN-L2-8 | P3 | Harvest and closure hygiene | Harvest notes (`backlogit --version`, PATH), `logs/` for captures, `stash.jsonl` carry-forward and the extra Copilot compound cite added |
+
+### Adversarial review remediation (2026-10-10)
+
+A multi-model adversarial review of the staged package returned READY_WITH_FOLLOWUPS (no P0/P1).
+Because Ship runs unattended, the follow-ups were folded in as text-level clarifications only: no
+design change, no change to shipment 042-S membership, task IDs, titles or dependency edges.
+
+| ID | Sev | Disposition | Where |
+|---|---|---|---|
+| M-1 | P2 | Applied. U4's red evidence is rows 2 and 3 (junction-based, unprivileged Windows); row 1's red from WSL/Developer Mode or disclosed; row 1 SKIP allowed on unprivileged Windows if recorded; no standalone `test:` push for U4; remaining U2/U3 fallback waits for the red run and reverts both commits | U4 AC1, AC4, posture paragraph; Blocked-path handling; both Rollback sections; Runtime Verification U4 row; RK-4; task 052.004-T; Rollback lines of 052.002-T, 052.003-T |
+| M-2 | P2 | Applied. `DBE25DF5` added as operator checkpoint 6 with the separate-future-task override; stays deferred | Operator checkpoints |
+| O-1 | P2 | Applied to stash entries `4372BAD4`, `DBE25DF5`, `EDC18D59` (explicit task/feature/shipment ID `N/A` in source refs) | `.backlogit/stash.jsonl` |
+| P-1 | P3 | Applied. COUNT/KEY_n coverage is the generic `GIT_` prefix rule, not independently observed; no table row added | U3 "Why three vectors"; deliberation D-BW-2 |
+| L-1 | P3 | Applied. Batch A precedent (its EX-2; 051.001-T, 051.006-T) cited | EX-2; tasks 052.001-T, 052.005-T |
+| L-2 | info | Not applied: an empty-linked-ancestor row is green at the parent (the loop never runs, `writepath.go:919-921`), so it is characterization only and would add a sixth sub-case to a unit already past its bound (EX-5) | none |
+| L-3 | P3 | Applied. The compile-stub also declares both sentinels | U2 Posture step 1; task 052.002-T AC2 |
+| L-4 | P3 | Applied. Invalid-UTF-8 error wrapped with the `%q` path | U2 helper; deliberation D-BW-1; task 052.002-T |
+| L-6 | P3 | Applied. EX-3 count 10; "same set" wording; e1 pathspec order | EX-3; U3 e1; deliberation D-BW-1a |
+| L-7 | P3 | Applied. Ship adds a cross-referencing comment on `scannedPathsFromListing` (`31F33EFE`) | U2 helper notes; task 052.002-T |
+| L-5, L-8 | P3 | No change (L-5 stays as tracked by `EDC18D59`; L-8 was a false positive) | none |
 
 ### Attempt 1 (superseded by attempt 2)
 

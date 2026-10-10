@@ -135,3 +135,36 @@ prose in implementation-notes. `size` is structured (`size_source: agent`,
 Nothing is pending in Stage for this batch. If the operator overrides a decision at staging-PR
 review, Stage re-enters at Step 2 for that decision, revises the plan and the affected task text,
 and re-assembles (the shipment is `queued`, so tasks can still be edited).
+
+## Adversarial review remediation (2026-10-10)
+
+A multi-model adversarial review (anchor `gpt-5.6-sol` plus three tiers) returned
+READY_WITH_FOLLOWUPS: no P0/P1. Because the operator is AFK and Ship runs unattended, the Orchestrator
+invoked a narrow Stage pass (dark factory, scope 042-S) to fold the follow-ups into the Stage-owned
+text before the staging PR is opened. Text-only: no design change; shipment 042-S membership
+(052-F, 052.001-T to 052.005-T), task IDs, titles and dependency edges are unchanged; no scope added.
+Each claim was re-verified against the code on this branch (source files equal `main`) before editing.
+
+| Finding | Disposition | Evidence and files changed |
+|---|---|---|
+| **M-1** (P2) U4 red evidence incoherent | **Applied** | Verified: `u4CreateSymlink` skips on `Errno 1314` under `GOOS == windows` (`writepath_test.go:49-57`); `ci.yml:101-103` sets `cancel-in-progress: true`. Plan U4 AC1/AC4 and posture paragraph, Blocked-path handling (U4 has no CI fallback; U2/U3 fallback waits for the red run and is two commits), both Rollback sections (revert both commits), Runtime Verification U4 row, RK-4, prechecks bullet, risk-signal bullet, CON-F2 history row; task `052.004-T` AC1/AC4; tasks `052.002-T` and `052.003-T` Rollback lines (two-commit exception); deliberation D-BW-3 |
+| **M-2** (P2) `DBE25DF5` missing from operator checkpoints | **Applied** | Verified: wrapper `check-write-path-precondition.sh:150` unscrubbed `rev-parse`; ED-7 empty-only (`writepath.go:850-855`); `GATECHECK_SRC` is derived by the sourced `scripts/lib/gatecheck-run.sh:32`; retiredarch's wrapper has the same unscrubbed pattern (`check-retired-architecture.sh:198`). Plan operator checkpoint 6 (separate future task override; deferral kept under P-021 C1; not moved into 042-S) |
+| **O-1** (P2) P-021 C2(4) explicit `N/A` IDs | **Applied** | `backlogit stash edit --text` on `4372BAD4`, `DBE25DF5`, `EDC18D59`: appended `task ID N/A; feature ID N/A at capture (052-F assigned at harvest); shipment ID N/A at capture (042-S)` to source refs; field-level diff versus HEAD shows only `text` changed on those three; archived `B83F53BB` untouched. `.backlogit/stash.jsonl` |
+| **P-1** (P3) COUNT/KEY_n coverage claim | **Applied** | Verified the e2 row list has no COUNT/KEY row. Reworded to "covered by the generic `GIT_` prefix rule, not independently observed"; no table row added. Plan U3 "Why three vectors"; deliberation D-BW-2 |
+| **L-1** (P3) green-on-arrival precedent | **Applied** | Verified: EX-2 is recorded in the Batch A **plan** (`2026-10-08-...-batch-a-correctness-plan.md`, lines 100-104); the Batch A deliberation states the same labelling rule (lines 97, 226); archived `051.001-T` and `051.006-T` carry `harness-ready` and "no red claimed" harness results. Plan EX-2; tasks `052.001-T`, `052.005-T` |
+| **L-2** (info) empty-linked-ancestor row | **Not applied** | An ancestor linked to an empty directory returns Code 1 `no fixtures discovered` at the parent and after (`writepath.go:919-921`; the loop never runs), so the row is green on arrival and adds a sixth sub-case to a unit already over its bound (EX-5). The finding's own condition (no enlargement) is not met. Recorded in the plan's remediation table |
+| **L-3** (P3) stub sentinels | **Applied** | Plan U2 Posture step 1; task `052.002-T` AC2 |
+| **L-4** (P3) wrap invalid-UTF-8 error | **Applied** | Plan U2 helper now `fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)` (`errors.Is`, INV-D and the planned rows unaffected); deliberation D-BW-1 failure modes; task `052.002-T` description |
+| **L-6** (P3) three text fixes | **Applied** | EX-3 count 9 to 10 (adds `hermeticGitEnv`); deliberation D-BW-1a "plus the SplitLines boundaries" reworded to "equals retiredarch's set exactly" (U+001C..U+001E already inside `< 0x20`); U3 e1 baseline pathspec order now `internal/** cmd/**` (the runner's) |
+| **L-7** (P3) cross-reference comment | **Applied** | Verified retiredarch `select.go:225` judges every listed record while the writepath helper judges scanned records only. Plan U2 helper notes; task `052.002-T` implementation notes (cite stash `31F33EFE`, not a unit tag) |
+| **L-5** (P3), **L-8** | No change | L-5 left as-is (tracked by `EDC18D59`); L-8 was a false positive (operator instruction) |
+
+**Files changed in this pass:** `docs/plans/2026-10-10-intercom-go-gatecheck-batch-b1-write-path-input-hardening-plan.md`,
+`docs/decisions/2026-10-10-intercom-go-gatecheck-batch-b1-write-path-input-hardening-deliberation.md`,
+`.backlogit/queue/052.001-T.md`, `052.002-T.md`, `052.003-T.md`, `052.004-T.md`, `052.005-T.md`, `.backlogit/stash.jsonl`,
+and this memory file. Not changed: `042-S`, `052-F`, every
+source, test and config file.
+
+**Tool gate for this pass:** `TOOL_DEGRADED` as above (no MCP tools exposed; backlogit v1.11.0 CLI used
+for `sync`, `stash edit` and `stash list`). **Citation correction:** the operator's instruction named
+"EX-2 of the Batch A deliberation"; EX-2 lives in the Batch A plan, and both documents are now cited.
