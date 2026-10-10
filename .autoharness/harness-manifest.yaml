@@ -770,8 +770,8 @@ variables_used:
   TIER_1_FAMILY: claude-haiku-5.5
   TIER_1_PROVIDER: 'anthropic'
   TIER_1_REASONING_EFFORT: 'xhigh'
-  MODEL_ROUTING_TIER2: claude-haiku-5
-  TIER_2_FAMILY: claude-haiku-5
+  MODEL_ROUTING_TIER2: claude-haiku-5.5
+  TIER_2_FAMILY: claude-haiku-5.5
   TIER_2_PROVIDER: 'anthropic'
   TIER_2_REASONING_EFFORT: 'xhigh'
   MODEL_ROUTING_TIER3: claude-sonnet-5.5
@@ -793,7 +793,7 @@ variables_used:
   STAGE_ESCALATION_FAMILY: claude-sonnet-5.5
   STAGE_ESCALATION_PROVIDER: 'anthropic'
   STAGE_ESCALATION_REASONING_EFFORT: 'xhigh'
-  SHIP_ESCALATION_FAMILY: claude-claude-sonnet-5.5
+  SHIP_ESCALATION_FAMILY: claude-sonnet-5.5
   SHIP_ESCALATION_PROVIDER: 'anthropic'
   SHIP_ESCALATION_REASONING_EFFORT: 'high'
   ESCALATION_FAMILY: claude-opus-5

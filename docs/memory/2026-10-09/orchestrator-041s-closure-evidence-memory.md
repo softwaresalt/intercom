@@ -34,7 +34,7 @@ The refusal is by design, not a defect:
 ## Decisions
 
 * Proposed the alternative the operator was offered earlier: an operator waiver of condition `cascade-evidence-record-missing`, carried by a closure-fix PR. The PR is prepared to merge-ready only. P-014 requires the operator's explicit merge approval, and that approval is the recorded waiver.
-* Carried `.autoharness/config.yaml` verbatim into the same commit, as instructed. `autoharness verify-workspace` reports 0 blockers and 0 strict schema blockers. It reports 32 warnings: 30 `ROUTE_VARIABLE_STALE` (the installed agent routing variables were rendered before the routing change) and 2 hardcoded-path portability warnings in files this change does not touch. CI does not run `verify-workspace`.
+* Carried `.autoharness/config.yaml` verbatim into the same commit, as instructed. Before the operator's manifest edit in this PR, `autoharness verify-workspace` reported 0 blockers, 0 strict schema blockers, and 32 warnings: 30 `ROUTE_VARIABLE_STALE` (the installed agent routing variables were rendered before the routing change) and 2 hardcoded-path portability warnings in files this change does not touch. The manifest edit lowers the stale count but does not re-render the agent files, so the drift remains. CI does not run `verify-workspace`.
 * Copilot flagged on PR #119 that `ship` routes to `claude-haiku-5.5` while the constitution's model routing table lists `ship` under Tier 2. Ship resolved the thread as a P-021 deferral (`A83C398E`). The operator then set Tier 2 to `claude-haiku-5.5` (`reasoning_effort: xhigh`) in a follow-up commit on the PR, which aligns the two and closes that item. The `stage` route still equals tier3, so Stage escalation stays degraded (`ESCALATION_DEGRADED`).
 * Declined to delete the `%TEMP%` scratch files. Principle IV (NON-NEGOTIABLE) bars agents from deleting outside the workspace, and the 040-S and 041-S closures followed the same rule. Provided `logs/remove-temp-scratch.ps1` (dry run by default, exact names only) for the operator to run.
 
@@ -47,5 +47,5 @@ The refusal is by design, not a defect:
 ## Next steps
 
 * Operator: review and approve the closure-fix PR (the merge approval records the waiver), and run `logs/remove-temp-scratch.ps1`.
-* Stage: triage stash entry `A83C398E` (adopt the 192-F closure flow and re-render the 30 stale routing variables with `tune-harness`). Its `ship` versus Tier 2 item is resolved by the Tier 2 edit. The `stage` escalation degradation remains.
+* Stage: triage stash entry `A83C398E` (adopt the 192-F closure flow and re-render the stale routing variables with `tune-harness`). Its `ship` versus Tier 2 item is resolved by the Tier 2 edit. The `stage` escalation degradation remains.
 * After merge: confirm `autoharness gate closure-evidence --path docs/closure/041-S-051-F-post-merge-closure.md --shipment 041-S` advances past `frontmatter_predicate`.
