@@ -15,9 +15,12 @@ shipment_id: 042-S
 
 ## Status
 
-**Complete. Shipment 042-S is queued** and covers feature 052-F plus five tasks. The next step
-belongs to the operator (push the Stage branch, open and approve the merge-commit staging PR) and
-then to Ship (claim 042-S after the staging PR is merged).
+**Complete. Shipment 042-S is queued** and covers feature 052-F plus five tasks. The Orchestrator,
+as operator-delegated actions under the operator's explicit instruction of 2026-10-10 (dark factory
+mode, scope 042-S, merge approval pre-authorized, admin fallback NOT authorized), already pushed
+`chore/stage-gatecheck-batch-b1-write-path-input-hardening` and opened staging PR #121
+(https://github.com/softwaresalt/intercom/pull/121). Remaining: Copilot and CI review of PR #121,
+the merge-commit merge, and then Ship claims 042-S. Do not repeat the push or the PR open.
 
 ## Session inputs
 
@@ -123,11 +126,18 @@ prose in implementation-notes. `size` is structured (`size_source: agent`,
 
 ## Operator actions still required
 
+Already done (not next steps): the Orchestrator, as operator-delegated actions under the operator's
+explicit instruction of 2026-10-10 (dark factory mode, scope 042-S, merge approval pre-authorized,
+admin fallback NOT authorized), pushed `chore/stage-gatecheck-batch-b1-write-path-input-hardening`
+and opened staging PR #121 (https://github.com/softwaresalt/intercom/pull/121). Stage did not push.
+
+Remaining:
+
 1. Review the staging PR content, including the Stage-recommended options (D-BW-1a, D-BW-2), the
    exceptions EX-1 to EX-5, and **PA-2** (the single authorized edit to the header-frozen oracle).
-2. Push `chore/stage-gatecheck-batch-b1-write-path-input-hardening` and open and approve the
-   merge-commit staging PR (Stage does not push).
-3. After the merge, hand `042-S` to Ship.
+2. Complete the Copilot and CI review of PR #121, then merge it with a merge commit (merge approval
+   is pre-authorized for 042-S; the admin fallback is not authorized).
+3. After the merge, Ship claims `042-S`.
 4. Optional: delete `%TEMP%\head-stash.jsonl`.
 
 ## Resume instructions
@@ -141,7 +151,8 @@ and re-assembles (the shipment is `queued`, so tasks can still be edited).
 A multi-model adversarial review (anchor `gpt-5.6-sol` plus three tiers) returned
 READY_WITH_FOLLOWUPS: no P0/P1. Because the operator is AFK and Ship runs unattended, the Orchestrator
 invoked a narrow Stage pass (dark factory, scope 042-S) to fold the follow-ups into the Stage-owned
-text before the staging PR is opened. Text-only: no design change; shipment 042-S membership
+text before the Orchestrator pushed the branch and opened staging PR #121. Text-only: no design
+change; shipment 042-S membership
 (052-F, 052.001-T to 052.005-T), task IDs, titles and dependency edges are unchanged; no scope added.
 Each claim was re-verified against the code on this branch (source files equal `main`) before editing.
 
