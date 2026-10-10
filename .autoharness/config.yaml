@@ -69,10 +69,10 @@ model_routing:
     model_family: "claude-haiku-5.5"           # Resolved into Tier 1 agent frontmatter
     context_tier: "default"        # context-capacity class (default | long_context)
   tier2:
-    model: claude-sonnet-5.5              # Standard: orchestration, code, review (e.g., claude-sonnet-5)
-    reasoning_effort: "high"
+    model: claude-haiku-5.5              # Standard: orchestration, code, review (e.g., claude-sonnet-5)
+    reasoning_effort: "xhigh"
     model_provider: "anthropic"
-    model_family: "claude-sonnet-5.5"
+    model_family: "claude-haiku-5.5"
     context_tier: "default"
   tier3:
     model: claude-sonnet-5.5              # Frontier: planning, architecture, analysis (e.g., claude-sonnet-5)
