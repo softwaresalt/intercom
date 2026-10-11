@@ -77,8 +77,8 @@ func decodeLsFilesListing(t *testing.T, out []byte) []string {
 
 // fixtureGit runs real git for test-fixture construction only, with every
 // ambient GIT_* variable removed and global/system config isolated, so the
-// fixture is identical on every machine. It deliberately does not use the
-// code under test.
+// fixture is independent of ambient GIT_* and global/system git config. It
+// deliberately does not use the code under test.
 func fixtureGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	fixtureGitEnv(t, dir, nil, args...)
@@ -325,8 +325,8 @@ func TestRunRepoScan_DeletedTrackedFile_KeepsReadError(t *testing.T) {
 }
 
 // TestContainedRegularFile_RejectsMalformedComponents covers the copy's lexical
-// rejections directly: these rel shapes never pass shouldScanRepoPath, so only
-// a direct call reaches them.
+// rejections directly: these rel shapes never pass shouldScan, so only a direct
+// call reaches them.
 func TestContainedRegularFile_RejectsMalformedComponents(t *testing.T) {
 	root := t.TempDir()
 	rows := []string{"a//b.go", "./a.go", "../x.go", "a/", ""}
@@ -805,11 +805,13 @@ func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
 	}
 }
 
-// TestDefaultGitRunnerIgnoresGitEnv is the bug-evidence test for D7BF9F74. Vector
-// (a) is a false clean: an ambient GIT_INDEX_FILE listing only cmd/x/main.go makes
-// the gate exit 0 although tracked internal/bad.go holds a write primitive. Vectors
-// (b) and (c) are the same new contract through GIT_LITERAL_PATHSPECS and
-// GIT_CONFIG_PARAMETERS. The no-vector control must stay green before and after.
+// TestDefaultGitRunnerIgnoresGitEnv is the bug-evidence test for stash
+// B83F53BB part 2; the environment shape it guards is from D7BF9F74. Vector
+// (a) is a false clean: an ambient GIT_INDEX_FILE listing only cmd/x/main.go
+// makes the gate exit 0 although tracked internal/bad.go holds a write
+// primitive. Vectors (b) and (c) are the same new contract through
+// GIT_LITERAL_PATHSPECS and GIT_CONFIG_PARAMETERS. The no-vector control must
+// stay green before and after.
 func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	t.Logf("git version: %s", gitVersion(t))
 	root := t.TempDir()
@@ -865,6 +867,23 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	})
 }
 
+// TestDefaultGitRunner_NonRepository_FailsClosed pins the existing non-zero-exit
+// branch: outside any repository git ls-files fails, and the runner returns no
+// listing, so the gate cannot read an empty or partial listing as a clean scan.
+func TestDefaultGitRunner_NonRepository_FailsClosed(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatalf("git is required for this test: %v", err)
+	}
+	root := t.TempDir()
+	out, err := DefaultGitRunner(root)
+	if err == nil {
+		t.Fatalf("DefaultGitRunner(%q) err = nil, want a non-zero git exit", root)
+	}
+	if len(out) != 0 {
+		t.Fatalf("DefaultGitRunner(%q) output = %q, want none on failure", root, out)
+	}
+}
+
 // TestGitRunnerEnv is the pure environment-filter table. It is kept identical to
 // retiredarch's TestGitRunnerEnv, so drift between the two hand-synced copies
 // fails a test (D-BW-2, RK-9).
@@ -904,8 +923,9 @@ func TestGitRunnerEnv(t *testing.T) {
 
 // TestScannedPathsFromListing_Table pins the selected-path rules at the helper
 // level. Names such as q"uote.go and back\slash.go cannot be created on Windows,
-// so the helper is exercised directly. The control-rune rows live in
-// TestRunRepoScan_BadListing_FailsClosed, where the %q message is observable.
+// so the helper is exercised directly. The control-rune row checks the
+// errListingControlRune sentinel; the %q message is checked in
+// TestRunRepoScan_BadListing_FailsClosed, where it is observable.
 func TestScannedPathsFromListing_Table(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -941,6 +961,11 @@ func TestScannedPathsFromListing_Table(t *testing.T) {
 			out:     lsFilesListing("internal/\xff.go"),
 			wantErr: pysem.ErrInvalidUTF8,
 		},
+		{
+			name:    "control rune in a scanned record",
+			out:     []byte("internal/a\x1fb.go\x00"),
+			wantErr: errListingControlRune,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -963,7 +988,8 @@ func TestScannedPathsFromListing_Table(t *testing.T) {
 
 // assertNoRawControl fails if stderr, without its trailing newline, contains a
 // control or line-separator rune. errorLine echoes listing paths only through
-// %q, so no raw control byte may reach a CI log (D-BW-1a).
+// %q, so no raw control byte may reach a CI log (D-BW-1a). Its predicate is an
+// independent oracle and is intentionally not shared with production code.
 func assertNoRawControl(t *testing.T, stderr string) {
 	t.Helper()
 	for _, r := range strings.TrimSuffix(stderr, "\n") {
@@ -973,9 +999,10 @@ func assertNoRawControl(t *testing.T, stderr string) {
 	}
 }
 
-// TestRunRepoScan_BadListing_FailsClosed drives runRepoScan with malformed
-// listings. These raw literals are the only malformed listings in the package;
-// every well-formed fake goes through lsFilesListing.
+// TestRunRepoScan_BadListing_FailsClosed drives runRepoScan with malformed or
+// unscannable listings. These raw literals are the malformed or unscannable
+// listings this test drives; every well-formed fake goes through lsFilesListing.
+// The all-unscanned row is a well-formed listing that expects ED-7.
 func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
 	const controlMsg = "contains a control or line-separator character"
 	tests := []struct {
@@ -993,6 +1020,8 @@ func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
 		{"scanned path with DEL", []byte("internal/a\x7fb.go\x00"), controlMsg},
 		{"scanned path with U+2029", []byte("internal/a\u2029b.go\x00"), controlMsg},
 		{"scanned path with US (0x1f)", []byte("internal/a\x1fb.go\x00"), controlMsg},
+		{"scanned path with TAB", []byte("internal/a\tb.go\x00"), controlMsg},
+		{"scanned path with CR", []byte("internal/a\rb.go\x00"), controlMsg},
 		{"scanned path with invalid UTF-8", []byte("internal/\xff.go\x00"), pysem.ErrInvalidUTF8.Error()},
 		{"all paths unscanned", lsFilesListing("internal/README.md"), "ED-7"},
 	}

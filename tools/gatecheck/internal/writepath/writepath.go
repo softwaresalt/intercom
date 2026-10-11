@@ -148,9 +148,10 @@ type GitRunner func(root string) ([]byte, error)
 // -z prints each name verbatim and NUL-terminated, so names containing quotes,
 // backslashes, spaces, newlines or non-ASCII bytes are never C-quoted.
 //
-// The child runs with gitRunnerEnv's isolated environment (D7BF9F74), so
-// ambient GIT_* variables and global/system git config cannot change the
-// listing. Threat model (mirrors the retired-architecture D6b stance: an
+// For a given root, the child runs with gitRunnerEnv's isolated environment
+// (D7BF9F74), so ambient GIT_* variables and global/system git config cannot
+// change the listing. A relative git resolved through PATH is not refused here
+// (stash 4372BAD4). Threat model (mirrors the retired-architecture D6b stance: an
 // anti-accident hygiene control, not an anti-adversary one): the adversary is
 // the ambient environment (agent hosts, git hooks, wrapper scripts), not an
 // in-job attacker. Git 2.32 or later is assumed for the config pins. A PATH
@@ -180,7 +181,9 @@ func DefaultGitRunner(root string) ([]byte, error) {
 // GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM pointed at os.DevNull. Windows
 // "=C:"-style per-drive entries have an empty name and are kept. It is copied,
 // not shared (D-BW-2, 5A8EC1BC): keep in sync by hand with
-// retiredarch.gitRunnerEnv; the pure table test must be kept identical.
+// retiredarch.gitRunnerEnv; the pure table test must be kept identical. The fold
+// is ASCII-only on purpose: git reads ASCII variable names, and the table must
+// stay identical to retiredarch.gitRunnerEnv (D-BW-2).
 func gitRunnerEnv(environ []string) []string {
 	env := make([]string, 0, len(environ)+3)
 	for _, kv := range environ {
@@ -215,15 +218,16 @@ func shouldScan(relPath string) bool {
 var (
 	errListingNotTerminated = errors.New("output is not NUL-terminated")
 	errListingEmptyRecord   = errors.New("output has an empty record")
+	errListingControlRune   = errors.New("contains a control or line-separator character")
 )
 
 // scannedPathsFromListing parses the NUL-terminated `git ls-files -z` listing
 // and returns the paths shouldScan selects, in git's order. It fails closed on
 // anything that is not exactly a NUL-terminated list of non-empty records. A
-// record that shouldScan rejects is never read or echoed, so it is judged on
-// nothing else. A selected path must be valid UTF-8 and must not contain a
-// control or line-separator character, because selected paths are echoed to
-// CI logs (D-BW-1a).
+// record that shouldScan rejects is never read or echoed. A selected path must
+// be valid UTF-8 and must not contain a C0 control (U+0000 to U+001F), DEL
+// (U+007F), U+0085, U+2028 or U+2029, because selected paths are echoed to CI
+// logs (D-BW-1a).
 //
 // Only the records this gate will scan are judged for UTF-8 and control runes.
 // retiredarch's selectRepoPaths judges every listed record instead; that
@@ -248,7 +252,7 @@ func scannedPathsFromListing(out []byte) ([]string, error) {
 		}
 		for _, r := range p {
 			if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
-				return nil, fmt.Errorf("path %q contains a control or line-separator character", p)
+				return nil, fmt.Errorf("path %q %w", p, errListingControlRune)
 			}
 		}
 		selected = append(selected, p)
@@ -911,6 +915,9 @@ func containedRegularFile(root, rel string) (bool, string) {
 // and fail closed on a git error, a per-file read/decode error (ED-2), a
 // selected path that is not a contained regular file (D44D8BDF: a symlink or
 // junction is never followed), any finding, or an empty selection (ED-7).
+// A malformed listing (not NUL-terminated, or an empty record), or a selected
+// path that is not valid UTF-8 or contains a forbidden rune, fails closed with
+// an output error before any file is read.
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)
 	if err != nil {
@@ -970,6 +977,8 @@ func runRepoScan(root string, git GitRunner) Result {
 // that check and the read is still followed (TOCTOU). It is shared, verbatim,
 // by both the "self-test" and "self-test-integrity" top-level modes; whether
 // the repo scan also runs afterward is Run's concern, not this function's.
+// The os.Stat and os.ReadDir pre-checks follow links and are not a containment
+// control; containedRegularFile is the control.
 func runFixtureSelfTest(root string) Result {
 	fixtureDir := filepath.Join(root, "scripts", "testdata", "writepath")
 	fixtureDirPosix := filepath.ToSlash(fixtureDir)
