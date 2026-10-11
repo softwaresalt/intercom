@@ -38,9 +38,40 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
+// lsFilesListing builds a `git ls-files` listing in the runner's current
+// newline-terminated format, or nil for no paths. Every well-formed listing
+// fake in this package builds its output here, so a format change is one edit.
+func lsFilesListing(paths ...string) []byte {
+	if len(paths) == 0 {
+		return nil
+	}
+	return []byte(strings.Join(paths, "\n") + "\n")
+}
+
+// decodeLsFilesListing is an independent decode of real runner output. It must
+// not call production selection code. It frames records only: it applies the
+// pysem.GitText text-mode decode (including its UTF-8 rejection) and splits on
+// newlines, with no further policy, because the oracle applies shouldScan
+// afterwards. Changing it changes what the frozen oracle examines, so it is
+// treated as an oracle edit (D-BW-4, PA-2).
+func decodeLsFilesListing(t *testing.T, out []byte) []string {
+	t.Helper()
+	text, err := pysem.GitText(out)
+	if err != nil {
+		t.Fatalf("decode git ls-files output: %v", err)
+	}
+	var records []string
+	for _, p := range pysem.SplitLines(text) {
+		if p != "" {
+			records = append(records, p)
+		}
+	}
+	return records
+}
+
 func u4StubGit(paths ...string) GitRunner {
 	return func(root string) ([]byte, error) {
-		return []byte(strings.Join(paths, "\n") + "\n"), nil
+		return lsFilesListing(paths...), nil
 	}
 }
 
@@ -518,8 +549,9 @@ func TestRun_GitError_FailsClosed(t *testing.T) {
 
 func TestRun_ReadError_FailsClosed(t *testing.T) {
 	root := repoRoot(t)
+	const missingRel = "internal/does-not-exist-anywhere.go"
 	missingFileGit := func(string) ([]byte, error) {
-		return []byte("internal/does-not-exist-anywhere.go\n"), nil
+		return lsFilesListing(missingRel), nil
 	}
 	var stdout, stderr strings.Builder
 	code := Run("", root, missingFileGit, &stdout, &stderr)
@@ -528,6 +560,9 @@ func TestRun_ReadError_FailsClosed(t *testing.T) {
 	}
 	if !strings.HasPrefix(stderr.String(), "::error::") {
 		t.Fatalf("stderr = %q, want ::error:: prefix", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), missingRel) {
+		t.Fatalf("stderr = %q, want it to name %q", stderr.String(), missingRel)
 	}
 }
 
@@ -540,8 +575,9 @@ func TestRun_InvalidUTF8_FailsClosed(t *testing.T) {
 	if err := os.WriteFile(badPath, []byte("package bad\n// caf\xff broken\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+	const badRel = "internal/bad.go"
 	git := func(string) ([]byte, error) {
-		return []byte("internal/bad.go\n"), nil
+		return lsFilesListing(badRel), nil
 	}
 	var stdout, stderr strings.Builder
 	code := Run("", root, git, &stdout, &stderr)
@@ -550,6 +586,9 @@ func TestRun_InvalidUTF8_FailsClosed(t *testing.T) {
 	}
 	if !strings.HasPrefix(stderr.String(), "::error::") {
 		t.Fatalf("stderr = %q, want ::error:: prefix", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), badRel) {
+		t.Fatalf("stderr = %q, want it to name %q", stderr.String(), badRel)
 	}
 }
 

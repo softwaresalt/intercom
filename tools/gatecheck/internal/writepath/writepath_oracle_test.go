@@ -6,10 +6,14 @@ package writepath
 // original 20 selectors) and asserts that production findings restricted to
 // those 20 selectors are identical in text, line and order.
 //
-// LIFECYCLE: the legacy side and its expectations are frozen. The only
-// authorised edit is the single AC-E2.6 adaptation in Unit E (production
+// LIFECYCLE: the legacy side and its expectations are frozen. Two edits are
+// authorised. First, the single AC-E2.6 adaptation in Unit E (production
 // side, input list, and moving unparseable-input expectations to stricter
-// fail-closed assertions). Any other edit is an H-3 stop.
+// fail-closed assertions). Second, the B83F53BB listing-format adaptation
+// (D-BW-4, staging PR for Gatecheck Batch B1): the tracked-tree test decodes
+// the runner's listing through decodeLsFilesListing, the runner-format
+// adapter in writepath_test.go, instead of pysem.GitText and
+// pysem.SplitLines. Any other edit is an H-3 stop.
 
 import (
 	"errors"
@@ -191,13 +195,9 @@ func TestOracle_TrackedProductionTree_Parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("git ls-files: %v", err)
 	}
-	listing, err := pysem.GitText(out)
-	if err != nil {
-		t.Fatalf("decode git ls-files output: %v", err)
-	}
 	var rels []string
-	for _, p := range pysem.SplitLines(listing) {
-		if p != "" && shouldScan(p) {
+	for _, p := range decodeLsFilesListing(t, out) {
+		if shouldScan(p) {
 			rels = append(rels, p)
 		}
 	}
