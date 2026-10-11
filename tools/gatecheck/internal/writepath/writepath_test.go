@@ -867,17 +867,22 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	})
 }
 
-// TestDefaultGitRunner_NonRepository_FailsClosed pins the existing non-zero-exit
-// branch: outside any repository git ls-files fails, and the runner returns no
-// listing, so the gate cannot read an empty or partial listing as a clean scan.
+// TestDefaultGitRunner_NonRepository_FailsClosed pins the non-zero-exit branch of
+// DefaultGitRunner: outside any repository git ls-files exits non-zero. The
+// GIT_CEILING_DIRECTORIES bound stops git from discovering a repository above the
+// per-test temp root, so the failure does not depend on the host checkout. The
+// empty-output check pins only the runner's nil-on-error contract; the gate's
+// fail-closed behaviour on a git error is covered by runRepoScan's git error path.
 func TestDefaultGitRunner_NonRepository_FailsClosed(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatalf("git is required for this test: %v", err)
 	}
 	root := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(root))
 	out, err := DefaultGitRunner(root)
-	if err == nil {
-		t.Fatalf("DefaultGitRunner(%q) err = nil, want a non-zero git exit", root)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() == 0 {
+		t.Fatalf("DefaultGitRunner(%q) err = %v, want a non-zero git exit", root, err)
 	}
 	if len(out) != 0 {
 		t.Fatalf("DefaultGitRunner(%q) output = %q, want none on failure", root, out)
@@ -923,9 +928,9 @@ func TestGitRunnerEnv(t *testing.T) {
 
 // TestScannedPathsFromListing_Table pins the selected-path rules at the helper
 // level. Names such as q"uote.go and back\slash.go cannot be created on Windows,
-// so the helper is exercised directly. The control-rune row checks the
-// errListingControlRune sentinel; the %q message is checked in
-// TestRunRepoScan_BadListing_FailsClosed, where it is observable.
+// so the helper is exercised directly. The control-rune row checks only the
+// errListingControlRune sentinel with errors.Is; TestRunRepoScan_BadListing_FailsClosed
+// checks the full %q-quoted message prefix, where it is observable.
 func TestScannedPathsFromListing_Table(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -987,9 +992,11 @@ func TestScannedPathsFromListing_Table(t *testing.T) {
 }
 
 // assertNoRawControl fails if stderr, without its trailing newline, contains a
-// control or line-separator rune. errorLine echoes listing paths only through
-// %q, so no raw control byte may reach a CI log (D-BW-1a). Its predicate is an
-// independent oracle and is intentionally not shared with production code.
+// control or line-separator rune, so no raw control byte may reach a CI log
+// (D-BW-1a). Listing paths reach errorLine unquoted through runRepoScan, and
+// scannedPathsFromListing rejects control runes in selected paths before that,
+// so this test checks that guard end to end. Its predicate is an independent
+// oracle and is intentionally not shared with production code.
 func assertNoRawControl(t *testing.T, stderr string) {
 	t.Helper()
 	for _, r := range strings.TrimSuffix(stderr, "\n") {
@@ -1034,13 +1041,19 @@ func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "internal", "a.go"), []byte(u4CleanGo), 0o644); err != nil {
 				t.Fatalf("write: %v", err)
 			}
+			// Control-rune rows: the production message is the %q-quoted path
+			// followed by the sentence. Each such row's out is exactly path + NUL.
+			var prefix string
+			if tc.want == controlMsg {
+				prefix = fmt.Sprintf("::error::git ls-files output: path %q ", strings.TrimSuffix(string(tc.out), "\x00"))
+			}
 			git := func(string) ([]byte, error) { return tc.out, nil }
 			res := runRepoScan(root, git)
 			if res.Code != 1 {
 				t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
 			}
-			if !strings.Contains(res.Stderr, tc.want) {
-				t.Fatalf("stderr = %q, want it to contain %q", res.Stderr, tc.want)
+			if !strings.Contains(res.Stderr, prefix+tc.want) {
+				t.Fatalf("stderr = %q, want it to contain %q", res.Stderr, prefix+tc.want)
 			}
 			assertNoRawControl(t, res.Stderr)
 		})
