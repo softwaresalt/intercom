@@ -81,6 +81,27 @@ func decodeLsFilesListing(t *testing.T, out []byte) []string {
 // code under test.
 func fixtureGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
+	fixtureGitEnv(t, dir, nil, args...)
+}
+
+// fixtureGitEnv is fixtureGit with extra environment entries applied after the
+// scrub, so a fixture can point GIT_INDEX_FILE at an alternate index. cmd.Dir is
+// always dir.
+func fixtureGitEnv(t *testing.T, dir string, extraEnv []string, args ...string) {
+	t.Helper()
+	base := []string{"-c", "user.name=writepath-test", "-c", "user.email=writepath-test@example.invalid", "-c", "commit.gpgsign=false"}
+	cmd := exec.Command("git", append(base, args...)...)
+	cmd.Dir = dir
+	cmd.Env = fixtureGitEnvironment(extraEnv)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fixture git %v: %v: %s", args, err, out)
+	}
+}
+
+// fixtureGitEnvironment is the scrubbed environment for test git children: every
+// ambient GIT_* entry is removed (case-folded), global and system config are
+// pinned off, and extraEnv is appended last.
+func fixtureGitEnvironment(extraEnv []string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
@@ -90,12 +111,62 @@ func fixtureGit(t *testing.T, dir string, args ...string) {
 		env = append(env, kv)
 	}
 	env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
-	base := []string{"-c", "user.name=writepath-test", "-c", "user.email=writepath-test@example.invalid", "-c", "commit.gpgsign=false"}
-	cmd := exec.Command("git", append(base, args...)...)
+	return append(env, extraEnv...)
+}
+
+// gitVersion returns the version reported by git --version, for the evidence
+// log. A missing git or an unparseable version is a failure, never a skip.
+func gitVersion(t *testing.T) string {
+	t.Helper()
+	cmd := exec.Command("git", "--version")
+	cmd.Env = fixtureGitEnvironment(nil)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git --version: %v", err)
+	}
+	line := strings.TrimSpace(string(out))
+	version, ok := strings.CutPrefix(line, "git version ")
+	if !ok || version == "" || version[0] < '0' || version[0] > '9' {
+		t.Fatalf("unparseable git --version output: %q", line)
+	}
+	return version
+}
+
+// gitLsFilesCapture is the baseline for TestDefaultGitRunnerIgnoresGitEnv: the
+// stdout bytes of `git ls-files -z -- internal/** cmd/**` (the runner's pathspec
+// order) under the scrubbed fixture environment. Only stdout is kept, because
+// git's stderr hints would corrupt the bytes. It does not call the code under test.
+func gitLsFilesCapture(t *testing.T, dir string) []byte {
+	t.Helper()
+	cmd := exec.Command("git", "ls-files", "-z", "--", "internal/**", "cmd/**")
 	cmd.Dir = dir
-	cmd.Env = env
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("fixture git %v: %v: %s", args, err, out)
+	cmd.Env = fixtureGitEnvironment(nil)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("baseline git ls-files: %v", err)
+	}
+	return out
+}
+
+// assertDefaultGitRunnerIsolated is the oracle for each environment vector:
+// DefaultGitRunner must return err == nil and the baseline bytes, and the gate
+// built on it must exit 1 naming the violating file. The exit code is never the
+// oracle alone.
+func assertDefaultGitRunnerIsolated(t *testing.T, root string, baseline []byte) {
+	t.Helper()
+	got, err := DefaultGitRunner(root)
+	if err != nil {
+		t.Fatalf("DefaultGitRunner: %v", err)
+	}
+	if !bytes.Equal(got, baseline) {
+		t.Errorf("DefaultGitRunner bytes = %q, want the baseline %q", got, baseline)
+	}
+	res := runRepoScan(root, DefaultGitRunner)
+	if res.Code != 1 {
+		t.Errorf("runRepoScan Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, "internal/bad.go:") || !strings.Contains(res.Stderr, "write primitive 'os.Remove' found") {
+		t.Errorf("runRepoScan stderr = %q, want a finding for internal/bad.go naming write primitive 'os.Remove'", res.Stderr)
 	}
 }
 
@@ -694,6 +765,103 @@ func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
 	}
 	if !strings.Contains(res.Stderr, "write primitive 'os.Remove' found") {
 		t.Fatalf("stderr = %q, want the finding text write primitive 'os.Remove' found", res.Stderr)
+	}
+}
+
+// TestDefaultGitRunnerIgnoresGitEnv is the bug-evidence test for D7BF9F74. Vector
+// (a) is a false clean: an ambient GIT_INDEX_FILE listing only cmd/x/main.go makes
+// the gate exit 0 although tracked internal/bad.go holds a write primitive. Vectors
+// (b) and (c) are the same new contract through GIT_LITERAL_PATHSPECS and
+// GIT_CONFIG_PARAMETERS. The no-vector control must stay green before and after.
+func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
+	t.Logf("git version: %s", gitVersion(t))
+	root := t.TempDir()
+	files := map[string]string{
+		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
+		"internal/ok.go":     "package internal\n\nfunc Ok() bool { return true }\n",
+		"internal/bad.go":    "package internal\n\nimport \"os\"\n\nfunc Wipe(p string) error { return os.Remove(p) }\n",
+		"internal/\u00e9.go": "package internal\n\nfunc Name() string { return \"\" }\n",
+	}
+	for rel, body := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	fixtureGit(t, root, "init", "-q")
+	fixtureGit(t, root, "add", "-A")
+	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
+
+	baseline := gitLsFilesCapture(t, root)
+	for _, want := range []string{"cmd/x/main.go", "internal/ok.go", "internal/bad.go", "internal/\u00e9.go"} {
+		if !slices.Contains(decodeLsFilesListing(t, baseline), want) {
+			t.Fatalf("baseline listing does not name %q: the fixture would be vacuous", want)
+		}
+	}
+
+	altIndex := filepath.Join(t.TempDir(), "alternate.index")
+	altEnv := []string{"GIT_INDEX_FILE=" + altIndex}
+	fixtureGitEnv(t, root, altEnv, "read-tree", "HEAD")
+	fixtureGitEnv(t, root, altEnv, "rm", "--cached", "-q", "--", "internal/ok.go", "internal/bad.go", "internal/\u00e9.go")
+
+	t.Run("control_no_vector", func(t *testing.T) {
+		hermeticGitEnv(t)
+		assertDefaultGitRunnerIsolated(t, root, baseline)
+	})
+	t.Run("vector_a_GIT_INDEX_FILE", func(t *testing.T) {
+		hermeticGitEnv(t)
+		t.Setenv("GIT_INDEX_FILE", altIndex)
+		assertDefaultGitRunnerIsolated(t, root, baseline)
+	})
+	t.Run("vector_b_GIT_LITERAL_PATHSPECS", func(t *testing.T) {
+		hermeticGitEnv(t)
+		t.Setenv("GIT_LITERAL_PATHSPECS", "1")
+		assertDefaultGitRunnerIsolated(t, root, baseline)
+	})
+	t.Run("vector_c_GIT_CONFIG_PARAMETERS", func(t *testing.T) {
+		hermeticGitEnv(t)
+		t.Setenv("GIT_CONFIG_PARAMETERS", "not-a-valid-config")
+		assertDefaultGitRunnerIsolated(t, root, baseline)
+	})
+}
+
+// TestGitRunnerEnv is the pure environment-filter table. It is kept identical to
+// retiredarch's TestGitRunnerEnv, so drift between the two hand-synced copies
+// fails a test (D-BW-2, RK-9).
+func TestGitRunnerEnv(t *testing.T) {
+	in := []string{
+		"PATH=/usr/bin",
+		"git_dir=/decoy/.git",
+		"Git_Index_File=/decoy/index",
+		"GIT_CEILING_DIRECTORIES=/ceiling",
+		"Git_Ceiling_Directories=/ceiling2",
+		"git_ceiling_directories=/ceiling3",
+		`=C:=C:\x`,
+		"GITX=1",
+		"GIT_CONFIG_GLOBAL=/decoy/gitconfig",
+		"HOME=/home/u",
+		"GIT_CONFIG_NOSYSTEM=0",
+	}
+	want := []string{
+		"PATH=/usr/bin",
+		"GIT_CEILING_DIRECTORIES=/ceiling",
+		"Git_Ceiling_Directories=/ceiling2",
+		"git_ceiling_directories=/ceiling3",
+		`=C:=C:\x`,
+		"GITX=1",
+		"HOME=/home/u",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_CONFIG_SYSTEM=" + os.DevNull,
+	}
+	if got := gitRunnerEnv(in); !slices.Equal(got, want) {
+		t.Fatalf("gitRunnerEnv =\n%q\nwant\n%q", got, want)
+	}
+	if got := gitRunnerEnv(nil); !slices.Equal(got, want[len(want)-3:]) {
+		t.Fatalf("gitRunnerEnv(nil) = %q, want only the three appended entries", got)
 	}
 }
 

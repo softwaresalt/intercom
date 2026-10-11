@@ -147,9 +147,20 @@ type GitRunner func(root string) ([]byte, error)
 // `git ls-files -z -- internal/** cmd/**` with root as the working directory.
 // -z prints each name verbatim and NUL-terminated, so names containing quotes,
 // backslashes, spaces, newlines or non-ASCII bytes are never C-quoted.
+//
+// The child runs with gitRunnerEnv's isolated environment (D7BF9F74), so
+// ambient GIT_* variables and global/system git config cannot change the
+// listing. Threat model (mirrors the retired-architecture D6b stance: an
+// anti-accident hygiene control, not an anti-adversary one): the adversary is
+// the ambient environment (agent hosts, git hooks, wrapper scripts), not an
+// in-job attacker. Git 2.32 or later is assumed for the config pins. A PATH
+// shim, an in-job attacker and a self-modifying PR are out of scope (R-A2b).
+// The wrapper's root discovery is a separate surface, captured in stash
+// DBE25DF5.
 func DefaultGitRunner(root string) ([]byte, error) {
 	cmd := exec.Command("git", "ls-files", "-z", "--", "internal/**", "cmd/**")
 	cmd.Dir = root
+	cmd.Env = gitRunnerEnv(os.Environ())
 	var stdout, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderrBuf
@@ -160,6 +171,32 @@ func DefaultGitRunner(root string) ([]byte, error) {
 		return nil, err
 	}
 	return stdout.Bytes(), nil
+}
+
+// gitRunnerEnv returns the environment for the gate-owned git child process
+// (D7BF9F74): environ with every entry whose name (the text before the first
+// '=', ASCII-case-folded) starts with GIT_ removed, except
+// GIT_CEILING_DIRECTORIES, followed by GIT_CONFIG_NOSYSTEM=1 and
+// GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM pointed at os.DevNull. Windows
+// "=C:"-style per-drive entries have an empty name and are kept. It is copied,
+// not shared (D-BW-2, 5A8EC1BC): keep in sync by hand with
+// retiredarch.gitRunnerEnv; the pure table test must be kept identical.
+func gitRunnerEnv(environ []string) []string {
+	env := make([]string, 0, len(environ)+3)
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		folded := []byte(name)
+		for i, c := range folded {
+			if 'a' <= c && c <= 'z' {
+				folded[i] = c - ('a' - 'A')
+			}
+		}
+		if strings.HasPrefix(string(folded), "GIT_") && string(folded) != "GIT_CEILING_DIRECTORIES" {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 }
 
 // shouldScan reports whether relPath (a forward-slash, repo-root-relative
