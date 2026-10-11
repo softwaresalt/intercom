@@ -1,6 +1,7 @@
 package writepath
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -38,13 +40,174 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
+// lsFilesListing builds a `git ls-files -z` listing: every path followed by a
+// NUL, or nil for no paths. Every well-formed listing fake in this package
+// builds its output here, so a format change is one edit.
+func lsFilesListing(paths ...string) []byte {
+	if len(paths) == 0 {
+		return nil
+	}
+	return []byte(strings.Join(paths, "\x00") + "\x00")
+}
+
+// decodeLsFilesListing is an independent decode of real runner output (NUL
+// framed, `git ls-files -z`). It must not call production selection code. It
+// frames records only: empty output means no paths, the output must end in a
+// NUL, and an empty record is fatal. It applies no UTF-8 policy, so it
+// tolerates an unscanned non-UTF-8 name, because the oracle applies shouldScan
+// afterwards. Changing it changes what the frozen oracle examines, so it is
+// treated as an oracle edit (D-BW-4, PA-2).
+func decodeLsFilesListing(t *testing.T, out []byte) []string {
+	t.Helper()
+	if len(out) == 0 {
+		return nil
+	}
+	if out[len(out)-1] != 0 {
+		t.Fatalf("decode git ls-files output: not NUL-terminated")
+	}
+	var records []string
+	for _, rec := range bytes.Split(out[:len(out)-1], []byte{0}) {
+		if len(rec) == 0 {
+			t.Fatalf("decode git ls-files output: empty record")
+		}
+		records = append(records, string(rec))
+	}
+	return records
+}
+
+// fixtureGit runs real git for test-fixture construction only, with every
+// ambient GIT_* variable removed and global/system config isolated, so the
+// fixture is independent of ambient GIT_* and global/system git config. It
+// deliberately does not use the code under test.
+func fixtureGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	fixtureGitEnv(t, dir, nil, args...)
+}
+
+// fixtureGitEnv is fixtureGit with extra environment entries applied after the
+// scrub, so a fixture can point GIT_INDEX_FILE at an alternate index. cmd.Dir is
+// always dir.
+func fixtureGitEnv(t *testing.T, dir string, extraEnv []string, args ...string) {
+	t.Helper()
+	base := []string{"-c", "user.name=writepath-test", "-c", "user.email=writepath-test@example.invalid", "-c", "commit.gpgsign=false"}
+	cmd := exec.Command("git", append(base, args...)...)
+	cmd.Dir = dir
+	cmd.Env = fixtureGitEnvironment(extraEnv)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fixture git %v: %v: %s", args, err, out)
+	}
+}
+
+// fixtureGitEnvironment is the scrubbed environment for test git children: every
+// ambient GIT_* entry is removed (case-folded), global and system config are
+// pinned off, and extraEnv is appended last.
+func fixtureGitEnvironment(extraEnv []string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if name == "" || strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	return append(env, extraEnv...)
+}
+
+// gitVersion returns the version reported by git --version, for the evidence
+// log. A missing git or an unparseable version is a failure, never a skip.
+func gitVersion(t *testing.T) string {
+	t.Helper()
+	cmd := exec.Command("git", "--version")
+	cmd.Env = fixtureGitEnvironment(nil)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git --version: %v", err)
+	}
+	line := strings.TrimSpace(string(out))
+	version, ok := strings.CutPrefix(line, "git version ")
+	if !ok || version == "" || version[0] < '0' || version[0] > '9' {
+		t.Fatalf("unparseable git --version output: %q", line)
+	}
+	return version
+}
+
+// gitLsFilesCapture is the baseline for TestDefaultGitRunnerIgnoresGitEnv: the
+// stdout bytes of `git ls-files -z -- internal/** cmd/**` (the runner's pathspec
+// order) under the scrubbed fixture environment. Only stdout is kept, because
+// git's stderr hints would corrupt the bytes. It does not call the code under test.
+func gitLsFilesCapture(t *testing.T, dir string) []byte {
+	t.Helper()
+	cmd := exec.Command("git", "ls-files", "-z", "--", "internal/**", "cmd/**")
+	cmd.Dir = dir
+	cmd.Env = fixtureGitEnvironment(nil)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("baseline git ls-files: %v", err)
+	}
+	return out
+}
+
+// assertDefaultGitRunnerIsolated is the oracle for each environment vector:
+// DefaultGitRunner must return err == nil and the baseline bytes, and the gate
+// built on it must exit 1 naming the violating file. The exit code is never the
+// oracle alone.
+func assertDefaultGitRunnerIsolated(t *testing.T, root string, baseline []byte) {
+	t.Helper()
+	got, err := DefaultGitRunner(root)
+	if err != nil {
+		t.Fatalf("DefaultGitRunner: %v", err)
+	}
+	if !bytes.Equal(got, baseline) {
+		t.Errorf("DefaultGitRunner bytes = %q, want the baseline %q", got, baseline)
+	}
+	res := runRepoScan(root, DefaultGitRunner)
+	if res.Code != 1 {
+		t.Errorf("runRepoScan Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, "internal/bad.go:") || !strings.Contains(res.Stderr, "write primitive 'os.Remove' found") {
+		t.Errorf("runRepoScan stderr = %q, want a finding for internal/bad.go naming write primitive 'os.Remove'", res.Stderr)
+	}
+}
+
+// hermeticGitEnv removes every ambient GIT_* variable from the test process and
+// pins global and system git config off. This is defence in depth for any child
+// process that inherits the test environment. DefaultGitRunner itself passes
+// gitRunnerEnv(os.Environ()) to its child, so its isolation comes from that
+// filter, not from this helper. t.Setenv registers restoration at cleanup.
+func hermeticGitEnv(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if name == "" || !strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+			continue
+		}
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatalf("unset %s: %v", name, err)
+		}
+	}
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+}
+
 func u4StubGit(paths ...string) GitRunner {
 	return func(root string) ([]byte, error) {
-		return []byte(strings.Join(paths, "\n") + "\n"), nil
+		return lsFilesListing(paths...), nil
 	}
 }
 
 const u4CleanGo = "package x\n\nfunc Clean() {}\n"
+
+// u4RejectGo is a full Go file holding a write primitive (os.Remove).
+const u4RejectGo = `package p
+
+import "os"
+
+func f() {
+	_ = os.Remove("x")
+}
+`
 
 func u4CreateSymlink(t *testing.T, target, link string) {
 	t.Helper()
@@ -61,6 +224,33 @@ func u4Junction(t *testing.T, link, target string) {
 	out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
 	if err != nil {
 		t.Fatalf("mklink /J %s %s: %v: %s", link, target, err, out)
+	}
+}
+
+// linkDir makes link a directory link to target: a junction on Windows (which
+// needs no privilege), a directory symlink elsewhere.
+func linkDir(t *testing.T, link, target string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		u4Junction(t, link, target)
+		return
+	}
+	u4CreateSymlink(t, target, link)
+}
+
+func u4Mkdir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// u4WriteRejectFixture writes u4RejectGo at path, creating parent directories.
+func u4WriteRejectFixture(t *testing.T, path string) {
+	t.Helper()
+	u4Mkdir(t, filepath.Dir(path))
+	if err := os.WriteFile(path, []byte(u4RejectGo), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -135,8 +325,8 @@ func TestRunRepoScan_DeletedTrackedFile_KeepsReadError(t *testing.T) {
 }
 
 // TestContainedRegularFile_RejectsMalformedComponents covers the copy's lexical
-// rejections directly: these rel shapes never pass shouldScanRepoPath, so only
-// a direct call reaches them.
+// rejections directly: these rel shapes never pass shouldScan, so only a direct
+// call reaches them.
 func TestContainedRegularFile_RejectsMalformedComponents(t *testing.T) {
 	root := t.TempDir()
 	rows := []string{"a//b.go", "./a.go", "../x.go", "a/", ""}
@@ -518,8 +708,9 @@ func TestRun_GitError_FailsClosed(t *testing.T) {
 
 func TestRun_ReadError_FailsClosed(t *testing.T) {
 	root := repoRoot(t)
+	const missingRel = "internal/does-not-exist-anywhere.go"
 	missingFileGit := func(string) ([]byte, error) {
-		return []byte("internal/does-not-exist-anywhere.go\n"), nil
+		return lsFilesListing(missingRel), nil
 	}
 	var stdout, stderr strings.Builder
 	code := Run("", root, missingFileGit, &stdout, &stderr)
@@ -528,6 +719,9 @@ func TestRun_ReadError_FailsClosed(t *testing.T) {
 	}
 	if !strings.HasPrefix(stderr.String(), "::error::") {
 		t.Fatalf("stderr = %q, want ::error:: prefix", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), missingRel) {
+		t.Fatalf("stderr = %q, want it to name %q", stderr.String(), missingRel)
 	}
 }
 
@@ -540,8 +734,9 @@ func TestRun_InvalidUTF8_FailsClosed(t *testing.T) {
 	if err := os.WriteFile(badPath, []byte("package bad\n// caf\xff broken\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+	const badRel = "internal/bad.go"
 	git := func(string) ([]byte, error) {
-		return []byte("internal/bad.go\n"), nil
+		return lsFilesListing(badRel), nil
 	}
 	var stdout, stderr strings.Builder
 	code := Run("", root, git, &stdout, &stderr)
@@ -551,12 +746,15 @@ func TestRun_InvalidUTF8_FailsClosed(t *testing.T) {
 	if !strings.HasPrefix(stderr.String(), "::error::") {
 		t.Fatalf("stderr = %q, want ::error:: prefix", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), badRel) {
+		t.Fatalf("stderr = %q, want it to name %q", stderr.String(), badRel)
+	}
 }
 
 func TestRun_EmptySelection_FailsClosed_ED7(t *testing.T) {
 	root := t.TempDir()
 	emptyGit := func(string) ([]byte, error) {
-		return []byte(""), nil
+		return lsFilesListing(), nil
 	}
 	var stdout, stderr strings.Builder
 	code := Run("", root, emptyGit, &stdout, &stderr)
@@ -565,6 +763,307 @@ func TestRun_EmptySelection_FailsClosed_ED7(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "ED-7") {
 		t.Fatalf("stderr = %q, want ED-7 mention", stderr.String())
+	}
+}
+
+// legacyNewlineListing is the parent's newline-framed listing of one clean
+// file. The NUL parser must reject it rather than select internal/a.go.
+const legacyNewlineListing = "internal/a.go\n"
+
+// TestRunRepoScan_NonASCIIPath_IsScanned_RealGit is the bug-evidence test for
+// B83F53BB. Real git C-quotes a non-ASCII tracked name in newline output, so the
+// newline-framed selection dropped internal/\u00e9.go and the gate exited zero
+// on a file that holds a write primitive.
+func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
+	hermeticGitEnv(t)
+	root := t.TempDir()
+	for rel, body := range map[string]string{
+		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
+		"internal/\u00e9.go": "package internal\n\nimport \"os\"\n\nfunc Wipe(p string) error { return os.Remove(p) }\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	fixtureGit(t, root, "init", "-q")
+	fixtureGit(t, root, "add", "-A")
+	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
+
+	res := runRepoScan(root, DefaultGitRunner)
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1: the non-ASCII tracked path must be scanned (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.Contains(filepath.ToSlash(res.Stderr), "internal/\u00e9.go") {
+		t.Fatalf("stderr = %q, want it to name the non-ASCII path internal/\u00e9.go", res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, "write primitive 'os.Remove' found") {
+		t.Fatalf("stderr = %q, want the finding text write primitive 'os.Remove' found", res.Stderr)
+	}
+}
+
+// TestDefaultGitRunnerIgnoresGitEnv is the bug-evidence test for stash
+// B83F53BB part 2; the environment shape it guards is from D7BF9F74. Vector
+// (a) is a false clean: an ambient GIT_INDEX_FILE listing only cmd/x/main.go
+// makes the gate exit 0 although tracked internal/bad.go holds a write
+// primitive. Vectors (b) and (c) are the same new contract through
+// GIT_LITERAL_PATHSPECS and GIT_CONFIG_PARAMETERS. The no-vector control must
+// stay green before and after.
+func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
+	t.Logf("git version: %s", gitVersion(t))
+	root := t.TempDir()
+	files := map[string]string{
+		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
+		"internal/ok.go":     "package internal\n\nfunc Ok() bool { return true }\n",
+		"internal/bad.go":    "package internal\n\nimport \"os\"\n\nfunc Wipe(p string) error { return os.Remove(p) }\n",
+		"internal/\u00e9.go": "package internal\n\nfunc Name() string { return \"\" }\n",
+	}
+	for rel, body := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	fixtureGit(t, root, "init", "-q")
+	fixtureGit(t, root, "add", "-A")
+	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
+
+	baseline := gitLsFilesCapture(t, root)
+	for _, want := range []string{"cmd/x/main.go", "internal/ok.go", "internal/bad.go", "internal/\u00e9.go"} {
+		if !slices.Contains(decodeLsFilesListing(t, baseline), want) {
+			t.Fatalf("baseline listing does not name %q: the fixture would be vacuous", want)
+		}
+	}
+
+	altIndex := filepath.Join(t.TempDir(), "alternate.index")
+	altEnv := []string{"GIT_INDEX_FILE=" + altIndex}
+	fixtureGitEnv(t, root, altEnv, "read-tree", "HEAD")
+	fixtureGitEnv(t, root, altEnv, "rm", "--cached", "-q", "--", "internal/ok.go", "internal/bad.go", "internal/\u00e9.go")
+
+	t.Run("control_no_vector", func(t *testing.T) {
+		hermeticGitEnv(t)
+		assertDefaultGitRunnerIsolated(t, root, baseline)
+	})
+	t.Run("vector_a_GIT_INDEX_FILE", func(t *testing.T) {
+		hermeticGitEnv(t)
+		t.Setenv("GIT_INDEX_FILE", altIndex)
+		assertDefaultGitRunnerIsolated(t, root, baseline)
+	})
+	t.Run("vector_b_GIT_LITERAL_PATHSPECS", func(t *testing.T) {
+		hermeticGitEnv(t)
+		t.Setenv("GIT_LITERAL_PATHSPECS", "1")
+		assertDefaultGitRunnerIsolated(t, root, baseline)
+	})
+	t.Run("vector_c_GIT_CONFIG_PARAMETERS", func(t *testing.T) {
+		hermeticGitEnv(t)
+		t.Setenv("GIT_CONFIG_PARAMETERS", "not-a-valid-config")
+		assertDefaultGitRunnerIsolated(t, root, baseline)
+	})
+}
+
+// TestDefaultGitRunner_NonRepository_FailsClosed pins the non-zero-exit branch of
+// DefaultGitRunner: outside any repository git ls-files exits non-zero. A
+// repository is planted in the parent of the per-test temp root, and the
+// GIT_CEILING_DIRECTORIES bound must stop git from discovering it. Without the
+// bound git would find the planted repository and exit zero, so the failure
+// proves the ceiling is effective and does not depend on the host checkout. The
+// empty-output check pins only the runner's nil-on-error contract; the gate's
+// fail-closed behaviour on a git error is covered by runRepoScan's git error path.
+func TestDefaultGitRunner_NonRepository_FailsClosed(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatalf("git is required for this test: %v", err)
+	}
+	root := t.TempDir()
+	fixtureGit(t, filepath.Dir(root), "init", "-q")
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(root))
+	out, err := DefaultGitRunner(root)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() == 0 {
+		t.Fatalf("DefaultGitRunner(%q) err = %v, want a non-zero git exit", root, err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("DefaultGitRunner(%q) output = %q, want none on failure", root, out)
+	}
+}
+
+// TestGitRunnerEnv is the pure environment-filter table. It is kept identical to
+// retiredarch's TestGitRunnerEnv, so drift between the two hand-synced copies
+// fails a test (D-BW-2, RK-9).
+func TestGitRunnerEnv(t *testing.T) {
+	in := []string{
+		"PATH=/usr/bin",
+		"git_dir=/decoy/.git",
+		"Git_Index_File=/decoy/index",
+		"GIT_CEILING_DIRECTORIES=/ceiling",
+		"Git_Ceiling_Directories=/ceiling2",
+		"git_ceiling_directories=/ceiling3",
+		`=C:=C:\x`,
+		"GITX=1",
+		"GIT_CONFIG_GLOBAL=/decoy/gitconfig",
+		"HOME=/home/u",
+		"GIT_CONFIG_NOSYSTEM=0",
+	}
+	want := []string{
+		"PATH=/usr/bin",
+		"GIT_CEILING_DIRECTORIES=/ceiling",
+		"Git_Ceiling_Directories=/ceiling2",
+		"git_ceiling_directories=/ceiling3",
+		`=C:=C:\x`,
+		"GITX=1",
+		"HOME=/home/u",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_CONFIG_SYSTEM=" + os.DevNull,
+	}
+	if got := gitRunnerEnv(in); !slices.Equal(got, want) {
+		t.Fatalf("gitRunnerEnv =\n%q\nwant\n%q", got, want)
+	}
+	if got := gitRunnerEnv(nil); !slices.Equal(got, want[len(want)-3:]) {
+		t.Fatalf("gitRunnerEnv(nil) = %q, want only the three appended entries", got)
+	}
+}
+
+// TestScannedPathsFromListing_Table pins the selected-path rules at the helper
+// level. Names such as q"uote.go and back\slash.go cannot be created on Windows,
+// so the helper is exercised directly. The control-rune row checks only the
+// errListingControlRune sentinel with errors.Is; TestRunRepoScan_BadListing_FailsClosed
+// checks the full %q-quoted message prefix, where it is observable.
+func TestScannedPathsFromListing_Table(t *testing.T) {
+	tests := []struct {
+		name    string
+		out     []byte
+		want    []string
+		wantErr error
+	}{
+		{
+			name: "empty listing selects nothing",
+		},
+		{
+			name: "selects non-ASCII, quote, backslash and space names byte-exact in listing order",
+			out:  lsFilesListing("internal/\u00e9.go", `internal/q"uote.go`, `internal/back\slash.go`, "internal/sp ace.go", "cmd/x/main.go"),
+			want: []string{"internal/\u00e9.go", `internal/q"uote.go`, `internal/back\slash.go`, "internal/sp ace.go", "cmd/x/main.go"},
+		},
+		{
+			name: "tolerates unscanned README, test, tab-named and invalid-UTF-8 names",
+			out:  lsFilesListing("internal/README.md", "internal/x_test.go", "internal/tab\there.txt", "internal/\xff.txt", "internal/a.go"),
+			want: []string{"internal/a.go"},
+		},
+		{
+			name:    "missing trailing NUL",
+			out:     []byte(legacyNewlineListing),
+			wantErr: errListingNotTerminated,
+		},
+		{
+			name:    "empty record",
+			out:     lsFilesListing("internal/a.go", ""),
+			wantErr: errListingEmptyRecord,
+		},
+		{
+			name:    "invalid UTF-8 in a scanned record",
+			out:     lsFilesListing("internal/\xff.go"),
+			wantErr: pysem.ErrInvalidUTF8,
+		},
+		{
+			name:    "control rune in a scanned record",
+			out:     []byte("internal/a\x1fb.go\x00"),
+			wantErr: errListingControlRune,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := scannedPathsFromListing(tc.out)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("err = %v, want errors.Is(err, %v)", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("paths = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// assertNoRawControl fails if stderr, without its trailing newline, contains a
+// control or line-separator rune, so no raw control byte may reach a CI log
+// (D-BW-1a). Listing paths reach errorLine unquoted through runRepoScan, and
+// scannedPathsFromListing rejects control runes in selected paths before that,
+// so this test checks that guard end to end. Its predicate is an independent
+// oracle and is intentionally not shared with production code.
+func assertNoRawControl(t *testing.T, stderr string) {
+	t.Helper()
+	for _, r := range strings.TrimSuffix(stderr, "\n") {
+		if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
+			t.Fatalf("stderr %q echoes raw control or separator rune %U", stderr, r)
+		}
+	}
+}
+
+// TestRunRepoScan_BadListing_FailsClosed drives runRepoScan with malformed or
+// unscannable listings. These raw literals are the malformed or unscannable
+// listings this test drives; every well-formed fake goes through lsFilesListing.
+// The all-unscanned row is a well-formed listing that expects ED-7.
+func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
+	const controlMsg = "contains a control or line-separator character"
+	tests := []struct {
+		name string
+		out  []byte
+		want string
+	}{
+		{"legacy newline listing", []byte(legacyNewlineListing), "not NUL-terminated"},
+		{"empty record", []byte("internal/a.go\x00\x00"), "empty record"},
+		{"lone NUL", []byte("\x00"), "empty record"},
+		{"scanned path with LF", []byte("internal/a\nb.go\x00"), controlMsg},
+		{"scanned path with U+2028", []byte("internal/a\u2028b.go\x00"), controlMsg},
+		{"scanned path with U+0085", []byte("internal/a\u0085b.go\x00"), controlMsg},
+		{"scanned path with ESC", []byte("internal/a\x1bb.go\x00"), controlMsg},
+		{"scanned path with DEL", []byte("internal/a\x7fb.go\x00"), controlMsg},
+		{"scanned path with U+2029", []byte("internal/a\u2029b.go\x00"), controlMsg},
+		{"scanned path with US (0x1f)", []byte("internal/a\x1fb.go\x00"), controlMsg},
+		{"scanned path with TAB", []byte("internal/a\tb.go\x00"), controlMsg},
+		{"scanned path with CR", []byte("internal/a\rb.go\x00"), controlMsg},
+		{"scanned path with invalid UTF-8", []byte("internal/\xff.go\x00"), pysem.ErrInvalidUTF8.Error()},
+		{"all paths unscanned", lsFilesListing("internal/README.md"), "ED-7"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "internal", "a.go"), []byte(u4CleanGo), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			// Control-rune rows: the production message is the %q-quoted path
+			// followed by the sentence. Each such row's out is exactly path + NUL.
+			var prefix string
+			if tc.want == controlMsg {
+				prefix = fmt.Sprintf("::error::git ls-files output: path %q ", strings.TrimSuffix(string(tc.out), "\x00"))
+			}
+			git := func(string) ([]byte, error) { return tc.out, nil }
+			res := runRepoScan(root, git)
+			if res.Code != 1 {
+				t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+			}
+			if tc.want == controlMsg {
+				if exact := prefix + tc.want + "\n"; res.Stderr != exact {
+					t.Fatalf("stderr = %q, want exactly %q", res.Stderr, exact)
+				}
+			} else if !strings.Contains(res.Stderr, prefix+tc.want) {
+				t.Fatalf("stderr = %q, want it to contain %q", res.Stderr, prefix+tc.want)
+			}
+			assertNoRawControl(t, res.Stderr)
+		})
 	}
 }
 
@@ -593,6 +1092,95 @@ func TestRunFixtureSelfTest_NoFixturesDiscovered(t *testing.T) {
 	}
 	if !strings.HasPrefix(res.Stderr, "no fixtures discovered under ") {
 		t.Fatalf("Stderr = %q, want %q prefix", res.Stderr, "no fixtures discovered under ")
+	}
+}
+
+// TestRunFixtureSelfTest_LinkedFixture_FailsClosed: a fixture reached through a
+// link, or through a linked ancestor, is refused before it is read (05E12A6F).
+// Every link is live and sits at the entry itself or at one ancestor, and the
+// write primitive lives outside the root, so a read-through would report PASS.
+func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
+	const fixtureRel = "scripts/testdata/writepath"
+	rows := []struct {
+		name     string
+		setup    func(t *testing.T, root, outside string)
+		entry    string
+		ancestor string
+	}{
+		{
+			name: "leaf file symlink",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, fixtureRel))
+				target := filepath.Join(outside, "x.go")
+				u4WriteRejectFixture(t, target)
+				u4CreateSymlink(t, target, filepath.Join(root, fixtureRel, "reject-x.go"))
+			},
+			entry: fixtureRel + "/reject-x.go",
+		},
+		{
+			name: "leaf directory link",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, fixtureRel))
+				target := filepath.Join(outside, "dir")
+				u4Mkdir(t, target)
+				linkDir(t, filepath.Join(root, fixtureRel, "reject-dirlink.go"), target)
+			},
+			entry: fixtureRel + "/reject-dirlink.go",
+		},
+		{
+			name: "linked scripts ancestor",
+			setup: func(t *testing.T, root, outside string) {
+				target := filepath.Join(outside, "scripts")
+				u4WriteRejectFixture(t, filepath.Join(target, "testdata", "writepath", "reject-x.go"))
+				linkDir(t, filepath.Join(root, "scripts"), target)
+			},
+			entry:    fixtureRel + "/reject-x.go",
+			ancestor: "scripts",
+		},
+		{
+			name: "linked scripts/testdata ancestor",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, "scripts"))
+				target := filepath.Join(outside, "testdata")
+				u4WriteRejectFixture(t, filepath.Join(target, "writepath", "reject-x.go"))
+				linkDir(t, filepath.Join(root, "scripts", "testdata"), target)
+			},
+			entry:    fixtureRel + "/reject-x.go",
+			ancestor: "scripts/testdata",
+		},
+		{
+			name: "linked scripts/testdata/writepath ancestor",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, "scripts", "testdata"))
+				target := filepath.Join(outside, "writepath")
+				u4WriteRejectFixture(t, filepath.Join(target, "reject-x.go"))
+				linkDir(t, filepath.Join(root, fixtureRel), target)
+			},
+			entry:    fixtureRel + "/reject-x.go",
+			ancestor: fixtureRel,
+		},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			temp := t.TempDir()
+			root := filepath.Join(temp, "repo")
+			outside := filepath.Join(temp, "outside")
+			u4Mkdir(t, root)
+			u4Mkdir(t, outside)
+			tc.setup(t, root, outside)
+
+			want := "::error::" + tc.entry + ": not a contained regular file: "
+			if tc.ancestor != "" {
+				want += tc.ancestor + " is not a real directory (mode "
+			}
+			res := runFixtureSelfTest(root)
+			if res.Code != 1 || !strings.Contains(res.Stderr, want) {
+				t.Fatalf("Code = %d, want 1 with stderr containing %q (stdout=%q stderr=%q)", res.Code, want, res.Stdout, res.Stderr)
+			}
+			if strings.Contains(res.Stdout, "PASS "+filepath.Base(tc.entry)) {
+				t.Fatalf("stdout = %q, must not PASS the linked entry", res.Stdout)
+			}
+		})
 	}
 }
 

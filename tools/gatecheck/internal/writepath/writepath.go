@@ -135,18 +135,33 @@ const (
 	rootResolveDisplay = "pathsafe.Root.Resolve"
 )
 
-// GitRunner runs `git ls-files -- internal/** cmd/**` rooted at root and
-// returns its raw stdout bytes (for pysem.GitText decoding), or an error if
-// the process could not be started or exited non-zero. It is injectable so
+// GitRunner runs `git ls-files -z -- internal/** cmd/**` rooted at root and
+// returns its raw stdout bytes: NUL-terminated records, parsed byte-exact by
+// scannedPathsFromListing with no pysem.GitText decoding. It returns an error
+// if the process could not be started or exited non-zero. It is injectable so
 // tests can simulate a missing/failing git without depending on the real
 // repository tree (M1-T8 AC: "an injectable gitRunner").
 type GitRunner func(root string) ([]byte, error)
 
 // DefaultGitRunner is the production GitRunner: it shells out to
-// `git ls-files -- internal/** cmd/**` with root as the working directory.
+// `git ls-files -z -- internal/** cmd/**` with root as the working directory.
+// -z prints each name verbatim and NUL-terminated, so names containing quotes,
+// backslashes, spaces, newlines or non-ASCII bytes are never C-quoted.
+//
+// For a given root, the child runs with gitRunnerEnv's isolated environment
+// (D7BF9F74), so ambient GIT_* variables and global/system git config cannot
+// change the listing. A relative git resolved through PATH is not refused here
+// (stash 4372BAD4). Threat model (mirrors the retired-architecture D6b stance: an
+// anti-accident hygiene control, not an anti-adversary one): the adversary is
+// the ambient environment (agent hosts, git hooks, wrapper scripts), not an
+// in-job attacker. Git 2.32 or later is assumed for the config pins. A PATH
+// shim, an in-job attacker and a self-modifying PR are out of scope (R-A2b).
+// The wrapper's root discovery is a separate surface, captured in stash
+// DBE25DF5.
 func DefaultGitRunner(root string) ([]byte, error) {
-	cmd := exec.Command("git", "ls-files", "--", "internal/**", "cmd/**")
+	cmd := exec.Command("git", "ls-files", "-z", "--", "internal/**", "cmd/**")
 	cmd.Dir = root
+	cmd.Env = gitRunnerEnv(os.Environ())
 	var stdout, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderrBuf
@@ -157,6 +172,34 @@ func DefaultGitRunner(root string) ([]byte, error) {
 		return nil, err
 	}
 	return stdout.Bytes(), nil
+}
+
+// gitRunnerEnv returns the environment for the gate-owned git child process
+// (D7BF9F74): environ with every entry whose name (the text before the first
+// '=', ASCII-case-folded) starts with GIT_ removed, except
+// GIT_CEILING_DIRECTORIES, followed by GIT_CONFIG_NOSYSTEM=1 and
+// GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM pointed at os.DevNull. Windows
+// "=C:"-style per-drive entries have an empty name and are kept. It is copied,
+// not shared (D-BW-2, 5A8EC1BC): keep in sync by hand with
+// retiredarch.gitRunnerEnv; the pure table test must be kept identical. The fold
+// is ASCII-only on purpose: git reads ASCII variable names, and the table must
+// stay identical to retiredarch.gitRunnerEnv (D-BW-2).
+func gitRunnerEnv(environ []string) []string {
+	env := make([]string, 0, len(environ)+3)
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		folded := []byte(name)
+		for i, c := range folded {
+			if 'a' <= c && c <= 'z' {
+				folded[i] = c - ('a' - 'A')
+			}
+		}
+		if strings.HasPrefix(string(folded), "GIT_") && string(folded) != "GIT_CEILING_DIRECTORIES" {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 }
 
 // shouldScan reports whether relPath (a forward-slash, repo-root-relative
@@ -170,6 +213,51 @@ func shouldScan(relPath string) bool {
 		return false
 	}
 	return strings.HasPrefix(relPath, "internal/") || strings.HasPrefix(relPath, "cmd/")
+}
+
+var (
+	errListingNotTerminated = errors.New("output is not NUL-terminated")
+	errListingEmptyRecord   = errors.New("output has an empty record")
+	errListingControlRune   = errors.New("contains a control or line-separator character")
+)
+
+// scannedPathsFromListing parses the NUL-terminated `git ls-files -z` listing
+// and returns the paths shouldScan selects, in git's order. It fails closed on
+// anything that is not exactly a NUL-terminated list of non-empty records. A
+// record that shouldScan rejects is never read or echoed. A selected path must
+// be valid UTF-8 and must not contain a C0 control (U+0000 to U+001F), DEL
+// (U+007F), U+0085, U+2028 or U+2029, because selected paths are echoed to CI
+// logs (D-BW-1a).
+//
+// Only the records this gate will scan are judged for UTF-8 and control runes.
+// retiredarch's selectRepoPaths judges every listed record instead; that
+// asymmetry is tracked by stash 31F33EFE.
+func scannedPathsFromListing(out []byte) ([]string, error) {
+	if len(out) == 0 {
+		return nil, nil
+	}
+	if out[len(out)-1] != 0 {
+		return nil, errListingNotTerminated
+	}
+	var selected []string
+	for _, p := range strings.Split(string(out[:len(out)-1]), "\x00") {
+		if p == "" {
+			return nil, errListingEmptyRecord
+		}
+		if !shouldScan(p) {
+			continue // by design: never read or echoed
+		}
+		if !utf8.ValidString(p) {
+			return nil, fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)
+		}
+		for _, r := range p {
+			if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
+				return nil, fmt.Errorf("path %q %w", p, errListingControlRune)
+			}
+		}
+		selected = append(selected, p)
+	}
+	return selected, nil
 }
 
 // nextOccurrence returns the byte offset of the first occurrence of sel in
@@ -827,24 +915,17 @@ func containedRegularFile(root, rel string) (bool, string) {
 // and fail closed on a git error, a per-file read/decode error (ED-2), a
 // selected path that is not a contained regular file (D44D8BDF: a symlink or
 // junction is never followed), any finding, or an empty selection (ED-7).
+// A malformed listing (not NUL-terminated, or an empty record), or a selected
+// path that is not valid UTF-8 or contains a forbidden rune, fails closed with
+// an output error before any file is read.
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)
 	if err != nil {
 		return Result{Stderr: errorLine("git ls-files", err), Code: 1}
 	}
-	listing, err := pysem.GitText(out)
+	relPaths, err := scannedPathsFromListing(out)
 	if err != nil {
 		return Result{Stderr: errorLine("git ls-files output", err), Code: 1}
-	}
-
-	var relPaths []string
-	for _, p := range pysem.SplitLines(listing) {
-		if p == "" {
-			continue
-		}
-		if shouldScan(p) {
-			relPaths = append(relPaths, p)
-		}
 	}
 
 	if len(relPaths) == 0 {
@@ -888,10 +969,16 @@ func runRepoScan(root string, git GitRunner) Result {
 }
 
 // runFixtureSelfTest performs ONLY the fixture self-test: every
-// scripts/testdata/writepath/*.go fixture is scanned and checked against
-// its accept-/reject- filename prefix. It is shared, verbatim, by both the
-// "self-test" and "self-test-integrity" top-level modes; whether the repo
-// scan also runs afterward is Run's concern, not this function's.
+// scripts/testdata/writepath/*.go fixture is checked against its accept-/
+// reject- filename prefix. Each fixture must pass containedRegularFile before
+// scanFile reads it, so a fixture reached through a symlink, junction or
+// linked ancestor is refused. Like the repo scan, it aborts on the first
+// refusal (05E12A6F). Accepted residual: a fixture swapped for a link between
+// that check and the read is still followed (TOCTOU). It is shared, verbatim,
+// by both the "self-test" and "self-test-integrity" top-level modes; whether
+// the repo scan also runs afterward is Run's concern, not this function's.
+// The os.Stat and os.ReadDir pre-checks follow links and are not a containment
+// control; containedRegularFile is the control.
 func runFixtureSelfTest(root string) Result {
 	fixtureDir := filepath.Join(root, "scripts", "testdata", "writepath")
 	fixtureDirPosix := filepath.ToSlash(fixtureDir)
@@ -924,6 +1011,9 @@ func runFixtureSelfTest(root string) Result {
 	var failures []string
 	for _, name := range names {
 		relPath := "scripts/testdata/writepath/" + name
+		if ok, reason := containedRegularFile(root, relPath); !ok {
+			return Result{Stderr: errorLine(relPath, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
+		}
 		findings, err := scanFile(root, relPath)
 		if err != nil {
 			return Result{Stderr: errorLine(relPath, err), Code: 1}
