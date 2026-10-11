@@ -17,8 +17,8 @@ Workflow run `38104296737` on the reviewed HEAD. Every check passed. Job URLs fo
 
 | Check | Result | Duration | Job id |
 |---|---|---|---|
-| test (Linux, required) | pass | 1m38s | 114366421477 |
-| test (windows, advisory) | pass | 2m2s | 114366421435 |
+| test | pass (the required Linux job; the PR check name is `test`) | 1m38s | 114366421477 |
+| test (windows, advisory) | pass at job level only: its test step is continue-on-error while `WINDOWS_GATE_REQUIRED` is unset, so a failing go test leaves the job green | 2m2s | 114366421435 |
 | lint | pass | 1m48s | 114366421439 |
 | security | pass | 56s | 114366421419 |
 | cross-compile (linux/amd64) | pass | 24s | 114366436480 |
@@ -44,6 +44,8 @@ Workflow run `38104296737` on the reviewed HEAD. Every check passed. Job URLs fo
 
 ## Live tree (run at 5eb2e78; e202fe3 changed only a test file, and b44cc15 only backlog and stash records)
 
+The exit codes below were observed in the session command output. Those commands print nothing on success, so the log files under logs/ are empty.
+
 | Command | Exit |
 |---|---|
 | `go run ./tools/gatecheck write-path --root .` | 0 |
@@ -68,6 +70,6 @@ Workflow run `38104296737` on the reviewed HEAD. Every check passed. Job URLs fo
 | `logs/gate-052.004-T-fulltest.txt` | 2026-10-10 (042-S branch) | `TestInvokeStartScriptMainPropagatesNonZeroExitCode` (157.5 s) and `TestLocationRestoredEvenOnNonZeroCopilotExit` (32.0 s, `location-check helper exceeded 30s timeout`) |
 | `logs/final-e202fe3-fulltest.txt` | 2026-10-10 (042-S branch) | `TestInvokeStartScriptMainPropagatesNonZeroExitCode` |
 
-Isolated reruns passed: `logs/052.004-T-integration-rerun.txt` (39.8 s, both tests) and `logs/final-startscript-isolated.txt` (19.6 s). The final full run on the reviewed HEAD (`logs/final-b44cc15-fulltest.txt`) passed the whole package.
+Isolated reruns passed: `logs/052.004-T-integration-rerun.txt` (39.8 s; a package-level `ok` line without `-v`, so per-test verdicts are not in that log) and `logs/final-startscript-isolated.txt` (19.6 s). The final full run on the reviewed HEAD (`logs/final-b44cc15-fulltest.txt`) passed the whole package.
 
 Cause: not established. The timeout predates this branch, so the 042-S workspace growth is a hypothesis only. The 041-S closure already recorded a start.ps1 timeout on a pre-toolchain baseline. The Linux CI test job, which is authoritative, passed.
