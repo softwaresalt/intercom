@@ -962,10 +962,14 @@ func runRepoScan(root string, git GitRunner) Result {
 }
 
 // runFixtureSelfTest performs ONLY the fixture self-test: every
-// scripts/testdata/writepath/*.go fixture is scanned and checked against
-// its accept-/reject- filename prefix. It is shared, verbatim, by both the
-// "self-test" and "self-test-integrity" top-level modes; whether the repo
-// scan also runs afterward is Run's concern, not this function's.
+// scripts/testdata/writepath/*.go fixture is checked against its accept-/
+// reject- filename prefix. Each fixture must pass containedRegularFile before
+// scanFile reads it, so a fixture reached through a symlink, junction or
+// linked ancestor is refused. Like the repo scan, it aborts on the first
+// refusal (05E12A6F). Accepted residual: a fixture swapped for a link between
+// that check and the read is still followed (TOCTOU). It is shared, verbatim,
+// by both the "self-test" and "self-test-integrity" top-level modes; whether
+// the repo scan also runs afterward is Run's concern, not this function's.
 func runFixtureSelfTest(root string) Result {
 	fixtureDir := filepath.Join(root, "scripts", "testdata", "writepath")
 	fixtureDirPosix := filepath.ToSlash(fixtureDir)
@@ -998,6 +1002,9 @@ func runFixtureSelfTest(root string) Result {
 	var failures []string
 	for _, name := range names {
 		relPath := "scripts/testdata/writepath/" + name
+		if ok, reason := containedRegularFile(root, relPath); !ok {
+			return Result{Stderr: errorLine(relPath, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
+		}
 		findings, err := scanFile(root, relPath)
 		if err != nil {
 			return Result{Stderr: errorLine(relPath, err), Code: 1}

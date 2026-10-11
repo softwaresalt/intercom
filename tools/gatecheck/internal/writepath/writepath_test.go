@@ -199,6 +199,16 @@ func u4StubGit(paths ...string) GitRunner {
 
 const u4CleanGo = "package x\n\nfunc Clean() {}\n"
 
+// u4RejectGo is a full Go file holding a write primitive (os.Remove).
+const u4RejectGo = `package p
+
+import "os"
+
+func f() {
+	_ = os.Remove("x")
+}
+`
+
 func u4CreateSymlink(t *testing.T, target, link string) {
 	t.Helper()
 	if err := os.Symlink(target, link); err != nil {
@@ -214,6 +224,33 @@ func u4Junction(t *testing.T, link, target string) {
 	out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
 	if err != nil {
 		t.Fatalf("mklink /J %s %s: %v: %s", link, target, err, out)
+	}
+}
+
+// linkDir makes link a directory link to target: a junction on Windows (which
+// needs no privilege), a directory symlink elsewhere.
+func linkDir(t *testing.T, link, target string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		u4Junction(t, link, target)
+		return
+	}
+	u4CreateSymlink(t, target, link)
+}
+
+func u4Mkdir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// u4WriteRejectFixture writes u4RejectGo at path, creating parent directories.
+func u4WriteRejectFixture(t *testing.T, path string) {
+	t.Helper()
+	u4Mkdir(t, filepath.Dir(path))
+	if err := os.WriteFile(path, []byte(u4RejectGo), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -1006,6 +1043,95 @@ func TestRunFixtureSelfTest_NoFixturesDiscovered(t *testing.T) {
 	}
 	if !strings.HasPrefix(res.Stderr, "no fixtures discovered under ") {
 		t.Fatalf("Stderr = %q, want %q prefix", res.Stderr, "no fixtures discovered under ")
+	}
+}
+
+// TestRunFixtureSelfTest_LinkedFixture_FailsClosed: a fixture reached through a
+// link, or through a linked ancestor, is refused before it is read (05E12A6F).
+// Every link is live and sits at the entry itself or at one ancestor, and the
+// write primitive lives outside the root, so a read-through would report PASS.
+func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
+	const fixtureRel = "scripts/testdata/writepath"
+	rows := []struct {
+		name     string
+		setup    func(t *testing.T, root, outside string)
+		entry    string
+		ancestor string
+	}{
+		{
+			name: "leaf file symlink",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, fixtureRel))
+				target := filepath.Join(outside, "x.go")
+				u4WriteRejectFixture(t, target)
+				u4CreateSymlink(t, target, filepath.Join(root, fixtureRel, "reject-x.go"))
+			},
+			entry: fixtureRel + "/reject-x.go",
+		},
+		{
+			name: "leaf directory link",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, fixtureRel))
+				target := filepath.Join(outside, "dir")
+				u4Mkdir(t, target)
+				linkDir(t, filepath.Join(root, fixtureRel, "reject-dirlink.go"), target)
+			},
+			entry: fixtureRel + "/reject-dirlink.go",
+		},
+		{
+			name: "linked scripts ancestor",
+			setup: func(t *testing.T, root, outside string) {
+				target := filepath.Join(outside, "scripts")
+				u4WriteRejectFixture(t, filepath.Join(target, "testdata", "writepath", "reject-x.go"))
+				linkDir(t, filepath.Join(root, "scripts"), target)
+			},
+			entry:    fixtureRel + "/reject-x.go",
+			ancestor: "scripts",
+		},
+		{
+			name: "linked scripts/testdata ancestor",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, "scripts"))
+				target := filepath.Join(outside, "testdata")
+				u4WriteRejectFixture(t, filepath.Join(target, "writepath", "reject-x.go"))
+				linkDir(t, filepath.Join(root, "scripts", "testdata"), target)
+			},
+			entry:    fixtureRel + "/reject-x.go",
+			ancestor: "scripts/testdata",
+		},
+		{
+			name: "linked scripts/testdata/writepath ancestor",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, "scripts", "testdata"))
+				target := filepath.Join(outside, "writepath")
+				u4WriteRejectFixture(t, filepath.Join(target, "reject-x.go"))
+				linkDir(t, filepath.Join(root, fixtureRel), target)
+			},
+			entry:    fixtureRel + "/reject-x.go",
+			ancestor: fixtureRel,
+		},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			temp := t.TempDir()
+			root := filepath.Join(temp, "repo")
+			outside := filepath.Join(temp, "outside")
+			u4Mkdir(t, root)
+			u4Mkdir(t, outside)
+			tc.setup(t, root, outside)
+
+			want := "::error::" + tc.entry + ": not a contained regular file: "
+			if tc.ancestor != "" {
+				want += tc.ancestor + " is not a real directory (mode "
+			}
+			res := runFixtureSelfTest(root)
+			if res.Code != 1 || !strings.Contains(res.Stderr, want) {
+				t.Fatalf("Code = %d, want 1 with stderr containing %q (stdout=%q stderr=%q)", res.Code, want, res.Stdout, res.Stderr)
+			}
+			if strings.Contains(res.Stdout, "PASS "+filepath.Base(tc.entry)) {
+				t.Fatalf("stdout = %q, must not PASS the linked entry", res.Stdout)
+			}
+		})
 	}
 }
 
