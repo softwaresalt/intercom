@@ -24,7 +24,7 @@ compaction_status: degraded
 close_path: cascade
 classification_binding: e204d053e4ad1925f723d9eddcb1462df16f982ec175aab1a7bd060bc672cd95
 closure_status: BLOCKED_PENDING_OPERATOR_DISPOSITION
-releasability: READY_WITH_CONDITIONS
+releasability: BLOCKED
 conditions:
   - id: cascade-post-close-writer-evidence-missing
     summary: "The harness writer produced the pre_close record (captured before the close), but no post_close writer phase exists. The mutating form of autoharness shipment cascade-close was deliberately not used, because it invokes backlogit shipment ship itself and the Ship role boundary reserves that invocation to the classified close path. The post-close state is evidenced by the shipment-reconcile post-mode check and the archive records, not by the writer. Unsatisfied and disclosed; operator decision requested on whether a post_close writer record should be produced by a separate verified step."
@@ -78,7 +78,7 @@ conditions:
 
 Shipment 042-S (feature 052-F, Gatecheck Batch B1 write-path input hardening) merged as PR #123 at 591f37e2ba877d81b1304d31905369e79096657f on 2026-10-11T02:15:09Z. The change hardens the merge-blocking write-path gate in three ways: it selects tracked Go files with NUL-delimited `git ls-files -z` output and fails closed on malformed or unscannable listings (B83F53BB, part 1); it removes ambient `GIT_*` variables and pins global and system git configuration for the `git ls-files` child (B83F53BB, part 2); and it refuses a fixture reached through a symlink, junction or linked ancestor in the self-test (05E12A6F). A comment-only correction in the retiredarch listing comment was included (U5).
 
-Releasability: `READY_WITH_CONDITIONS`. The conditions are listed in the frontmatter, and each one carries its evidence.
+Releasability: `BLOCKED` for the closure record, pending the operator disposition of the P-010 violation (see the disposition section). The shipped code change itself carries no open code condition; its open conditions are listed in the frontmatter, and each one carries its evidence.
 
 ## Merge and gate record
 
