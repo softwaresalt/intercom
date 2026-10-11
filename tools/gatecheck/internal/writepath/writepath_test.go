@@ -171,10 +171,10 @@ func assertDefaultGitRunnerIsolated(t *testing.T, root string, baseline []byte) 
 }
 
 // hermeticGitEnv removes every ambient GIT_* variable from the test process and
-// pins global and system git config off. DefaultGitRunner inherits the process
-// environment, so a host core.quotePath, GIT_INDEX_FILE or hook-exported
-// variable would otherwise change the listing a test observes. t.Setenv
-// registers restoration at cleanup.
+// pins global and system git config off. This is defence in depth for any child
+// process that inherits the test environment. DefaultGitRunner itself passes
+// gitRunnerEnv(os.Environ()) to its child, so its isolation comes from that
+// filter, not from this helper. t.Setenv registers restoration at cleanup.
 func hermeticGitEnv(t *testing.T) {
 	t.Helper()
 	for _, kv := range os.Environ() {
@@ -754,7 +754,7 @@ func TestRun_InvalidUTF8_FailsClosed(t *testing.T) {
 func TestRun_EmptySelection_FailsClosed_ED7(t *testing.T) {
 	root := t.TempDir()
 	emptyGit := func(string) ([]byte, error) {
-		return []byte(""), nil
+		return lsFilesListing(), nil
 	}
 	var stdout, stderr strings.Builder
 	code := Run("", root, emptyGit, &stdout, &stderr)
@@ -868,9 +868,11 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 }
 
 // TestDefaultGitRunner_NonRepository_FailsClosed pins the non-zero-exit branch of
-// DefaultGitRunner: outside any repository git ls-files exits non-zero. The
-// GIT_CEILING_DIRECTORIES bound stops git from discovering a repository above the
-// per-test temp root, so the failure does not depend on the host checkout. The
+// DefaultGitRunner: outside any repository git ls-files exits non-zero. A
+// repository is planted in the parent of the per-test temp root, and the
+// GIT_CEILING_DIRECTORIES bound must stop git from discovering it. Without the
+// bound git would find the planted repository and exit zero, so the failure
+// proves the ceiling is effective and does not depend on the host checkout. The
 // empty-output check pins only the runner's nil-on-error contract; the gate's
 // fail-closed behaviour on a git error is covered by runRepoScan's git error path.
 func TestDefaultGitRunner_NonRepository_FailsClosed(t *testing.T) {
@@ -878,6 +880,7 @@ func TestDefaultGitRunner_NonRepository_FailsClosed(t *testing.T) {
 		t.Fatalf("git is required for this test: %v", err)
 	}
 	root := t.TempDir()
+	fixtureGit(t, filepath.Dir(root), "init", "-q")
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(root))
 	out, err := DefaultGitRunner(root)
 	var exitErr *exec.ExitError
@@ -1052,7 +1055,11 @@ func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
 			if res.Code != 1 {
 				t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
 			}
-			if !strings.Contains(res.Stderr, prefix+tc.want) {
+			if tc.want == controlMsg {
+				if exact := prefix + tc.want + "\n"; res.Stderr != exact {
+					t.Fatalf("stderr = %q, want exactly %q", res.Stderr, exact)
+				}
+			} else if !strings.Contains(res.Stderr, prefix+tc.want) {
 				t.Fatalf("stderr = %q, want it to contain %q", res.Stderr, prefix+tc.want)
 			}
 			assertNoRawControl(t, res.Stderr)
