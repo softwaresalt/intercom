@@ -1,6 +1,7 @@
 package writepath
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -38,35 +40,84 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
-// lsFilesListing builds a `git ls-files` listing in the runner's current
-// newline-terminated format, or nil for no paths. Every well-formed listing
-// fake in this package builds its output here, so a format change is one edit.
+// lsFilesListing builds a `git ls-files -z` listing: every path followed by a
+// NUL, or nil for no paths. Every well-formed listing fake in this package
+// builds its output here, so a format change is one edit.
 func lsFilesListing(paths ...string) []byte {
 	if len(paths) == 0 {
 		return nil
 	}
-	return []byte(strings.Join(paths, "\n") + "\n")
+	return []byte(strings.Join(paths, "\x00") + "\x00")
 }
 
-// decodeLsFilesListing is an independent decode of real runner output. It must
-// not call production selection code. It frames records only: it applies the
-// pysem.GitText text-mode decode (including its UTF-8 rejection) and splits on
-// newlines, with no further policy, because the oracle applies shouldScan
+// decodeLsFilesListing is an independent decode of real runner output (NUL
+// framed, `git ls-files -z`). It must not call production selection code. It
+// frames records only: empty output means no paths, the output must end in a
+// NUL, and an empty record is fatal. It applies no UTF-8 policy, so it
+// tolerates an unscanned non-UTF-8 name, because the oracle applies shouldScan
 // afterwards. Changing it changes what the frozen oracle examines, so it is
 // treated as an oracle edit (D-BW-4, PA-2).
 func decodeLsFilesListing(t *testing.T, out []byte) []string {
 	t.Helper()
-	text, err := pysem.GitText(out)
-	if err != nil {
-		t.Fatalf("decode git ls-files output: %v", err)
+	if len(out) == 0 {
+		return nil
+	}
+	if out[len(out)-1] != 0 {
+		t.Fatalf("decode git ls-files output: not NUL-terminated")
 	}
 	var records []string
-	for _, p := range pysem.SplitLines(text) {
-		if p != "" {
-			records = append(records, p)
+	for _, rec := range bytes.Split(out[:len(out)-1], []byte{0}) {
+		if len(rec) == 0 {
+			t.Fatalf("decode git ls-files output: empty record")
 		}
+		records = append(records, string(rec))
 	}
 	return records
+}
+
+// fixtureGit runs real git for test-fixture construction only, with every
+// ambient GIT_* variable removed and global/system config isolated, so the
+// fixture is identical on every machine. It deliberately does not use the
+// code under test.
+func fixtureGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if name == "" || strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	base := []string{"-c", "user.name=writepath-test", "-c", "user.email=writepath-test@example.invalid", "-c", "commit.gpgsign=false"}
+	cmd := exec.Command("git", append(base, args...)...)
+	cmd.Dir = dir
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fixture git %v: %v: %s", args, err, out)
+	}
+}
+
+// hermeticGitEnv removes every ambient GIT_* variable from the test process and
+// pins global and system git config off. DefaultGitRunner inherits the process
+// environment, so a host core.quotePath, GIT_INDEX_FILE or hook-exported
+// variable would otherwise change the listing a test observes. t.Setenv
+// registers restoration at cleanup.
+func hermeticGitEnv(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if name == "" || !strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+			continue
+		}
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatalf("unset %s: %v", name, err)
+		}
+	}
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 }
 
 func u4StubGit(paths ...string) GitRunner {
@@ -604,6 +655,161 @@ func TestRun_EmptySelection_FailsClosed_ED7(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "ED-7") {
 		t.Fatalf("stderr = %q, want ED-7 mention", stderr.String())
+	}
+}
+
+// legacyNewlineListing is the parent's newline-framed listing of one clean
+// file. The NUL parser must reject it rather than select internal/a.go.
+const legacyNewlineListing = "internal/a.go\n"
+
+// TestRunRepoScan_NonASCIIPath_IsScanned_RealGit is the bug-evidence test for
+// B83F53BB. Real git C-quotes a non-ASCII tracked name in newline output, so the
+// newline-framed selection dropped internal/\u00e9.go and the gate exited zero
+// on a file that holds a write primitive.
+func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
+	hermeticGitEnv(t)
+	root := t.TempDir()
+	for rel, body := range map[string]string{
+		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
+		"internal/\u00e9.go": "package internal\n\nimport \"os\"\n\nfunc Wipe(p string) error { return os.Remove(p) }\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	fixtureGit(t, root, "init", "-q")
+	fixtureGit(t, root, "add", "-A")
+	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
+
+	res := runRepoScan(root, DefaultGitRunner)
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1: the non-ASCII tracked path must be scanned (stderr=%q)", res.Code, res.Stderr)
+	}
+	if !strings.Contains(filepath.ToSlash(res.Stderr), "internal/\u00e9.go") {
+		t.Fatalf("stderr = %q, want it to name the non-ASCII path internal/\u00e9.go", res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, "write primitive 'os.Remove' found") {
+		t.Fatalf("stderr = %q, want the finding text write primitive 'os.Remove' found", res.Stderr)
+	}
+}
+
+// TestScannedPathsFromListing_Table pins the selected-path rules at the helper
+// level. Names such as q"uote.go and back\slash.go cannot be created on Windows,
+// so the helper is exercised directly. The control-rune rows live in
+// TestRunRepoScan_BadListing_FailsClosed, where the %q message is observable.
+func TestScannedPathsFromListing_Table(t *testing.T) {
+	tests := []struct {
+		name    string
+		out     []byte
+		want    []string
+		wantErr error
+	}{
+		{
+			name: "empty listing selects nothing",
+		},
+		{
+			name: "selects non-ASCII, quote, backslash and space names byte-exact in listing order",
+			out:  lsFilesListing("internal/\u00e9.go", `internal/q"uote.go`, `internal/back\slash.go`, "internal/sp ace.go", "cmd/x/main.go"),
+			want: []string{"internal/\u00e9.go", `internal/q"uote.go`, `internal/back\slash.go`, "internal/sp ace.go", "cmd/x/main.go"},
+		},
+		{
+			name: "tolerates unscanned README, test, tab-named and invalid-UTF-8 names",
+			out:  lsFilesListing("internal/README.md", "internal/x_test.go", "internal/tab\there.txt", "internal/\xff.txt", "internal/a.go"),
+			want: []string{"internal/a.go"},
+		},
+		{
+			name:    "missing trailing NUL",
+			out:     []byte(legacyNewlineListing),
+			wantErr: errListingNotTerminated,
+		},
+		{
+			name:    "empty record",
+			out:     lsFilesListing("internal/a.go", ""),
+			wantErr: errListingEmptyRecord,
+		},
+		{
+			name:    "invalid UTF-8 in a scanned record",
+			out:     lsFilesListing("internal/\xff.go"),
+			wantErr: pysem.ErrInvalidUTF8,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := scannedPathsFromListing(tc.out)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("err = %v, want errors.Is(err, %v)", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("paths = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// assertNoRawControl fails if stderr, without its trailing newline, contains a
+// control or line-separator rune. errorLine echoes listing paths only through
+// %q, so no raw control byte may reach a CI log (D-BW-1a).
+func assertNoRawControl(t *testing.T, stderr string) {
+	t.Helper()
+	for _, r := range strings.TrimSuffix(stderr, "\n") {
+		if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
+			t.Fatalf("stderr %q echoes raw control or separator rune %U", stderr, r)
+		}
+	}
+}
+
+// TestRunRepoScan_BadListing_FailsClosed drives runRepoScan with malformed
+// listings. These raw literals are the only malformed listings in the package;
+// every well-formed fake goes through lsFilesListing.
+func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
+	const controlMsg = "contains a control or line-separator character"
+	tests := []struct {
+		name string
+		out  []byte
+		want string
+	}{
+		{"legacy newline listing", []byte(legacyNewlineListing), "not NUL-terminated"},
+		{"empty record", []byte("internal/a.go\x00\x00"), "empty record"},
+		{"lone NUL", []byte("\x00"), "empty record"},
+		{"scanned path with LF", []byte("internal/a\nb.go\x00"), controlMsg},
+		{"scanned path with U+2028", []byte("internal/a\u2028b.go\x00"), controlMsg},
+		{"scanned path with U+0085", []byte("internal/a\u0085b.go\x00"), controlMsg},
+		{"scanned path with ESC", []byte("internal/a\x1bb.go\x00"), controlMsg},
+		{"scanned path with DEL", []byte("internal/a\x7fb.go\x00"), controlMsg},
+		{"scanned path with U+2029", []byte("internal/a\u2029b.go\x00"), controlMsg},
+		{"scanned path with US (0x1f)", []byte("internal/a\x1fb.go\x00"), controlMsg},
+		{"scanned path with invalid UTF-8", []byte("internal/\xff.go\x00"), pysem.ErrInvalidUTF8.Error()},
+		{"all paths unscanned", lsFilesListing("internal/README.md"), "ED-7"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "internal", "a.go"), []byte(u4CleanGo), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			git := func(string) ([]byte, error) { return tc.out, nil }
+			res := runRepoScan(root, git)
+			if res.Code != 1 {
+				t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+			}
+			if !strings.Contains(res.Stderr, tc.want) {
+				t.Fatalf("stderr = %q, want it to contain %q", res.Stderr, tc.want)
+			}
+			assertNoRawControl(t, res.Stderr)
+		})
 	}
 }
 

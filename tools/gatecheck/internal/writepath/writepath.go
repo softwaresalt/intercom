@@ -135,17 +135,20 @@ const (
 	rootResolveDisplay = "pathsafe.Root.Resolve"
 )
 
-// GitRunner runs `git ls-files -- internal/** cmd/**` rooted at root and
-// returns its raw stdout bytes (for pysem.GitText decoding), or an error if
-// the process could not be started or exited non-zero. It is injectable so
+// GitRunner runs `git ls-files -z -- internal/** cmd/**` rooted at root and
+// returns its raw stdout bytes: NUL-terminated records, parsed byte-exact by
+// scannedPathsFromListing with no pysem.GitText decoding. It returns an error
+// if the process could not be started or exited non-zero. It is injectable so
 // tests can simulate a missing/failing git without depending on the real
 // repository tree (M1-T8 AC: "an injectable gitRunner").
 type GitRunner func(root string) ([]byte, error)
 
 // DefaultGitRunner is the production GitRunner: it shells out to
-// `git ls-files -- internal/** cmd/**` with root as the working directory.
+// `git ls-files -z -- internal/** cmd/**` with root as the working directory.
+// -z prints each name verbatim and NUL-terminated, so names containing quotes,
+// backslashes, spaces, newlines or non-ASCII bytes are never C-quoted.
 func DefaultGitRunner(root string) ([]byte, error) {
-	cmd := exec.Command("git", "ls-files", "--", "internal/**", "cmd/**")
+	cmd := exec.Command("git", "ls-files", "-z", "--", "internal/**", "cmd/**")
 	cmd.Dir = root
 	var stdout, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdout
@@ -170,6 +173,50 @@ func shouldScan(relPath string) bool {
 		return false
 	}
 	return strings.HasPrefix(relPath, "internal/") || strings.HasPrefix(relPath, "cmd/")
+}
+
+var (
+	errListingNotTerminated = errors.New("output is not NUL-terminated")
+	errListingEmptyRecord   = errors.New("output has an empty record")
+)
+
+// scannedPathsFromListing parses the NUL-terminated `git ls-files -z` listing
+// and returns the paths shouldScan selects, in git's order. It fails closed on
+// anything that is not exactly a NUL-terminated list of non-empty records. A
+// record that shouldScan rejects is never read or echoed, so it is judged on
+// nothing else. A selected path must be valid UTF-8 and must not contain a
+// control or line-separator character, because selected paths are echoed to
+// CI logs (D-BW-1a).
+//
+// Only the records this gate will scan are judged for UTF-8 and control runes.
+// retiredarch's selectRepoPaths judges every listed record instead; that
+// asymmetry is tracked by stash 31F33EFE.
+func scannedPathsFromListing(out []byte) ([]string, error) {
+	if len(out) == 0 {
+		return nil, nil
+	}
+	if out[len(out)-1] != 0 {
+		return nil, errListingNotTerminated
+	}
+	var selected []string
+	for _, p := range strings.Split(string(out[:len(out)-1]), "\x00") {
+		if p == "" {
+			return nil, errListingEmptyRecord
+		}
+		if !shouldScan(p) {
+			continue // by design: never read or echoed
+		}
+		if !utf8.ValidString(p) {
+			return nil, fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)
+		}
+		for _, r := range p {
+			if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
+				return nil, fmt.Errorf("path %q contains a control or line-separator character", p)
+			}
+		}
+		selected = append(selected, p)
+	}
+	return selected, nil
 }
 
 // nextOccurrence returns the byte offset of the first occurrence of sel in
@@ -832,19 +879,9 @@ func runRepoScan(root string, git GitRunner) Result {
 	if err != nil {
 		return Result{Stderr: errorLine("git ls-files", err), Code: 1}
 	}
-	listing, err := pysem.GitText(out)
+	relPaths, err := scannedPathsFromListing(out)
 	if err != nil {
 		return Result{Stderr: errorLine("git ls-files output", err), Code: 1}
-	}
-
-	var relPaths []string
-	for _, p := range pysem.SplitLines(listing) {
-		if p == "" {
-			continue
-		}
-		if shouldScan(p) {
-			relPaths = append(relPaths, p)
-		}
 	}
 
 	if len(relPaths) == 0 {
