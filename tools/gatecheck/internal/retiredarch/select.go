@@ -26,9 +26,9 @@ import (
 // returns its raw stdout bytes (NUL-terminated records), or an error if the
 // process could not be started or exited non-zero. It is injectable so tests
 // can simulate a missing/failing git without depending on the real repository
-// tree. Its signature matches writepath.GitRunner, but writepath's listing is
-// newline-separated and not -z (deferred entry B83F53BB), so the two outputs
-// differ.
+// tree. retiredarch's runner takes the pathspecs as arguments, while
+// writepath's runner takes only the root and fixes its own pathspecs. Both
+// now emit -z NUL-terminated records (B83F53BB).
 type GitRunner func(root string, pathspecs ...string) ([]byte, error)
 
 // DefaultGitRunner is the production GitRunner: it shells out to
