@@ -906,8 +906,8 @@ before falling back to the operator-halt checkpoint:
    (threshold-kind + count = `consecutive_task_failures` / 3, failure
    summary, last-N action/observation refs, artifact refs, telemetry-
    evidence pointers, resumption checkpoint ref).
-2. **Resolve the escalation route**: `gpt-5.6-sol` /
-   `openai` / `high`, resolving
+2. **Resolve the escalation route**: `claude-sonnet-5.5` /
+   `anthropic` / `medium`, resolving
    this workspace's currently-effective escalation route per the nested
    per-role -> legacy flat (DEPRECATED) -> tier3 precedence defined in
    `escalation-protocol.instructions.md` (F02FD596). This resolution always
@@ -926,8 +926,8 @@ before falling back to the operator-halt checkpoint:
    carried over from this file's frontmatter or a prior session's resolved
    value, and MUST NOT invent a last-known-good fallback. Falls back per
    field to
-   `claude-opus-5` / `` /
-   `` when no override for a field is declared at
+   `claude-sonnet-5.5` / `anthropic` /
+   `xhigh` when no override for a field is declared at
    any tier. This is the config-resolved successor to ad hoc "suggest a
    frontier-tier model" prose — the route is now declared, not improvised.
 3. **Same-route guard**: if the resolved escalation tuple equals this
