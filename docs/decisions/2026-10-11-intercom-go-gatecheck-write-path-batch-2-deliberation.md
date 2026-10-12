@@ -412,3 +412,14 @@ closure procedure is what Ship uses to close S1 and S2.
 
 See D-WB2-9; entries `36BE1F61`, `1B85D0F4`, `A8FB0682`, `284270E8` and `49982A4E` were created after the
 Step 1.9 gate with full P-021 C2 fields and are left active (not consumed by this batch).
+
+## Harvest record (Stage, after plan review ADVISORY)
+
+* **S1 = shipment `044-S`** (feature `054-F`): tasks `054.001-T` (U1), `054.002-T` (U2),
+  `054.003-T` (U3), `054.004-T` (U4), `054.005-T` (U5), `054.006-T` (U5b), `054.007-T` (U6),
+  `054.008-T` (U7), `054.009-T` (U8).
+* **S2 = shipment `045-S`** (feature `055-F`): tasks `055.001-T` (U9), `055.002-T` (U10),
+  `055.003-T` (U11), `055.004-T` (U12), `055.005-T` (U13), `055.006-T` (U14), `055.007-T` (U15).
+* **Edges:** `043-S` blocks `044-S` blocks `045-S` (shipment `dependencies`); task-level
+  predecessor chains inside each feature as in the plan's dependency graph.
+* **Consumed and archived stash:** EEE39D23, DBE25DF5, 858516B9, EDC18D59, 2613D248.
