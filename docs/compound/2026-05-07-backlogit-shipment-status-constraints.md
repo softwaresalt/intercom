@@ -7,6 +7,14 @@ tags: [backlogit, shipment, cli, closure]
 
 # backlogit shipment status constraints
 
+> **Superseded in part (2026-10-12, shipment 043-S / feature 053-F).** The close
+> instructions in this entry (invoking `mode: classify-close-path` and then
+> `mode: safe-close` with a `CLASSIFICATION_BINDING`) are retired. The single
+> close procedure is now `autoharness shipment cascade-close --classify-only`
+> routed by exit code, with the mutating command used for CASCADE only after
+> per-closure operator approval. The backlogit status facts below remain valid.
+> Source decision: `docs/decisions/2026-10-11-intercom-go-closure-tooling-batch-1-deliberation.md` (D-CT-1).
+
 ## Symptom
 
 Running the generic status-mutation command against a shipment artifact

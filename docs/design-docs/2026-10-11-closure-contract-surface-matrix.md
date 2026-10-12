@@ -45,7 +45,7 @@ These paths keep retired tokens by design. They are excluded from the matrix, we
 | `docs/compound/2026-10-08-bound-cascade-close-procedure.md` | L17 (evidence path naming classify-close-path records); L31 (step 3, classify-close-path read-only). | retire in part: add a dated "Superseded in part" note naming D-CT-1; body kept | U14 | none | none |
 | `docs/compound/workflow-issues/cross-artifact-contract-closure-requires-every-surface-2026-09-13.md` | L123 (mention: the plan adds classify-close-path). | keep (mention in passing; the learning behind U1) | U14 | none | none |
 | `docs/compound/workflow-issues/ship-step6-post-merge-branch-ordering-2026-09-19.md` | L27 (mention in the step 6 ordering list). | keep (mention in passing; step 6.0 stays first) | U14 | none | none |
-| `tests/integration/ship_feature_completion_contract_test.go` | L138 (row 4), L229 (21a), L237 (21c), L241 (22a), L268 (24a), L283 (26), L287 (27), L303 (row 30 section constant), L319 (row 31). | adopt: expand (U2), then keep the shared helpers and contract the old needles (U11) | U2 (expand) and U11 (contract) | none | itself; `TestCascadeRoutesThroughSafeClose` (same file, L359) |
+| `tests/integration/ship_feature_completion_contract_test.go` | L138 (row 4), L229 (21a), L237 (21c), L241 (22a), L268 (24a), L283 (26), L287 (27), L303 (row 30 section constant), L319 (row 31). | adopt: expand (U2), then keep the shared helpers and contract the old needles (U11) | U2 (expand) and U11 (contract) | none | itself; `TestCascadeRoutesThroughSafeClose` (replaced by TestCascadeRoutesThroughCommand in 053.011-T) (same file, L359) |
 | `tests/integration/shipment_close_path_behavior_test.go` | L12, L16, L33, L117, L212, L224, L508, L517, L532 (behavioral replica of the retired contract). | retire, after the U12 smoke test exists | U13 | none | none (compile gate in U13) |
 | `tests/integration/shipment_close_path_harness_test.go` | L24, L31, L34, L87, L88, L122, L364, L480, L485, L658 (replica classify-close-path and `computeBinding`). Not in scope-query output: L706-715 read the skill to compute a digest (no fixed value is asserted). | retire, with the behavior test | U13 | none | none (self) |
 
@@ -69,7 +69,7 @@ These overlays are local to this repository. The plan requires them to stay byte
 | Surface and anchor | Lines | Disposition | Owner | Upstream counterpart | Pinning test |
 |---|---|---|---|---|---|
 | (1) Ship Step 6.1 a1 "Covering-feature completion gate" (021-S) in `.github/agents/_ship.agent.md` | 777 (heading); 790, 795, 797, 799, 803 (S0, S1, S2, ALREADY_DONE, HALT) | RETAIN: local overlay | U5 (must not change) | none (no a1 text in `templates/agents/_ship.agent.md.tmpl`) | contract rows 3, 12, 13, 16a, 16b |
-| (2) P-010 Ship grant wording in `.github/policies/workflow-policies.md`, with the same grant in the Ship Role Boundary | Policy L245 (inside P-010 at L211); Ship L38 (Role Boundary Backlog row) | RETAIN: local overlay | U6 (policy) and U5 (Role Boundary), must not change | none (grant absent from both templates) | contract rows 1, 2a, 2b, 2c, 2d, 20a, 28 |
+| (2) P-010 Ship grant wording in `.github/policies/workflow-policies.md`, with the same grant in the Ship Role Boundary | Policy L245 (inside P-010 at L211); Ship L38 (Role Boundary Backlog row) | RETAIN: local overlay | U6 (policy) and U5 (Role Boundary), must not change (Amended in 053.006-T: the grant now names the approved mutating cascade-close run and forbids direct backlogit shipment ship; checkpoint 1 approval is recorded in the 043-S PR description when the PR is opened. The (a1) grant sentence is unchanged.) | none (grant absent from both templates) | contract rows 1, 2a, 2b, 2c, 2d, 20a, 28 |
 | (3) Intake reconciliation relocation (021-S) in Ship Step 0.5 item 3b | 202, 205, 206, 207, 210 (Step 0.5 heading at L153); claim at L269 | RETAIN: local overlay (pre-claim placement) | U5 (must not change) | `templates/agents/_ship.agent.md.tmpl` item 6 (L276) sits after the claim (L274-275); the local pre-claim placement is a deliberate divergence | contract rows 14, 17, 18, 29 |
 | Ship Step 6.0 "Post-Merge Branch Protocol" with the pre-self-close context reload | 729 (heading); 761-764 (reload clause) | RETAIN | U5 (must not change) | `templates/agents/_ship.agent.md.tmpl` L758 | contract rows 5, 6, 11 |
 | a0 "TOPOLOGY_GATE: lifecycle" in Ship Step 6.1 | 771-775 | RETAIN | U5 (must not change) | `templates/agents/_ship.agent.md.tmpl` L799 | contract row 3 (ordering anchor) |
@@ -116,7 +116,7 @@ Source: `tests/integration/ship_feature_completion_contract_test.go`. The map re
 | 22b | presence | Skill L367 (no archive, no status transition, no record mutation) | U4 | retired |
 | 22c | presence | Skill L392 (fail-closed BLOCK wording) | U4 | retired |
 | 23a | presence (two) | Skill L595 (REFUSED; the bound verdict alone selects the branch) | U4 | retired |
-| 23b | absence plus presence | Skill L602 ("bound verdict `SAFE_CLOSE` only" present); default-selection wording absent today | U4 | retired |
+| 23b | absence plus presence | Skill L602 ("bound verdict `SAFE_CLOSE` only" present); default-selection wording absent today (superseded in review cycle 1: the default-to-SAFE_CLOSE bullet was removed from the skill because it routed exit 2 and exit 4 into the safe-close mutations; row 23b now asserts it is absent) | U4 | retired |
 | 23c | presence (two) | Skill L596 (CASCADE_UNBOUND; zero archive, zero status transition) | U4 | retired |
 | 23d | presence | Skill L595 (CLASSIFICATION_INVALID) | U4 | retired |
 | 24a | presence (two) | Skill L595 (CLASSIFICATION_DRIFT); L255 ("strictly READ-ONLY") | U4 | retired; see N8 |
@@ -259,6 +259,16 @@ Help text checked: `autoharness --help`. Listed commands: home, version, verify-
 * `tests/integration/shipment_close_path_behavior_test.go` and `tests/integration/shipment_close_path_harness_test.go`: replica tests for the retired contract. DEFERRED: unit 053.013-T (per-operation approval required under Principle VII; dark mode does not waive it).
 * This matrix document: permitted.
 
+### Underscore-form sweep (review cycle 1)
+
+Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECONCILE_FAIL_CLASSIFICATION|RECONCILE_FAIL_CASCADE_UNBOUND|VERDICT_REASON" -- .github scripts AGENTS.md README.md tests`
+
+* `.github`: 0 hits in any file. There is no live `.github` hit to classify.
+* `scripts`, `AGENTS.md`, `README.md`: 0 hits each.
+* `tests/integration/ship_feature_completion_contract_test.go`: 9 lines (L23 comment; L314, L331, L337, L347, L352, L358, L411, L422). All are `assertAbsent` negative-test needles or a comment naming them. Permitted.
+* `tests/integration/shipment_close_path_behavior_test.go`: 3 lines (L71, L499, L502). Failure messages in a replica test of the retired contract. Test code, not an instruction; removal deferred to 053.013-T.
+* `tests/integration/shipment_close_path_harness_test.go`: 9 lines (L47, L58, L70, L71, L72, L73, L86, L487, L489). Constants and comments in a replica test of the retired contract. Test code, not an instruction; removal deferred to 053.013-T.
+
 ### Go verification
 
 * `go vet ./...`: clean (exit 0). `gofmt -l .`: no output.
@@ -283,3 +293,10 @@ Help text checked: `autoharness --help`. Listed commands: home, version, verify-
 5. Dangling anchors adopted from upstream (for example 'SUPERSESSION NOTE', 'D6', 'pre-mode step 7', and P-015 item 7 referring to 'precondition 1', which no longer exists in the local P-015 list). Recorded for the review gate.
 6. P-007 restore sentence in the Ship agent safe-close pointer ('restore .backlogit/queue/ + .backlogit/archive/' on HALT - cascade detected) is retained from HEAD; upstream adds a G1 approval requirement. Pre-existing; out of 043-S scope; recorded for the review gate.
 7. Stash C5E50EFD (start-script hermeticity) and stash 9F824B64 remain as Stage-owned items.
+
+### Review cycle 1 (pre-PR adversarial and multi-persona review)
+
+* Consensus P0/P1 findings addressed: the safe-close direct `backlogit_ship_shipment` call is removed; the default-to-SAFE_CLOSE bullet is removed (exit 2 and exit 4 never route to the safe-close mutations); the intercom auto-check approval wording is replaced by explicit operator approval; the prose classification in safe-close is replaced by an entry gate; duplicate `allowed_ids` / `required_ids` definitions are reduced to the flat set; Linked-Deliberation Disposition is required before post-mode and before the backlog commit; `--replace-pre-close` and the `--sha` / argv rules are stated for the Ship agent; the P-015 statement and postcondition are made conditional on the SAFE_CLOSE path.
+* Contract tests strengthened: row 23b asserts absence; rows 22b and 24a use a classify-only needle; skill-scoped absence checks are added to `TestCascadeRoutesThroughCommand`; dead either-form helpers are removed; row 29 anchors are asserted unique.
+* Deferred to Stage as out-of-scope discoveries (P-021 C2 capture): the pre-existing items listed under the next bullet.
+* Residual findings accepted with rationale: the Stage model text in the escalation steps (operator decision R1); the frontmatter drift in the Ship agent (`model_family` and `reasoning_effort` differ from the `config.yaml` ship route; re-render by `autoharness install` or `tune`, not by hand); the P-018 dark-mode wording in Ship Steps 7b and 14 (pre-existing, outside 043-S); the intercom and scripts references in agent files (pre-existing); the learned-closure seed instruction with `applyTo: "**"` (pre-existing; operator promotion decision); the footer template name (pre-existing). Stash IDs for the deferred and residual items above will be recorded when captured; none are recorded yet.
