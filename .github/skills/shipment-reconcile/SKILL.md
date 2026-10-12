@@ -342,9 +342,11 @@ mutated or repaired by this mode.
    If any are absent, flag them in the report.
 
 3. **Deleted-file guard** (known `backlogit_ship_shipment` quirk — see P-007):
-   Run `git status -- ".backlogit/archive/"` and inspect for deletions.
-   If any archive files are reported as deleted, recommend
-   `git restore .backlogit/archive/` before the commit step.
+   Run `git status --short -- ".backlogit/archive/"` and inspect for deletions.
+   If any archive files are reported as deleted (` D`), restore only the
+   individual paths that `git status --short -- .backlogit/archive/` lists as
+   deleted, one `git restore -- <path>` per listed path (never a whole
+   directory), before the commit step.
 
 4. **Produce post-mode report** per the same schema.
 
@@ -450,7 +452,8 @@ item IDs, one artifact at a time, verifying after each archival that the parent
 feature and any unshipped sibling tasks survive. Invoked between pre-mode
 (`PROCEED`) and post-mode, under the lock pre-mode already holds. If invoked
 standalone, acquire the lock per pre-mode step 1 first and release it on
-completion.
+completion. Standalone invocation HALTs unless the evidence record shows
+`close_path_selection: SAFE_CLOSE`.
 
 0. **Load manifest, snapshot pre-close state, and confirm the recorded close path
    (the path is selected by the `--classify-only` route, never re-selected here)**:
@@ -461,8 +464,9 @@ completion.
       below — because the classification in (c) and the cascade
       pre/post-comparison in the Cascade Close Sub-Procedure both require it,
       and the cascade path skips steps 1–10 entirely.
-   b. **Snapshot pre-close `parent_id` and declared `status` for every task
-      item** in the manifest by reading each task's current frontmatter from
+   b. **Snapshot pre-close `parent_id` and declared `status` for every explicit
+      manifest item regardless of `artifact_type`**, by reading each item's current
+      frontmatter from
       whichever of `.backlogit/queue/` or
       `.backlogit/archive/` currently contains it — a manifest
       task item may already be
@@ -497,38 +501,13 @@ completion.
    c. **Entry gate (no classification in this mode)**: entry is only after
       `cascade-close --classify-only` exited 3 and recorded
       `selected_close_path: SAFE_CLOSE`. Do not re-classify to CASCADE here. If
-      any check in this mode would select CASCADE, HALT with operator review and
-      do not call the cascade operation. The P-015 classification that the
-      `--classify-only` command implements is specified below for reference
-      only; safe-close never evaluates it to choose a path. Over the manifest
-      `items` loaded in (a), the cascade close path is permitted
-      **only** when, for **every** feature member of the manifest: it is a
-      root (no `parent_id`); it is fully covered (every one of its
-      **descendants — at every depth, not only direct children** —
-      enumerated by walking the full `parent_id` graph live from
-      `.backlogit/queue/` + `.backlogit/archive/`
-      starting at the feature, is also a manifest member); and, if it
-      enumerates to zero descendants, that childlessness is **positively
-      verified** against the live workspace (never inferred from an
-      incomplete or failed enumeration) and the feature is additionally
-      terminal (no manifest member declares it as parent). **A
-      direct-children-only check is insufficient** (155-S, PR #407 review,
-      thread PRRT_kwDORzpWpM6b2MJv): Backlogit's own `releaseScopeItemIDs`
-      recursively adds every descendant of each manifest item — not just
-      the feature's immediate children — before `collectArchiveCandidateIDs`
-      archives terminal descendants, so a manifest such as `[feature, task]`
-      where that task has an out-of-manifest subtask (of any
-      `artifact_type`, not only `task`) would otherwise wrongly qualify for
-      `CASCADE`, and the destructive cascade would archive that subtask
-      before the Cascade Close Sub-Procedure's step 3 gate ever sees it —
-      halting only **after** the mutation. The manifest must contain nothing
-      beyond the qualifying root feature(s) and their descendants at every
-      depth. If **any** feature member fails **any** precondition, the
-      **whole manifest** falls back to safe-close (steps 1–10 below) —
-      qualification is never per-member, and no feature ID is ever
-      special-cased.
+      the evidence record's `selected_close_path` is not `SAFE_CLOSE`, HALT with
+      operator review and do not call the cascade operation. Safe-close never
+      evaluates the P-015 classification to choose a path. CASCADE is permitted
+      only when the P-015 INV-6 engine-inertness containment holds and the command
+      returned exit 0.
 
-      **When this classification identifies qualifying feature members**
+      **When the P-015 INV-6 classification identifies qualifying feature members**
       (i.e. selects `CASCADE`): extend the same pre-close declared-status
       snapshot from (b) — still **before** the cascade invocation, never
       after — with each qualifying feature member's own declared `status`
@@ -538,7 +517,7 @@ completion.
       feature statuses added here) is the single pre-close declared-status
       snapshot the Cascade Close Sub-Procedure's step 3 two-set gate reads
       from; "qualifying feature members" for that gate means exactly the set
-      this classification determines here — never a separate
+      the P-015 INV-6 classification determines here — never a separate
       re-derivation, and independent of *how* the engine happens to
       transition any given member.
 
@@ -825,19 +804,9 @@ above.
 3. **Verify `archived_ids` against the two-set `allowed_ids` / `required_ids`
    gate** (replaces exact full-set equality — see the SUPERSESSION NOTE
    above and the P-015 policy's own supersession note for why):
-   * **Compute `allowed_ids`** = `closure_scope(S)`, exactly as defined by the flat
-     gate in 'Cascade Close Postconditions: Flat `allowed_ids` / `required_ids` Sets'
-     below: every explicit manifest item ID regardless of `artifact_type` (qualifying
-     feature members included) plus the shipment record itself. Linked deliberations
-     are never added here; INV-12 (Linked-Deliberation Disposition) is the only
-     archiver of them.
-   * **Compute `required_ids`** = the shipment record and every qualifying
-     feature member (**both unconditionally** — never omitted, and never
-     conditioned on either artifact's own pre-close declared status) +
-     every other manifest item that was **not** truly `status: archived` in the
-     pre-close declared-status snapshot (Step 0(b) for manifest items, extended by
-     Step 0(c) for qualifying feature members — all captured **before** this step 1
-     invocation, never a freshly-read or assumed post-close value).
+   * Apply the flat `allowed_ids` / `required_ids` postcondition sets defined in the
+     section "Cascade Close Postconditions: Flat" (single definition; do not restate
+     them here).
    * **Two separately-labelled, independently-failing conditions.** Neither
      may be evaluated as a precondition of the other, and the two MUST NOT
      be merged into a single combined test (conflating two questions into
@@ -943,11 +912,7 @@ above.
      0(b) snapshots every explicit manifest member regardless of
      `artifact_type`, no Step 0(c) linked-deliberation extension participates
      in this set. A disposition-set deliberation that is not an explicit
-     manifest member is never a `required_ids` member. Pre-Mode's
-     Member-Class Status Contract agrees with this by construction: it
-     accepts a qualifying feature member's pre-close `active`, `done`, or
-     `archived` status instead of halting on it, so the status this gate
-     disregards is never one Pre-Mode stopped on.
+     manifest member is never a `required_ids` member.
    * **Two separately-labelled, independently-failing conditions.** Neither
      may be evaluated as a precondition of the other, and the two MUST NOT
      be merged into a single combined test (conflating two questions into
@@ -1565,13 +1530,13 @@ If pre-mode cannot acquire the lock because another process holds it:
 * `mode: pre` with `expected_status: queued` (or `active` for already-claimed shipments) runs at Ship Step 0.5 intake
 * `mode: safe-close` runs **in place of** the cascade `backlogit_ship_shipment` call and archives only the manifest item IDs (one artifact at a time) plus the shipment record itself — **except** when the `--classify-only` route exits 0 (`CASCADE`), in which case only the mutating `autoharness shipment cascade-close` command runs, after per-closure operator approval, and safe-close steps 1–10 are skipped entirely
 * Close-path selection is made **only** from the machine-checkable `--classify-only` result (`selected_close_path`, Step 0(c)), never inferred from prose or manifest shape alone; any classifier error, ambiguity, or unresolved precondition HALTs under the Step 0(c) routing table, and only exit 3 routes to safe-close
-* Step 0(c)'s "fully covered" check walks the qualifying feature's **full descendant tree, at every depth** (via a full `parent_id` graph, not a single-level scan of direct children only) — a manifest such as `[feature, task]` where that task has an out-of-manifest subtask must fall back to safe-close, never wrongly qualify for `CASCADE` (155-S, PR #407 review, thread PRRT_kwDORzpWpM6b2MJv)
-* The Cascade Close Sub-Procedure independently verifies `returned_ids` is empty, `archived_ids` against the two-set `allowed_ids` / `required_ids` gate (step 3: `allowed_ids` = `closure_scope(S)` (every explicit manifest item regardless of `artifact_type`) + the shipment record, with linked deliberations excluded and handled only by INV-12; `required_ids` = the shipment record and every qualifying feature member, both unconditionally, plus every other manifest item NOT truly `status: archived` in the Step 0(b)/(c) pre-close declared-status snapshot; `archived_ids - allowed_ids` non-empty halts with `HALT — cascade archived unexpected artifact {id}`, `required_ids - archived_ids` non-empty halts with `HALT — cascade did not archive required artifact {id}`, evaluated as two independent, never-merged conditions — a truly pre-archived **non-shipment, non-feature** allowed member (i.e. a manifest task item) has no transition to report and is correctly, expectedly absent from `archived_ids`, never a mismatch, but this tolerance never extends to the shipment record itself, which remains unconditionally required regardless of its own pre-close declared status, nor does it extend to a qualifying feature member itself, which is likewise unconditionally required regardless of its own pre-close declared status — since Backlogit's own `ShipShipment` forces every explicit qualifying feature member through `status: done` before archive-candidate collection ever runs, so it is never still `archived` by that point either), and no `parent_id` was cleared — a mismatch on any of these halts fail-closed with a P-005 violation even though the cascade path was itself permitted
+* The P-015 INV-6 "fully covered" check (evaluated by the Step 0(c) `--classify-only` run) walks the qualifying feature's **full descendant tree, at every depth** (via a full `parent_id` graph, not a single-level scan of direct children only) — a manifest such as `[feature, task]` where that task has an out-of-manifest subtask must select `SAFE_CLOSE` (exit 3), never wrongly qualify for `CASCADE` (155-S, PR #407 review, thread PRRT_kwDORzpWpM6b2MJv)
+* The Cascade Close Sub-Procedure independently verifies `returned_ids` is empty, `archived_ids` against the two-set `allowed_ids` / `required_ids` gate (step 3 applies the flat `allowed_ids` / `required_ids` sets defined in "Cascade Close Postconditions: Flat"; `archived_ids - allowed_ids` non-empty halts with `HALT — cascade archived unexpected artifact {id}`, `required_ids - archived_ids` non-empty halts with `HALT — cascade did not archive required artifact {id}`, evaluated as two independent, never-merged conditions — a truly pre-archived **non-shipment, non-feature** allowed member (i.e. a manifest task item) has no transition to report and is correctly, expectedly absent from `archived_ids`, never a mismatch, but this tolerance never extends to the shipment record itself, which remains unconditionally required regardless of its own pre-close declared status, nor does it extend to a qualifying feature member itself, which is likewise unconditionally required regardless of its own pre-close declared status — since Backlogit's own `ShipShipment` forces every explicit qualifying feature member through `status: done` before archive-candidate collection ever runs, so it is never still `archived` by that point either), and no `parent_id` was cleared — a mismatch on any of these halts fail-closed with a P-005 violation even though the cascade path was itself permitted
 * Safe-close computes the protected set (parent feature + unshipped siblings) from expected IDs and proves it is fully present in queue at a baseline gate before archiving anything
 * Safe-close verifies the protected set survives after every single-item archival (verify-after-each invariant), with no pre-archived exemption for protected-set members
 * Safe-close moves the shipment record to live `shipped`, verifies it, explicitly archives only that record, and verifies `archived_status: shipped` before closure completes
 * Safe-close archives the shipment record as its own single artifact and never via the cascade op
-* Safe-close reverts on cascade detection (`git restore`/`git revert`) and halts with a P-005 violation; it never auto-prunes the manifest
+* Safe-close reverts on cascade detection (`git restore -- <path>` per touched path, or `git revert`) and halts with a P-005 violation; it never auto-prunes the manifest
 * `mode: post` runs after the safe-close archive sequence in Ship Step 6
 * All five item classifications are represented in the schema
 * Pre-mode adds a shipment-record-status classification (`record-consistent` /
