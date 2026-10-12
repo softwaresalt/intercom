@@ -78,7 +78,7 @@ conditions:
 
 Shipment 042-S (feature 052-F, Gatecheck Batch B1 write-path input hardening) merged as PR #123 at 591f37e2ba877d81b1304d31905369e79096657f on 2026-10-11T02:15:09Z. The change hardens the merge-blocking write-path gate in three ways: it selects tracked Go files with NUL-delimited `git ls-files -z` output and fails closed on malformed or unscannable listings (B83F53BB, part 1); it removes ambient `GIT_*` variables and pins global and system git configuration for the `git ls-files` child (B83F53BB, part 2); and it refuses a fixture reached through a symlink, junction or linked ancestor in the self-test (05E12A6F). A comment-only correction in the retiredarch listing comment was included (U5).
 
-Releasability: `READY_WITH_CONDITIONS` for the closure record. The operator dispositioned every condition on 2026-10-11T21:47 -07:00 (section 'Operator disposition (2026-10-11)'), including the P-010 violation, so the closure is no longer blocked. The shipped code change itself carries no open code condition; each frontmatter condition is dispositioned and carries its evidence, and the disclosures are retained.
+Releasability: `READY_WITH_CONDITIONS` for the closure record. The operator dispositioned the conditions that required an operator decision on 2026-10-11T21:47 -07:00 (section 'Operator disposition (2026-10-11)'), including the P-010 violation, so the closure is no longer blocked. Five conditions were already satisfied from technical evidence and are not operator decisions; the section lists them. The shipped code change itself carries no open code condition; each frontmatter condition is satisfied and carries its evidence, and the disclosures are retained.
 
 ## Merge and gate record
 
@@ -172,6 +172,8 @@ The operator's reply of 2026-10-11T21:47 -07:00, verbatim `A, accept, accept`, a
 3. **Flaky start-script tests (`TestInvokeStartScriptMainPropagatesNonZeroExitCode`, `TestLocationRestoredEvenOnNonZeroCopilotExit`): accepted with root-cause analysis**, summarized in the condition `timing-sensitive-start-script-test`. The fix is captured as stash `C5E50EFD` and is not implemented in this closure.
 4. **Principle IV scratch writes: done by the operator.** The operator deleted Stage's `%TEMP%` scratch files `head-stash.jsonl` and `stage-042s-commitmsg.txt`.
 5. **Post-close writer record: no replay (option A).** No `post_close` writer record is produced for 042-S. The writer refuses after the fact, and a hand-built record would be fabricated. Future closures use the writer through stash `A83C398E`.
+
+Conditions satisfied from technical evidence, not operator decisions: `copilot-request-via-rest`, `covering-feature-archived-on-done-move`, `closure-mutations-before-closure-branch`, `intercom-unavailable` and `mcp-tools-unavailable`. They were satisfied when this closure was written, and the operator reply does not change them.
 
 Closure PR approval basis: DARK_MODE_ACTIVE scope 042-S, with `merge_approval_pre_authorized` true for closure PR #124 only, after its gates pass. `admin_fallback_pre_authorized` is false (no `--admin`, no bypass of branch protection). The merge runs only after the section 1.9 gate, the P-018 gate on the final HEAD, and required CI all pass on that HEAD.
 

@@ -12,7 +12,7 @@ Scope: shipment 042-S (feature 052-F), closure PR #124, dark factory scope 042-S
 
 * No cascade, close, `backlogit shipment ship`, move-to-shipped or archive primitive was run during the resume.
 * One stash capture: `C5E50EFD` (P-021 C2, capture-only, medium task) for the start-script test hermeticity and `WaitDelay` root cause. Duplicate scan was clean for token-bearing entries. Related, not reuse candidates: `26EDD633` and `96B308D1`.
-* Closure artifact: status `ready_with_conditions`, `closure_pr: 124`, closure and releasability `READY_WITH_CONDITIONS`, compaction `degraded` (P-020 non-blocking). All 11 conditions are `satisfied: true` with non-empty evidence, and each operator disposition is recorded in the artifact.
+* Closure artifact: status `ready_with_conditions`, `closure_pr: 124`, closure and releasability `READY_WITH_CONDITIONS`, compaction `degraded` (P-020 non-blocking). All 11 conditions are `satisfied: true` with non-empty evidence. The operator-decision conditions are dispositioned in the artifact, and five conditions are satisfied from technical evidence and labelled as such.
 * Copilot review-body findings with no thread (closure PR number placeholder; memory-only versus `target: all` wording) were fixed in the docs commit.
 
 ## Gates run locally
