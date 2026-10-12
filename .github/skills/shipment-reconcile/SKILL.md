@@ -507,20 +507,6 @@ completion. Standalone invocation HALTs unless the evidence record shows
       only when the P-015 INV-6 engine-inertness containment holds and the command
       returned exit 0.
 
-      **When the P-015 INV-6 classification identifies qualifying feature members**
-      (i.e. selects `CASCADE`): extend the same pre-close declared-status
-      snapshot from (b) — still **before** the cascade invocation, never
-      after — with each qualifying feature member's own declared `status`
-      field, read the identical way (frontmatter's own `status` field only,
-      never inferred from `queue/`/`archive/` location). The resulting
-      combined map (manifest task statuses captured in (b), plus qualifying
-      feature statuses added here) is the single pre-close declared-status
-      snapshot the Cascade Close Sub-Procedure's step 3 two-set gate reads
-      from; "qualifying feature members" for that gate means exactly the set
-      the P-015 INV-6 classification determines here — never a separate
-      re-derivation, and independent of *how* the engine happens to
-      transition any given member.
-
 1. **Load manifest** via `backlogit_get_shipment(shipment_id)`. Extract the
    `items` list. These IDs are the **only** artifacts safe-close may move or
    archive.
@@ -631,10 +617,12 @@ completion. Standalone invocation HALTs unless the evidence record shows
 ### Cascade Close Sub-Procedure (P-015 `CASCADE` exception ONLY)
 
 Runs **only** when the `--classify-only` route in Step 0(c) Command Routing (above)
-exits 0 (`CASCADE` selected), never from Safe-Close Mode Step 0, and
-reuses the manifest and pre-close `parent_id`/declared-`status` snapshot
-Step 0 already captured in (a)/(b)/(c) — this sub-procedure never reloads
-the manifest or attempts to reconstruct pre-close state after the fact.
+exits 0 (`CASCADE` selected), never from Safe-Close Mode Step 0. The cascade
+baseline is the pre-close record written by `autoharness shipment cascade-close --classify-only`
+(the `pre_close` section of the evidence record); the mutating
+command re-verifies that baseline itself. Safe-close Step 0(b) and 0(c) do not
+apply to the CASCADE path. This sub-procedure never reloads the manifest or
+attempts to reconstruct pre-close state after the fact.
 Replaces steps 1–10 above entirely for this shipment's closure; there is no
 partial mixing of the two paths.
 
@@ -711,7 +699,7 @@ record's own declared `status` field. A record residing in
 `.backlogit/archive/` while declaring `status: done` is **not**
 truly archived; only a declared `status: archived` is truly archived for
 step 3's two-set gate below. The sole authority for "truly archived" is the
-declared-status snapshot Step 0(b)/(c) already captured before this
+declared-status pre-close snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`) already captured before this
 sub-procedure runs.
 
 A `pre-archived` (by location) manifest member is **expected and tolerated
@@ -727,9 +715,9 @@ precondition wording is unchanged.
 This tolerance applies to **manifest members only** — it does not
 restate, weaken, or cross-apply to the protected set, which has no
 pre-archived exemption (see Safe-Close Mode steps 3/5 above). A manifest
-that qualifies for `CASCADE` has no protected set by construction (full
-coverage is itself a Step 0(c) precondition), so no protected set arises
-on this path.
+that qualifies for `CASCADE` has no protected set by construction (the
+P-015 INV-6 engine-inertness predicate governs out-of-manifest descendants), so no
+protected set arises on this path.
 
 **`archived_ids` is a transition log, not a manifest echo.** The cascade
 operation invoked in step 1 below reports, in `archived_ids`, only the
@@ -747,8 +735,8 @@ regardless of their own pre-close declared status, so neither can ever be
 "correctly absent" the way a task item can — see
 step 3 for the full statement of that rule. The live fail-closed guard
 over this result is the two-set `allowed_ids` / `required_ids` gate
-specified in step 3 below, evaluated **against the Step 0(b)/(c) pre-close
-declared-status snapshot** — never against location, and never against a
+specified in step 3 below, evaluated **against the pre-close
+declared-status snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`)** — never against location, and never against a
 post-close re-read.
 
    **SUPERSESSION NOTE (155-S, 2026-08-24).** This paragraph previously
@@ -865,7 +853,7 @@ above.
      this tolerance.
 4. **Verify no `parent_id` was cleared**: re-read every archived task's
    frontmatter and confirm `parent_id` is unchanged from the pre-close
-   snapshot captured in Step 0(b) — never a freshly-read or assumed value,
+   snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`) — never a freshly-read or assumed value,
    since the field being verified is the very one a cascade could have just
    cleared. Any cleared or altered `parent_id` is a
    cascade-detection failure equivalent to step 6 of safe-close: halt with
@@ -874,17 +862,17 @@ above.
 5. **Produce cascade-close report** recording the classifier's verdict,
    qualifying feature IDs
    (all Step 0(c)), the pre-close declared-status
-   snapshot (Step 0(b)/(c)), the `backlogit_ship_shipment` result
+   snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`), the `backlogit_ship_shipment` result
    (`shipment_status`, `archived_ids`, `returned_ids`, `commit_sha`),
    `allowed_ids`, `required_ids`, and both set differences
    (`archived_ids - allowed_ids` and `required_ids - archived_ids`) — so a
    vacuous `required_ids` is visible in the report rather than silent — and
-   the parent_id-preservation verification outcome (against the Step 0(b)
-   snapshot).
+   the parent_id-preservation verification outcome (against the pre-close
+   snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`)).
 6. **Gate decision**: `returned_ids` empty, `archived_ids - allowed_ids`
    empty (no unexpected artifact archived), `required_ids - archived_ids`
    empty (no required artifact left unarchived), and every `parent_id`
-   preserved (against the Step 0(b) snapshot) →
+   preserved (against the pre-close snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`)) →
    `recommendation: CLOSED`. Run the Linked-Deliberation Disposition
    step; only `DISPOSITION_COMPLETE` proceeds to post-mode. Any verification failure above → the corresponding `HALT`; do
    not proceed to post-mode or any commit step.
@@ -907,9 +895,7 @@ above.
    * **Compute `required_ids`** = the shipment record and every qualifying
      feature member (**both unconditionally** — never omitted, and never
      conditioned on either artifact's own pre-close declared status) + every
-     other manifest item that was **not** truly `status: archived` in the
-     Step 0(b) all-member pre-close declared-status snapshot. Because Step
-     0(b) snapshots every explicit manifest member regardless of
+     other manifest item that was **not** truly `status: archived` in the all-member pre-close declared-status snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`). Because the pre-close snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`) covers every explicit manifest member regardless of
      `artifact_type`, no Step 0(c) linked-deliberation extension participates
      in this set. A disposition-set deliberation that is not an explicit
      manifest member is never a `required_ids` member.
@@ -931,8 +917,8 @@ above.
    * An `allowed_ids` **non-shipment, non-feature** member (any explicit
      manifest item that is neither the shipment record nor a qualifying
      feature member, including an explicit-member deliberation under H10)
-     that was already truly `status: archived` in the Step 0(b) all-member
-     pre-close snapshot MAY be included in or omitted from `archived_ids` by
+     that was already truly `status: archived` in the all-member
+     pre-close snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`) MAY be included in or omitted from `archived_ids` by
      the engine — neither outcome fails either check (it is outside
      `required_ids` by construction, and if present in `archived_ids` it is
      still inside `allowed_ids`). **This tolerance never extends to the
