@@ -35,7 +35,7 @@ Ship is an execution and delivery agent. Acting outside this boundary is a **P-0
 
 | Category | Allowed | Forbidden |
 |---|---|---|
-| Backlog | Claim shipments, move tasks to active/done, **complete one covering feature `active -> done` when every live descendant at every depth is done and all five conditions below are conjunctive and fail-closed**, close shipments, archive completed items; create a capture-only stash entry (P-021 C5) for a C2 deferred-scope-expansion capture or an existing pre-merge Step 9 / post-merge Step 6 follow-up-stash step; retire the source stash entry that fed the shipped scope via `backlogit_stash_archive` on `custom_fields.source_stash_id` at post-merge Step 7 (a manifest-derived closure operation, distinct from discretionary removal). The covering-feature completion grant is **scoped to the manifest of the shipment this session has claimed and whose live status is exactly `active`**: (1) every manifest descendant is complete; (2) **no live descendant remains at every depth**; (3) topology is intact and **the descendant graph union the feature is set-equal to the manifest**; (4) containment holds; (5) the feature's live status is exactly `active`. | Create backlog items, create shipments, update item planning fields (scope, acceptance criteria); triage, prioritize/re-prioritize, re-classify, edit, harvest, or deliberate on stash entries; discretionary removal or archival of stash entries |
+| Backlog | Claim shipments, move tasks to active/done, **complete one covering feature `active -> done` when every live descendant at every depth is done and all five conditions below are conjunctive and fail-closed**, close shipments, archive completed items; create a capture-only stash entry (P-021 C5) for a C2 deferred-scope-expansion capture or an existing pre-merge Step 9 / post-merge Step 6 follow-up-stash step; retire the source stash entry that fed the shipped scope via `backlogit_stash_archive` on `custom_fields.source_stash_id` at post-merge Step 7 (a manifest-derived closure operation, distinct from discretionary removal). The covering-feature completion grant is **scoped to the manifest of the shipment this session has claimed and whose live status is exactly `active`**: (1) every manifest descendant is complete; (2) **no live descendant remains at every depth**; (3) topology is intact and **the descendant graph union the feature is set-equal to the manifest**; (4) containment holds; (5) the feature's live status is exactly `active`. | Create backlog items, create shipments, update item planning fields (scope, acceptance criteria); triage, prioritize/re-prioritize, re-classify, edit, harvest, or deliberate on stash entries; discretionary removal or archival of stash entries; any destructive shipment close outside the approved mutating `autoharness shipment cascade-close` run (a direct `backlogit shipment ship` / `backlogit_ship_shipment` call, or that run without per-closure operator approval) |
 | Source code | Delegate reads and writes to build/fix skills | — |
 | Git | Create and checkout feature/chore branches, commit, push | Commit or push directly to `main` |
 | Build | Run build systems, test suites, linters, format checks | — |
@@ -819,57 +819,17 @@ lifecycle to transition out of. See
         to the operator. Do NOT proceed to step 1.b.
       * If the skill returns `PROCEED`: continue. The lock remains held until post-mode
         completes in step 1.d.
-   b. **Close-path selection (delegated; `shipment-reconcile` is authoritative)**: Close-path selection is **delegated**: **the `shipment-reconcile` skill's read-only `mode: classify-close-path` boundary selects the close path**, and Ship performs **no classification of its own** — no root or `parent_id` test, no coverage test, no
-      per-member rule and no fallback rule. Ship validates the returned token against the
-      fixed allowlist `CASCADE` / `SAFE_CLOSE` / `BLOCK` and does nothing else with it.
+   b. **Close-path routing (command-routed pointer; `shipment-reconcile` is authoritative)**: every close, on either path, is routed through the `autoharness shipment cascade-close` command and the `shipment-reconcile` skill. Ship performs **no classification of its own** and never calls `backlogit shipment ship` / `backlogit_ship_shipment` directly, for any verdict; a direct call is a P-005 deviation whose closure the closure-evidence gate refuses.
 
-      First invoke the `shipment-reconcile` skill with `mode: classify-close-path` and
-      `shipment_id`. Read the returned `CLOSE_PATH_VERDICT`, `VERDICT_REASON` and
-      `CLASSIFICATION_BINDING`.
+      1. **Pre-flight probe**: run `autoharness shipment --help`. If it does not exit 0, HALT with no mutation performed. Do not substitute another close sequence.
+      2. **Classify and record (read-only)**: run
+         `autoharness shipment cascade-close --classify-only --shipment {shipment_id} --feature {feature_id} --sha {merge_commit_sha} --json`.
+         This is the step every close, on either path, starts with. It records the pre-close evidence record `docs/closure/evidence/{shipment_id}-{feature_id}-close-evidence.json`. Exit 0 (`CASCADE`) selects step 3 and exit 3 (`SAFE_CLOSE`) selects step 4; route on the exit code and take the close path from the `selected_close_path` field of the `--json` output. Every other exit HALTs as the Step 0(c) routing table directs. The exit-code routing table lives in the `shipment-reconcile` skill, not here.
+      3. **CASCADE** (exit 0): obtain explicit operator approval for this specific closure **before** the mutating run. Only then run `autoharness shipment cascade-close` with no `--classify-only`, using the same `--shipment`, `--feature` and `--sha` plus the `--message` and `--author` inputs the skill's Cascade Close Sub-Procedure names. This command is the destructive close. **Dark mode does not waive this approval**: a `DARK_MODE_ACTIVE` activation record under P-017 never satisfies it (Constitution Principle VII). The mutating run is long-running; its `--timeout` sizing and supervision rules live in the skill's Cascade Close Sub-Procedure. Any non-zero exit HALTs as the Step 0(c) routing table directs and never falls through to `SAFE_CLOSE`.
+      4. **SAFE_CLOSE** (exit 3): invoke the `shipment-reconcile` skill with `mode: safe-close`, the `shipment_id`, and the `merge_commit_sha`. The skill closes the shipment record only through its own authoritative close sequence (internally, a move to `<shipment_id> --status shipped`, then archive), entirely inside the skill boundary. Keep this agent file at pointer level only; the full safe-close algorithm lives in the `shipment-reconcile` skill and must not be re-derived here.
+      5. **Disposition and record (both paths)**: once the selected path closes (mutating exit 0 on `CASCADE`; `CLOSED` from safe-close on `SAFE_CLOSE`), the skill's Linked-Deliberation Disposition step (P-015 INV-12) must return `DISPOSITION_COMPLETE` before post-mode runs. On `HALT — linked-deliberation disposition failed {id}`, Ship stops at step 1.b: steps 1.c–1.e do not run, and the skill's own halt handling governs any rollback. The closure artifact records `close_path` (`cascade` or `safe_close`) and `close_evidence` (the evidence record path), as step 2 specifies.
 
-      * **A `CLOSE_PATH_VERDICT: CASCADE` designates `shipment-reconcile` `mode: safe-close` — specifically its Cascade Close Sub-Procedure — as this shipment's close path**, and Ship invokes it carrying the returned `CLASSIFICATION_BINDING` into that call. **Ship NEVER calls `backlogit shipment ship` / `backlogit_ship_shipment` directly, for any verdict**: the cascade primitive is reachable only from inside that sub-procedure, after the skill has itself revalidated the binding. **HALT on any result token the installed classification did not name**, and HALT on `BLOCK`, and on any absent, empty, unparseable
-        or ambiguous result.
-      * Invoke the close path the boundary named, **carrying the returned `CLASSIFICATION_BINDING` into that call**, in place of any locally selected sequence
-        for this shipment's closure.
-      * Ship invokes **only** the close path the returned verdict names, and **never a path
-        absent from that verdict**. **Ship MUST NOT invoke `mode: safe-close` without a `classification_binding`**; an unbound safe-close invocation by Ship is a contract
-        violation and HALTs. **Ship treats `RECONCILE_FAIL_CASCADE_UNBOUND`,
-        `RECONCILE_FAIL_CLASSIFICATION_INVALID`, `RECONCILE_FAIL_CLASSIFICATION_DRIFT` and
-        `RECONCILE_FAIL_CLASSIFICATION_REFUSED` as a HALT with no mutation performed**; it
-        reclassifies only on drift and returns to Stage on every other refusal.
-
-      **When `CLOSE_PATH_VERDICT: SAFE_CLOSE`** — Invoke the `shipment-reconcile` skill with
-      `mode: safe-close`, the `shipment_id`, and the `merge_commit_sha` —
-      **carrying the `classification_binding` from the preceding `classify-close-path`
-      call**. **An unbound safe-close invocation is refused by the skill**, so it MUST NOT
-      be attempted. Keep this agent file at pointer level only — the full, step-by-step
-      safe-close algorithm lives in the `shipment-reconcile` skill and must not be
-      re-derived here.
-      At the summary level, the skill:
-      * archives only the shipment manifest's explicit item IDs;
-      * closes only the shipment record through **the authoritative close sequence defined by the `shipment-reconcile` skill**, never by a direct shipment status
-        prescription (internally, that sequence resolves to move
-        `<shipment_id> --status shipped` -> verify live `status: shipped` ->
-        `backlogit archive <shipment_id>` -> verify `archived_status: shipped`, entirely
-        inside the skill boundary);
-      * **proves the protected set on the safe-close path**, where a protected set exists; a manifest qualifying for the cascade close path has **no protected set by construction**, and the skill halts fail-closed on any cascade or provenance
-        ambiguity on either path.
-      * If the skill returns `HALT — cascade detected, revert required`, restore
-        `.backlogit/queue/` + `.backlogit/archive/`, surface the
-        protected-set violation, and halt. Do NOT commit a corrupt backlog.
-
-      **When `CLOSE_PATH_VERDICT: CASCADE`** — invoke the `shipment-reconcile`
-      skill with `mode: safe-close`, the `shipment_id`, and the
-      `merge_commit_sha`, carrying the returned `CLASSIFICATION_BINDING` into
-      that call. Safe-close's own Step 0 revalidates that binding and, on a
-      bound `CASCADE` verdict, delegates to its **Cascade Close Sub-Procedure**
-      — the only sanctioned caller of the underlying cascade primitive. That
-      sub-procedure requeues + detaches unshipped descendant tasks back to the
-      backlog with `parent_id` cleared, archives release-scope members outside
-      the manifest-scoped ordering, and preserves/restores a non-member
-      covering feature via snapshot — a hazard that is acceptable only because
-      the classification boundary has already verified this manifest is a
-      fully-covered root set.
+      If the skill returns `HALT — cascade detected, revert required`, restore `.backlogit/queue/` + `.backlogit/archive/`, surface the protected-set violation, and halt. Do NOT commit a corrupt backlog.
    c. **Verify archive integrity (P-007)**: Run `git status -- ".backlogit/archive/"`.
       If any archive files appear as working-tree deletions, restore them immediately:
       `git restore .backlogit/archive/`. See P-007 in workflow-policies for the
@@ -884,6 +844,7 @@ lifecycle to transition out of. See
       `git add .backlogit/`
       `git commit -m "chore: archive {shipment_id} backlog artifacts"`
 2. Invoke `operational-closure` in `mode=post-merge` to produce release-readiness, monitoring, and rollback artifacts in `docs/closure/`. The closure artifact carries a **compaction status** field (initialized `pending`) that step 8 finalizes to `done`/`degraded`; the Orchestrator's closure-gated routing treats a `pending`/unset compaction status as an incomplete post-merge closure (P-020).
+   **Closure-evidence contract**: write the closure artifact at the canonical path `docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md` with the gate-relevant frontmatter keys `closure_status`, `compaction_status`, `close_path` (`cascade` or `safe_close`), and `close_evidence` (the `docs/closure/evidence/{shipment_id}-{feature_id}-close-evidence.json` record path written by `autoharness shipment cascade-close`, committed with the artifact), and run `autoharness gate closure-evidence --path docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md --shipment {shipment_id} --json` before every commit of it (while `compaction_status` is `pending` or `closure_status` is `BLOCKED`, only a `frontmatter_predicate` failure is tolerated) and again once its compaction status is finalized, when exit 0 is required before closure is declared complete (a finalized `BLOCKED` or unmet-conditions record may still be committed as a truthful record when the gate's reported `failed_check` is `frontmatter_predicate`, but closure is not declared complete). Legacy date-prefixed closure names remain readable but are never written.
    In dark mode, the closure summary must list decisions, gates, reviewed HEADs,
    merge/fallback status, admin fallback result if any, **compaction status (P-020)**,
    closure status, and follow-up items before `DARK_MODE_COMPLETE` can be emitted.
@@ -901,9 +862,13 @@ lifecycle to transition out of. See
    * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Stashed {count} follow-up item(s) from post-merge closure: {summary_list}` listing each item's title.
 7. **Source artifact cleanup** (backlogit only): When the `backlogit` capability pack is installed, retire the source artifacts that directly fed the shipped scope instead of heuristically searching for "stale" backlog items.
    * For each shipped top-level item in scope (feature or chore), read `custom_fields.source_stash_id`. If present, call `backlogit_stash_archive` with the stash ID only. If the stash entry is already archived, skip and log it.
-   * For each shipped top-level item in scope (feature or chore), read `custom_fields.source_deliberation_id`. If present, verify the deliberation artifact exists via `backlogit_get_item`. If it exists and is not already archived, call `backlogit_archive_item`. If it is already archived or not found, skip and log it.
-   * After processing the full shipped scope, record the archived and skipped source artifact IDs in the closure artifact's `Source artifact cleanup` section so the closure report remains the traceable system of record.
-   * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Source artifacts archived: {stash_count} stash, {delib_count} deliberations`.
+   * For each shipped top-level item in scope (feature or chore), read `custom_fields.source_deliberation_id`. If present, never call `backlogit_archive_item` on it independently: read the shipment's `linked_deliberation_disposition` report produced by the `shipment-reconcile` Linked-Deliberation Disposition step (P-015 INV-12), the only sanctioned archival of a validated linked deliberation, and record that deliberation's outcome from the report. The report is the `linked_deliberation_disposition` field of this closure's `shipment-reconcile` close report under `.backlogit/reconcile/`, taken from the run that returned `DISPOSITION_COMPLETE`:
+     * outcome `archived` or `already-archived`: record it and skip.
+     * any `retained_*` outcome (including `retained_read_error`): **never archive**; record the outcome verbatim with its `reason_code` (and `path`, when present). An unknown `reason_code` is accepted and recorded verbatim.
+     * any other outcome value: record it verbatim and never archive.
+     * the deliberation is absent from the report (the report predates this contract, or the link was outside the disposition set): record `skipped_not_in_disposition_report` and never archive. This outcome has no disposition-report entry, so its `reason_code` is recorded as absent — never invent a synthetic code — unless the ID is listed in the close report's `unresolved_references`. When the ID is listed in the close report's `unresolved_references`, also copy that entry's `reason_code` verbatim; an explicit manifest member is outside the disposition set (H10) because the close path itself archives it, so it is never listed in `unresolved_references`, its `reason_code` is always recorded as absent, and Ship never archives it here.
+   * After processing the full shipped scope, record the archived and skipped source artifact IDs in the closure artifact's `Source artifact cleanup` section (each `source_deliberation_id` outcome and `reason_code` copied from the disposition report, never re-derived; a `skipped_not_in_disposition_report` outcome has no report entry, so its `reason_code` is recorded as absent unless the close report's `unresolved_references` lists the ID) so the closure report remains the traceable system of record.
+   * When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Source artifacts archived: {stash_count} stash, {delib_count} deliberations`, where `{delib_count}` counts the report's `archived` outcomes (archived by the INV-12 disposition step, never by Ship).
 8. **Mandatory (P-020)**: Invoke **compact-context** with `target: all` to consolidate memory checkpoints, finalize any decided-plans, and compact closure artifacts, then record the outcome as the compaction status of the step-2 operational-closure artifact. This is required because built-in AI assistant memory features do not write to the repository's `docs/` directory — compact-context is the mechanism that ensures durable persistence. **Invocation is mandatory per merge; candidate selection stays threshold-gated** — the just-closed release unit's memory is the one intended candidate (eligible under the completed-work rule), so the guaranteed call is a bounded, cheap Tier-1 consolidation of that fresh memory and degrades to a scan-only no-op only when nothing else qualifies. **Failure semantics (P-020)**: SKIPPING this invocation is a P-020 violation recorded via P-005 telemetry. Because backlog/shipment archival ran in step 1, completeness is tracked by the operational-closure artifact's compaction status, not shipment active-state: skipping leaves that status unset so post-merge closure is **incomplete** and the Orchestrator's closure-gated routing (P-001 + P-020) holds the next shipment until compaction is completed — it does not strand the merged PR. A compact-context run that **FAILS** is **NON-BLOCKING**: record `compaction: degraded` in the closure artifact, log a warning, and continue closure (the merge already landed and the skill is non-destructive).
 9. **Backlog index resync** (backlogit only): After all archival, source-artifact mutations, and knowledge graduation are complete, call `backlogit_sync_index` (or CLI fallback `backlogit sync`) to rebuild the backlogit index so it reflects all closure mutations.
    - On success: log `CLOSURE_INDEX_SYNC_OK`. When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Backlog index resynced after closure`.
