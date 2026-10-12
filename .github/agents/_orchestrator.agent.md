@@ -467,8 +467,7 @@ This agent operates at **Tier 2 (Standard)** by default, but supports an indepen
 * **Declare**: pass the resolved fields as the invocation override when the runtime supports per-invocation model directives — never a baked provider-specific `--model` CLI flag (Core Rule 3).
 * **Degrade explicitly**: when the runtime cannot honor a per-invocation override, emit `ROUTING_DEGRADED` naming the subagent and the resolved route that could not be honored, and surface it to the operator — never silently fall back to the current session model without declaring the degradation.
 * **Propagate to inherited skills (P-013.5/H7)**: skills invoked by Stage/Ship at
-  depth 2 (see the Subagent Depth table below) do not carry an independent
-  `model_family`/`model_provider` binding of their own — they execute inside the
+  depth 2 (see the Subagent Depth table below) have no independent model binding of their own — they execute inside the
   depth-1 agent's own invocation, so the depth-1 override declared above already
   covers them. There is nothing separate to "resolve" or "reload" at the skill
   layer. If a runtime ever exposes an independent per-skill model binding that
