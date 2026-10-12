@@ -418,7 +418,7 @@ autoharness before closing; there is no hand-run fallback.
 
 **Approval is not waivable by dark mode.** The approval for the mutating `autoharness shipment cascade-close` run is not waivable by dark mode: a `DARK_MODE_ACTIVE` activation record under P-017 never satisfies it, and it is required in dark mode on the same terms as in interactive operation (Constitution Principle VII, Destructive Command Approval, NON-NEGOTIABLE).
 
-**Consume `selected_close_path`.** Ship reads the close path from the `selected_close_path` field of the command's `--json` output (mirrored as `pre_close.close_path_selection` in the evidence record) and never routes on `classifier_verdict` alone. A `CASCADE` classifier verdict with an `UNVERIFIED` engine verdict selects `SAFE_CLOSE`, and only `selected_close_path: CASCADE` permits the mutating run.
+**Consume `selected_close_path`.** Ship reads the close path from the `selected_close_path` field of the command's `--json` output (mirrored as `pre_close.close_path_selection` in the evidence record) and never routes on `classifier_verdict` alone. A `CASCADE` classifier verdict with an `UNVERIFIED` engine verdict selects `SAFE_CLOSE`, and only `selected_close_path: CASCADE` in the command's JSON output (recorded in the evidence record as `pre_close.close_path_selection`) permits the mutating run.
 
 **Exit codes (verbatim from `autoharness shipment --help`):**
 
@@ -499,9 +499,10 @@ completion. Standalone invocation HALTs unless the evidence record shows
       empty and silently disabling the completeness check entirely. Never a
       freshly-read or assumed value.
    c. **Entry gate (no classification in this mode)**: entry is only after
-      `cascade-close --classify-only` exited 3 and recorded
-      `selected_close_path: SAFE_CLOSE`. Do not re-classify to CASCADE here. If
-      the evidence record's `selected_close_path` is not `SAFE_CLOSE`, HALT with
+      `cascade-close --classify-only` exited 3 and the `selected_close_path` field of the command's JSON output
+      (recorded in the evidence record as `pre_close.close_path_selection`) is
+      `SAFE_CLOSE`. Do not re-classify to CASCADE here. If
+      the evidence record's `pre_close.close_path_selection` is not `SAFE_CLOSE`, HALT with
       operator review and do not call the cascade operation. Safe-close never
       evaluates the P-015 classification to choose a path. CASCADE is permitted
       only when the P-015 INV-6 engine-inertness containment holds and the command
@@ -1515,7 +1516,7 @@ If pre-mode cannot acquire the lock because another process holds it:
 * `mode: pre` runs before closing a shipment in Ship Step 6
 * `mode: pre` with `expected_status: queued` (or `active` for already-claimed shipments) runs at Ship Step 0.5 intake
 * `mode: safe-close` runs **in place of** the cascade `backlogit_ship_shipment` call and archives only the manifest item IDs (one artifact at a time) plus the shipment record itself — **except** when the `--classify-only` route exits 0 (`CASCADE`), in which case only the mutating `autoharness shipment cascade-close` command runs, after per-closure operator approval, and safe-close steps 1–10 are skipped entirely
-* Close-path selection is made **only** from the machine-checkable `--classify-only` result (`selected_close_path`, Step 0(c)), never inferred from prose or manifest shape alone; any classifier error, ambiguity, or unresolved precondition HALTs under the Step 0(c) routing table, and only exit 3 routes to safe-close
+* Close-path selection is made **only** from the machine-checkable `--classify-only` result (the `selected_close_path` field of the command's JSON output, recorded in the evidence record as `pre_close.close_path_selection`; Step 0(c)), never inferred from prose or manifest shape alone; any classifier error, ambiguity, or unresolved precondition HALTs under the Step 0(c) routing table, and only exit 3 routes to safe-close
 * The P-015 INV-6 "fully covered" check (evaluated by the Step 0(c) `--classify-only` run) walks the qualifying feature's **full descendant tree, at every depth** (via a full `parent_id` graph, not a single-level scan of direct children only) — a manifest such as `[feature, task]` where that task has an out-of-manifest subtask must select `SAFE_CLOSE` (exit 3), never wrongly qualify for `CASCADE` (155-S, PR #407 review, thread PRRT_kwDORzpWpM6b2MJv)
 * The Cascade Close Sub-Procedure independently verifies `returned_ids` is empty, `archived_ids` against the two-set `allowed_ids` / `required_ids` gate (step 3 applies the flat `allowed_ids` / `required_ids` sets defined in "Cascade Close Postconditions: Flat"; `archived_ids - allowed_ids` non-empty halts with `HALT — cascade archived unexpected artifact {id}`, `required_ids - archived_ids` non-empty halts with `HALT — cascade did not archive required artifact {id}`, evaluated as two independent, never-merged conditions — a truly pre-archived **non-shipment, non-feature** allowed member (i.e. a manifest task item) has no transition to report and is correctly, expectedly absent from `archived_ids`, never a mismatch, but this tolerance never extends to the shipment record itself, which remains unconditionally required regardless of its own pre-close declared status, nor does it extend to a qualifying feature member itself, which is likewise unconditionally required regardless of its own pre-close declared status — since Backlogit's own `ShipShipment` forces every explicit qualifying feature member through `status: done` before archive-candidate collection ever runs, so it is never still `archived` by that point either), and no `parent_id` was cleared — a mismatch on any of these halts fail-closed with a P-005 violation even though the cascade path was itself permitted
 * Safe-close computes the protected set (parent feature + unshipped siblings) from expected IDs and proves it is fully present in queue at a baseline gate before archiving anything
