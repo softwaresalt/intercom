@@ -150,9 +150,9 @@ If the impl-plan output does not contain a `Requires plan hardening` conclusion,
 
 **Violation Action**:
 
-1. Run `git restore .backlogit/archive/` to recover deleted archive files
+1. Restore only the paths listed as deleted by `git status --short -- .backlogit/archive/`, one `git restore -- <path>` each, to recover deleted archive files
 2. Re-verify with `git status -- ".backlogit/archive/"` — confirm no deletions remain
-3. Stage the restored files: `git add .backlogit/archive/`
+3. Stage only the restored paths, one `git add -- <path>` each
 4. Proceed to the commit step only after verification passes
 5. If restoration fails, halt and prompt the operator. Broadcast a P-005 violation event.
 
@@ -421,7 +421,7 @@ Neither condition may be waived by the agent. Green CI alone is not approval. Op
 
 **Applies when**: `true` is true and shipments may cover a partial subset of a covering feature's tasks (partial-feature shipments).
 
-**Statement**: The ship agent MUST close a shipment by archiving **only** the shipment manifest's explicit item IDs, one artifact at a time, via the `shipment-reconcile` safe-close procedure, and finally the shipment record itself as its own single artifact. It MUST NOT call the cascade `backlogit_ship_shipment` directly. The destructive CASCADE close runs only through `autoharness shipment cascade-close` after per-closure operator approval, and only where INV-6 holds (see below). The cascade op treats a shipment as a proxy for its covering feature and archives the parent feature and any unshipped sibling tasks — corrupting the backlog whenever the shipment is a partial-feature shipment that intentionally excludes them.
+**Statement**: The ship agent MUST close a shipment by archiving **only** the shipment manifest's explicit item IDs, one artifact at a time, via the `shipment-reconcile` safe-close procedure on the SAFE_CLOSE path (the destructive CASCADE close runs only through `autoharness shipment cascade-close` under per-closure approval, where INV-6 holds), and finally the shipment record itself as its own single artifact. It MUST NOT call the cascade `backlogit_ship_shipment` directly. The destructive CASCADE close runs only through `autoharness shipment cascade-close` after per-closure operator approval, and only where INV-6 holds (see below). The cascade op treats a shipment as a proxy for its covering feature and archives the parent feature and any unshipped sibling tasks — corrupting the backlog whenever the shipment is a partial-feature shipment that intentionally excludes them.
 
 **Precondition**: The shipment manifest (`items`) has been read, and the **protected set** — the covering feature plus every unshipped sibling task that is not in the manifest — has been computed from **expected IDs** (partial-feature detection scanning both queue and archive). A clean git baseline for `.backlogit/` has been captured, and a **baseline integrity gate** has confirmed every protected-set member is present in `.backlogit/queue/` before any manifest item is archived. A protected-set member already archived or missing at baseline is treated as a pre-existing cascade and halts closure.
 
