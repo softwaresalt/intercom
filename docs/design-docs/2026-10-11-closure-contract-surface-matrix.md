@@ -300,3 +300,31 @@ Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECON
 * Contract tests strengthened: row 23b asserts absence; rows 22b and 24a use a classify-only needle; skill-scoped absence checks are added to `TestCascadeRoutesThroughCommand`; dead either-form helpers are removed; row 29 anchors are asserted unique.
 * Deferred to Stage as out-of-scope discoveries (P-021 C2 capture): the pre-existing items listed under the next bullet.
 * Residual findings accepted with rationale: the Stage model text in the escalation steps (operator decision R1); the frontmatter drift in the Ship agent (`model_family` and `reasoning_effort` differ from the `config.yaml` ship route; re-render by `autoharness install` or `tune`, not by hand); the P-018 dark-mode wording in Ship Steps 7b and 14 (pre-existing, outside 043-S); the intercom and scripts references in agent files (pre-existing); the learned-closure seed instruction with `applyTo: "**"` (pre-existing; operator promotion decision); the footer template name (pre-existing). Stash IDs for the deferred and residual items above will be recorded when captured; none are recorded yet.
+
+## Review outcome and captures (043-S, pre-PR)
+
+### Review cycles
+- Cycle 1 (commits 0ca2030, 88cf082, 999a413, 7d4a180): consensus P0/P1 fixed (direct cascade call removed from the skill; default-to-SAFE_CLOSE bullet removed so exits 2 and 4 HALT; intercom auto-check approval replaced by explicit operator approval; prose classification in safe-close replaced by an entry gate; Ship commit gated on disposition; P-015 statement and postcondition conditioned on the SAFE_CLOSE path; contract rows strengthened; dead helpers removed).
+- Cycle 2 re-review (adversarial 3 models, Correctness, Security): NOT RESOLVED items were fixed in cycle 3 (whole-directory restores; smoke-test exit-1 skip; pre-flight selected_close_path requirement; step-0(c) predicate; duplicate allowed_ids; rows 9a-9d scope; replica tests quarantined).
+- Cycle 3 (commits a6b2d2d, 2749d5d, ee56ce0): last permitted cycle under the circuit breaker. Fixes applied as listed above; row 28 kept on the whole policy file (its needles are the retained a1 grant text in P-010) and a separate guard now checks INV-6 inside the P-015 section.
+- Final read-only verification (adversarial 3 models; Security): READY_WITH_FOLLOWUPS from both. No HIGH-confidence P0/P1 consensus finding. Open items carried as captures below: the single-reviewer LOW-confidence P1 (safe-close Step 0(c) and cascade pre-archived paragraph versus INV-6), the P2/P3 items, and the TOOL_DEGRADED note (no reviewer had a shell; final gate used the file text at HEAD ee56ce0).
+
+### Accepted residuals (not findings)
+- verify-workspace escalation_route_resolution fails (operator decision R1, stash 0A215E0B; config.yaml unchanged by plan).
+- verify-workspace reload_propagation_directive fails (operator decision: the literal phrase has no upstream source; task 053.008-T stays active until decided).
+- The two replica test files are retained with an explicit t.Skip (no deletion, Principle VII). Deletion is task 053.013-T, pending per-operation approval.
+- Policy version-history rows 1.19.0 and 1.21.0 keep the historical token (decision D-3).
+- Pre-existing environment failures: tools/gatecheck root tests (Windows bash wrapper); start-script timing flake (see C5E50EFD).
+
+### Captured follow-ups (stash, .backlogit/stash.jsonl)
+- DEFERRED SCOPE EXPANSION (close-path alignment with INV-6 and anchors): F2759510 (high, requires deliberation).
+- DEFERRED SCOPE EXPANSION (argv and approval mirroring; catalog annotation): 6E8381D9 (medium, requires deliberation).
+- DEFERRED SCOPE EXPANSION (dark-mode P-018 and orchestrator approval wording): 8E1E2D80 (high, requires deliberation).
+- Follow-up (render and template drift, pre-existing): 8134B7B7.
+- Follow-up (replica and CI residuals tied to 053.013-T): FC6FE1D5.
+- Follow-up (environment failures): 5CC5532E.
+
+### Verification at HEAD ee56ce0
+- go vet and gofmt clean; integration package green except the start-script timing flake (passes in isolation).
+- verify-workspace: 0 blockers; 0 ROUTE_VARIABLE_STALE; frontmatter ok; closure_source_artifact_cleanup ok; orchestrator_invocation_routing_directive ok; escalation_directive_present ok; failing: escalation_route_resolution and reload_propagation_directive (both accepted residuals above).
+- Retired-token sweep: live instruction text contains no imperative direct call to the cascade operation; remaining mentions are prohibitions or descriptive.
