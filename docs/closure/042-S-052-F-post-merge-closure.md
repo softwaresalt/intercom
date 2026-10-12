@@ -134,7 +134,7 @@ Stage owns each entry below (P-021 C5: Ship captures only). None is fixed in thi
 * Bounded-threat-model deliberation first: `CDBA41E3`, `FE2F02FF` and `C0D28448`.
 * Separate policy decision: `31F33EFE`.
 * Optional: `4372BAD4`, `65AE88CA` and `96B2E8CC`.
-* Start-script RCA (operator item 3): `C5E50EFD` (medium, task, no deliberation required). Related entries, not reuse candidates (no DEFERRED SCOPE EXPANSION token): `26EDD633` (earlier low follow-up on the same test, with an unconfirmed workspace-size hypothesis) and `96B308D1` (a separate TestGatecheckCleanup_* Windows path bug).
+* Start-script RCA (operator item 3): `C5E50EFD` (medium, task; the recorded flag is `requires deliberation: no`, but Stage's P-021 C6 intake still routes it through the `deliberate` skill before planning). Related entries, not reuse candidates (no DEFERRED SCOPE EXPANSION token): `26EDD633` (earlier low follow-up on the same test, with an unconfirmed workspace-size hypothesis) and `96B308D1` (a separate TestGatecheckCleanup_* Windows path bug).
 * Closure-record compaction (P-020): `8ED0A706` (37 closure records deferred by age).
 
 ## Risky action record
@@ -148,6 +148,18 @@ Stage owns each entry below (P-021 C5: Ship captures only). None is fixed in thi
 * The classify-only writer left an empty, untracked directory `.autoharness/gates/cascade-close/probe/probe-lc3raky0`. It is not committed and contains nothing. The committed writer record `docs/closure/evidence/042-S-052-F-close-evidence.json` contains the absolute local backlogit binary path; that is writer output, so Ship did not redact it.
 The direct `backlogit shipment ship` call recorded above is a P-010 deviation, accepted by the operator on 2026-10-11T21:47 -07:00 as a disclosed process deviation (see the Operator disposition section). Do not repeat it.
 * The archive of the shipment is on the closure branch only, not on main, until the closure PR merges.
+
+### ActionRisk, approval path and ActionResult
+
+| Action | ActionRisk | Approval path | ActionResult |
+| --- | --- | --- | --- |
+| Oracle edit PA-2 (staged in PR #121 at bc32606, carried by PR #123) | medium (test oracle) | Authorized in the plan (PA-2) | Applied; CI green on the reviewed HEAD b44cc15 |
+| Frozen-surface comment edit PA-5 (`retiredarch/select.go`) | low (comment only) | Declared in the plan (PA-5) | Applied in 1d39f76 (U5); CI green |
+| `backlogit move 052-F --status done` (a1 covering-feature transition) | medium | a1 gate with the five conditions verified; operator dark-factory scope; no force flags | Exit 0; re-read `done`; relocated to archive |
+| `backlogit shipment ship 042-S --sha 591f37e...` (cascade close) | high | Classify-close-path verdict CASCADE with binding e204d053...; the safe-close step 0 revalidation did not run (P-010) | Exit 0; shipment shipped; `returned_ids` empty; `archived_ids` as recorded in the reconcile record; accepted as a disclosed deviation by the operator on 2026-10-11T21:47 -07:00 (item 1) |
+| `autoharness shipment cascade-close --classify-only` (pre_close evidence) | low (read-only verdict and evidence record) | Classify-only mode, no mutation | Exit 0; `mutation_possible` no; the pre_close record is committed; an empty untracked probe directory under `.autoharness/gates/cascade-close/probe/` was left and is not committed |
+| Stash capture C5E50EFD (resume) | low (capture only) | P-021 C2 and C5 (Ship capture-only) | Appended once; no other stash entry edited or archived |
+| Removal of Stage's `%TEMP%` scratch files | low | Operator disposition, item 4 | Deleted by the operator; Ship did not delete them |
 
 ## Operator disposition (2026-10-11)
 
@@ -169,6 +181,7 @@ Ship did not run any cascade, close, shipment-ship, move-to-shipped or archive p
 
 * Invariants: INV-A (scanFile and scanSource unchanged), INV-B (no filepath.Abs or EvalSymlinks in runners), INV-C (no local masker), INV-D (ErrInvalidUTF8 identity via errors.Is), INV-E (goldens unchanged), INV-F (finding order unchanged), INV-G (the oracle edit limited to the authorized decode block and header). Each was checked on the reviewed HEAD by the pre-PR review and the test suite.
 * Validator evidence: the gate runs in the evidence file (exit codes and the linked-fixture PASS rows), and the CI checks for PR #123 (docs/closure/evidence/042-S-verification-evidence.md).
+* Pre-deploy audits: performed, result none required. PR #123 changed only `tools/gatecheck` files and `.backlogit` records. No `cmd/` or `internal/` product package, `go.mod` or workflow file changed, so there is no migration, feature flag, configuration, access or release prerequisite to audit. Result: no pre-deploy findings.
 * Deployment and rollout: not applicable. The change is CI-run tooling merged to main. It has no deployment step, and the next CI run on main is the rollout.
 * Post-deploy checks: CI run 38104542539 on main for merge commit 591f37e2ba877d81b1304d31905369e79096657f completed with conclusion success (checked 2026-10-11). That is the first validation-window run.
 * Healthy and failure signals: healthy is `write-path --root .` and `--self-test-integrity` exiting 0 with goldens unchanged, and the write-path verdict step passing in CI. A failure is a non-zero exit from the write-path steps on main. Note that `WRITE_PATH_GATE_ADVISORY` is unset, so the verdict step is blocking.
