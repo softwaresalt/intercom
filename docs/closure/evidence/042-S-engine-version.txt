@@ -1,0 +1,6 @@
+Command: backlogit --version (run on 2026-10-11 during the 042-S cascade close, workspace C:\Source\GitHub\intercom-go)
+Exit: 0
+Stdout (first line, the value used as the engine= line of the CLASSIFICATION_BINDING v1 canonical lines):
+backlogit version 1.11.0 (latest: v1.11.0 -- up to date)
+
+Note: the "(latest: ... -- up to date)" part depends on the live update check. A run with a different update state produces a different engine= line and therefore a different digest, so this file pins the value used for binding e204d053e4ad1925f723d9eddcb1462df16f982ec175aab1a7bd060bc672cd95.

@@ -33,8 +33,8 @@ compacted_from:
   - docs/archive/memory/2026-09-13-stage-true-lineage-attempt-7-option-a.md
   - docs/archive/memory/2026-09-14-stage-true-lineage-attempt-8-gate-failed.md
 preserved_latest_checkpoints:
-  - docs/memory/2026-09-12-stage-taskonly-replan-and-harvest-session.md
-  - docs/memory/2026-09-14-stage-operator-accepted-residual-disposition.md
+  - docs/archive/memory/2026-09-12-stage-taskonly-replan-and-harvest-session.md
+  - docs/archive/memory/2026-09-14-stage-operator-accepted-residual-disposition.md
 ---
 
 # Compacted: PR54 Stage lineage, task-only finalization, and true-lineage cycles
@@ -47,7 +47,7 @@ shipment finalization work. The final shipped state is already summarized in
 merge commit `f7112e0693804ac75cd4511d2ee3eaeac15583e4` and staged the 021-S / 022-F work without
 claiming it. This compaction keeps the deeper Stage reasoning that would otherwise be lost.
 
-Two most recent checkpoints were intentionally left in `docs/memory/` rather than archived:
+Two most recent checkpoints were intentionally left in `docs/memory/` rather than archived when this summary was written. The 2026-10-11 compaction has since moved both verbatim to `docs/archive/memory/` (never deleted), and the frontmatter lists their current paths. The archived verbatim original `docs/archive/memory/2026-09-14-ship-pr54-copilot-review-block-halt.md` (line 25) still names the pre-archive path, because archived originals are kept verbatim; the frontmatter mapping resolves it. The two checkpoints, and why they were kept, are:
 `2026-09-12-stage-taskonly-replan-and-harvest-session.md` for the unmerged
 `chore/stage-task-only-shipment-finalization` branch lineage, and
 `2026-09-14-stage-operator-accepted-residual-disposition.md` for the last operator-disposition
