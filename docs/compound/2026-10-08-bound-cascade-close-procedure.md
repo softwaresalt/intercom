@@ -7,6 +7,8 @@ tags: [shipment-reconcile, cascade-close, classification-binding, p-015, p-005, 
 
 # Bound cascade close: classify, recompute, compare, then ship
 
+> **Superseded in part (2026-10-12, shipment 043-S / feature 053-F).** The binding procedure in this entry is retired (the `CLASSIFICATION_BINDING` prose contract, the `classify-close-path` mode, and the `RECONCILE_FAIL_CLASSIFICATION_*` tokens). The replacement is the single command-routed close: `autoharness shipment cascade-close --classify-only` routed by exit code, then the mutating command for CASCADE after per-closure operator approval, or the shipment-reconcile skill's safe-close sequence for SAFE_CLOSE. Source decision: `docs/decisions/2026-10-11-intercom-go-closure-tooling-batch-1-deliberation.md` (D-CT-1). The historical text below is retained for the record.
+
 ## Context
 
 No executable `shipment-reconcile` `safe-close` CLI or gate exists here (stash D10D3AFC, active). Every closure therefore applies the skill prose by hand and invokes `backlogit shipment ship` directly.
