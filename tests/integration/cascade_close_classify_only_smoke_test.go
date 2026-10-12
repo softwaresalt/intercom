@@ -37,21 +37,15 @@ const cascadeSmokeRegistry = "schema_version: 1.0.0\n" +
 	"cli:\n" +
 	"  binary: backlogit\n"
 
-// cascadeSmokeDocumentedCodes are the classify-only exit codes documented by
-// `autoharness shipment cascade-close --help`.
-var cascadeSmokeDocumentedCodes = map[int]bool{0: true, 2: true, 3: true, 4: true}
-
-// cascadeSmokeVerdicts are the classifier_verdict values the contract uses.
-var cascadeSmokeVerdicts = map[string]bool{"CASCADE": true, "SAFE_CLOSE": true}
-
 // cascadeSmokeOutcome records one child process run. A timeout is kept apart
-// from exit codes so it can never be mistaken for a documented code.
+// from exit codes so it can never be mistaken for a real exit code.
 type cascadeSmokeOutcome struct {
-	stdout   []byte
-	stderr   []byte
-	code     int
-	timedOut bool
-	runErr   error
+	stdout      []byte
+	stderr      []byte
+	code        int
+	timedOut    bool
+	waitDelayed bool
+	runErr      error
 }
 
 // cascadeSmokeReport is the subset of the --json object this test checks.
@@ -78,7 +72,7 @@ type cascadeSmokeEvidenceRecord struct {
 func TestCascadeCloseClassifyOnlySmoke(t *testing.T) {
 	cascadeSmokeRequireTools(t)
 
-	repo := cascadeSmokeRepoRoot(t)
+	repo := repoRoot(t)
 	evidenceBefore, err := cascadeSmokeEvidenceSnapshot(repo)
 	if err != nil {
 		t.Fatalf("snapshot real docs/closure/evidence: %v", err)
@@ -103,8 +97,8 @@ func TestCascadeCloseClassifyOnlySmoke(t *testing.T) {
 	if rep.Mode != "classify_only" {
 		t.Fatalf("mode = %q, want classify_only", rep.Mode)
 	}
-	if !cascadeSmokeVerdicts[rep.ClassifierVerdict] {
-		t.Fatalf("classifier_verdict %q is not a documented value\nstdout:\n%s", rep.ClassifierVerdict, first.stdout)
+	if rep.ClassifierVerdict != "CASCADE" && rep.ClassifierVerdict != "SAFE_CLOSE" {
+		t.Fatalf("classifier_verdict %q is neither CASCADE nor SAFE_CLOSE\nstdout:\n%s", rep.ClassifierVerdict, first.stdout)
 	}
 	// The fixture is built to select CASCADE, which the contract maps to exit 0.
 	if rep.ClassifierVerdict != "CASCADE" {
@@ -112,9 +106,6 @@ func TestCascadeCloseClassifyOnlySmoke(t *testing.T) {
 	}
 	if first.code != 0 {
 		t.Fatalf("exit code = %d, want 0 (CASCADE selected)\nstdout:\n%s\nstderr:\n%s", first.code, first.stdout, first.stderr)
-	}
-	if !cascadeSmokeDocumentedCodes[first.code] {
-		t.Fatalf("exit code %d is not a documented classify-only code", first.code)
 	}
 	if rep.ExitCode != first.code {
 		t.Fatalf("json exit_code = %d, process exit = %d", rep.ExitCode, first.code)
@@ -170,7 +161,8 @@ func TestCascadeCloseClassifyOnlySmoke(t *testing.T) {
 }
 
 // cascadeSmokeRequireTools skips, never passes vacuously, when the real
-// autoharness or backlogit binaries are unavailable.
+// autoharness or backlogit binaries are unavailable, or when an older
+// autoharness CLI exits 1 for `shipment --help`. Any other probe failure fails.
 func cascadeSmokeRequireTools(t *testing.T) {
 	t.Helper()
 	for _, bin := range []string{"autoharness", "backlogit"} {
@@ -180,8 +172,12 @@ func cascadeSmokeRequireTools(t *testing.T) {
 	}
 	scratch := t.TempDir()
 	help := cascadeSmokeRun("autoharness", scratch, scratch, "shipment", "--help")
-	if help.timedOut || help.runErr != nil || help.code != 0 {
-		t.Skipf("skipping cascade-close smoke: `autoharness shipment --help` failed (timedOut=%t, code=%d, err=%v)\n%s%s", help.timedOut, help.code, help.runErr, help.stdout, help.stderr)
+	cascadeSmokeMustComplete(t, "autoharness shipment --help", help)
+	if help.code == 1 {
+		t.Skipf("skipping cascade-close smoke: `autoharness shipment --help` exited 1, the unknown-command code of an older autoharness without cascade-close\nstdout:\n%s\nstderr:\n%s", help.stdout, help.stderr)
+	}
+	if help.code != 0 {
+		t.Fatalf("`autoharness shipment --help` exited %d, want 0\nstdout:\n%s\nstderr:\n%s", help.code, help.stdout, help.stderr)
 	}
 }
 
@@ -246,16 +242,20 @@ func cascadeSmokeClassifyArgs(workspace string) []string {
 	}
 }
 
-// cascadeSmokeRun runs name with args in dir. TEMP, TMP, and TMPDIR point at
-// tmp so child scratch output stays inside the test's temp directory.
+// cascadeSmokeRun runs name with args in dir. TEMP, TMP, TMPDIR, and the profile,
+// config, and cache directories point under tmp (see cascadeSmokeEnv) so child
+// output stays inside the test's temp directory.
 func cascadeSmokeRun(name, dir, tmp string, args ...string) cascadeSmokeOutcome {
 	ctx, cancel := context.WithTimeout(context.Background(), cascadeSmokeTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = cascadeSmokeEnv(tmp)
-	// Without WaitDelay, a grandchild holding the output pipes can block Wait
-	// and keep the t.TempDir() directory locked after a timeout kill.
+	// WaitDelay bounds how long Wait blocks on the output pipes once the child
+	// exits. It does not kill grandchildren: on Windows the default Cancel kills
+	// only the direct child, so a leftover grandchild can keep files open and
+	// fixture cleanup can fail. This is accepted, and the cleanup error is
+	// reported by t.TempDir.
 	cmd.WaitDelay = cascadeSmokeWaitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -269,6 +269,8 @@ func cascadeSmokeRun(name, dir, tmp string, args ...string) cascadeSmokeOutcome 
 		out.timedOut = true
 	case errors.As(err, &exitErr):
 		out.code = exitErr.ExitCode()
+	case errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 0:
+		out.waitDelayed = true
 	case err != nil:
 		out.runErr = err
 	}
@@ -284,22 +286,44 @@ func cascadeSmokeMustComplete(t *testing.T, what string, o cascadeSmokeOutcome) 
 		t.Fatalf("%s: timed out after %s (not an exit code)\nstdout:\n%s\nstderr:\n%s", what, cascadeSmokeTimeout, o.stdout, o.stderr)
 	case o.runErr != nil:
 		t.Fatalf("%s: could not run: %v", what, o.runErr)
+	case o.waitDelayed:
+		t.Logf("%s: child exited 0 but its output pipes stayed open past WaitDelay %s, so a grandchild likely holds them; treating the run as completed", what, cascadeSmokeWaitDelay)
 	}
 }
 
-// cascadeSmokeEnv inherits the current environment with the temp-directory
-// variables redirected to tmp.
+// cascadeSmokeEnv inherits the current environment except for GIT_, BACKLOGIT_,
+// and AUTOHARNESS_ variables. The temp-directory variables and the profile,
+// config, and cache directories point under tmp, so the child never reads or
+// writes the operator's real state.
 func cascadeSmokeEnv(tmp string) []string {
-	env := make([]string, 0, len(os.Environ())+3)
+	overrides := []string{
+		"TEMP=" + tmp,
+		"TMP=" + tmp,
+		"TMPDIR=" + tmp,
+		"HOME=" + filepath.Join(tmp, "home"),
+		"USERPROFILE=" + filepath.Join(tmp, "userprofile"),
+		"APPDATA=" + filepath.Join(tmp, "appdata"),
+		"LOCALAPPDATA=" + filepath.Join(tmp, "localappdata"),
+		"XDG_CONFIG_HOME=" + filepath.Join(tmp, "xdg-config"),
+		"XDG_DATA_HOME=" + filepath.Join(tmp, "xdg-data"),
+		"XDG_CACHE_HOME=" + filepath.Join(tmp, "xdg-cache"),
+	}
+	replaced := make(map[string]bool, len(overrides))
+	for _, kv := range overrides {
+		key, _, _ := strings.Cut(kv, "=")
+		replaced[strings.ToUpper(key)] = true
+	}
+	env := make([]string, 0, len(os.Environ())+len(overrides))
 	for _, kv := range os.Environ() {
 		key, _, _ := strings.Cut(kv, "=")
-		switch strings.ToUpper(key) {
-		case "TEMP", "TMP", "TMPDIR":
+		upper := strings.ToUpper(key)
+		if replaced[upper] || strings.HasPrefix(upper, "GIT_") ||
+			strings.HasPrefix(upper, "BACKLOGIT_") || strings.HasPrefix(upper, "AUTOHARNESS_") {
 			continue
 		}
 		env = append(env, kv)
 	}
-	return append(env, "TEMP="+tmp, "TMP="+tmp, "TMPDIR="+tmp)
+	return append(env, overrides...)
 }
 
 // cascadeSmokeParseReport decodes the --json object from a run's stdout.
@@ -322,25 +346,6 @@ func cascadeSmokeResolve(t *testing.T, path string) string {
 		t.Fatalf("resolve %s: %v", path, err)
 	}
 	return resolved
-}
-
-// cascadeSmokeRepoRoot walks up from the package directory to the module root.
-func cascadeSmokeRepoRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	for {
-		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("go.mod not found above %s", dir)
-		}
-		dir = parent
-	}
 }
 
 // cascadeSmokeEvidenceSnapshot maps each file under the real repository's
