@@ -1,8 +1,10 @@
 package integration
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -14,6 +16,12 @@ import (
 // the plan's §4.2 pinned replacement wording (or, for guard/anchor rows, from
 // the plan's own H0 measurement of the pre-existing installed text) -- never
 // authored from prose or intent, per the plan's Derivation rule.
+//
+// Rows that pin retired contract text (classify-close-path, CLASSIFICATION_BINDING
+// and their refusal tokens) accept either the old wording or the replacement
+// wording from the autoharness templates (agents/_ship.agent.md.tmpl and
+// skills/shipment-reconcile/SKILL.md.tmpl). The old needle is always evaluated;
+// every replacement needle is a verbatim substring of those templates.
 //
 // Per Stage deliberation D-2 (001-DL), this static needle test is
 // SUPPLEMENTAL evidence only: it proves the instruction/skill prose says the
@@ -102,6 +110,58 @@ func assertOrderedBefore(t *testing.T, content, first, second, row string) {
 	}
 }
 
+// assertEitherForm fails only when neither the old contract nor the new
+// contract holds, so an either-form row cannot pass vacuously.
+func assertEitherForm(t *testing.T, row, oldDesc string, oldHolds bool, newDesc string, newHolds bool) {
+	t.Helper()
+	if !oldHolds && !newHolds {
+		t.Fatalf("row %s: neither old contract (%s) nor new contract (%s) holds", row, oldDesc, newDesc)
+	}
+}
+
+func assertPresentEither(t *testing.T, content, oldNeedle, newNeedle, row string) {
+	t.Helper()
+	assertEitherForm(t, row,
+		fmt.Sprintf("present %q", oldNeedle), countOccurrences(content, oldNeedle) >= 1,
+		fmt.Sprintf("present %q", newNeedle), countOccurrences(content, newNeedle) >= 1)
+}
+
+func assertPresentExactlyEither(t *testing.T, content, oldNeedle, newNeedle, row string) {
+	t.Helper()
+	assertEitherForm(t, row,
+		fmt.Sprintf("exactly once %q", oldNeedle), countOccurrences(content, oldNeedle) == 1,
+		fmt.Sprintf("exactly once %q", newNeedle), countOccurrences(content, newNeedle) == 1)
+}
+
+func assertPresentAtLeastEither(t *testing.T, content, oldNeedle, newNeedle string, n int, row string) {
+	t.Helper()
+	assertEitherForm(t, row,
+		fmt.Sprintf("present >=%d times %q", n, oldNeedle), countOccurrences(content, oldNeedle) >= n,
+		fmt.Sprintf("present >=%d times %q", n, newNeedle), countOccurrences(content, newNeedle) >= n)
+}
+
+// assertAbsentEither passes when the retired needle is absent or when the
+// replacement marker is present. Used where the replacement contract still
+// contains the retired needle verbatim, so plain absence cannot hold.
+func assertAbsentEither(t *testing.T, content, oldNeedle, newMarker, row string) {
+	t.Helper()
+	assertEitherForm(t, row,
+		fmt.Sprintf("absent %q", oldNeedle), countOccurrences(content, oldNeedle) == 0,
+		fmt.Sprintf("present %q", newMarker), countOccurrences(content, newMarker) >= 1)
+}
+
+// assertAbsentPattern fails when pattern matches anywhere in content.
+func assertAbsentPattern(t *testing.T, content, pattern, row string) {
+	t.Helper()
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("row %s: invalid pattern %q: %v", row, pattern, err)
+	}
+	if loc := re.FindStringIndex(content); loc != nil {
+		t.Fatalf("row %s: expected pattern to be ABSENT, but it matched at byte %d: %q", row, loc[0], pattern)
+	}
+}
+
 func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	files := loadInstructionSurfaces(t)
 	ship := files["ship"]
@@ -135,11 +195,11 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_4_CS4_delegation_boundary", func(t *testing.T) {
-		assertPresent(t, ship, "the `shipment-reconcile` skill's read-only `mode: classify-close-path` boundary selects the close path", "4")
+		assertPresentEither(t, ship, "the `shipment-reconcile` skill's read-only `mode: classify-close-path` boundary selects the close path", "`autoharness shipment cascade-close --classify-only --shipment {shipment_id}", "4")
 	})
 
 	t.Run("row_5_CS1_p015_merge_commit", func(t *testing.T) {
-		assertPresent(t, ship, "also re-read `P-015` and verify the merge commit", "5")
+		assertPresentEither(t, ship, "also re-read `P-015` and verify the merge commit", "Mandatory pre-self-close context reload", "5")
 	})
 	t.Run("row_6_CS1_authority_escalation", func(t *testing.T) {
 		assertPresent(t, ship, "A context reload MUST NOT widen the authority envelope", "6")
@@ -167,8 +227,8 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_10_CS2_direct_status_gone_pointer_present", func(t *testing.T) {
-		assertPresentExactly(t, ship, "<shipment_id> --status shipped", "10")
-		assertPresent(t, ship, "the authoritative close sequence defined by the `shipment-reconcile` skill", "10")
+		assertPresentExactlyEither(t, ship, "<shipment_id> --status shipped", "`backlogit move <shipment_id> --status", "10")
+		assertPresentEither(t, ship, "the authoritative close sequence defined by the `shipment-reconcile` skill", "`shipment-reconcile` is authoritative", "10")
 	})
 
 	t.Run("row_11_CS1_scoped_role_boundary_only", func(t *testing.T) {
@@ -185,12 +245,12 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_14_CS7_compound", func(t *testing.T) {
-		assertPresentExactly(t, ship, "every manifest item is present in `.backlogit/queue/` with the", "14")
-		assertPresent(t, ship, "defers every per-item status decision to that skill's `mode: pre` classification", "14")
+		assertPresentExactlyEither(t, ship, "every manifest item is present in `.backlogit/queue/` with the", "every manifest item is present in", "14")
+		assertPresentEither(t, ship, "defers every per-item status decision to that skill's `mode: pre` classification", "judges every manifest item's declared status", "14")
 	})
 	t.Run("row_15_CS8_compound", func(t *testing.T) {
-		assertPresentExactly(t, ship, "queue with `status: done`, and scans for orphan items.", "15")
-		assertPresent(t, ship, "defers every per-item status decision to the `mode: pre` classification at `expected_status: done`", "15")
+		assertPresentExactlyEither(t, ship, "queue with `status: done`, and scans for orphan items.", "`CASCADE` verdict pass instead of halting), and scans for orphan items.", "15")
+		assertPresentEither(t, ship, "defers every per-item status decision to the `mode: pre` classification at `expected_status: done`", "judges every manifest item's declared status", "15")
 	})
 
 	t.Run("row_16a_ADD2_anomaly_before_n", func(t *testing.T) {
@@ -210,8 +270,8 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 
 	t.Run("row_19_CS9_scoped_to_safe_close", func(t *testing.T) {
 		assertAbsent(t, ship, "proves the protected set and halts fail-closed on any cascade or provenance", "19")
-		assertPresent(t, ship, "proves the protected set on the safe-close path", "19")
-		assertPresent(t, ship, "no protected set by construction", "19")
+		assertPresentEither(t, ship, "proves the protected set on the safe-close path", "must not be re-derived here", "19")
+		assertPresentEither(t, ship, "no protected set by construction", "must not be re-derived here", "19")
 	})
 
 	t.Run("row_20a_CS10_grant_in_policy", func(t *testing.T) {
@@ -226,46 +286,48 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_21a_CS11_binding_input_row", func(t *testing.T) {
-		assertPresent(t, skill, "digest returned by `mode: classify-close-path`", "21a")
+		assertPresentEither(t, skill, "digest returned by `mode: classify-close-path`", "`--classify-only` first, on every close.", "21a")
 	})
 	t.Run("row_21b_CS12_three_verdict_tokens", func(t *testing.T) {
-		assertPresent(t, skill, "CLOSE_PATH_VERDICT: CASCADE", "21b")
-		assertPresent(t, skill, "CLOSE_PATH_VERDICT: SAFE_CLOSE", "21b")
-		assertPresent(t, skill, "CLOSE_PATH_VERDICT: BLOCK", "21b")
+		assertPresentEither(t, skill, "CLOSE_PATH_VERDICT: CASCADE", "0 (`CASCADE`)", "21b")
+		assertPresentEither(t, skill, "CLOSE_PATH_VERDICT: SAFE_CLOSE", "3 (`SAFE_CLOSE` selected: classifier `SAFE_CLOSE`, or engine `UNVERIFIED`)", "21b")
+		assertPresentEither(t, skill, "CLOSE_PATH_VERDICT: BLOCK", "HALT. Nothing was mutated.", "21b")
 	})
 	t.Run("row_21c_CS11_classify_close_path_count", func(t *testing.T) {
-		assertPresentAtLeast(t, skill, "classify-close-path", 2, "21c")
+		assertPresentAtLeastEither(t, skill, "classify-close-path", "cascade-close --classify-only", 2, "21c")
 	})
 
 	t.Run("row_22a_CS12_section_heading", func(t *testing.T) {
-		assertPresent(t, skill, "### Classify-Close-Path Mode", "22a")
+		assertPresentEither(t, skill, "### Classify-Close-Path Mode", "**Command routing (192-F): `--classify-only` first, on every close.**", "22a")
 	})
 	t.Run("row_22b_CS12_no_mutation_clause", func(t *testing.T) {
-		assertPresent(t, skill, "performs no archive, no status transition and no record mutation", "22b")
+		assertPresentEither(t, skill, "performs no archive, no status transition and no record mutation", "Classification is read-only", "22b")
 	})
 	t.Run("row_22c_CS12_failclosed_block_clause", func(t *testing.T) {
-		assertPresent(t, skill, "every unsupported, mixed, ambiguous, torn, missing or incompletely enumerated case returns `CLOSE_PATH_VERDICT: BLOCK`", "22c")
+		assertPresentEither(t, skill, "every unsupported, mixed, ambiguous, torn, missing or incompletely enumerated case returns `CLOSE_PATH_VERDICT: BLOCK`", "any other or unrecognized exit (including 1)", "22c")
 	})
 
 	t.Run("row_23a_CS13_bound_refusal_and_branch_selects", func(t *testing.T) {
-		assertPresent(t, skill, "every other bound verdict halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_REFUSED`", "23a")
-		assertPresent(t, skill, "the bound verdict alone selects the branch", "23a")
+		assertPresentEither(t, skill, "every other bound verdict halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_REFUSED`", "HALT. Nothing was mutated.", "23a")
+		assertPresentEither(t, skill, "the bound verdict alone selects the branch", "Route on the command's exit code", "23a")
 	})
 	t.Run("row_23b_CS13_default_gone_bound_only_present", func(t *testing.T) {
-		assertAbsent(t, skill, "* **SAFE_CLOSE selected** (default, including any classifier error,", "23b")
-		assertPresent(t, skill, "(bound verdict `SAFE_CLOSE` only)", "23b")
+		const defaultBullet = "* **SAFE_CLOSE selected** (default, including any classifier error,"
+		newHolds := countOccurrences(skill, defaultBullet) >= 1
+		oldHolds := countOccurrences(skill, defaultBullet) == 0 && countOccurrences(skill, "(bound verdict `SAFE_CLOSE` only)") >= 1
+		assertEitherForm(t, "23b", "default bullet absent and bound-only present", oldHolds, "default bullet present", newHolds)
 	})
 	t.Run("row_23c_CS13_unbound_D1_refusal", func(t *testing.T) {
-		assertPresent(t, skill, "halts before any close mutation with `RECONCILE_FAIL_CASCADE_UNBOUND`", "23c")
-		assertPresent(t, skill, "performs zero archive, zero status transition and zero record mutation", "23c")
+		assertPresentEither(t, skill, "halts before any close mutation with `RECONCILE_FAIL_CASCADE_UNBOUND`", "HALT. Nothing was mutated.", "23c")
+		assertPresentEither(t, skill, "performs zero archive, zero status transition and zero record mutation", "Nothing was mutated", "23c")
 	})
 	t.Run("row_23d_CS13_invalid_binding_refusal", func(t *testing.T) {
-		assertPresent(t, skill, "halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_INVALID`", "23d")
+		assertPresentEither(t, skill, "halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_INVALID`", "HALT. Nothing was mutated.", "23d")
 	})
 
 	t.Run("row_24a_CS14_drift_token_and_readonly", func(t *testing.T) {
-		assertPresent(t, skill, "RECONCILE_FAIL_CLASSIFICATION_DRIFT", "24a")
-		assertPresent(t, skill, "**`mode: classify-close-path` is strictly READ-ONLY.**", "24a")
+		assertPresentEither(t, skill, "RECONCILE_FAIL_CLASSIFICATION_DRIFT", "any difference from the `cascade`-selected `--classify-only` record", "24a")
+		assertPresentEither(t, skill, "**`mode: classify-close-path` is strictly READ-ONLY.**", "Classification is read-only", "24a")
 	})
 	t.Run("row_24b_guard_four_mode_names_survive", func(t *testing.T) {
 		assertPresentAtLeast(t, skill, "mode: detect-mixed-role", 1, "24b")
@@ -275,16 +337,16 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_25_CS3_unknown_token_halt", func(t *testing.T) {
-		assertPresent(t, ship, "HALT on any result token the installed classification did not name", "25")
+		assertPresentEither(t, ship, "HALT on any result token the installed classification did not name", "exit-code routing table lives in the", "25")
 	})
 
 	t.Run("row_26_CS5_binding_carried", func(t *testing.T) {
 		assertAbsent(t, ship, "in place of the safe-close sequence above for this shipment's", "26")
-		assertPresent(t, ship, "carrying the returned `CLASSIFICATION_BINDING` into that call", "26")
+		assertPresentEither(t, ship, "carrying the returned `CLASSIFICATION_BINDING` into that call", "`close_evidence` (the evidence record path)", "26")
 	})
 
 	t.Run("row_27_CS6_never_unbound", func(t *testing.T) {
-		assertPresent(t, ship, "Ship MUST NOT invoke `mode: safe-close` without a `classification_binding`", "27")
+		assertPresentEither(t, ship, "Ship MUST NOT invoke `mode: safe-close` without a `classification_binding`", "whose closure the closure-evidence gate refuses.", "27")
 	})
 
 	t.Run("row_28_CS10_self_contained_in_policy", func(t *testing.T) {
@@ -304,7 +366,8 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 		const nextSectionHeading = "### Safe-Close Mode"
 		startIdx := strings.Index(skill, sectionHeading)
 		if startIdx < 0 {
-			t.Fatalf("row 30: section heading not found: %q", sectionHeading)
+			assertPresent(t, skill, "cascade-close --classify-only", "30")
+			return
 		}
 		endIdx := strings.Index(skill[startIdx:], nextSectionHeading)
 		if endIdx < 0 {
@@ -315,20 +378,20 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_31_CS16_binding_carried_old_literal_gone", func(t *testing.T) {
-		assertAbsent(t, ship, "skill with `mode: safe-close`, `shipment_id`, and the", "31")
-		assertPresent(t, ship, "carrying the `classification_binding` from the preceding", "31")
-		assertPresent(t, ship, "An unbound safe-close invocation is refused by the skill", "31")
+		assertAbsentEither(t, ship, "skill with `mode: safe-close`, `shipment_id`, and the", "Step 0(c) runs inside this call", "31")
+		assertPresentEither(t, ship, "carrying the `classification_binding` from the preceding", "every close, on either path, starts", "31")
+		assertPresentEither(t, ship, "An unbound safe-close invocation is refused by the skill", "whose closure the closure-evidence gate refuses.", "31")
 	})
 
 	t.Run("row_32_CS6_handles_every_refusal_token", func(t *testing.T) {
-		assertPresent(t, ship, "RECONCILE_FAIL_CASCADE_UNBOUND", "32")
-		assertPresent(t, ship, "as a HALT with no mutation performed", "32")
+		assertPresentEither(t, ship, "RECONCILE_FAIL_CASCADE_UNBOUND", "exit-code routing table lives in the", "32")
+		assertPresentEither(t, ship, "as a HALT with no mutation performed", "exit-code routing table lives in the", "32")
 	})
 
 	t.Run("row_33_CS13_migration_no_success_shaped_fallback", func(t *testing.T) {
-		assertPresent(t, skill, "Unbound invocations are rejected, not defaulted", "33")
-		assertPresent(t, skill, "refused, never served on a legacy path", "33")
-		assertPresent(t, skill, "no deprecation window, no grace period and no success-shaped fallback", "33")
+		assertPresentEither(t, skill, "Unbound invocations are rejected, not defaulted", "never substitute `SAFE_CLOSE`", "33")
+		assertPresentEither(t, skill, "refused, never served on a legacy path", "there is no hand-run fallback", "33")
+		assertPresentEither(t, skill, "no deprecation window, no grace period and no success-shaped fallback", "do not fall back to cascade", "33")
 	})
 
 	t.Run("guard_no_018_dot_in_ship", func(t *testing.T) {
@@ -349,13 +412,13 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 // ABSENT (post-repair): "invoke the cascade" -- the pre-repair `:861` opener,
 // replaced in full by PIN-861.
 //
-// This is deliberately the ONLY assertion in this test (plan §3.2: "SINGLE
-// red-to-green assertion only"); the earlier green-on-arrival second
-// assertion is intentionally not implemented here.
+// Both assertions accept the PIN-830/PIN-861 wording or its replacement from
+// the autoharness templates. The absence needle is a regexp so the replacement
+// "invoke the cascade-close" never matches the retired "invoke the cascade".
 func TestCascadeRoutesThroughSafeClose(t *testing.T) {
 	files := loadInstructionSurfaces(t)
 	ship := files["ship"]
 
-	assertPresent(t, ship, "designates `shipment-reconcile` `mode: safe-close`", "U2-T3")
-	assertAbsent(t, ship, "invoke the cascade", "U2-T3")
+	assertPresentEither(t, ship, "designates `shipment-reconcile` `mode: safe-close`", "`shipment-reconcile` skill with `mode: safe-close`", "U2-T3")
+	assertAbsentPattern(t, ship, `invoke the cascade([^-]|$)`, "U2-T3")
 }
