@@ -31,7 +31,11 @@ CI log:
 
 1. **Scan set (EEE39D23):** `scannedPathsFromListing` keeps only `shouldScan` records, so a tracked
    symlink or gitlink with no `.go` suffix (verified: `git ls-files` lists `internal/fx` and
-   `internal/sub`) is never checked.
+   `internal/sub`) is never checked. **Plan-review SEC-1, verified by probe:** the pathspecs
+   `internal/**` and `cmd/**` do not list a symlink or gitlink named exactly `internal` or `cmd`
+   (the literal pathspecs `internal` and `cmd` do), so a top-level `cmd -> ../pkg` symlink is never
+   judged either. U6 therefore also changes the runner's pathspecs to the literal `internal` and
+   `cmd`.
 2. **Root discovery (DBE25DF5):** both wrappers derive `ROOT` through unscrubbed
    `git rev-parse --show-toplevel` (verified: ambient `GIT_DIR`+`GIT_WORK_TREE` returns the decoy
    root), and ED-7 detects only an empty selection.
@@ -51,20 +55,26 @@ CI log:
 
 **Chain:** `043-S` (Batch 1, queued, on the Batch 1 staging branch) → **S1** → **S2**, each with a
 `blocks` edge (`backlogit dep add <later> <earlier>`). **Merge order:** the Batch 1 staging PR
-merges first (as a merge commit, never squash), then this branch's staging PR.
+merges first (as a merge commit, never squash; Principle XI), then this branch's staging PR.
 
-**File overlap with 043-S: none** (043-S: `.github/**`, `.autoharness/**`, policy docs,
-`tests/integration/*` contract tests; Batch 2: `tools/gatecheck/**`, `scripts/**`). Both must leave
-`go test ./...` green. Within Batch 2, S1 and S2 both edit `writepath.go` and `writepath_test.go`
-(S2 only `gitRunnerEnv` and `TestGitRunnerEnv`), so the chain is required for ordering, not only
-priority.
+**Why the `043-S` edge exists although the file sets are disjoint (SB-2):** it is an
+operator-directed ordering, not a file conflict. 043-S installs the single authoritative
+shipment-close procedure that Ship must use to close S1 and S2, so Ship should not claim S1 before
+043-S has shipped. **File overlap with 043-S: none** (043-S: `.github/**`, `.autoharness/**`,
+policy docs, `tests/integration/*` contract tests; Batch 2: `tools/gatecheck/**`, `scripts/**`);
+both must leave `go test ./...` green.
+
+**Why two shipments (SB-1):** a review-size cap and gate-risk isolation, not disjoint files. S1 is
+one package; S2 mixes shell, a shared lib and a frozen pin. The S1 → S2 edge is needed only
+because U13/U14 edit `writepath.go` and `writepath_test.go` after S1 does; U9-U12 (shell) are
+independent of S1 and are chained for serial execution only.
 
 ## Requirements Trace
 
 | Requirement (source) | Units |
 |---|---|
 | EDC18D59: central escaping at `errorLine` and fixture prints; unwrap `*fs.PathError`; `!strconv.IsPrint` for C1; cover the `not a contained regular file: <reason>` sink | U1-U4 |
-| EEE39D23: every tracked record under `internal/**`, `cmd/**` passes containment or fails closed; decide case-variant scope | U5, U6 (case variant: D-WB2-3, pinned in U5) |
+| EEE39D23: every tracked record under `internal/**`, `cmd/**` passes containment or fails closed (including a top-level `internal`/`cmd` link); decide case-variant scope | U5, U6 (case variant: D-WB2-3, pinned in U5) |
 | 858516B9: `.go`-named directory fails closed; FIFO row without a Windows skip; hard link (decided not implemented, D-WB2-7) | U7, U8 |
 | DBE25DF5: deliberate root discovery for both wrappers; wrong-tree coverage with `internal/` and `cmd/` in both repos (AS-5); per-arm guard rejected (D-WB2-5) | U9-U12 |
 | 2613D248: strip `MSYS`, `CYGWIN`, `MSYS2_*`; boundary rows in both tables, identical; retiredarch pin atomicity | U13-U15 |
@@ -78,149 +88,210 @@ Evaluated in this order; the first failure wins; every echoed string passes `esc
 | 1 | git runner error | `::error::git ls-files: <err>` exit 1 (unchanged text for control-free input) |
 | 2 | listing not NUL-terminated or has an empty record | `::error::git ls-files output: ...` exit 1 (unchanged) |
 | 3 | a **selected** path is invalid UTF-8 or has a forbidden rune | `::error::git ls-files output: path "..." ...` exit 1 (unchanged) |
-| **4 (new)** | a listed record that `shouldScan` did **not** select fails `containedRegularFile` (symlink, gitlink or other directory, symlinked ancestor, non-regular), checked in git order | `::error::<rel>: not a contained regular file: <reason>` exit 1, before ED-7 and before any selected file is read |
+| **4 (new)** | a listed record that `shouldScan` did **not** select fails `containedRegularFile` (symlink, gitlink or other directory, symlinked ancestor, non-regular, **including a record named exactly `internal` or `cmd`**), checked in git order | `::error::<rel>: not a contained regular file: <reason>` exit 1, before ED-7 and before any selected file is read |
 | 5 | no selected path (ED-7) | unchanged, exit 1 |
 | 6 | per selected path: containment refusal, read error, finding | unchanged ordering and text (read error now has the `*fs.PathError` unwrapped) |
 | 7 | clean | exit 0 |
 
 A tracked non-selected record absent from the working tree keeps today's `fs.ErrNotExist` pass (a
-deleted non-Go file is not built). Case-variant top-level directories (`Internal/`, `CMD/`) are
-not selected and are not an error (D-WB2-3). Fixture self-test adds one outcome: a directory whose
-name ends in `.go` fails closed.
+deleted non-Go file is not built; `ls-files -z` carries no mode, so a symlink or gitlink record
+whose path is absent from disk also passes, an accepted residual, G-9). Case-variant top-level
+directories (`Internal/`, `CMD/`) are not selected and are not an error (D-WB2-3). Fixture
+self-test adds one outcome: a directory whose name ends in `.go` fails closed (raised during
+collection, before the per-fixture containment checks).
+
+**Echo completeness (SEC-3, G-7):** "every echoed string" means: `errorLine`, the repo-scan
+findings loop, the fixture `PASS`/`FAIL` lines and joined findings, and the two fixture-directory
+`...not found` / `no fixtures discovered` lines (which carry `--root`). The shell
+`unrecognized argument: $arg` echo carries workflow-YAML-supplied text (trusted) and stays an
+accepted residual.
 
 ## Implementation Units
 
 Conventions: every task has both `size` (effort) and `complexity` (difficulty), set independently.
-Every test unit names its red evidence (the parent-commit failure). Posture for a pair is
-test-first: the test unit lands red, the production unit turns it green. Windows: filesystem
-symlink rows reuse the existing `u4CreateSymlink` helper (skips only on Errno 1314 under
-`GOOS=windows`, red evidence comes from the required Linux job); rows that need names Windows
-cannot create live in `//go:build !windows` files, so no new `t.Skip` is added.
+Posture for a pair is test-first: the **test unit lands red and records the failing output at the
+parent commit; it does not need a green repository**, and the **production unit that follows
+restores green**. A full `go test ./...` green is required at each pair completion (U2, U4, U6, U8,
+U10, U12, U15), not at the test units (SB-4, G-5). Every test fixture is created under
+`t.TempDir()` and no unit writes outside the cwd tree (Principles III and IV, CR-8). Windows:
+filesystem symlink rows reuse the existing `u4CreateSymlink` helper (skips only on Errno 1314 under
+`GOOS=windows`; red evidence comes from the required Linux job); rows that need names or objects
+Windows cannot create live in `//go:build unix` files (not `!windows`, because `syscall.Mkfifo` is
+absent on plan9, js and wasip1), so no new `t.Skip` is added, helpers used only by those files live
+in those files, and verification adds `GOOS=linux go vet ./tools/gatecheck/...` (G-6). Commit
+convention: `test(...)` for test units, `fix(...)`/`feat(...)` for production units (CR-6).
+
+**Safety modes (Principle VIII, CR-2):** careful mode for U6, U10, U12 and U15 (a merge-blocking
+gate, a wrapper behaviour change and a pin refreeze: enumerate the risks above, confirm the
+outcome-matrix and the `PA-*` rollback before each commit); freeze-scope mode bounded to
+`tools/gatecheck/**` and `scripts/**` for every unit. The Ship agent invokes the `safety-modes`
+skill at the start of each of those units.
 
 ### RU-1: Write-path gate completeness and CI-log output safety (shipment S1)
 
 **U1 (test; size S, complexity low): escape helper and `errorLine` rows.**
 File: `tools/gatecheck/internal/writepath/writepath_test.go`. Scenarios (2): (a) a pure table for
-`escapeLogText`: control characters (LF, CR, TAB, ESC), DEL, C1 including U+009B, U+0085, U+2028,
-U+2029, a bidi override (U+202E), a format character (U+200B), an invalid UTF-8 byte, a lone
-backslash, printable ASCII and printable non-ASCII (`é`, a CJK rune): non-printables become
-`\xNN` / `\uNNNN` / `\UNNNNNNNN`, everything else is byte-identical; (b) `errorLine` rows: benign
-text identical to today's golden text; context and error text with a newline followed by
-`::error::x` produce exactly one output line. **Red:** `escapeLogText` is undefined (compile red)
-and `errorLine` prints the raw newline. AC: both scenarios fail at the parent for those reasons.
+`escapeLogText`: LF, CR, TAB, ESC, DEL, C1 including U+009B, U+0085, U+2028, U+2029, a bidi override
+(U+202E), a zero-width format character (U+200B), an invalid UTF-8 byte, a lone backslash, printable
+ASCII and printable non-ASCII (`é`, a CJK rune). Non-printables become `\xNN` / `\uNNNN` /
+`\UNNNNNNNN`; everything else is byte-identical. Keep the table to long-stable Unicode classes
+(`strconv.IsPrint` follows the toolchain's tables, G-8). (b) `errorLine` rows: benign text identical
+to today's golden text; a context and error text containing a newline followed by `::error::x`
+produce exactly one output line. **Red:** `escapeLogText` is undefined (compile red) and `errorLine`
+prints the raw newline. AC: both scenarios fail at the parent for those reasons.
 
 **U2 (prod; size S, complexity low): `escapeLogText` and `errorLine`.** Blocked by U1.
-File: `writepath.go`. Add `escapeLogText(string) string` (iterate with `utf8.DecodeRuneInString`;
-a width-1 `RuneError` becomes `\xNN`; `!strconv.IsPrint(r)` becomes a visible escape; backslash is
-**not** escaped). `errorLine` escapes `context` and `err.Error()`. AC: U1 green; every existing
-golden and `TestRunRepoScan_BadListing_FailsClosed` row unchanged; `go vet` clean.
+File: `writepath.go`. Add `escapeLogText(string) string` (iterate with `utf8.DecodeRuneInString`; a
+width-1 `RuneError` becomes `\xNN`; `!strconv.IsPrint(r)` becomes a visible escape; backslash is
+**not** escaped, so an attacker-written literal `\x0a` is indistinguishable from an escaped newline,
+which is cosmetic and carries no workflow-command risk: commands need a real line break). The
+doc comment says "keep in sync with any retiredarch copy; the planned home is `pysem` when
+`36BE1F61` lands" (AR-5). `errorLine` escapes `context` and `err.Error()`. AC: U1 green; every
+existing golden and `TestRunRepoScan_BadListing_FailsClosed` row unchanged (verified: that test
+already builds its expectation with `%q`); `go vet` clean.
 
 **U3 (test; size M, complexity medium): call-site sink rows.** Blocked by U2.
-Files: `writepath_test.go`, new `writepath_unix_test.go` (`//go:build !windows`). Scenarios (2):
-(a) repo-scan sinks as one table: a stub runner returning an error whose text contains a newline and
-`::error::` stays on one line; a read error echoes **no absolute path** (the `*fs.PathError` is
-unwrapped); update the pinned expectation of `TestRunRepoScan_DeletedTrackedFile_KeepsReadError`,
-which today recomputes `errorLine(rel, readErr)` from the raw `*fs.PathError`, to the unwrapped
-form; (b) fixture-self-test sinks (unix-only file): a fixture named with an embedded newline and
-`::error::` text yields PASS/FAIL lines and a U4 `not a contained regular file` line that contain no
-raw control character (`assertNoRawControl`). **Red:** PASS/FAIL and the read error currently echo
-raw text and the absolute path. AC: the existing U4 linked-fixture rows (benign names) stay green.
+Files: `writepath_test.go`, new `writepath_unix_test.go` (`//go:build unix`). Scenarios (2):
+(a) repo-scan sinks as one table: a stub runner returning an error whose text contains a newline
+and `::error::` stays on one line; a selected record whose name contains U+009B (passes the D-BW-1a
+rune filter) prints its finding line escaped (SEC-3); a read error echoes **no absolute path** (the
+`*fs.PathError` is unwrapped); a non-`PathError` error passes through unchanged (SB-8). Update the
+pinned expectation of `TestRunRepoScan_DeletedTrackedFile_KeepsReadError`, which today recomputes
+`errorLine(rel, readErr)` from the raw `*fs.PathError`: the test unwraps with `errors.As` itself and
+must **not** call `unwrapPathError`, so only U1 is compile-red (G-1). (b) fixture-self-test sinks
+(unix-only file): a fixture named with an embedded newline and `::error::` text yields `PASS` and
+`FAIL` lines, joined findings and a U4 `not a contained regular file` line that contain no raw
+control character (`assertNoRawControl`). **Red:** these currently echo raw text and the absolute
+path. AC: the existing U4 linked-fixture rows (benign names) stay green.
 
-**U4 (prod; size S, complexity low): apply the chokepoint at the sinks.** Blocked by U3.
-File: `writepath.go`. `runFixtureSelfTest`: escape the name in `PASS`, `FAIL` and the joined findings;
-add `unwrapPathError(error) error` and use it where `scanFile`'s error reaches `errorLine` in
-`runRepoScan` and `runFixtureSelfTest`. AC: U3 green; goldens unchanged;
+**U4 (prod; size S, complexity low): apply the chokepoint at every sink.** Blocked by U3.
+File: `writepath.go`. `runFixtureSelfTest`: escape the name in `PASS`, `FAIL` and the joined
+findings, and the `fixture dir not found` / `no fixtures discovered` lines; `runRepoScan`: escape
+each line of the findings loop; add `unwrapPathError(error) error` (via `errors.As`) and use it
+where `scanFile`'s error reaches `errorLine` in both functions. AC: U3 green; goldens unchanged;
 `TestRun_ReadError_FailsClosed` still names the relative path.
 
 **U5 (test; size M, complexity medium): scan-set widening rows.** Blocked by U4.
-File: `writepath_test.go`. Scenarios (3): (a) `runRepoScan` table over real files with a stub
-runner: a non-`.go` symlink record, a `_test.go` symlink, a symlink to a directory, a symlinked
-ancestor of a non-Go file, and a gitlink (real directory plus listed record) each fail with
-`not a contained regular file`; controls: a regular non-Go file, a regular `_test.go`, and a record
-absent from disk pass; (b) a pure row pinning the D-WB2-3 decision: `Internal/x.go` and `CMD/y.go`
-listing records are neither selected nor an error; (c) one real-git end-to-end row
-(`hermeticGitEnv`; `git update-index --cacheinfo 160000,...` for `internal/sub` plus a real
-directory) proving the pathspec returns the gitlink record and the gate refuses it. **Red:** every
-(a) refusal row and (c) pass at the parent (silent drop), controls and (b) green on arrival
-(characterization, stated in the test). AC: red evidence for (a) and (c) captured on the Linux job.
+File: `writepath_test.go` (and the existing `gitLsFilesCapture` baseline helper, updated to the new
+pathspecs). **Every row lists a real clean selected `internal/ok.go` beside the record under test**,
+so the parent fails with the intended silent pass, not ED-7 (G-2); control rows assert exit 0.
+Scenarios (3): (a) `runRepoScan` table over real files with a stub runner: a non-`.go` symlink
+record, a `_test.go` symlink, a symlink to a directory, a symlinked ancestor of a non-Go file, and a
+gitlink (real directory plus listed record) each fail with `not a contained regular file`;
+controls: a regular non-Go file, a regular `_test.go` and a record absent from disk pass (exit 0);
+(b) a pure row pinning the D-WB2-3 decision: `Internal/x.go` and `CMD/y.go` records are neither
+selected nor an error; (c) real-git rows (`hermeticGitEnv`; records created with
+`git update-index --cacheinfo`): a gitlink `internal/sub`, and a symlink and a gitlink named exactly
+`internal` and `cmd`, proving the **runner's listing contains them** (assert listing bytes) and the
+gate refuses them; plus a control asserting the new pathspecs return bytes identical to the old
+`internal/** cmd/**` pair on the real tree. **Red:** every (a) refusal row and the (c) refusals pass
+silently at the parent; controls and (b) are green on arrival (characterization, stated in the
+test). AC: red evidence for (a) and (c) captured on the Linux job.
 
 **U6 (prod; size M, complexity medium): contain every non-selected record.** Blocked by U5.
-File: `writepath.go`. Add `listedRecords(out []byte) ([]string, error)` (the NUL/empty-record
-parse); `scannedPathsFromListing` keeps its signature and composes it; `runRepoScan` runs
-`containedRegularFile` over the non-selected records in git order after the selected-path rules and
-before ED-7; the in-loop check for selected records is unchanged. Update the doc comments
-(`runRepoScan`, `scannedPathsFromListing`) with the outcome-4 text, the case-variant decision and
-the hard-link accepted residual (`A8FB0682`). AC: U5 green; `TestScannedPathsFromListing_Table` and
-`TestRunRepoScan_BadListing_FailsClosed` unchanged and green; `TestRun_RepoMode_CurrentTreeIsClean`
-green on the real tree (56 records, none non-regular).
+File: `writepath.go`. Replace the parse loop with one single-pass iterator
+`scanListing(out []byte) (selected, others []string, err error)` that keeps **today's error
+precedence for multi-fault listings** (encounter order, G-3); `scannedPathsFromListing` keeps its
+signature and returns `selected`; `runRepoScan` runs `containedRegularFile` over `others` in git
+order after the selected-path rules and before ED-7; the in-loop check for selected records is
+unchanged. `DefaultGitRunner` lists `-- internal cmd` (literal pathspecs; identical bytes on the
+real tree, plus top-level `internal`/`cmd` records). Update the `GitRunner`, `runRepoScan` and
+`scannedPathsFromListing` doc comments with the outcome-4 text, the case-variant decision, the
+gitlink-absent-from-disk residual and the hard-link accepted residual (`A8FB0682`). AC: U5 green;
+`TestScannedPathsFromListing_Table` and `TestRunRepoScan_BadListing_FailsClosed` unchanged and
+green; `TestRun_RepoMode_CurrentTreeIsClean` green on the real tree (56 records, none non-regular);
+`TestDefaultGitRunnerIgnoresGitEnv` green.
 
 **U7 (test; size S, complexity low): fixture directory and FIFO rows.** Blocked by U6.
-Files: `writepath_test.go`, `writepath_unix_test.go`. Scenarios (2): (a) a table: real directories
-named `accept-d.go`, `reject-d.go` and `other.go` fail closed with the escaped name; a directory
-named `harness` (no `.go` suffix) next to a valid fixture is still skipped and the self-test
-passes; (b) unix-only FIFO named `reject-fifo.go` (via `syscall.Mkfifo`) is refused as not a regular
-file, run in a goroutine with a timeout so a regression fails instead of hanging. **Red:** (a)
-directory rows pass silently at the parent; (b) is a characterization row (green on arrival, stated).
+Files: `writepath_test.go`, `writepath_unix_test.go`. **Each row includes at least one valid fixture**
+beside the directory so the parent does not return "no fixtures discovered" (G-2). Scenarios (2):
+(a) a table: real directories named `accept-d.go` and `reject-d.go` fail closed with the escaped
+name; a directory named `harness` (no `.go` suffix) next to a valid fixture is still skipped and the
+self-test passes (SB-7); (b) unix-only FIFO named `reject-fifo.go` (via `syscall.Mkfifo`) is refused
+as not a regular file, run in a goroutine with a timeout so a regression fails instead of hanging;
+cleanup unblocks a stuck opener by opening the FIFO `O_RDWR|O_NONBLOCK` (G-6). **Red:** (a)
+directory rows pass silently at the parent; (b) is a characterization row (green on arrival,
+stated).
 
 **U8 (prod; size S, complexity low): refuse `.go`-named directories.** Blocked by U7.
 File: `writepath.go`. In `runFixtureSelfTest` replace the unconditional `e.IsDir()` skip with: a
 directory whose name ends in `.go` returns `errorLine(relPath, errors.New("fixture is a directory; names ending in .go must be regular files"))`
-exit 1; other directories stay skipped. Comment records the hard-link residual. AC: U7 green;
-`TestRun_SelfTest_MatchesGolden` and `TestRun_SelfTestIntegrity_MatchesGolden` unchanged.
+exit 1 (raised during collection, before the per-fixture containment loop); other directories stay
+skipped. The comment records the hard-link residual. AC: U7 green; `TestRun_SelfTest_MatchesGolden`
+and `TestRun_SelfTestIntegrity_MatchesGolden` unchanged.
 
 ### RU-2: Gate git discovery and environment isolation (shipment S2)
 
-**U9 (test; size M, complexity medium): write-path wrapper wrong-tree rows.**
-File: `tools/gatecheck/check_write_path_wrapper_test.go` (extend the go shim in this file to record
-the `--root` argument it hands the generated binary; the shim is package-shared). Scenarios (3):
-(a) two repositories that both contain `internal/` and `cmd/` files; ambient `GIT_DIR` and
-`GIT_WORK_TREE` point at the decoy; the recorded `--root` must be the wrapper's own checkout
-(`os.SameFile`, Windows 8.3 safe); (b) `GIT_DIR` alone with cwd in a subdirectory of the real tree;
-(c) a no-ambient control. **Red:** (a) and (b) record the decoy or subdirectory at the parent.
-Follow the existing `requireBash` / `runWritePathWrapperWithTrace` harness.
+**U9 (test; size M, complexity medium): write-path wrapper wrong-tree rows and a text pin.**
+Files: `tools/gatecheck/check_write_path_wrapper_test.go` (extend the package-shared go shim to
+record the `--root` argument it hands the generated binary) and `tools/gatecheck/wrapper_text_test.go`.
+Scenarios (2): (a) one wrong-tree **table**; two repositories that **both** contain `internal/` and
+`cmd/` files (AS-5); the recorded `--root` must be the wrapper's own checkout (`os.SameFile`,
+Windows 8.3 safe) in these rows: ambient `GIT_DIR` and `GIT_WORK_TREE` pointing at the decoy
+(including mixed-case names such as `Git_Work_Tree`); `GIT_DIR` alone with cwd in a subdirectory of
+the real tree; a no-ambient control; a **nested checkout** (the script's tree lives inside another
+repository without its own `.git`): the wrapper must fail closed, never scan the parent (AR-1);
+(b) a text pin: no wrapper code line assigns `ROOT` except through `gatecheck_repo_root` (the
+caller-cwd `git rev-parse --show-toplevel >/dev/null` precondition is allowed; AR-3). **Red:** the
+decoy, subdirectory and nested rows record the wrong root at the parent, and the text pin sees the
+direct assignment. Follow the `requireBash` / `runWritePathWrapperWithTrace` harness.
 
 **U10 (prod; size S, complexity medium): `gatecheck_repo_root` and the write-path wrapper.** Blocked by U9.
 Files: `scripts/lib/gatecheck-run.sh`, `scripts/check-write-path-precondition.sh`. Add
-`gatecheck_repo_root`: run `git -C "${GATECHECK_SRC}" rev-parse --show-toplevel` with every
-exported variable whose ASCII-uppercased name starts with `GIT_` unset, except
-`GIT_CEILING_DIRECTORIES` (mirrors Go `gitRunnerEnv`); fail with git's message and its exit code.
-The wrapper sets `ROOT="$(gatecheck_repo_root)"` and keeps a separate caller-cwd
-`git rev-parse --show-toplevel >/dev/null` precondition (exit 128 outside a work tree), as the
-retiredarch wrapper does. AC: U9 green; `TestGatecheckRunSh_ShellcheckCleanIfAvailable`,
-`TestWritePathWrapperText_PureBashDispatch` and the runner tests green; header comment states the
-anchoring change (D-WB2-4).
+`gatecheck_repo_root`: unset every exported variable whose name matches the **locale-free** glob
+`[Gg][Ii][Tt]_*` except an exact case-insensitive `GIT_CEILING_DIRECTORIES` (a `case` pattern, not
+`${name^^}`: bash 3.2 lacks `^^` and Turkish locales mangle `i`, SEC-4), run
+`git -C "${GATECHECK_SRC}" rev-parse --show-toplevel`, then **assert the result is the same
+directory as `GATECHECK_SRC`** (`[ "$top" -ef "$GATECHECK_SRC" ]`, path-form safe under Git Bash)
+and fail closed otherwise (AR-1/AR-6); on a git failure return git's exit code. Do not expand an
+empty array under `set -u` (bash 3.2). The wrapper sets `ROOT="$(gatecheck_repo_root)"` and keeps a
+separate caller-cwd `git rev-parse --show-toplevel >/dev/null` precondition (exit 128 outside a work
+tree), as the retiredarch wrapper does. AC: U9 green; `TestGatecheckRunSh_ShellcheckCleanIfAvailable`,
+`TestWritePathWrapperText_PureBashDispatch` and the runner tests green; the header comment states
+the anchoring change (D-WB2-4).
 
-**U11 (test; size S, complexity medium): retiredarch wrapper wrong-tree rows.** Blocked by U10.
-File: `tools/gatecheck/check_retired_architecture_wrapper_test.go`. Same three scenarios as U9
-against `scripts/check-retired-architecture.sh`. **Red:** (a) the `git -C GATECHECK_SRC` form returns
-the decoy under ambient variables (verified by probe).
+**U11 (test; size S, complexity medium): retiredarch wrapper wrong-tree rows and text pin.** Blocked by U10.
+Files: `tools/gatecheck/check_retired_architecture_wrapper_test.go`, `wrapper_text_test.go`. Same
+two scenarios as U9 against `scripts/check-retired-architecture.sh`. **Red:** the decoy and
+subdirectory rows (the `git -C GATECHECK_SRC` form returns the decoy under ambient variables, verified
+by probe) and the nested-checkout row; the text pin fails on line 198.
 
 **U12 (prod; size S, complexity low): retiredarch wrapper uses the shared function.** Blocked by U10, U11.
 File: `scripts/check-retired-architecture.sh`. Replace line 198 with `ROOT="$(gatecheck_repo_root)"`;
-keep the line-192 caller-cwd precondition and its comment. AC: U11 green; the
+keep the line-192 caller-cwd precondition; rewrite the "Root anchoring (C-3 exception)" comment block
+to say `gatecheck_repo_root` is the single root-policy point (AR-3). AC: U11 green; the
 `TestRetiredArchWrapperText_*` pins and `TestCheckRetiredArchitectureWrapper_FailsOutsideAGitWorkTree`
-green (read the pinned phrases first; amend the comment, never the pinned text, unless a pin names
-the replaced line).
+green (the pinned phrases are the four decision-record strings and the dispatch lines; none names the
+replaced line).
 
-**U13 (test; size S, complexity low): twin env-table rows.** Blocked by U12 (sequence only).
-Files: `writepath_test.go`, `retiredarch/select_test.go` (`TestGitRunnerEnv`, **identical rows in
-both**). Scenarios (2, one per package, same table): strip rows `MSYS=1`, `msys=1`, `CYGWIN=x`,
-`Msys2_Arg_Conv_Excl=*`; keep rows `MSYSTEM=MINGW64`, `MSYSX=1`, `MSYS2=1`, `CYGWINX=1`; the three
-boundary rows from the entry: bare `GIT_DIR` (no `=`), exact `GIT_`, bare `GIT_CEILING_DIRECTORIES`.
-**Red:** the strip rows fail in both packages; the keep rows and the three boundary rows are green
-on arrival (characterization, stated).
+**U13 (test; size S, complexity low): twin env-table rows and a parity test.** Blocked by U12 (sequence only).
+Files: `writepath_test.go`, `retiredarch/select_test.go`. Scenarios (3): (a) writepath
+`TestGitRunnerEnv` and (b) retiredarch `TestGitRunnerEnv` with **identical rows**: strip `MSYS=1`,
+`msys=1`, `CYGWIN=x`, `Msys2_Arg_Conv_Excl=*`; keep `MSYSTEM=MINGW64`, `MSYSX=1`, `MSYS2=1`,
+`CYGWINX=1`; the three boundary rows from the entry: bare `GIT_DIR` (no `=`), exact `GIT_`, bare
+`GIT_CEILING_DIRECTORIES`; (c) a parity test in `writepath_test.go` that parses both `gitRunnerEnv`
+function bodies (`select.go` read through `repoRoot(t)`; precedent `TestHarness_049002_RetiredArchPinReanchored`)
+and requires token equality of the **bodies** (the doc comments legitimately differ, G-5).
+**Red:** the strip rows fail in both packages and the parity test fails once U14 lands before U15;
+the keep rows and the three boundary rows are green on arrival (characterization, stated).
 
 **U14 (prod; size S, complexity low): writepath `gitRunnerEnv`.** Blocked by U13.
-File: `writepath.go`. Add the MSYS rule after the `GIT_*` rule; update the doc comment (copy, keep
-identical with retiredarch). AC: writepath half of U13 green.
+File: `writepath.go`. Add the MSYS rule **inline inside `gitRunnerEnv`**, in the same shape as the
+`GIT_` rule (AR-8); update the doc comment (copy; keep bodies identical with retiredarch). AC: the
+writepath table of U13 green; the parity test is allowed to stay red until U15.
 
 **U15 (prod, atomic; size S, complexity medium): retiredarch `gitRunnerEnv` and its pin.** Blocked by U14.
-Files: `retiredarch/select.go` and `retiredarch/pin.go` **in one commit**: the
-`gitRunnerEnv` body in `select.go` and the hand-authored `canonicalDecls` copy in `pin.go`
-(token-equal). `closedWorldDecls`, `pathspecFrozenDecls` and `prefixFrozenDecls` name declarations,
-not text, and do not change. AC: retiredarch half of U13 green; `pin_test.go` green including
-`TestCheckPathspecPin_GitRunnerIsolation_Rejected`; `git show --stat` of the commit lists exactly
-those two files; the two `gitRunnerEnv` bodies are textually identical to the writepath copy.
+Files: `retiredarch/select.go` and `retiredarch/pin.go` **in one commit**: the `gitRunnerEnv` body
+in `select.go` and the hand-authored `canonicalDecls` copy in `pin.go` (token-equal). Constraints
+(G-4): the MSYS rule is **inline** (no new top-level declaration or helper, because
+`closedWorldDecls` and `sharedRulesOK` would clear `PathspecOK`); the literal `"GIT_CONFIG_NOSYSTEM=1"`
+must appear exactly once in `select.go` (`pin_test.go` mutates its first occurrence), so do not
+repeat it in new comments; no new import. `closedWorldDecls`, `pathspecFrozenDecls` and
+`prefixFrozenDecls` name declarations, not text, and do not change. **Red evidence for U15 is the U13
+retiredarch strip rows plus the parity test** at the parent; the pin test is the green guard. AC:
+those rows and the parity test green; `pin_test.go` green including
+`TestCheckPathspecPin_GitRunnerIsolation_Rejected`; `git show --stat` lists exactly those two files;
+the writepath and retiredarch `gitRunnerEnv` bodies are token-identical.
 
 ## Dependency Graph
 
@@ -229,31 +300,60 @@ those two files; the two `gitRunnerEnv` bodies are textually identical to the wr
 S1 ─blocks→ S2:     U9 → U10 → U11 → U12 → U13 → U14 → U15
 ```
 
-All task-level edges are single-predecessor chains (no cycle). The strictly linear order is
-intentional: RU-1 tasks all edit `writepath.go`/`writepath_test.go`; U13-U15 share the twin table.
-U9-U12 (shell) and U13-U15 (env) could run in parallel across files, but Ship executes serially, so
-the chain adds no cost.
+All task-level edges are single-predecessor chains (no cycle), except U12, which is blocked by both
+U10 and U11. The linear order is intentional: RU-1 tasks all edit `writepath.go` and
+`writepath_test.go`; U13-U15 share the twin table. Ship executes serially, so the chain adds no cost.
+
+## Constitution Check
+
+| Principle | Verdict | Note |
+|---|---|---|
+| I Safety-First Go | Pass | Errors wrapped and escaped at the sink; no `panic`; `strconv.IsPrint` on the exact input; `go vet` and Linux `GOOS` vet in verification. |
+| II Test-First (NON-NEGOTIABLE) | Pass | Every behaviour change is a test unit then a production unit; green-on-arrival characterization rows are labelled and never counted as red evidence; U15's red is the U13 retiredarch rows plus the parity test. |
+| III Workspace Isolation | Pass | Fixtures under `t.TempDir()`; no unit writes outside the cwd tree; git child scrubbed. |
+| IV CLI Workspace Containment (NON-NEGOTIABLE) | Pass | The change *strengthens* containment (every record passes `containedRegularFile`); root is anchored to the script's own checkout. |
+| V Structured Observability | Pass | Stderr stays one `::error::` line per outcome; milestone broadcasts are Ship's intercom duty (degraded visibility must be warned, not bypassed); commit convention stated. |
+| VI Single Responsibility | Pass | One shared shell function for root policy; `escapeLogText` stays package-local (copy, not shared, D-WB2-6); no new dependency. |
+| VII Destructive Command Approval (NON-NEGOTIABLE) | Pass | No unit contains a destructive command: `git revert` appends history, `backlogit` archive moves rather than deletes; any `rm`, `git rm`, `reset`, force-push or history rewrite needs operator approval and is not planned. |
+| VIII Explicit Safety Modes | Pass | Careful mode for U6, U10, U12, U15; freeze-scope bounded to `tools/gatecheck/**` and `scripts/**`. |
+| IX Git-Friendly Persistence | Pass | Plain-text sources and docs. |
+| X Agent Context Efficiency | Pass | Units are small file sets; verification output is summarised. |
+| XI Merge Commit History | Pass | Merge order and the "never squash the Batch 1 PR" rule are explicit. |
+| Task Granularity (NON-NEGOTIABLE) | Pass with notes | Every unit has fewer than 3 files and fewer than 4 scenarios (tables count as one); U6 touches 3 functions (`scanListing`, the `scannedPathsFromListing` wrapper, `runRepoScan`) plus `DefaultGitRunner`'s argv (4, under the bound of 5); size M units (U3, U5, U6, U9) are each one reviewable diff. |
 
 ## Decisions and Rationale
 
-See the deliberation: D-WB2-1 (two shipments), D-WB2-2 (contain every non-selected record), D-WB2-3
-(case variants out of scope), D-WB2-4 (script-anchored scrubbed root through one shared function),
-D-WB2-5 (per-arm ED-7 guard rejected), D-WB2-6 (one local escaping chokepoint, `!strconv.IsPrint`),
-D-WB2-7 (directory refusal, FIFO as a build-tag row, hard link not implemented), D-WB2-8 (MSYS
-strip, twin tables, atomic refreeze), D-WB2-9 (three new deferred entries), D-WB2-10 (no overlap with
-043-S).
+See the deliberation: D-WB2-1 (two shipments), D-WB2-2 (contain every non-selected record, **as
+amended by plan review: literal `internal`/`cmd` pathspecs so a top-level symlink or gitlink is
+listed**), D-WB2-3 (case variants out of scope; the Windows-build exposure is an accepted residual),
+D-WB2-4 (script-anchored scrubbed root through one shared function, **as amended: same-directory
+assertion and a locale-free glob**), D-WB2-5 (per-arm ED-7 guard rejected), D-WB2-6 (one local
+escaping chokepoint, `!strconv.IsPrint`), D-WB2-7 (directory refusal, FIFO as a build-tag row, hard
+link not implemented), D-WB2-8 (MSYS strip, twin tables, atomic refreeze), D-WB2-9 (new deferred
+entries `36BE1F61`, `1B85D0F4`, `A8FB0682`, plus plan-review captures `284270E8`, `49982A4E`),
+D-WB2-10 (no overlap with 043-S).
 
 ## Risks and Caveats
 
 | Risk | Mitigation |
 |---|---|
-| A new fail-closed outcome blocks every PR if a legitimate tracked symlink or gitlink exists | Verified none exists today (56 records, modes 100644/100755 only); U6 AC runs `TestRun_RepoMode_CurrentTreeIsClean`. Rollback: revert the U6 commit. |
+| A new fail-closed outcome blocks every PR if a legitimate tracked symlink or gitlink exists | Verified none exists today (56 records, modes 100644/100755 only); U6 AC runs `TestRun_RepoMode_CurrentTreeIsClean`. Rollback: revert U6 **with** U5. |
+| The literal-pathspec change in U6 lists a different set | U5(c) asserts byte-identical listings to the old pathspecs on the real tree; `TestDefaultGitRunnerIgnoresGitEnv` stays green. |
 | Escaping changes a golden | Escape only touches non-printable runes; U2 and U4 ACs require every golden byte-identical. |
-| Wrapper anchoring changes behaviour for callers outside the checkout | Documented (D-WB2-4, operator checkpoint 3); caller-cwd precondition and exit 128 preserved; engine and tree now come from the same checkout. |
-| Shell scrub is not portable (Git Bash, dash-less shells) | `env -u` is already used in the lib; `compgen -e` is a bash builtin (wrappers are bash). Fallback in D-WB2-4 option C. U9/U11 run under `requireBash`, including Windows Git Bash in the advisory job. |
-| `pin.go` and `select.go` drift | U15 is a single atomic commit with a stat assertion; red evidence is the pin test itself. |
-| Windows cannot create symlinks or control-char names | Existing Errno 1314 skip for symlinks only; unix-only rows are build-tagged, not skipped; Linux CI is the required evidence. |
-| Review-cycle fatigue (B1 hit the cap) | Two shipments with disjoint surfaces (D-WB2-1); each unit is one reviewable diff. |
+| Wrapper anchoring changes behaviour for callers outside the checkout | Documented (D-WB2-4, operator checkpoint 3); caller-cwd precondition and exit 128 preserved; engine and tree now come from the same checkout; a nested checkout now fails closed. |
+| Shell scrub is not portable | Locale-free glob `[Gg][Ii][Tt]_*`, `compgen -e` is a bash builtin (wrappers are bash), no empty-array expansion under `set -u`; U9/U11 run under `requireBash`, including Windows Git Bash in the advisory job. Fallback: D-WB2-4 option C. |
+| `pin.go` and `select.go` drift | U15 is a single atomic commit with a stat assertion; the parity test (U13c) guards the writepath/retiredarch twin. |
+| Windows cannot create symlinks or control-char names | Existing Errno 1314 skip for symlinks only; `unix`-tagged rows are not skipped; Linux CI is the required evidence; `GOOS=linux go vet` covers the tagged files from any host. |
+| Review-cycle fatigue (B1 hit the cap) | Two shipments (D-WB2-1); each unit is one reviewable diff. |
+
+**Accepted residuals (carried into each closure record with stash IDs):** hard link refusal
+(`A8FB0682`); retiredarch echo sinks (`36BE1F61`) so the log-injection class is closed for the
+write-path gate only (SEC-7); the other wrappers' root discovery (`1B85D0F4`); the retiredarch
+scan-set twin of this batch (`284270E8`); engine-side `--root` top-level assertion for direct
+invocations (`49982A4E`); case-variant and module-wide scope, including the Windows-build
+exposure of an `Internal/` directory (D-WB2-3, SEC-2, operator checkpoint 2); a symlink or gitlink
+record whose path is absent from disk (G-9); TOCTOU between the walk and the read; the shell
+`unrecognized argument` echo (workflow YAML is trusted); backslash left unescaped (cosmetic).
 
 ## Plan Hardening Signals
 
@@ -274,13 +374,17 @@ strip, twin tables, atomic refreeze), D-WB2-9 (three new deferred entries), D-WB
 
 * **Runtime surfaces changed:** the `gatecheck write-path` and `gatecheck retired-arch` CLI via
   their wrappers (CI steps, pre-push gates). No service, API or UI.
-* **Ship verification per unit (Stage does not run these):** `go test ./tools/gatecheck/...`
-  (race on the Linux job), `go vet ./...`, the full `go test ./...`, shellcheck on the touched
-  scripts, `scripts/check-write-path-precondition.sh --self-test` and
-  `scripts/check-retired-architecture.sh --self-test` on the real tree (both exit 0).
+* **Ship verification (Stage does not run these):** at every pair completion (U2, U4, U6, U8, U10,
+  U12, U15): `go test ./tools/gatecheck/...` (race on the Linux job), `go vet ./...`,
+  `GOOS=linux go vet ./tools/gatecheck/...` (covers the `unix`-tagged files from any host), the full
+  `go test ./...`, shellcheck on the touched scripts, `scripts/check-write-path-precondition.sh
+  --self-test` and `scripts/check-retired-architecture.sh --self-test` on the real tree (both exit
+  0). At test units record the red output only.
 * **Operational closure:** each shipment closes through the post-043-S single close procedure;
-  closure record lists the accepted residuals (hard link `A8FB0682`, retiredarch echo `36BE1F61`,
-  other wrappers `1B85D0F4`, case variants/module scope, TOCTOU) with stash IDs.
+  closure record lists the accepted residuals (see Risks and Caveats) with stash IDs.
+* **Stage verifies after assembly:** both shipments exist as queued, the `blocks` edges
+  `043-S ← S1 ← S2` read back through `backlogit dep`, manifests match the harvested IDs, and the
+  feature precedes its tasks in each shipment.
 
 ## Plan Hardening
 
@@ -322,10 +426,11 @@ cross-shipment merge-order dependency.
   bash 3.2 errors); use the `${arr[@]+"${arr[@]}"}` form or build the `env -u` argument list in a
   way that is never empty, and keep `TestGatecheckRunSh_ShellcheckCleanIfAvailable` green.
 * **`set -e` in a command substitution:** `ROOT="$(gatecheck_repo_root)"` must fail the wrapper
-  with git's exit code when git fails, as today (U9 control row asserts a non-git root still
-  fails, not a silent empty `--root`).
-* **Windows case-insensitive env names:** the scrub uppercases names before comparing, so `git_dir`
-  and `Git_Work_Tree` are removed; a U9 row sets a mixed-case ambient name.
+  with git's exit code when git fails, as today (the U9 table asserts a non-git root still fails,
+  not a silent empty `--root`).
+* **Case-insensitive env names without locale dependence:** the scrub uses the glob
+  `[Gg][Ii][Tt]_*`, never `${name^^}`, so `git_dir` and `Git_Work_Tree` are removed under any
+  locale (SEC-4); a U9 row sets a mixed-case ambient name.
 * **U5(c) real-git row:** use `hermeticGitEnv` so ambient developer variables cannot flip the red
   evidence (B1 lesson); assert listing bytes, not only exit code.
 * **U7(b) FIFO:** a regression would block forever in `os.ReadFile`; the goroutine-and-timeout
@@ -339,10 +444,10 @@ cross-shipment merge-order dependency.
 
 | ID | ProposedAction | ActionRisk | Approval | Expected ActionResult and rollback |
 |---|---|---|---|---|
-| PA-1 | U6: add the matrix row-4 refusal to the merge-blocking gate | medium (false positive blocks all PRs) | operator review of the staging PR | Result: gate stays green on the real tree. Rollback: revert the U6 commit; U5 rows go red, so the revert must include U5 (record as a pair). |
-| PA-2 | U10/U12: change wrapper root anchoring from caller-cwd to script location | medium (behaviour change) | operator checkpoint 3 | Result: same `--root` for every in-checkout invocation. Rollback: revert U10/U12 together with U9/U11. |
+| PA-1 | U6: add the matrix row-4 refusal and the literal pathspecs to the merge-blocking gate | medium (false positive blocks all PRs) | operator review of the staging PR; careful mode | Result: gate stays green on the real tree. Rollback: revert the U6 commit together with U5 (record as a pair; `git revert` appends history, Principle VII not triggered). |
+| PA-2 | U10/U12: change wrapper root anchoring from caller-cwd to script location, with a same-directory assertion | medium (behaviour change) | operator checkpoint 3; careful mode | Result: same `--root` for every in-checkout invocation; a nested checkout fails closed. Rollback: revert U10/U12 together with U9/U11. |
 | PA-3 | U15: refreeze retiredarch `gitRunnerEnv` and `canonicalDecls` | medium (pin gate integrity) | none beyond review | Result: pin test green. Rollback: revert the single commit. |
-| PA-4 | Archive the five consumed stash entries after shipments are assembled | low (reversible: archive, not delete) | none | Result: entries retrievable from the archive with a disposition note. |
+| PA-4 | Archive the five consumed stash entries after shipments are assembled | low (reversible: archive, not delete) | none; the disposition note links D-WB2-3 and the accepted residuals so the case-variant decision is not lost with the archive (SB-3) | Result: entries retrievable from the archive with a disposition note. |
 | PA-5 | Create two features, 15 tasks, two shipments, edges `043-S ← S1 ← S2` | low | none | Rollback: `backlogit` archive of the new items before Ship claims. |
 
 ### Verification, monitoring and closure additions
@@ -375,5 +480,32 @@ this section must FAIL.
 None block staging. Operator checkpoints 1-6 are defaults that stand unless overridden at PR review;
 checkpoint 6 is a hard sequencing requirement (merge the Batch 1 staging PR first).
 
-<!-- plan-review-attempt: 0 -->
+## Plan Review (attempt 1, superseded)
 
+dispatch_mode: multi-agent
+decision: FAIL
+
+Five of six personas ran as subagents (Constitution Reviewer, Go Reviewer, Scope Boundary Auditor,
+Architecture Strategist, Security Lens Reviewer); the Learnings Researcher did not run in this
+attempt (its Step 1.8 pass is recorded in the deliberation) and runs in attempt 2. Gate: FAIL on
+P1 findings. Disposition of every finding follows; the revised plan above is the re-review input.
+
+| ID | Sev | Finding | Disposition |
+|---|---|---|---|
+| CR-1 | P1 | No Constitution Check section | **Fixed**: `## Constitution Check` added (all principles) |
+| CR-2 | P1 | Safety mode not declared per unit | **Fixed**: careful mode U6/U10/U12/U15, freeze-scope `tools/gatecheck/**` + `scripts/**` |
+| CR-3 | P1 | Principle VII and PA-4/PA-5 approvals | **Fixed**: no destructive command is planned; `git revert` appends history, `backlogit` archive moves; VII row in the check |
+| AR-1 | P1 | Script anchoring trusts git discovery (nested checkout); no top-level check | **Fixed (wrapper)**: `-ef GATECHECK_SRC` assertion + nested-checkout row (U9/U10); engine part captured `49982A4E` |
+| AR-2 | P1 | Direct `--root <subdir>` partial listing | **Accepted residual**: captured `49982A4E` (frozen retiredarch `DefaultGitRunner`; trusted `--root` contract) |
+| SEC-1 | P1 | Top-level `internal`/`cmd` symlink or gitlink not listed | **Verified by probe and fixed**: literal pathspecs (U5c/U6); retiredarch twin captured `284270E8` |
+| SEC-2 | P2 | Windows case-variant exposure | **Accepted residual**, now recorded explicitly (D-WB2-3) |
+| SEC-3 | P2 | Findings loop echoes raw relPath | **Fixed**: U3/U4 cover the findings loop |
+| SEC-4 | P2 | `${name^^}` locale and bash 3.2 | **Fixed**: locale-free glob (U10) |
+| G-1 | P2 | U3 references `unwrapPathError` before U4 | **Fixed**: test unwraps with `errors.As` |
+| G-2 | P2 | Red evidence hits ED-7 / "no fixtures" | **Fixed**: every U5/U7 row has a clean selected file or valid fixture |
+| G-3 | P2 | `listedRecords` changes multi-fault precedence | **Fixed**: single-pass `scanListing` |
+| G-4 | P2 | Pin closed-world constraints on `select.go` | **Fixed**: inline-only, single `GIT_CONFIG_NOSYSTEM=1` literal (U15) |
+| SB-1..SB-5 | P2 | Split wording; 043-S edge; residual tracking; verification line; U9 scenario count | **Fixed** (see sequence section, PA-4, verification, U9 table) |
+| AR-3..AR-7, CR-4..CR-8, G-5..G-9, SB-6..SB-10, SEC-5..SEC-7 | P2/P3 | Advisory | **Applied** where cheap (text pins U9/U11, parity test U13c, `unix` tag, FIFO cleanup, echo completeness, keep-in-sync note); SB-6 (merge U14/U15) rejected: three files breaks the 2-hour bound; SB-10 trimming deferred |
+
+<!-- plan-review-attempt: 1 -->

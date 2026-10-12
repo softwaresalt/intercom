@@ -217,9 +217,12 @@ them into two sequenced shipments (D-WB2-1).
 | C. Split by priority (mediums first) | Rejected. EEE39D23 and DBE25DF5 are both medium, but DBE25DF5 needs ambient `GIT_DIR`/`GIT_WORK_TREE`, while EEE39D23 needs only a committed symlink (a hostile-PR path), so the engine fix is the more likely exposure. It also would put new raw-echo refusal paths into the codebase before the escaping chokepoint exists. |
 
 **Sequence:** `043-S` (Batch 1) → S1 → S2, each with a `blocks` dependency edge on its predecessor.
-**Why S2 follows S1 rather than running in parallel:** both edit `writepath.go` and
-`writepath_test.go` (S2 touches only `gitRunnerEnv` and `TestGitRunnerEnv`); stacking avoids a
-conflicting rebase. **Why S1 precedes S2 on content:** the new refusal messages of EEE39D23 and
+The `043-S` edge is operator-directed ordering (043-S installs the single close procedure Ship uses
+to close S1 and S2), not a file conflict; the file sets are disjoint. **Why two shipments:** a
+review-size cap and gate-risk isolation, not disjoint files (S1 is one package; S2 mixes shell, a
+shared lib and a frozen pin). **Why S2 follows S1 rather than running in parallel:** both edit
+`writepath.go` and `writepath_test.go` (S2 touches only `gitRunnerEnv` and `TestGitRunnerEnv`);
+stacking avoids a conflicting rebase. **Why S1 precedes S2 on content:** the new refusal messages of EEE39D23 and
 858516B9 should be born escaped, so the EDC18D59 chokepoint lands first inside S1.
 
 ### D-WB2-2: EEE39D23, widen the scan set by applying `containedRegularFile` to every non-selected record
@@ -234,6 +237,12 @@ conflicting rebase. **Why S1 precedes S2 on content:** the new refusal messages 
 * **New outcome:** one new fail-closed refusal, reusing the existing message shape
   `::error::<rel>: not a contained regular file: <reason>` (same sink class as the U4 line, so a
   single escaping rule covers it). The plan carries a full outcome matrix.
+* **Plan-review amendment (Security Lens SEC-1, verified by probe):** the pathspecs `internal/**`
+  and `cmd/**` do **not** list a tracked symlink or gitlink named exactly `internal` or `cmd`; the
+  literal pathspecs `internal` and `cmd` do. A top-level `cmd -> ../pkg` link would therefore never
+  reach the new check. The runner's pathspecs become the literal `internal` and `cmd` (listing
+  bytes identical on the real tree, asserted by a control row). The retiredarch scan set has the
+  same gaps; captured as `284270E8` (retiredarch is frozen by `pin.go`).
 * **Non-selected record names are not rune-validated** (unlike selected paths). Hostile names are
   safe only because every echo goes through the D-WB2-6 chokepoint; this is why the escaping
   tasks precede the widening tasks. The control-character false-positive asymmetry
@@ -254,7 +263,12 @@ variant of `internal` or `cmd` (`Internal/`, `CMD/`) is **not** brought into the
 * A `:(icase)` pathspec or a case-fold refusal would change the pathspec contract pinned by the
   wiring and by retiredarch-style freezes, and add a refusal for a layout the repo does not have.
 * **Residual (accepted, operator checkpoint 2):** module Go code outside `internal/**` and `cmd/**`
-  is outside the gate by design. A test row pins that a case-variant record is neither selected nor
+  is outside the gate by design. Plan review (Security Lens SEC-2) noted the Windows-build exposure:
+  on NTFS or APFS a tracked `Internal/` directory aliases `internal/`, and a `//go:build windows`
+  file under it would compile in a Windows build while the required Linux job skips it. That is
+  recorded as an accepted residual, not fixed, because a `:(icase)` pathspec would change the
+  runner contract, git itself cannot check out both spellings on such a filesystem, and the gate is
+  an anti-accident control for the Linux job. A test row pins that a case-variant record is neither selected nor
   an error, so any future widening is a deliberate change. If the operator wants module-wide scope
   that is a separate deliberation, not a defect of this gate.
 
@@ -273,6 +287,15 @@ variant of `internal` or `cmd` (`Internal/`, `CMD/`) is **not** brought into the
   come from the same checkout. retiredarch has anchored this way since M2-T11. Each wrapper keeps
   its own caller-cwd `git rev-parse --show-toplevel >/dev/null` precondition (exit 128 outside a
   work tree) as a separate statement, as the retiredarch wrapper already does.
+* **Plan-review amendment (Architecture Strategist AR-1, AR-6; Security Lens SEC-4):**
+  (1) `gatecheck_repo_root` also **asserts the discovered top level is the same directory as
+  `GATECHECK_SRC`** (`-ef`) and fails closed otherwise, so a checkout nested inside another
+  repository (git would return the parent) never scans the parent. (2) The scrub matches names with
+  the locale-free glob `[Gg][Ii][Tt]_*` instead of `${name^^}` (bash 3.2 lacks `^^`; Turkish
+  locales mangle `i`). (3) The engine-side `--show-prefix` top-level check that AR-1/AR-2 asked for
+  is **not** added here: `--root` is supplied only by the wrappers (they reject a caller `--root`),
+  the retiredarch `DefaultGitRunner` is frozen in `pin.go`, and a direct `--root <subdir>` is outside
+  the anti-accident model. It is captured as `49982A4E` and listed as an accepted residual.
 * **Wrong-tree coverage (AS-5):** tests use two repositories that **both** contain `internal/` and
   `cmd/` files. The oracle is the `--root` value the wrapper hands the built binary (shim-recorded),
   compared by file identity, under ambient `GIT_DIR`+`GIT_WORK_TREE`, under `GIT_DIR` alone from a
@@ -358,6 +381,11 @@ empty-selection guard is left exactly as it is.
    `DBE25DF5`, now fixable by calling the shared `gatecheck_repo_root` that S2 adds.
 3. **`A8FB0682` Fixture hard-link refusal (low, bug):** the part of `858516B9` decided against in D-WB2-7,
    kept as an open, unscheduled item with the rationale.
+4. **`284270E8` Retiredarch scan-set twin (medium, bug), found in plan review (SEC-1):** the
+   retired-architecture selection has the same non-`.go` record and top-level `internal`/`cmd` link
+   gaps as EEE39D23; frozen by `pin.go`, so it needs its own atomic refreeze.
+5. **`49982A4E` Engine-side `--root` top-level assertion (low, task), found in plan review
+   (AR-1/AR-2):** neither engine verifies `--root` is a work-tree top level.
 
 ### D-WB2-10: Interaction with shipment 043-S (Batch 1)
 
@@ -382,5 +410,5 @@ closure procedure is what Ship uses to close S1 and S2.
 
 ## Newly discovered scope
 
-See D-WB2-9; entries `36BE1F61`, `1B85D0F4` and `A8FB0682` were created after the Step 1.9 gate with
-full P-021 C2 fields and are left active (not consumed by this batch).
+See D-WB2-9; entries `36BE1F61`, `1B85D0F4`, `A8FB0682`, `284270E8` and `49982A4E` were created after the
+Step 1.9 gate with full P-021 C2 fields and are left active (not consumed by this batch).
