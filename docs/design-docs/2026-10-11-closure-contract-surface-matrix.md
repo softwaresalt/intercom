@@ -236,3 +236,50 @@ Help text checked: `autoharness --help`. Listed commands: home, version, verify-
 
 * D1: The harness U1 check "doc has 33-row map" is a weak substring test. A row count check would be stronger. Not changed by this unit.
 * D2: `_orchestrator.agent.md` carries two P1 hardcoded home-path portability findings in the baseline. They are outside the U8 text listed in the plan. Not changed by this unit.
+
+## Verification (043-S, unit U15)
+
+### Measured state (verify-workspace, read-only report)
+
+* Blockers: 0 (baseline 0). Strict schema blockers: 0.
+* ROUTE_VARIABLE_STALE warnings: 0 (baseline 10 instances, 10 variables).
+* frontmatter_conformity: ok (baseline failing with 18 missing-name errors; closed by unit 053.010-T).
+* closure_source_artifact_cleanup: ok (baseline FAIL; closed by 053.007-T).
+* orchestrator_invocation_routing_directive: ok (baseline FAIL; closed by 053.008-T).
+* escalation_directive_present: ok (baseline FAIL; closed by 053.008-T).
+* escalation_route_resolution: FAIL, EXPECTED (ESCALATION_DEGRADED, stage same-route no-op). Disposition: operator decision R1 (stash 0A215E0B). Not implemented in 043-S: the plan keeps `.autoharness/config.yaml` unchanged.
+* reload_propagation_directive: FAIL, NOT EXPECTED by the plan. Cause: the check requires the literal phrase 'no independent model binding' inside the 'Propagate to inherited skills' section; no upstream template contains it. Disposition: operator decision (authorize wording, or correct the checker). Recorded in task 053.008-T.
+* Warnings remaining: 2, both portability-finding (hard-coded home or autoharness path in agent files; pre-existing; not in 043-S scope).
+
+### Retired-token sweep (git grep, excluding immutable history)
+
+* `.github/**`: only `.github/policies/workflow-policies.md`, and only in the version-history rows 1.19.0 and 1.21.0 (append-only history, kept verbatim by decision D-3).
+* `docs/compound/**`: `2026-05-07-backlogit-shipment-status-constraints.md`, `2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`, `2026-10-02-backlogit-stale-binary-on-path-breaks-index.md`, `2026-10-08-bound-cascade-close-procedure.md` (superseded note), `workflow-issues/cross-artifact-contract-closure-requires-every-surface-2026-09-13.md`, `workflow-issues/ship-step6-post-merge-branch-ordering-2026-09-19.md`. Passing mentions are permitted by the plan; only the two superseded entries are in scope for U14.
+* `tests/integration/ship_feature_completion_contract_test.go`: negative-test needles (permitted).
+* `tests/integration/shipment_close_path_behavior_test.go` and `tests/integration/shipment_close_path_harness_test.go`: replica tests for the retired contract. DEFERRED: unit 053.013-T (per-operation approval required under Principle VII; dark mode does not waive it).
+* This matrix document: permitted.
+
+### Go verification
+
+* `go vet ./...`: clean (exit 0). `gofmt -l .`: no output.
+* `go test ./tests/integration/...`: all tests pass except `TestInvokeStartScriptMainPropagatesNonZeroExitCode`, which hits the 30 s budget of a start-script test on this host (host has real engram and backlogit sidecars on PATH, which the test comment says should be absent). It passes in isolation on most runs (about 20 s). Pre-existing timing flake; Batch 3 stash C5E50EFD covers start-script hermeticity.
+* `go test ./...` full: the failing-test set equals the pre-043-S baseline set (55 test names) plus the one timing flake above. The 55 baseline failures are all in `tools/gatecheck`, caused by the Windows bash wrapper path (exit 127); they are environment-specific and pre-existing.
+* New tests added by 043-S: `TestCascadeCloseClassifyOnlySmoke` (passes, about 12 s; real autoharness and backlogit against a `t.TempDir` fixture) and `TestCascadeRoutesThroughCommand` (passes).
+
+### First mutating use: what the next shipment's closure must observe
+
+* Probe first: `autoharness shipment --help` must exit 0; otherwise HALT.
+* Classify first on every close: `autoharness shipment cascade-close --classify-only --shipment <S> --feature <F> --sha <merge_sha> --json`. Exit 0 selects CASCADE; exit 3 selects SAFE_CLOSE (nothing invoked); exits 2 and 4 HALT with nothing mutated; exits 5, 6, 7, 8 HALT for operator review with no commit, retry, or direct call; any other exit (including 1) HALTs as CLI too old or unexpected.
+* Mutating run (CASCADE only, after per-closure operator approval not waived in dark mode): `autoharness shipment cascade-close --shipment <S> --feature <F> --sha <merge_sha> --message <text> --author <name> --timeout <secs>`; stay attached or poll in the background; the supervision budget is `--timeout` + 600 s.
+* Evidence phases the record must show, in order: pre_close, then invoking, then post_close. The closure artifact must carry close_path (cascade or safe_close) and close_evidence (path `docs/closure/evidence/<S>-<F>-close-evidence.json`) and must pass `autoharness gate closure-evidence` before it is committed.
+* A direct `backlogit shipment ship` or `backlogit_ship_shipment` call is a P-005 deviation that the closure-evidence gate refuses.
+
+### Residual register (named, not silent)
+
+1. Operator decision R1-R3 (stash 0A215E0B): routing values in `.autoharness/config.yaml`; not implemented in 043-S by plan design.
+2. reload_propagation_directive (see above): operator decision on wording source.
+3. U13 deferred: delete the two replica test files only after per-operation approval (Principle VII). Until then the shipment cannot close under the a1 gate, because 053.013-T is not done.
+4. Version-history collision risk: policy row 1.26.0 (043-S) may collide with an upstream 1.26.0 row on a future sync.
+5. Dangling anchors adopted from upstream (for example 'SUPERSESSION NOTE', 'D6', 'pre-mode step 7', and P-015 item 7 referring to 'precondition 1', which no longer exists in the local P-015 list). Recorded for the review gate.
+6. P-007 restore sentence in the Ship agent safe-close pointer ('restore .backlogit/queue/ + .backlogit/archive/' on HALT - cascade detected) is retained from HEAD; upstream adds a G1 approval requirement. Pre-existing; out of 043-S scope; recorded for the review gate.
+7. Stash C5E50EFD (start-script hermeticity) and stash 9F824B64 remain as Stage-owned items.
