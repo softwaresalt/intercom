@@ -747,6 +747,8 @@ func isWellFormedBinding(binding string) bool {
 // mapping table specifies. It NEVER re-derives the path from the supplied
 // binding alone -- it recomputes classification fresh from the live
 // workspace and requires the recomputed digest to match.
+//
+//nolint:unparam // retired replica quarantined pending operator-approved deletion (053.013-T)
 func (f *closePathFixture) safeClose(shipmentID, mergeSHA, binding string) safeCloseResult {
 	f.t.Helper()
 

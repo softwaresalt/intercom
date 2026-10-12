@@ -32,6 +32,8 @@ import (
 
 // fixtureCascadeShape builds a fully-covered-root shipment: one root
 // feature, one child task, both listed in the shipment manifest.
+//
+//nolint:unparam // retired replica quarantined pending operator-approved deletion (053.013-T)
 func fixtureCascadeShape(t *testing.T) (f *closePathFixture, shipmentID, featureID, taskID string) {
 	t.Helper()
 	f = newClosePathFixture(t)
