@@ -88,6 +88,13 @@ func TestCascadeCloseClassifyOnlySmoke(t *testing.T) {
 		}
 	})
 
+	t.Run("cascade_full_root_exit0", cascadeSmokeFullRootExit0)
+	t.Run("safe_close_task_only_exit3", cascadeSmokeTaskOnlySafeClose)
+}
+
+// cascadeSmokeFullRootExit0 is the CASCADE subtest. Both the covering feature
+// and its task are manifest members, so the real command exits 0.
+func cascadeSmokeFullRootExit0(t *testing.T) {
 	fixture := cascadeSmokeBuildFixture(t)
 	scratch := t.TempDir()
 
@@ -160,9 +167,38 @@ func TestCascadeCloseClassifyOnlySmoke(t *testing.T) {
 	}
 }
 
+// cascadeSmokeUnknownCommand is the text autoharness prints for an unrecognized
+// command. An older autoharness without cascade-close rejects `shipment` with it.
+const cascadeSmokeUnknownCommand = "Unknown command: shipment"
+
+// cascadeSmokeTaskOnlySafeClose runs the real classify-only command against a
+// fixture whose manifest holds only the task, with no covering feature member.
+// The classifier selects SAFE_CLOSE, which exits 3 with mutation_possible no.
+func cascadeSmokeTaskOnlySafeClose(t *testing.T) {
+	fixture := cascadeSmokeBuildFixtureWithItems(t, cascadeSmokeTask)
+	scratch := t.TempDir()
+
+	run := cascadeSmokeRun("autoharness", fixture, scratch, cascadeSmokeClassifyArgs(fixture)...)
+	cascadeSmokeMustComplete(t, "task-only --classify-only", run)
+	if run.code != 3 {
+		t.Fatalf("exit code = %d, want 3 (SAFE_CLOSE)\nstdout:\n%s\nstderr:\n%s", run.code, run.stdout, run.stderr)
+	}
+	rep := cascadeSmokeParseReport(t, run)
+	if rep.ExitCode != run.code {
+		t.Fatalf("json exit_code = %d, process exit = %d", rep.ExitCode, run.code)
+	}
+	if rep.ClassifierVerdict != "SAFE_CLOSE" {
+		t.Fatalf("classifier_verdict = %q, want SAFE_CLOSE\nstdout:\n%s", rep.ClassifierVerdict, run.stdout)
+	}
+	if rep.MutationPossible != "no" {
+		t.Fatalf("mutation_possible = %q, want no\nstdout:\n%s", rep.MutationPossible, run.stdout)
+	}
+}
+
 // cascadeSmokeRequireTools skips, never passes vacuously, when the real
 // autoharness or backlogit binaries are unavailable, or when an older
-// autoharness CLI exits 1 for `shipment --help`. Any other probe failure fails.
+// autoharness CLI rejects `shipment` as an unknown command. Any other probe
+// result fails the test.
 func cascadeSmokeRequireTools(t *testing.T) {
 	t.Helper()
 	for _, bin := range []string{"autoharness", "backlogit"} {
@@ -173,11 +209,19 @@ func cascadeSmokeRequireTools(t *testing.T) {
 	scratch := t.TempDir()
 	help := cascadeSmokeRun("autoharness", scratch, scratch, "shipment", "--help")
 	cascadeSmokeMustComplete(t, "autoharness shipment --help", help)
-	if help.code == 1 {
-		t.Skipf("skipping cascade-close smoke: `autoharness shipment --help` exited 1, the unknown-command code of an older autoharness without cascade-close\nstdout:\n%s\nstderr:\n%s", help.stdout, help.stderr)
-	}
-	if help.code != 0 {
-		t.Fatalf("`autoharness shipment --help` exited %d, want 0\nstdout:\n%s\nstderr:\n%s", help.code, help.stdout, help.stderr)
+	output := string(help.stdout) + string(help.stderr)
+	switch help.code {
+	case 0:
+		if !strings.Contains(output, "cascade-close") {
+			t.Fatalf("`autoharness shipment --help` exited 0 but its output does not mention cascade-close\nstdout:\n%s\nstderr:\n%s", help.stdout, help.stderr)
+		}
+	case 1:
+		if !strings.Contains(output, cascadeSmokeUnknownCommand) {
+			t.Fatalf("`autoharness shipment --help` exited 1 without %q, so it is not the old-CLI unknown-command exit\nstdout:\n%s\nstderr:\n%s", cascadeSmokeUnknownCommand, help.stdout, help.stderr)
+		}
+		t.Skipf("skipping cascade-close smoke: `autoharness shipment --help` exited 1 with %q, an older autoharness without cascade-close\nstdout:\n%s\nstderr:\n%s", cascadeSmokeUnknownCommand, help.stdout, help.stderr)
+	default:
+		t.Fatalf("`autoharness shipment --help` exited %d, want 0 or 1 (unknown command)\nstdout:\n%s\nstderr:\n%s", help.code, help.stdout, help.stderr)
 	}
 }
 
@@ -185,6 +229,14 @@ func cascadeSmokeRequireTools(t *testing.T) {
 // autoharness classifies as CASCADE. The covering feature is a manifest member
 // along with its task, which makes the feature a fully covered root.
 func cascadeSmokeBuildFixture(t *testing.T) string {
+	t.Helper()
+	return cascadeSmokeBuildFixtureWithItems(t, cascadeSmokeFeature+","+cascadeSmokeTask)
+}
+
+// cascadeSmokeBuildFixtureWithItems creates a backlogit workspace holding the
+// feature and task above and a shipment whose manifest is items, a
+// comma-separated list of item IDs.
+func cascadeSmokeBuildFixtureWithItems(t *testing.T, items string) string {
 	t.Helper()
 	dir := t.TempDir()
 	scratch := t.TempDir()
@@ -195,7 +247,7 @@ func cascadeSmokeBuildFixture(t *testing.T) string {
 		{[]string{"init"}, ""},
 		{[]string{"add", "--type", "feature", "--title", "Smoke feature", "--status", "active"}, cascadeSmokeFeature},
 		{[]string{"add", "--type", "task", "--title", "Smoke task", "--parent", cascadeSmokeFeature, "--status", "active"}, cascadeSmokeTask},
-		{[]string{"shipment", "create", "--title", "Smoke shipment", "--items", cascadeSmokeFeature + "," + cascadeSmokeTask}, cascadeSmokeShipment},
+		{[]string{"shipment", "create", "--title", "Smoke shipment", "--items", items}, cascadeSmokeShipment},
 	}
 	for _, step := range steps {
 		out := cascadeSmokeBacklogit(t, dir, scratch, step.args...)

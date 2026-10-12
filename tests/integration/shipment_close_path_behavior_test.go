@@ -62,6 +62,7 @@ func fixturePartialFeatureShape(t *testing.T) (f *closePathFixture, shipmentID, 
 // ---------------------------------------------------------------------------
 
 func TestClassifyClosePath_Z1_WholeTreeUnchanged_Cascade(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	f, shipmentID, _, _ := fixtureCascadeShape(t)
 	before := f.snapshotTree()
 	result := f.classifyClosePath(shipmentID)
@@ -73,6 +74,7 @@ func TestClassifyClosePath_Z1_WholeTreeUnchanged_Cascade(t *testing.T) {
 }
 
 func TestClassifyClosePath_Z1_WholeTreeUnchanged_SafeClose(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	f, shipmentID, _, _ := fixturePartialFeatureShape(t)
 	before := f.snapshotTree()
 	result := f.classifyClosePath(shipmentID)
@@ -84,6 +86,7 @@ func TestClassifyClosePath_Z1_WholeTreeUnchanged_SafeClose(t *testing.T) {
 }
 
 func TestClassifyClosePath_Z1_WholeTreeUnchanged_AllBlockReasons(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	cases := []struct {
 		name       string
 		build      func(t *testing.T) (f *closePathFixture, shipmentID string)
@@ -214,6 +217,7 @@ func TestClassifyClosePath_Z1_WholeTreeUnchanged_AllBlockReasons(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSafeClose_B4_NoMutationUntilAfterVerdict(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	f, shipmentID, _, _ := fixtureCascadeShape(t)
 
 	preClassifySnapshot := f.snapshotTree()
@@ -256,6 +260,7 @@ func equalSnapshots(a, b treeSnapshot) bool {
 // ---------------------------------------------------------------------------
 
 func TestSafeClose_B1_RefusalTokens_ZeroMutation(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	t.Run(failCascadeUnbound, func(t *testing.T) {
 		f, shipmentID, _, _ := fixtureCascadeShape(t)
 		before := f.snapshotTree()
@@ -333,6 +338,7 @@ func flipHexChar(binding string) string {
 // ---------------------------------------------------------------------------
 
 func TestSafeClose_B5_WorkspaceDriftAfterClassification_RefusesWithZeroMutation(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	f, shipmentID, featureID, _ := fixtureCascadeShape(t)
 
 	classified := f.classifyClosePath(shipmentID)
@@ -359,6 +365,7 @@ func TestSafeClose_B5_WorkspaceDriftAfterClassification_RefusesWithZeroMutation(
 // ---------------------------------------------------------------------------
 
 func TestSafeClose_B2_BoundCascade_ArchivesExactlyManifestSubtree(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	f, shipmentID, featureID, taskID := fixtureCascadeShape(t)
 	classified := f.classifyClosePath(shipmentID)
 	if classified.Verdict != verdictCascade {
@@ -405,6 +412,7 @@ func equalStringSlices(a, b []string) bool {
 // ---------------------------------------------------------------------------
 
 func TestSafeClose_B3_BoundSafeClose_SingleArtifactDelta_PreservesReachablePath(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	f, shipmentID, featureID, taskID := fixturePartialFeatureShape(t)
 	classified := f.classifyClosePath(shipmentID)
 	if classified.Verdict != verdictSafeClose {
@@ -447,6 +455,7 @@ func TestSafeClose_B3_BoundSafeClose_SingleArtifactDelta_PreservesReachablePath(
 // ---------------------------------------------------------------------------
 
 func TestSafeClose_B6_DirectEnginePathOnlyReachableThroughBoundDispatch(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	f, shipmentID, _, _ := fixtureCascadeShape(t)
 
 	// An unbound direct call to the engine's cascade primitive is exactly
@@ -484,6 +493,7 @@ func TestSafeClose_B6_DirectEnginePathOnlyReachableThroughBoundDispatch(t *testi
 // ---------------------------------------------------------------------------
 
 func TestClassifyClosePath_Z2Z3Z4_ReturnValueOnly_NoReconcileReportFile(t *testing.T) {
+	t.Skip("retired-contract replica (053-F U13): exercises a test-only Go mirror of the retired classify-close-path contract, not production; superseded by TestCascadeCloseClassifyOnlySmoke; deletion awaits per-operation operator approval (Principle VII, 053.013-T)")
 	f, shipmentID, _, _ := fixtureCascadeShape(t)
 
 	// Confirm no reconcile directory exists ahead of classification.

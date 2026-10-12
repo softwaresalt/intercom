@@ -141,6 +141,29 @@ func liveLines(content string) string {
 	return b.String()
 }
 
+// policySection returns the policy text from the line containing heading up to,
+// but not including, the next line that starts with "## P-". It fails the test
+// when the heading is missing.
+func policySection(t *testing.T, policy, heading string) string {
+	t.Helper()
+	var b strings.Builder
+	in := false
+	for _, line := range strings.SplitAfter(policy, "\n") {
+		if !in && strings.Contains(line, heading) {
+			in = true
+		} else if in && strings.HasPrefix(line, "## P-") {
+			break
+		}
+		if in {
+			b.WriteString(line)
+		}
+	}
+	if !in {
+		t.Fatalf("policy section heading not found: %q", heading)
+	}
+	return b.String()
+}
+
 func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	files := loadInstructionSurfaces(t)
 	ship := files["ship"]
@@ -195,15 +218,19 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 
 	t.Run("row_9a_CS4_predicate_absent", func(t *testing.T) {
 		assertAbsent(t, ship, "permitted **only** when, for **every** feature member of the manifest: it is a", "9a")
+		assertAbsent(t, skill, "permitted **only** when, for **every** feature member of the manifest: it is a", "9a")
 	})
 	t.Run("row_9b_CS4_predicate_absent", func(t *testing.T) {
 		assertAbsent(t, ship, "enumerates to zero children, that childlessness is **positively verified**", "9b")
+		assertAbsent(t, skill, "enumerates to zero children, that childlessness is **positively verified**", "9b")
 	})
 	t.Run("row_9c_CS4_predicate_absent", func(t *testing.T) {
 		assertAbsent(t, ship, "The manifest must contain nothing beyond the", "9c")
+		assertAbsent(t, skill, "The manifest must contain nothing beyond the", "9c")
 	})
 	t.Run("row_9d_CS4_predicate_absent", func(t *testing.T) {
 		assertAbsent(t, ship, "qualification is never per-member, and no feature ID is ever special-cased.", "9d")
+		assertAbsent(t, skill, "qualification is never per-member, and no feature ID is ever special-cased.", "9d")
 	})
 
 	t.Run("row_10_CS2_direct_status_gone_pointer_present", func(t *testing.T) {
@@ -349,6 +376,11 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 		assertAbsent(t, liveLines(policy), "fully-covered-root", "28")
 	})
 
+	t.Run("guard_inv6_engine_inertness_in_p015", func(t *testing.T) {
+		p015 := policySection(t, policy, "## P-015:")
+		assertPresent(t, p015, "**INV-6 (Engine-inertness containment gate).**", "guard")
+	})
+
 	t.Run("guard_policy_no_unconditional_cascade_never_called", func(t *testing.T) {
 		assertAbsent(t, policy, "and the cascade `backlogit_ship_shipment` was never called", "guard")
 		assertPresent(t, policy, "on the SAFE_CLOSE path, the cascade `backlogit_ship_shipment` was never called", "guard")
@@ -401,6 +433,18 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 
 	t.Run("guard_no_018_dot_in_ship", func(t *testing.T) {
 		assertAbsent(t, ship, "018.", "guard")
+	})
+
+	t.Run("guard_no_imperative_direct_cascade_call", func(t *testing.T) {
+		for _, needle := range []string{"Invoke `backlogit_ship_shipment`", "Invoke `backlogit shipment ship`"} {
+			assertAbsent(t, ship, needle, "guard")
+			assertAbsent(t, skill, needle, "guard")
+		}
+	})
+
+	t.Run("guard_disposition_gates_post_mode", func(t *testing.T) {
+		assertPresent(t, skill, "only `DISPOSITION_COMPLETE` proceeds to post-mode", "guard")
+		assertPresent(t, ship, "DISPOSITION_COMPLETE", "guard")
 	})
 }
 
