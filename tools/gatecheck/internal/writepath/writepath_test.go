@@ -116,6 +116,21 @@ func fixtureGitEnvironment(extraEnv []string) []string {
 	return append(env, extraEnv...)
 }
 
+// fixtureGitStdin is fixtureGit that feeds stdin and returns trimmed stdout. It
+// exists for `git hash-object -w --stdin`, which fixtureGit cannot drive.
+func fixtureGitStdin(t *testing.T, dir string, stdin []byte, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = fixtureGitEnvironment(nil)
+	cmd.Stdin = bytes.NewReader(stdin)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fixture git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // gitVersion returns the version reported by git --version, for the evidence
 // log. A missing git or an unparseable version is a failure, never a skip.
 func gitVersion(t *testing.T) string {
@@ -134,20 +149,57 @@ func gitVersion(t *testing.T) string {
 	return version
 }
 
+// gitLsFilesListing is `git ls-files -z -- pathspecs...` in dir under the
+// scrubbed fixture environment with extraEnv applied after the scrub. Only stdout
+// is kept, because git's stderr hints would corrupt the bytes. It does not call
+// the code under test.
+func gitLsFilesListing(t *testing.T, dir string, extraEnv []string, pathspecs ...string) []byte {
+	t.Helper()
+	args := append([]string{"ls-files", "-z", "--"}, pathspecs...)
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = fixtureGitEnvironment(extraEnv)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files %v: %v", pathspecs, err)
+	}
+	return out
+}
+
 // gitLsFilesCapture is the baseline for TestDefaultGitRunnerIgnoresGitEnv: the
-// stdout bytes of `git ls-files -z -- internal/** cmd/**` (the runner's pathspec
-// order) under the scrubbed fixture environment. Only stdout is kept, because
-// git's stderr hints would corrupt the bytes. It does not call the code under test.
+// stdout bytes of `git ls-files -z -- internal cmd`, the literal pathspecs the
+// runner moves to in U6 (R2-1). The runner still lists with `internal/** cmd/**`
+// today; TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree pins that the
+// two are byte-identical on the real tree.
 func gitLsFilesCapture(t *testing.T, dir string) []byte {
 	t.Helper()
-	cmd := exec.Command("git", "ls-files", "-z", "--", "internal/**", "cmd/**")
+	return gitLsFilesListing(t, dir, nil, "internal", "cmd")
+}
+
+// gitLsFilesOldPairCapture is the stdout bytes of the current runner pathspecs,
+// `git ls-files -z -- internal/** cmd/**`. It is the control side of
+// TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree.
+func gitLsFilesOldPairCapture(t *testing.T, dir string) []byte {
+	t.Helper()
+	return gitLsFilesListing(t, dir, nil, "internal/**", "cmd/**")
+}
+
+// gitConfigValue returns the value of key in dir's repository config, or "" when
+// the key is unset (git config exits 1 for an unset key).
+func gitConfigValue(t *testing.T, dir, key string) string {
+	t.Helper()
+	cmd := exec.Command("git", "config", "--get", key)
 	cmd.Dir = dir
 	cmd.Env = fixtureGitEnvironment(nil)
 	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("baseline git ls-files: %v", err)
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return ""
 	}
-	return out
+	if err != nil {
+		t.Fatalf("git config --get %s: %v", key, err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // assertDefaultGitRunnerIsolated is the oracle for each environment vector:
@@ -1071,13 +1123,93 @@ func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
 	}
 }
 
+// u5bGitlinkSHA is the object name for every gitlink record in the (a) rows.
+// update-index --cacheinfo records a 160000 entry without the commit present.
+const u5bGitlinkSHA = "0123456789abcdef0123456789abcdef01234567"
+
+// u5bStageBlob stages body at rel as a 100644 blob in root's index. The working
+// tree is not touched, so the caller decides what exists on disk.
+func u5bStageBlob(t *testing.T, root, rel, body string) {
+	t.Helper()
+	blob := fixtureGitStdin(t, root, []byte(body), "hash-object", "-w", "--stdin")
+	fixtureGit(t, root, "update-index", "--add", "--cacheinfo", "100644,"+blob+","+rel)
+}
+
+// u5bRealGitRepo builds one repository under t.TempDir() for one (a) row. The
+// index holds clean as a regular blob and record as a 120000 symlink (its blob
+// is the link target) or a 160000 gitlink, both made with update-index
+// --cacheinfo. On disk, clean is a Go file, a symlink record is a real symlink
+// to a directory outside the repository, and a gitlink record is a real
+// directory, so no record is absent from disk (G-9).
+func u5bRealGitRepo(t *testing.T, mode, record, clean string) string {
+	t.Helper()
+	root := t.TempDir()
+	fixtureGit(t, root, "init", "-q")
+	u5bStageBlob(t, root, clean, u4CleanGo)
+	u4WriteText(t, filepath.Join(root, filepath.FromSlash(clean)), u4CleanGo)
+	switch mode {
+	case "120000":
+		target := filepath.Join(t.TempDir(), "realdir")
+		u4Mkdir(t, target)
+		blob := fixtureGitStdin(t, root, []byte(target), "hash-object", "-w", "--stdin")
+		fixtureGit(t, root, "update-index", "--add", "--cacheinfo", "120000,"+blob+","+record)
+		u4CreateSymlink(t, target, filepath.Join(root, filepath.FromSlash(record)))
+	case "160000":
+		fixtureGit(t, root, "update-index", "--add", "--cacheinfo", "160000,"+u5bGitlinkSHA+","+record)
+		u4Mkdir(t, filepath.Join(root, filepath.FromSlash(record)))
+	default:
+		t.Fatalf("u5bRealGitRepo: unknown mode %q", mode)
+	}
+	return root
+}
+
+// TestRunRepoScan_RealGitTopLevelAndGitlinkRecords is the real-git level of the
+// scan-set widening to every listed record (D-WB2-3, U5b). Each row is its own
+// repository, because a link named exactly internal or cmd cannot share an index
+// with internal/ok.go (a directory/file conflict, R2-2). Each row asserts that the
+// production runner's listing contains the record and that runRepoScan refuses it
+// with "not a contained regular file". Every row is red against the current code:
+// the pathspecs internal/** and cmd/** never match a bare top-level name, so the
+// listing lacks the record; and the gitlink internal/sub is listed, but
+// runRepoScan judges only .go paths, so it passes silently with exit 0.
+func TestRunRepoScan_RealGitTopLevelAndGitlinkRecords(t *testing.T) {
+	rows := []struct {
+		name, mode, record, clean string
+	}{
+		{name: "a1 gitlink internal/sub beside clean internal/ok.go (red)", mode: "160000", record: "internal/sub", clean: "internal/ok.go"},
+		{name: "a2 symlink named internal beside clean cmd/ok.go (red)", mode: "120000", record: "internal", clean: "cmd/ok.go"},
+		{name: "a3 gitlink named internal beside clean cmd/ok.go (red)", mode: "160000", record: "internal", clean: "cmd/ok.go"},
+		{name: "a4 symlink named cmd beside clean internal/ok.go (red)", mode: "120000", record: "cmd", clean: "internal/ok.go"},
+		{name: "a5 gitlink named cmd beside clean internal/ok.go (red)", mode: "160000", record: "cmd", clean: "internal/ok.go"},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			hermeticGitEnv(t)
+			root := u5bRealGitRepo(t, tc.mode, tc.record, tc.clean)
+			out, err := DefaultGitRunner(root)
+			if err != nil {
+				t.Fatalf("DefaultGitRunner: %v", err)
+			}
+			if !bytes.Contains(out, []byte(tc.record+"\x00")) {
+				t.Errorf("DefaultGitRunner listing = %q, want it to contain the record %q", out, tc.record+"\x00")
+			}
+			res := runRepoScan(root, DefaultGitRunner)
+			want := "::error::" + tc.record + ": not a contained regular file: "
+			if res.Code != 1 || !strings.Contains(res.Stderr, want) {
+				t.Errorf("runRepoScan Code = %d, stderr = %q; want Code 1 with %q", res.Code, res.Stderr, want)
+			}
+		})
+	}
+}
+
 // TestDefaultGitRunnerIgnoresGitEnv is the bug-evidence test for stash
 // B83F53BB part 2; the environment shape it guards is from D7BF9F74. Vector
 // (a) is a false clean: an ambient GIT_INDEX_FILE listing only cmd/x/main.go
 // makes the gate exit 0 although tracked internal/bad.go holds a write
 // primitive. Vectors (b) and (c) are the same new contract through
-// GIT_LITERAL_PATHSPECS and GIT_CONFIG_PARAMETERS. The no-vector control must
-// stay green before and after.
+// GIT_LITERAL_PATHSPECS and GIT_CONFIG_PARAMETERS. Vector (d) is
+// GIT_ICASE_PATHSPECS, which still changes the literal-pathspec listing once the
+// pathspecs are literal. The no-vector control must stay green before and after.
 func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	t.Logf("git version: %s", gitVersion(t))
 	root := t.TempDir()
@@ -1121,6 +1253,9 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 		t.Setenv("GIT_INDEX_FILE", altIndex)
 		assertDefaultGitRunnerIsolated(t, root, baseline)
 	})
+	// characterization-only once the pathspecs are literal (R2-1): the runner
+	// moves to literal pathspecs in U6, after which GIT_LITERAL_PATHSPECS changes
+	// nothing. Vector (d) below replaces it as the discriminating env vector.
 	t.Run("vector_b_GIT_LITERAL_PATHSPECS", func(t *testing.T) {
 		hermeticGitEnv(t)
 		t.Setenv("GIT_LITERAL_PATHSPECS", "1")
@@ -1131,6 +1266,74 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 		t.Setenv("GIT_CONFIG_PARAMETERS", "not-a-valid-config")
 		assertDefaultGitRunnerIsolated(t, root, baseline)
 	})
+	// vector_d has its own repository so the shared fixture gains no case-variant
+	// record. Pathspec case folding is driven by GIT_ICASE_PATHSPECS. The
+	// assertion requires a change on a case-sensitive repository (core.ignorecase
+	// false). On a core.ignorecase=true host an unchanged listing is logged as a
+	// characterization result, not failed.
+	t.Run("vector_d_GIT_ICASE_PATHSPECS", func(t *testing.T) {
+		hermeticGitEnv(t)
+		icaseRoot := u5bIcaseFixture(t)
+		icaseBaseline := gitLsFilesCapture(t, icaseRoot)
+		raw := gitLsFilesListing(t, icaseRoot, []string{"GIT_ICASE_PATHSPECS=1"}, "internal", "cmd")
+		t.Setenv("GIT_ICASE_PATHSPECS", "1")
+		got, err := DefaultGitRunner(icaseRoot)
+		if err != nil {
+			t.Fatalf("DefaultGitRunner: %v", err)
+		}
+		if !bytes.Equal(got, icaseBaseline) {
+			t.Errorf("DefaultGitRunner bytes = %q, want the baseline %q", got, icaseBaseline)
+		}
+		ignoreCase := gitConfigValue(t, icaseRoot, "core.ignorecase")
+		switch {
+		case !bytes.Equal(raw, icaseBaseline):
+			t.Logf("discriminating: the unscrubbed literal listing changed to %q (core.ignorecase=%q)", raw, ignoreCase)
+		case ignoreCase == "true":
+			t.Log("not discriminating on this host (characterization): core.ignorecase=true and the unscrubbed literal listing matched the baseline")
+		default:
+			t.Errorf("unscrubbed literal listing %q equals the baseline on a case-sensitive repository (core.ignorecase=%q): the GIT_ICASE_PATHSPECS vector is vacuous", raw, ignoreCase)
+		}
+	})
+}
+
+// TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree is characterization,
+// green on arrival. The literal pathspecs `-- internal cmd` that U6 moves the
+// runner to must list the real tree byte-identically to the current
+// `internal/** cmd/**` pair, so the move changes no selection on today's tree.
+func TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree(t *testing.T) {
+	hermeticGitEnv(t)
+	root := repoRoot(t)
+	probe := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	probe.Dir = root
+	probe.Env = fixtureGitEnvironment(nil)
+	if out, err := probe.Output(); err != nil || strings.TrimSpace(string(out)) != "true" {
+		t.Fatalf("%s is not a git work tree (out=%q, err=%v): the byte-identity control needs the real tree", root, out, err)
+	}
+	literal := gitLsFilesCapture(t, root)
+	oldPair := gitLsFilesOldPairCapture(t, root)
+	if len(oldPair) == 0 {
+		t.Fatal("old pair listing is empty: the control would be vacuous")
+	}
+	if !bytes.Equal(literal, oldPair) {
+		t.Errorf("literal pathspecs listing (%d bytes, %d records) differs from internal/** cmd/** (%d bytes, %d records)",
+			len(literal), len(decodeLsFilesListing(t, literal)), len(oldPair), len(decodeLsFilesListing(t, oldPair)))
+	}
+}
+
+// u5bIcaseFixture builds the repository for vector (d): a tracked Internal/x.go
+// beside internal/ok.go and cmd/x/main.go. Internal/x.go is staged with
+// update-index only, so no case-variant directory is written to disk on a
+// case-insensitive host.
+func u5bIcaseFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	fixtureGit(t, root, "init", "-q")
+	for _, rel := range []string{"cmd/x/main.go", "internal/ok.go"} {
+		u5bStageBlob(t, root, rel, u4CleanGo)
+		u4WriteText(t, filepath.Join(root, filepath.FromSlash(rel)), u4CleanGo)
+	}
+	u5bStageBlob(t, root, "Internal/x.go", u4CleanGo)
+	return root
 }
 
 // TestDefaultGitRunner_NonRepository_FailsClosed pins the non-zero-exit branch of
