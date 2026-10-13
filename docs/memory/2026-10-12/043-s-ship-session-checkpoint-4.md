@@ -33,7 +33,7 @@ Supersedes: checkpoint 3 (halted before merge). Backlogit checkpoint: `checkpoin
 
 ## Resume procedure (operator decision needed first)
 
-1. Operator decides 053.013-T. Option A: explicitly approve the per-operation deletion of `tests/integration/shipment_close_path_behavior_test.go` and `shipment_close_path_harness_test.go` (and the nolint directives with them). Then complete 053.013-T, then rerun a1. Option B: Stage disposition (re-parent or abandon) of 053.013-T, which still needs a1 condition 2 satisfied at every depth.
+1. Operator decides 053.013-T. The only route that satisfies the invariants is Option A: explicitly approve the per-operation deletion of `tests/integration/shipment_close_path_behavior_test.go` and `shipment_close_path_harness_test.go` (and the nolint directives with them), then complete 053.013-T, then rerun a1. Option B (re-parent or abandon 053.013-T via Stage) is NOT a valid route as written: re-parenting breaks a1 condition 3 (feature descendants plus the feature must equal the manifest), and abandoning leaves a non-done manifest member that pre-mode rejects. Any alternative needs a new operator-authorized disposition that preserves every a1 and pre-mode invariant, confirmed by Stage (Copilot review 5497651531).
 2. Only after a1 passes: pre-mode reconcile (expected_status done), then `autoharness shipment cascade-close --classify-only`. A CASCADE result still needs per-closure operator approval for the mutating run (not waived by dark mode, Principle VII). Safe-close (exit 3) is only reached on the exit-3 safe_close record, and is subject to the pre-existing step 8 issue (FAB0AA3B).
 3. Closure artifact at `docs/closure/043-S-053-F-post-merge-closure.md` with close_path, close_evidence and compaction status.
 
