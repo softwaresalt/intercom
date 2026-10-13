@@ -505,6 +505,166 @@ func TestRunRepoScan_FinalDirectoryLink_FailsClosed(t *testing.T) {
 	u4MustFailClosed(t, runRepoScan(root, u4StubGit("internal/x.go")), "internal/x.go")
 }
 
+// u4WriteText writes text to path, creating parent directories.
+func u4WriteText(t *testing.T, path, text string) {
+	t.Helper()
+	u4Mkdir(t, filepath.Dir(path))
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// nonSelectedFixture makes a repository root holding a clean selected
+// internal/ok.go, plus an outside directory for link targets. Every row lists
+// ok.go beside its record, so a refusal row that passes is a silent pass, not
+// ED-7 (G-2).
+func nonSelectedFixture(t *testing.T) (root, outside string) {
+	t.Helper()
+	temp := t.TempDir()
+	root = filepath.Join(temp, "repo")
+	outside = filepath.Join(temp, "outside")
+	u4Mkdir(t, outside)
+	u4WriteText(t, filepath.Join(root, "internal", "ok.go"), u4CleanGo)
+	return root, outside
+}
+
+// TestRunRepoScan_NonSelectedRecordContainment widens the containment check
+// from selected paths to every listed record under internal/** and cmd/**
+// (D-WB2-3, U5). Rows (a1)-(a5) are red against the current runRepoScan, which
+// judges only selected paths: each non-selected record passes silently with
+// exit 0 instead of failing with "not a contained regular file". Rows (c1)-(c3)
+// are characterization rows, green on arrival, pinning the controls that must
+// keep passing once containment widens.
+func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
+	rows := []struct {
+		name   string
+		record string
+		setup  func(t *testing.T, root, outside string)
+		refuse bool
+	}{
+		{
+			name:   "a1 non-.go symlink record (red)",
+			record: "internal/link.txt",
+			setup: func(t *testing.T, root, outside string) {
+				u4WriteText(t, filepath.Join(outside, "secret.txt"), "outside\n")
+				u4CreateSymlink(t, filepath.Join(outside, "secret.txt"), filepath.Join(root, "internal", "link.txt"))
+			},
+			refuse: true,
+		},
+		{
+			name:   "a2 _test.go symlink record (red)",
+			record: "internal/link_test.go",
+			setup: func(t *testing.T, root, outside string) {
+				u4WriteText(t, filepath.Join(outside, "target_test.go"), u4CleanGo)
+				u4CreateSymlink(t, filepath.Join(outside, "target_test.go"), filepath.Join(root, "internal", "link_test.go"))
+			},
+			refuse: true,
+		},
+		{
+			// Not .go-named on purpose: a .go-named directory link is a selected
+			// path that the current code already refuses
+			// (TestRunRepoScan_FinalDirectoryLink_FailsClosed), so it would not be red.
+			name:   "a3 symlink to a directory (red)",
+			record: "internal/dirlink",
+			setup: func(t *testing.T, root, outside string) {
+				sub := filepath.Join(root, "internal", "sub")
+				u4Mkdir(t, sub)
+				linkDir(t, filepath.Join(root, "internal", "dirlink"), sub)
+			},
+			refuse: true,
+		},
+		{
+			name:   "a4 symlinked ancestor of a non-Go file (red)",
+			record: "internal/linkdir/data.txt",
+			setup: func(t *testing.T, root, outside string) {
+				target := filepath.Join(outside, "realdir")
+				u4WriteText(t, filepath.Join(target, "data.txt"), "data\n")
+				linkDir(t, filepath.Join(root, "internal", "linkdir"), target)
+			},
+			refuse: true,
+		},
+		{
+			name:   "a5 gitlink record over a real directory (red)",
+			record: "internal/sub",
+			setup: func(t *testing.T, root, outside string) {
+				u4Mkdir(t, filepath.Join(root, "internal", "sub"))
+			},
+			refuse: true,
+		},
+		{
+			name:   "c1 regular non-Go file (characterization)",
+			record: "internal/readme.txt",
+			setup: func(t *testing.T, root, outside string) {
+				u4WriteText(t, filepath.Join(root, "internal", "readme.txt"), "notes\n")
+			},
+		},
+		{
+			name:   "c2 regular _test.go file (characterization)",
+			record: "internal/regular_test.go",
+			setup: func(t *testing.T, root, outside string) {
+				u4WriteText(t, filepath.Join(root, "internal", "regular_test.go"), u4CleanGo)
+			},
+		},
+		{
+			name:   "c3 record absent from disk (characterization)",
+			record: "internal/ghost.txt",
+		},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			root, outside := nonSelectedFixture(t)
+			if tc.setup != nil {
+				tc.setup(t, root, outside)
+			}
+			paths := []string{"internal/ok.go", tc.record}
+			slices.Sort(paths)
+			res := runRepoScan(root, u4StubGit(paths...))
+			if tc.refuse {
+				u4MustFailClosed(t, res, tc.record)
+				return
+			}
+			if res.Code != 0 || res.Stderr != "" {
+				t.Fatalf("Code = %d, Stderr = %q, want Code 0 and empty Stderr", res.Code, res.Stderr)
+			}
+		})
+	}
+}
+
+// TestScanSet_CaseVariantRecordsAreNeitherSelectedNorErrors pins the D-WB2-3
+// decision: the scan set is case-sensitive, so Internal/x.go and CMD/y.go are
+// neither selected nor an error. Characterization, green on arrival (D-WB2-3):
+// a case-folding scan set is a deliberate change and must break this test.
+func TestScanSet_CaseVariantRecordsAreNeitherSelectedNorErrors(t *testing.T) {
+	for _, rel := range []string{"Internal/x.go", "CMD/y.go"} {
+		if shouldScan(rel) {
+			t.Fatalf("shouldScan(%q) = true, want false (D-WB2-3)", rel)
+		}
+	}
+	rows := []struct {
+		name    string
+		listing []byte
+		want    []string
+	}{
+		{name: "case variants alone", listing: lsFilesListing("Internal/x.go", "CMD/y.go")},
+		{
+			name:    "case variants beside a selected file",
+			listing: lsFilesListing("CMD/y.go", "Internal/x.go", "internal/ok.go"),
+			want:    []string{"internal/ok.go"},
+		},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := scannedPathsFromListing(tc.listing)
+			if err != nil {
+				t.Fatalf("scannedPathsFromListing error = %v, want nil (D-WB2-3)", err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("scannedPathsFromListing = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func requireWritepathHarnessTask(t *testing.T) {
 	t.Helper()
 	name := strings.TrimPrefix(t.Name(), "TestHarness_")
