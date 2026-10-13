@@ -135,16 +135,26 @@ const (
 	rootResolveDisplay = "pathsafe.Root.Resolve"
 )
 
-// GitRunner runs `git ls-files -z -- internal/** cmd/**` rooted at root and
-// returns its raw stdout bytes: NUL-terminated records, parsed byte-exact by
-// scannedPathsFromListing with no pysem.GitText decoding. It returns an error
-// if the process could not be started or exited non-zero. It is injectable so
-// tests can simulate a missing/failing git without depending on the real
-// repository tree (M1-T8 AC: "an injectable gitRunner").
+// GitRunner runs `git ls-files -z -- internal cmd` rooted at root and returns
+// its raw stdout bytes: NUL-terminated records, parsed byte-exact by scanListing
+// with no pysem.GitText decoding. It returns an error if the process could not
+// be started or exited non-zero. It is injectable so tests can simulate a
+// missing/failing git without depending on the real repository tree (M1-T8 AC:
+// "an injectable gitRunner").
+//
+// The listing carries no file mode, so a gitlink or symlink record whose path is
+// absent from the working tree passes containment (G-9, LR-3). Closing that
+// residual needs a mode-bearing `ls-files -s -z`, which changes this output
+// contract (D-WB2-2 option B) and is deferred.
 type GitRunner func(root string) ([]byte, error)
 
 // DefaultGitRunner is the production GitRunner: it shells out to
-// `git ls-files -z -- internal/** cmd/**` with root as the working directory.
+// `git ls-files -z -- internal cmd` with root as the working directory. The
+// pathspecs are literal directory names, so a top-level record named exactly
+// internal or cmd (a symlink or gitlink) is listed as well; the former
+// `internal/** cmd/**` pathspecs never matched it. On a core.ignorecase host the
+// literal pathspecs can also list a case variant such as Internal/x.go, which
+// runRepoScan judges as a non-selected record (D-WB2-3, RR-4).
 // -z prints each name verbatim and NUL-terminated, so names containing quotes,
 // backslashes, spaces, newlines or non-ASCII bytes are never C-quoted.
 //
@@ -159,7 +169,7 @@ type GitRunner func(root string) ([]byte, error)
 // The wrapper's root discovery is a separate surface, captured in stash
 // DBE25DF5.
 func DefaultGitRunner(root string) ([]byte, error) {
-	cmd := exec.Command("git", "ls-files", "-z", "--", "internal/**", "cmd/**")
+	cmd := exec.Command("git", "ls-files", "-z", "--", "internal", "cmd")
 	cmd.Dir = root
 	cmd.Env = gitRunnerEnv(os.Environ())
 	var stdout, stderrBuf bytes.Buffer
@@ -221,43 +231,56 @@ var (
 	errListingControlRune   = errors.New("contains a control or line-separator character")
 )
 
-// scannedPathsFromListing parses the NUL-terminated `git ls-files -z` listing
-// and returns the paths shouldScan selects, in git's order. It fails closed on
-// anything that is not exactly a NUL-terminated list of non-empty records. A
-// record that shouldScan rejects is never read or echoed. A selected path must
-// be valid UTF-8 and must not contain a C0 control (U+0000 to U+001F), DEL
-// (U+007F), U+0085, U+2028 or U+2029, because selected paths are echoed to CI
-// logs (D-BW-1a).
+// scanListing makes one pass over the NUL-terminated `git ls-files -z` listing
+// and splits its records into selected (shouldScan selects them) and others
+// (every other record), each in git's order. It fails closed on anything that is
+// not exactly a NUL-terminated list of non-empty records. Faults are reported in
+// listing order, so the first one encountered wins (G-3). The NUL-termination
+// check runs before any record is classified (R2-5). A selected path must be
+// valid UTF-8 and must not contain a C0 control (U+0000 to U+001F), DEL (U+007F),
+// U+0085, U+2028 or U+2029, because selected paths are echoed to CI logs
+// (D-BW-1a). Other records are not rune-checked: runRepoScan tests their
+// containment, and any refusal echoes them only through logLine (SEC-11).
 //
 // Only the records this gate will scan are judged for UTF-8 and control runes.
 // retiredarch's selectRepoPaths judges every listed record instead; that
 // asymmetry is tracked by stash 31F33EFE.
-func scannedPathsFromListing(out []byte) ([]string, error) {
+func scanListing(out []byte) (selected, others []string, err error) {
 	if len(out) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if out[len(out)-1] != 0 {
-		return nil, errListingNotTerminated
+		return nil, nil, errListingNotTerminated
 	}
-	var selected []string
 	for _, p := range strings.Split(string(out[:len(out)-1]), "\x00") {
 		if p == "" {
-			return nil, errListingEmptyRecord
+			return nil, nil, errListingEmptyRecord
 		}
 		if !shouldScan(p) {
-			continue // by design: never read or echoed
+			others = append(others, p)
+			continue
 		}
 		if !utf8.ValidString(p) {
-			return nil, fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)
+			return nil, nil, fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)
 		}
 		for _, r := range p {
 			if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
-				return nil, fmt.Errorf("path %q %w", p, errListingControlRune)
+				return nil, nil, fmt.Errorf("path %q %w", p, errListingControlRune)
 			}
 		}
 		selected = append(selected, p)
 	}
-	return selected, nil
+	return selected, others, nil
+}
+
+// scannedPathsFromListing returns the selected records of scanListing: the paths
+// shouldScan selects, in git's order, under scanListing's error contract. Case
+// variants such as Internal/x.go and CMD/y.go are neither selected nor an error
+// (D-WB2-3). scanListing places them in others, where runRepoScan judges them
+// only by containment.
+func scannedPathsFromListing(out []byte) ([]string, error) {
+	selected, _, err := scanListing(out)
+	return selected, err
 }
 
 // nextOccurrence returns the byte offset of the first occurrence of sel in
@@ -960,22 +983,45 @@ func containedRegularFile(root, rel string) (bool, string) {
 	return true, ""
 }
 
-// runRepoScan performs the repo-mode invariant scan: enumerate every
-// tracked internal/**, cmd/** Go source (via git, injectable), scan each,
-// and fail closed on a git error, a per-file read/decode error (ED-2), a
-// selected path that is not a contained regular file (D44D8BDF: a symlink or
-// junction is never followed), any finding, or an empty selection (ED-7).
-// A malformed listing (not NUL-terminated, or an empty record), or a selected
-// path that is not valid UTF-8 or contains a forbidden rune, fails closed with
-// an output error before any file is read.
+// runRepoScan performs the repo-mode invariant scan: enumerate every tracked
+// record under internal/ and cmd/ (via git, injectable), scan each selected Go
+// source, and fail closed on a git error, a malformed listing, a record that is
+// not a contained regular file (D44D8BDF: a symlink or junction is never
+// followed), a per-file read/decode error (ED-2), any finding, or an empty
+// selection (ED-7). A malformed listing (not NUL-terminated, or an empty record),
+// or a selected path that is not valid UTF-8 or contains a forbidden rune, fails
+// closed with an output error before any file is read.
+//
+// The checks run in this order. Listing faults fail first. Then every
+// non-selected record is checked for containment in git order (outcome 4). A
+// symlink, gitlink or other directory, a symlinked ancestor, or any other
+// non-regular file is refused as `::error::<rel>: not a contained regular file:
+// <reason>`, including a record named exactly internal or cmd. That check runs
+// before ED-7 and before any selected file is read. Then ED-7. Then each selected
+// file is checked for containment and scanned in git order, as before. A record
+// absent from disk passes (fs.ErrNotExist, G-9).
+//
+// Case-variant records such as Internal/x.go and CMD/y.go are neither selected
+// nor an error (D-WB2-3). On a core.ignorecase host the literal pathspecs can
+// list them; they pass if they are regular files (RR-4).
+//
+// Accepted residuals: a hard link to a file outside the repository is a regular
+// file to Lstat, so it passes (A8FB0682). A gitlink or symlink record absent from
+// disk passes (G-9). A Windows junction as the final component is refused as
+// non-regular, because Go reports a mount point as ModeIrregular (LR-4).
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)
 	if err != nil {
 		return Result{Stderr: errorLine("git ls-files", err), Code: 1}
 	}
-	relPaths, err := scannedPathsFromListing(out)
+	relPaths, others, err := scanListing(out)
 	if err != nil {
 		return Result{Stderr: errorLine("git ls-files output", err), Code: 1}
+	}
+	for _, rel := range others {
+		if ok, reason := containedRegularFile(root, rel); !ok {
+			return Result{Stderr: errorLine(rel, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
+		}
 	}
 
 	if len(relPaths) == 0 {
