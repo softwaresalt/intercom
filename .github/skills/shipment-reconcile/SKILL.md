@@ -27,7 +27,7 @@ command, after per-closure operator approval.
 
 ## When to Use
 
-* **Ship Step 6 closure** (mandatory): run `mode: pre`, then `mode: safe-close`
+* **Ship Step 6 closure** (mandatory): run `mode: pre`, then, on the exit 3 `safe_close` record only, `mode: safe-close`
   **instead of** the cascade `backlogit_ship_shipment` call, then `mode: post`.
   The `--classify-only` route (Step 0(c) Command Routing, below) selects and
   records the close path from the machine-checkable P-015 classification.
@@ -402,7 +402,7 @@ Route on the command's exit code:
 
 | Mode | Exit | Skill action |
 |---|---|---|
-| `--classify-only` | 0 (`CASCADE`) | Obtain destructive-command approval, then run the mutating `cascade-close` (Cascade Close Sub-Procedure) |
+| `--classify-only` | 0 (`CASCADE`) AND `selected_close_path` is `cascade`; otherwise HALT | Obtain destructive-command approval, then run the mutating `cascade-close` (Cascade Close Sub-Procedure); never routed to safe-close steps |
 | `--classify-only` | 3 (`SAFE_CLOSE` selected: classifier `SAFE_CLOSE`, or engine `UNVERIFIED`); exit 3 AND `selected_close_path` is `safe_close`; otherwise HALT | Safe-close steps 1–10, then the Linked-Deliberation Disposition step, citing the verdict record as `close_evidence` |
 | mutating | 0 | Run the Linked-Deliberation Disposition step with its inputs from the evidence record, then write the closure artifact with `close_path: cascade` and `close_evidence` |
 | mutating | 3 | Reached only when no `cascade`-selected `--classify-only` record preceded the run, which the routing above never does. Nothing was mutated: HALT, operator review, and never `SAFE_CLOSE` on this result (the Cascade Close Sub-Procedure's No-substitution rule). A selected-path change after a `CASCADE` `--classify-only` selection is exit 4, never 3 |
@@ -502,9 +502,9 @@ completion. A standalone invocation first runs `autoharness shipment cascade-clo
       `safe_close`. Do not re-classify to CASCADE here. If
       the evidence record's `pre_close.close_path_selection` is not `safe_close`, HALT with
       operator review and do not call the cascade operation. Safe-close never
-      evaluates the P-015 classification to choose a path. `cascade` is permitted
-      only when the P-015 INV-6 engine-inertness containment holds and the command
-      returned exit 0.
+      evaluates the P-015 classification to choose a path, and never invokes the
+      cascade operation; CASCADE is governed only by the Cascade Close
+      Sub-Procedure gate.
 
 1. **Load manifest** via `backlogit_get_shipment(shipment_id)`. Extract the
    `items` list. These IDs are the **only** artifacts safe-close may move or
