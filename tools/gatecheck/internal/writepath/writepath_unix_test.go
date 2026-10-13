@@ -33,11 +33,11 @@ func unixWriteFixture(t *testing.T, path, src string) {
 }
 
 // TestRunFixtureSelfTest_SinkEscapesControlText pins the fixture self-test
-// sinks (U3, red phase). The rows live in a linux || darwin file because the
-// fixture names embed a newline, which Windows cannot create. The PASS and FAIL
-// lines and the joined findings must escape that name, and no output may echo
-// the absolute root. The not-a-contained-regular-file line is a
-// characterization row, green on arrival, because errorLine already escapes it.
+// sinks (U3). The rows live in a linux || darwin file because the fixture names
+// embed a newline, which Windows cannot create. The PASS and FAIL lines and the
+// joined findings must escape that name, and no output may echo the absolute
+// root. The not-a-contained-regular-file line is a characterization row, because
+// errorLine already escapes it. The PASS and FAIL rows are green since U3.
 func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 	const (
 		fixtureRel = "scripts/testdata/writepath"
@@ -100,6 +100,28 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 				res.Code, res.Stdout, res.Stderr, wantPrefix)
 		}
 	})
+}
+
+// TestRunRepoScan_NewlineNonSelectedNameEscapes is the Linux-only outcome-4 row
+// for a real newline in a non-selected directory name. Windows cannot create
+// such a name, so the row lives in this linux || darwin file.
+func TestRunRepoScan_NewlineNonSelectedNameEscapes(t *testing.T) {
+	const rel = "internal/a\n::error::x"
+	root := t.TempDir()
+	u4Mkdir(t, filepath.Join(root, filepath.FromSlash(rel)))
+
+	res := runRepoScan(root, u4StubGit(rel))
+	want := `::error::internal/a\x0a::error::x: not a contained regular file: `
+	if res.Code != 1 {
+		t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+	}
+	if n := strings.Count(res.Stderr, "\n"); n != 1 {
+		t.Fatalf("stderr has %d lines, want exactly one: %q", n, res.Stderr)
+	}
+	assertNoRawControl(t, res.Stderr)
+	if !strings.HasPrefix(res.Stderr, want) {
+		t.Fatalf("stderr = %q, want it to start with %q", res.Stderr, want)
+	}
 }
 
 // TestRunFixtureSelfTest_FIFOFixtureRefused is a characterization row, green on

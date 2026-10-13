@@ -167,17 +167,19 @@ func gitLsFilesListing(t *testing.T, dir string, extraEnv []string, pathspecs ..
 }
 
 // gitLsFilesCapture is the baseline for TestDefaultGitRunnerIgnoresGitEnv: the
-// stdout bytes of `git ls-files -z -- internal cmd`, the literal pathspecs the
-// runner moves to in U6 (R2-1). The runner still lists with `internal/** cmd/**`
-// today; TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree pins that the
-// two are byte-identical on the real tree.
+// stdout bytes of `git ls-files -z -- internal cmd`, the literal pathspecs
+// DefaultGitRunner lists with since U6 (R2-1).
+// TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree pins that these
+// literal pathspecs are byte-identical to the former `internal/** cmd/**` pair
+// on the real tree.
 func gitLsFilesCapture(t *testing.T, dir string) []byte {
 	t.Helper()
 	return gitLsFilesListing(t, dir, nil, "internal", "cmd")
 }
 
-// gitLsFilesOldPairCapture is the stdout bytes of the current runner pathspecs,
-// `git ls-files -z -- internal/** cmd/**`. It is the control side of
+// gitLsFilesOldPairCapture is the stdout bytes of the former runner pathspecs,
+// `git ls-files -z -- internal/** cmd/**`, which DefaultGitRunner no longer uses
+// since U6. It is the control side of
 // TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree.
 func gitLsFilesOldPairCapture(t *testing.T, dir string) []byte {
 	t.Helper()
@@ -389,23 +391,26 @@ func fsPathErrorInner(t *testing.T, err error) error {
 	return pathErr.Err
 }
 
-// TestRunRepoScan_SinkEscapesAndUnwrapsPathError pins the repo-scan sinks (U3,
-// red phase). A runner error, a finding and a read error must each stay on one
-// output line, and a read error must name only the bare cause, never the
-// absolute root. The runner-error and non-PathError rows are characterization
-// rows, green on arrival, because errorLine already escapes its text. The
-// U+009B and PathError rows are red against the unchanged runRepoScan.
+// TestRunRepoScan_SinkEscapesAndUnwrapsPathError pins the repo-scan sinks (U3).
+// A runner error, a finding and a read error must each stay on one output line,
+// and a read error must name only the bare cause, never the absolute root. The
+// runner-error and non-PathError rows are characterization rows, because
+// errorLine already escapes its text. The U+009B and PathError rows are green
+// since U3. The hostile non-selected name row pins the outcome-4 escape and is
+// characterization too.
 func TestRunRepoScan_SinkEscapesAndUnwrapsPathError(t *testing.T) {
 	const (
 		c1Rel      = "internal/a\u009bb.go"
+		hostileRel = "internal/a\u009bb\u2028c"
 		deletedRel = "internal/gone.go"
 		badRel     = "internal/bad.go"
 	)
 	tests := []struct {
-		name  string
-		setup func(t *testing.T, root string) GitRunner
-		want  func(t *testing.T, root string) string
-		exact bool
+		name    string
+		setup   func(t *testing.T, root string) GitRunner
+		want    func(t *testing.T, root string) string
+		exact   bool
+		oneLine bool
 	}{
 		{
 			name: "runner error with LF and ::error:: stays on one line (characterization)",
@@ -455,6 +460,17 @@ func TestRunRepoScan_SinkEscapesAndUnwrapsPathError(t *testing.T) {
 			},
 			exact: true,
 		},
+		{
+			name: "non-selected directory with U+009B and U+2028 (hostile name, escape at the outcome-4 line)",
+			setup: func(t *testing.T, root string) GitRunner {
+				u4Mkdir(t, filepath.Join(root, filepath.FromSlash(hostileRel)))
+				return u4StubGit(hostileRel)
+			},
+			want: func(*testing.T, string) string {
+				return `::error::internal/a\x9bb\u2028c: not a contained regular file: internal/a\x9bb\u2028c is not a regular file (mode d`
+			},
+			oneLine: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -468,6 +484,14 @@ func TestRunRepoScan_SinkEscapesAndUnwrapsPathError(t *testing.T) {
 			first := strings.SplitN(res.Stderr, "\n", 2)[0]
 			if strings.ContainsFunc(first, unicode.IsControl) {
 				t.Fatalf("first stderr line echoes a raw control character: %q", first)
+			}
+			if tc.oneLine {
+				if n := strings.Count(res.Stderr, "\n"); n != 1 {
+					t.Fatalf("stderr has %d lines, want exactly one: %q", n, res.Stderr)
+				}
+				if strings.ContainsFunc(first, func(r rune) bool { return r == 0x2028 || r == 0x9b }) {
+					t.Fatalf("first stderr line echoes a raw U+2028 or U+009B: %q", first)
+				}
 			}
 			if strings.Contains(res.Stderr, root) {
 				t.Fatalf("stderr echoes absolute root %q: %q", root, res.Stderr)
@@ -580,13 +604,12 @@ func nonSelectedFixture(t *testing.T) (root, outside string) {
 	return root, outside
 }
 
-// TestRunRepoScan_NonSelectedRecordContainment widens the containment check
-// from selected paths to every listed record under internal/** and cmd/**
-// (D-WB2-3, U5). Rows (a1)-(a5) are red against the current runRepoScan, which
-// judges only selected paths: each non-selected record passes silently with
-// exit 0 instead of failing with "not a contained regular file". Rows (c1)-(c3)
-// are characterization rows, green on arrival, pinning the controls that must
-// keep passing once containment widens.
+// TestRunRepoScan_NonSelectedRecordContainment checks every listed record under
+// internal/** and cmd/** for containment, not only the selected paths (D-WB2-3,
+// U5). Rows (a1)-(a5) are refusal rows: each non-selected record fails with
+// "not a contained regular file", as it has since U5. Rows (c1)-(c3) are
+// characterization rows pinning the controls that must keep passing under the
+// wider containment check.
 func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 	rows := []struct {
 		name   string
@@ -595,7 +618,7 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 		refuse bool
 	}{
 		{
-			name:   "a1 non-.go symlink record (red)",
+			name:   "a1 non-.go symlink record (refusal)",
 			record: "internal/link.txt",
 			setup: func(t *testing.T, root, outside string) {
 				u4WriteText(t, filepath.Join(outside, "secret.txt"), "outside\n")
@@ -604,7 +627,7 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 			refuse: true,
 		},
 		{
-			name:   "a2 _test.go symlink record (red)",
+			name:   "a2 _test.go symlink record (refusal)",
 			record: "internal/link_test.go",
 			setup: func(t *testing.T, root, outside string) {
 				u4WriteText(t, filepath.Join(outside, "target_test.go"), u4CleanGo)
@@ -615,8 +638,9 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 		{
 			// Not .go-named on purpose: a .go-named directory link is a selected
 			// path that the current code already refuses
-			// (TestRunRepoScan_FinalDirectoryLink_FailsClosed), so it would not be red.
-			name:   "a3 symlink to a directory (red)",
+			// (TestRunRepoScan_FinalDirectoryLink_FailsClosed), so it would
+			// exercise the selected-path check instead of the non-selected one.
+			name:   "a3 symlink to a directory (refusal)",
 			record: "internal/dirlink",
 			setup: func(t *testing.T, root, outside string) {
 				sub := filepath.Join(root, "internal", "sub")
@@ -626,7 +650,7 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 			refuse: true,
 		},
 		{
-			name:   "a4 symlinked ancestor of a non-Go file (red)",
+			name:   "a4 symlinked ancestor of a non-Go file (refusal)",
 			record: "internal/linkdir/data.txt",
 			setup: func(t *testing.T, root, outside string) {
 				target := filepath.Join(outside, "realdir")
@@ -636,7 +660,7 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 			refuse: true,
 		},
 		{
-			name:   "a5 gitlink record over a real directory (red)",
+			name:   "a5 gitlink record over a real directory (refusal)",
 			record: "internal/sub",
 			setup: func(t *testing.T, root, outside string) {
 				u4Mkdir(t, filepath.Join(root, "internal", "sub"))
@@ -680,6 +704,50 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRunRepoScan_ChecksRunInOutcomeOrder pins the order of runRepoScan's
+// checks: a listing fault is reported before any non-selected record is tested
+// for containment, and a non-selected refusal is reported before ED-7.
+func TestRunRepoScan_ChecksRunInOutcomeOrder(t *testing.T) {
+	t.Run("non-selected directory alone is refused before ED-7", func(t *testing.T) {
+		root := t.TempDir()
+		u4Mkdir(t, filepath.Join(root, "internal", "sub"))
+
+		res := runRepoScan(root, u4StubGit("internal/sub"))
+		want := "::error::internal/sub: not a contained regular file: "
+		if res.Code != 1 || !strings.HasPrefix(res.Stderr, want) {
+			t.Fatalf("Code = %d, stderr = %q, want Code 1 with prefix %q", res.Code, res.Stderr, want)
+		}
+		if strings.Contains(res.Stderr, "ED-7") {
+			t.Fatalf("stderr = %q, must not reach the ED-7 empty-selection check", res.Stderr)
+		}
+	})
+	t.Run("listing fault beside a non-selected directory is reported first", func(t *testing.T) {
+		root := t.TempDir()
+		u4Mkdir(t, filepath.Join(root, "internal", "sub"))
+
+		res := runRepoScan(root, u4StubGit("internal/sub", "internal/a\xff.go"))
+		want := `::error::git ls-files output: path "internal/a\xff.go": ` + pysem.ErrInvalidUTF8.Error() + "\n"
+		if res.Code != 1 || res.Stderr != want {
+			t.Fatalf("Code = %d, stderr = %q, want Code 1 and exactly %q", res.Code, res.Stderr, want)
+		}
+	})
+}
+
+// TestRunRepoScan_CaseVariantRecordsAbsentFromDisk checks D-WB2-3 at the
+// repo-scan level: case-variant records that are not on disk pass by G-9 beside
+// a clean selected file.
+func TestRunRepoScan_CaseVariantRecordsAbsentFromDisk(t *testing.T) {
+	t.Run("case variants absent from disk beside a clean selected file (characterization, D-WB2-3)", func(t *testing.T) {
+		root := t.TempDir()
+		u4WriteText(t, filepath.Join(root, "internal", "ok.go"), u4CleanGo)
+
+		res := runRepoScan(root, u4StubGit("Internal/x.go", "CMD/y.go", "internal/ok.go"))
+		if res.Code != 0 || res.Stderr != "" {
+			t.Fatalf("Code = %d, Stderr = %q, want Code 0 and empty Stderr", res.Code, res.Stderr)
+		}
+	})
 }
 
 // TestScanSet_CaseVariantRecordsAreNeitherSelectedNorErrors pins the D-WB2-3
@@ -1168,19 +1236,19 @@ func u5bRealGitRepo(t *testing.T, mode, record, clean string) string {
 // repository, because a link named exactly internal or cmd cannot share an index
 // with internal/ok.go (a directory/file conflict, R2-2). Each row asserts that the
 // production runner's listing contains the record and that runRepoScan refuses it
-// with "not a contained regular file". Every row is red against the current code:
-// the pathspecs internal/** and cmd/** never match a bare top-level name, so the
-// listing lacks the record; and the gitlink internal/sub is listed, but
-// runRepoScan judges only .go paths, so it passes silently with exit 0.
+// with "not a contained regular file". The rows are green since U5b and U6: the
+// literal pathspecs `-- internal cmd` match a bare top-level name, so the
+// listing carries the record, and runRepoScan refuses every non-selected record
+// that it lists.
 func TestRunRepoScan_RealGitTopLevelAndGitlinkRecords(t *testing.T) {
 	rows := []struct {
 		name, mode, record, clean string
 	}{
-		{name: "a1 gitlink internal/sub beside clean internal/ok.go (red)", mode: "160000", record: "internal/sub", clean: "internal/ok.go"},
-		{name: "a2 symlink named internal beside clean cmd/ok.go (red)", mode: "120000", record: "internal", clean: "cmd/ok.go"},
-		{name: "a3 gitlink named internal beside clean cmd/ok.go (red)", mode: "160000", record: "internal", clean: "cmd/ok.go"},
-		{name: "a4 symlink named cmd beside clean internal/ok.go (red)", mode: "120000", record: "cmd", clean: "internal/ok.go"},
-		{name: "a5 gitlink named cmd beside clean internal/ok.go (red)", mode: "160000", record: "cmd", clean: "internal/ok.go"},
+		{name: "a1 gitlink internal/sub beside clean internal/ok.go (refusal)", mode: "160000", record: "internal/sub", clean: "internal/ok.go"},
+		{name: "a2 symlink named internal beside clean cmd/ok.go (refusal)", mode: "120000", record: "internal", clean: "cmd/ok.go"},
+		{name: "a3 gitlink named internal beside clean cmd/ok.go (refusal)", mode: "160000", record: "internal", clean: "cmd/ok.go"},
+		{name: "a4 symlink named cmd beside clean internal/ok.go (refusal)", mode: "120000", record: "cmd", clean: "internal/ok.go"},
+		{name: "a5 gitlink named cmd beside clean internal/ok.go (refusal)", mode: "160000", record: "cmd", clean: "internal/ok.go"},
 	}
 	for _, tc := range rows {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1253,8 +1321,8 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 		t.Setenv("GIT_INDEX_FILE", altIndex)
 		assertDefaultGitRunnerIsolated(t, root, baseline)
 	})
-	// characterization-only once the pathspecs are literal (R2-1): the runner
-	// moves to literal pathspecs in U6, after which GIT_LITERAL_PATHSPECS changes
+	// characterization-only once the pathspecs are literal (R2-1): the runner has
+	// listed with literal pathspecs since U6, so GIT_LITERAL_PATHSPECS changes
 	// nothing. Vector (d) below replaces it as the discriminating env vector.
 	t.Run("vector_b_GIT_LITERAL_PATHSPECS", func(t *testing.T) {
 		hermeticGitEnv(t)
@@ -1296,10 +1364,10 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	})
 }
 
-// TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree is characterization,
-// green on arrival. The literal pathspecs `-- internal cmd` that U6 moves the
-// runner to must list the real tree byte-identically to the current
-// `internal/** cmd/**` pair, so the move changes no selection on today's tree.
+// TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree is characterization.
+// The literal pathspecs `-- internal cmd` that the runner has listed with since
+// U6 must list the real tree byte-identically to the former `internal/** cmd/**`
+// pair, so the change to literal pathspecs altered no selection on today's tree.
 func TestGitLsFilesCapture_NewPathspecsMatchOldPairOnRealTree(t *testing.T) {
 	hermeticGitEnv(t)
 	root := repoRoot(t)
@@ -1656,10 +1724,10 @@ func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
 // TestRunFixtureSelfTest_DirectoryFixtureRefusals pins how fixture collection
 // treats directories. A directory whose name ends in .go must fail closed
 // during collection, before any fixture is read (U8). Rows (d1) and (d2) are
-// red: collection skips every directory silently, so the self-test passes.
-// Row (d3) is a characterization row, green on arrival: a directory without a
-// .go suffix stays skipped (SB-7). Every row also holds a valid fixture, so a
-// "no fixtures discovered" result cannot satisfy a red row (G-2).
+// refusal rows, green since U8: collection refuses each one before the self-test
+// can pass. Row (d3) is a characterization row: a directory without a .go suffix
+// stays skipped (SB-7). Every row also holds a valid fixture, so a "no fixtures
+// discovered" result cannot satisfy a refusal row (G-2).
 func TestRunFixtureSelfTest_DirectoryFixtureRefusals(t *testing.T) {
 	const (
 		fixtureRel   = "scripts/testdata/writepath"
@@ -1674,13 +1742,13 @@ func TestRunFixtureSelfTest_DirectoryFixtureRefusals(t *testing.T) {
 		wantStderr string
 	}{
 		{
-			name:       "(red) directory accept-d.go fails closed",
+			name:       "(refusal) directory accept-d.go fails closed",
 			dirName:    "accept-d.go",
 			wantCode:   1,
 			wantStderr: errorLine(fixtureRel+"/accept-d.go", errors.New(dirRefusal)),
 		},
 		{
-			name:       "(red) directory reject-d.go fails closed",
+			name:       "(refusal) directory reject-d.go fails closed",
 			dirName:    "reject-d.go",
 			wantCode:   1,
 			wantStderr: errorLine(fixtureRel+"/reject-d.go", errors.New(dirRefusal)),
@@ -1706,6 +1774,27 @@ func TestRunFixtureSelfTest_DirectoryFixtureRefusals(t *testing.T) {
 					res.Code, res.Stdout, res.Stderr, tc.wantCode, tc.wantStdout, tc.wantStderr)
 			}
 		})
+	}
+}
+
+// TestRunFixtureSelfTest_HostileFixtureNameEscapesPassLine checks the fixture
+// sink with a name that holds U+009B: the PASS line escapes it, and no raw
+// U+009B reaches stdout. The name is creatable on NTFS.
+func TestRunFixtureSelfTest_HostileFixtureNameEscapesPassLine(t *testing.T) {
+	const fixtureRel = "scripts/testdata/writepath"
+	root := t.TempDir()
+	fixtureDir := filepath.Join(root, filepath.FromSlash(fixtureRel))
+	u4WriteText(t, filepath.Join(fixtureDir, "accept-ok.go"), u4CleanGo)
+	u4WriteText(t, filepath.Join(fixtureDir, "accept-\u009b.go"), u4CleanGo)
+
+	res := runFixtureSelfTest(root)
+	want := "PASS accept-ok.go: clean as expected\n" + `PASS accept-\x9b.go: clean as expected` + "\n"
+	if res.Code != 0 || res.Stdout != want || res.Stderr != "" {
+		t.Fatalf("got (Code=%d, stdout=%q, stderr=%q), want (0, %q, empty stderr)",
+			res.Code, res.Stdout, res.Stderr, want)
+	}
+	if strings.ContainsRune(res.Stdout, 0x9b) {
+		t.Fatalf("stdout echoes a raw U+009B: %q", res.Stdout)
 	}
 }
 
@@ -3358,12 +3447,12 @@ func TestHarness_049007_D1aFixtureSetRemainsFrozen(t *testing.T) {
 	}
 }
 
-// TestEscapeLogText_Table pins the ED-2 escape format (U1, red phase). Every
-// rune with !strconv.IsPrint becomes \xNN, \uNNNN or \UNNNNNNNN in lowercase
-// hex, an invalid UTF-8 byte becomes \xNN, and everything else, including the
-// backslash, is byte-identical. The non-printable rows are red against the
-// compiling stub. The printable and backslash rows are characterization rows,
-// green on arrival.
+// TestEscapeLogText_Table pins the ED-2 escape format (U1). Every rune with
+// !strconv.IsPrint becomes \xNN, \uNNNN or \UNNNNNNNN in lowercase hex, an
+// invalid UTF-8 byte becomes \xNN, and everything else, including the backslash,
+// is byte-identical. The non-printable rows are green since U1. The printable and
+// backslash rows are characterization rows. Escaping is idempotent (SEC-12), so
+// each output must also be a fixed point of escapeLogText.
 func TestEscapeLogText_Table(t *testing.T) {
 	tests := []struct {
 		name string
@@ -3390,18 +3479,21 @@ func TestEscapeLogText_Table(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := escapeLogText(tc.in); got != tc.want {
+			got := escapeLogText(tc.in)
+			if got != tc.want {
 				t.Fatalf("escapeLogText(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+			if again := escapeLogText(got); again != got {
+				t.Fatalf("escapeLogText is not idempotent (SEC-12): escapeLogText(%q) = %q, want %q", got, again, got)
 			}
 		})
 	}
 }
 
-// TestErrorLine_EscapesControlSequences pins the errorLine sink (U1, red
-// phase). Benign text keeps the golden line, and a newline followed by
-// "::error::x" in the context or the error text must not split the output into
-// more than one line. The benign row is characterization, green on arrival. The
-// newline rows are red against the unchanged errorLine.
+// TestErrorLine_EscapesControlSequences pins the errorLine sink (U1). Benign
+// text keeps the golden line, and a newline followed by "::error::x" in the
+// context or the error text must not split the output into more than one line.
+// The benign row is characterization. The newline rows are green since U1.
 func TestErrorLine_EscapesControlSequences(t *testing.T) {
 	tests := []struct {
 		name    string
