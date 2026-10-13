@@ -24,7 +24,7 @@ Supersedes: checkpoint 3 (halted before merge). Backlogit checkpoint: `checkpoin
 4. Multi-persona review at `bfdb933` (Correctness, Security, Maintainability, Adversarial), then re-review. Zero P0 and zero HIGH-confidence P1 across both passes. One Maintainability P1 (MEDIUM confidence) recorded as P2 with rationale (4B2EB2FB).
 5. Copilot: stale thread PRRT_kwDOTPuhps6rplrN replied and resolved. Two new threads (PRRT_kwDOTPuhps6rqlRw, PRRT_kwDOTPuhps6rqlSE) captured (762A4FCA, 9C6C2078), replied with entry IDs, resolved. Review-body findings from reviews 5496871927 and 5496914474 dispositioned by PR comment. Copilot gate SATISFIED on `3c67eec` (also at last-mile re-check before merge).
 6. CI on `3c67eec`: all checks pass (lint, test, test windows advisory, ci gate, security, cross-compile, merge-strategy, pipeline-topology).
-7. P-021 C2 captures this session: A298D760, E16EB224, 53E63C81, F4FE2A35, 5CE8BC95, 5C44AC0D, 78E00644, FAB0AA3B, D5D103A1, BD952D5E, B93DDAAC, 724FA2FB, 8F7B16E6, 4B2EB2FB, 762A4FCA, 9C6C2078, 0606E72F.
+7. P-021 C2 captures this session: A298D760, E16EB224, 53E63C81, F4FE2A35, 5CE8BC95, 5C44AC0D, 78E00644, FAB0AA3B, D5D103A1, BD952D5E, B93DDAAC, 724FA2FB, 8F7B16E6, 4B2EB2FB, 762A4FCA, 9C6C2078, 0606E72F. Earlier 043-S captures still open: F2759510 (high), 8E1E2D80 (high), 6E8381D9, 8134B7B7, 5CC5532E, FC6FE1D5 (053.013-T follow-up).
 8. P-020 compaction: `compact-context` (target all) ran as a subagent on the post-merge branch. Result: 13 originals moved to `docs/archive/memory/` with `git mv`, 8 compacted summaries in `docs/memory/compacted/`, 2026-10-12 files and active-work references skipped. Status: completed (not degraded). Closure artifact compaction status: NOT recorded, because no closure artifact exists yet; this is part of why closure is incomplete.
 
 ## Closure-branch state
@@ -39,7 +39,9 @@ Supersedes: checkpoint 3 (halted before merge). Backlogit checkpoint: `checkpoin
 
 ## Known gaps (disclosed)
 
-* Close-path behavior has NO CI coverage on this head: the ten replica tests are skipped by design, and TestCascadeCloseClassifyOnlySmoke skips in the CI test job because autoharness is not installed there (FC6FE1D5).
+* Close-path behavior has NO CI coverage on this head: the ten replica tests are skipped by design. TestCascadeCloseClassifyOnlySmoke skips when autoharness is absent. Copilot's review states that the CI test job does not install autoharness; this is NOT yet confirmed in ci.yml (FC6FE1D5 item 2 asks for confirmation before treating it as CI evidence).
+* 053.015-T is archived as done although its dependency list includes 053.013-T (queued). Re-verify 053.015-T after 053.013-T completes.
+* The archived 053.008-T implementation note still says BLOCKED. It is superseded by the completion comment added on 053.008-T; Ship does not edit planning text.
 * Pre-existing: shipment-reconcile step 8 prescribes `backlogit move <shipment> --status shipped`, which the harness notes the engine rejects (FAB0AA3B).
 * verify-workspace `escalation_route_resolution` FAILS by design (stash 0A215E0B, operator decision R1-R3, not in this PR).
 * Replica-hygiene and the `{{id}}` template leak are captured (5C44AC0D, D5D103A1).
