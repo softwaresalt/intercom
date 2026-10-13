@@ -943,7 +943,7 @@ func escapeLogText(s string) string {
 // stripped so CI logs show only repo-relative prefixes (SEC-4). Stdlib only:
 // no filepath.Abs and no filepath.EvalSymlinks. The walk is a time-of-check
 // only: scanFile reads the file later, so a file swapped for a link between that
-// check and the read is still followed (TOCTOU, D44D8BDF). A retiredarch copy
+// check and the read is still followed (TOCTOU). A retiredarch copy
 // exists (retiredarch.containedRegularFile): keep the two in sync by hand,
 // because a fix to one must be checked against the other.
 func containedRegularFile(root, rel string) (bool, string) {
@@ -1013,7 +1013,7 @@ func containedRegularFile(root, rel string) (bool, string) {
 // non-regular, because Go reports a mount point as ModeIrregular (LR-4). Selected
 // files are read after the containment walk, so a file swapped for a link between
 // the Lstat in containedRegularFile and the read in scanFile is still followed
-// (TOCTOU, D44D8BDF).
+// (TOCTOU).
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)
 	if err != nil {
