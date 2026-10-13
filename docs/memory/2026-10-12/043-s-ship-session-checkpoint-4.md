@@ -50,3 +50,14 @@ Supersedes: checkpoint 3 (halted before merge). Backlogit checkpoint: `checkpoin
 
 * No `backlogit shipment ship` or cascade primitive without per-closure operator approval.
 * No admin fallback. Merge commit only (P-009). Stay on the branch until merge; post-merge work only on post-merge/ branches.
+
+## P-020 compaction report (compact-context Phase 4, durable)
+
+* Trigger: docs/memory held 71 files (max_files 40 exceeded); total 360.4 KB (below the 500 KB size threshold).
+* Phase 2 candidates: 13 files (60.7 KB) under the completed-work rule. Age-eligible but skipped: 3 (2026-09-18, reference blocked by not-Done items).
+* Files compacted: 13 originals to 8 summaries in `docs/memory/compacted/` (2026-10-12-*). Originals moved with `git mv` to `docs/archive/memory/`.
+* Space recovered: about 32 KB net (60.7 KB moved; about 28.7 KB of summaries added).
+* Active checkpoints preserved: 6.
+* Plans consolidated into decided-plans: 0. Closure records compacted: 0 (docs/plans and docs/closure were outside the allowed change scope).
+* Skipped deliberately: 2026-09-28 top-level (exactly 14 days, not older); 2026-10-01 post-m4 (open 038-F); 2026-10-07 retiredarch (open residuals); 2026-10-11 stage-closure-tooling and gatecheck-batch-2 (active or governing records); all 2026-10-12 files (they name 043-S and 053-F).
+* Status: completed (not degraded). Closure-artifact compaction status: not recorded, because no post-merge closure artifact exists while closure is halted.

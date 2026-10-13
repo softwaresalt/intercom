@@ -11,7 +11,7 @@ source_files:
 
 # 040-S / 050-F closure session: compacted memory (2026-10-08)
 
-This summary replaces `ship-040s-post-merge-closure-memory.md` (2,690 bytes). The verbatim original is archived at `docs/archive/memory/ship-040s-post-merge-closure-memory.md`. At the time of the 040-S compaction report, this file was the live record and was intentionally left in place.
+This summary replaces `ship-040s-post-merge-closure-memory.md` (2,690 bytes). The verbatim original is archived at `docs/archive/memory/ship-040s-post-merge-closure-memory.md`. At the time of the 040-S compaction report, this file was the live record and was intentionally left in place. The 043-S P-020 compaction on 2026-10-12 later moved it to the archive path above.
 
 ## Outcome
 
