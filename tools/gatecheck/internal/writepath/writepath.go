@@ -855,6 +855,11 @@ func errorLine(context string, err error) string {
 	return fmt.Sprintf("::error::%s: %v\n", context, err)
 }
 
+// escapeLogText is a red-phase stub that returns s unchanged. U2 replaces it
+// with the ED-2 escape: non-printable runes and invalid UTF-8 bytes become
+// visible \xNN, \uNNNN or \UNNNNNNNN escapes.
+func escapeLogText(s string) string { return s }
+
 // containedRegularFile reports whether rel, a repo-relative '/'-separated path
 // exactly as `git ls-files` prints it, names a regular file reached without
 // following a link (D44D8BDF, writepath arm). It is a semantic copy of

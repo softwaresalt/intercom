@@ -2832,3 +2832,92 @@ func TestHarness_049007_D1aFixtureSetRemainsFrozen(t *testing.T) {
 		t.Fatalf("not implemented: 049.007-T: D-T1a oracle must not expand its frozen fixture list from the promoted flat corpus")
 	}
 }
+
+// TestEscapeLogText_Table pins the ED-2 escape format (U1, red phase). Every
+// rune with !strconv.IsPrint becomes \xNN, \uNNNN or \UNNNNNNNN in lowercase
+// hex, an invalid UTF-8 byte becomes \xNN, and everything else, including the
+// backslash, is byte-identical. The non-printable rows are red against the
+// compiling stub. The printable and backslash rows are characterization rows,
+// green on arrival.
+func TestEscapeLogText_Table(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "LF", in: "a\nb", want: `a\x0ab`},
+		{name: "CR", in: "a\rb", want: `a\x0db`},
+		{name: "TAB", in: "a\tb", want: `a\x09b`},
+		{name: "ESC", in: "a\x1b[0m", want: `a\x1b[0m`},
+		{name: "DEL", in: "a\x7fb", want: `a\x7fb`},
+		{name: "C1 NEL U+0085", in: "a\u0085b", want: `a\x85b`},
+		{name: "C1 CSI U+009B", in: "a\u009bb", want: `a\x9bb`},
+		{name: "LINE SEPARATOR U+2028", in: "a\u2028b", want: `a\u2028b`},
+		{name: "PARAGRAPH SEPARATOR U+2029", in: "a\u2029b", want: `a\u2029b`},
+		{name: "BIDI OVERRIDE U+202E", in: "a\u202eb", want: `a\u202eb`},
+		{name: "ZERO WIDTH SPACE U+200B", in: "a\u200bb", want: `a\u200bb`},
+		{name: "TAG CHARACTER U+E0001", in: "a\U000e0001b", want: `a\U000e0001b`},
+		{name: "INVALID UTF-8 byte", in: "a\xffb", want: `a\xffb`},
+		{name: "LONE BACKSLASH", in: `a\b`, want: `a\b`},
+		{name: "printable ASCII", in: "Az09 !~", want: "Az09 !~"},
+		{name: "printable e-acute U+00E9", in: "caf\u00e9", want: "caf\u00e9"},
+		{name: "printable CJK U+65E5", in: "\u65e5\u672c", want: "\u65e5\u672c"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := escapeLogText(tc.in); got != tc.want {
+				t.Fatalf("escapeLogText(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestErrorLine_EscapesControlSequences pins the errorLine sink (U1, red
+// phase). Benign text keeps the golden line, and a newline followed by
+// "::error::x" in the context or the error text must not split the output into
+// more than one line. The benign row is characterization, green on arrival. The
+// newline rows are red against the unchanged errorLine.
+func TestErrorLine_EscapesControlSequences(t *testing.T) {
+	tests := []struct {
+		name    string
+		context string
+		err     error
+		want    string
+	}{
+		{
+			name:    "benign text is the golden line",
+			context: "git ls-files",
+			err:     errors.New("exit status 128"),
+			want:    "::error::git ls-files: exit status 128\n",
+		},
+		{
+			name:    "newline and ::error:: in the error text stay on one line",
+			context: "internal/a.go",
+			err:     errors.New("boom\n::error::x"),
+			want:    `::error::internal/a.go: boom\x0a::error::x` + "\n",
+		},
+		{
+			name:    "newline and ::error:: in the context stay on one line",
+			context: "internal/a.go\n::error::x",
+			err:     errors.New("read failed"),
+			want:    `::error::internal/a.go\x0a::error::x: read failed` + "\n",
+		},
+		{
+			name:    "newline and ::error:: in both context and error text stay on one line",
+			context: "internal/a.go\n::error::x",
+			err:     errors.New("boom\n::error::x"),
+			want:    `::error::internal/a.go\x0a::error::x: boom\x0a::error::x` + "\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := errorLine(tc.context, tc.err)
+			if lines := strings.Count(got, "\n"); lines != 1 || !strings.HasSuffix(got, "\n") {
+				t.Fatalf("errorLine printed %d newline(s), want exactly one line terminator: %q", lines, got)
+			}
+			if got != tc.want {
+				t.Fatalf("errorLine = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
