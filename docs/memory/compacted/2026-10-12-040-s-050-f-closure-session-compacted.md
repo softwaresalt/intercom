@@ -23,7 +23,7 @@ This summary replaces `ship-040s-post-merge-closure-memory.md` (2,690 bytes). Th
 ## Decisions
 
 * Close path: the cascade was run with a bound classification, then manually revalidated. `classify-close-path` issued binding `17bab11e`. A session-local helper recomputed the binding, and it matched. `backlogit shipment ship` was then run directly as a CLI call.
-* No invokable `safe-close` CLI or gate exists (stash `D10D3AFC`, active). Tool enforcement was therefore absent. This matches 037-S, and differs from 033-S and 039-S only in the fresh recompute-and-compare.
+* No invokable `safe-close` CLI or gate existed at 040-S execution (stash `D10D3AFC`, then active). Tool enforcement was therefore absent at that time. This matches 037-S, and differs from 033-S and 039-S only in the fresh recompute-and-compare.
 * Source artifact cleanup: 050-F had no `source_stash_id` or `source_deliberation_id`, so the manifest rule selected nothing. Stash entries `9FC28DB9`, `990AFA71` and `D7BF9F74` were already archived by Stage at harvest. Nothing was archived discretionarily.
 
 ## Deviations and disclosures

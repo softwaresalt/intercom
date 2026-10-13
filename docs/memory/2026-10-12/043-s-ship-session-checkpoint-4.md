@@ -39,7 +39,7 @@ Supersedes: checkpoint 3 (halted before merge). Backlogit checkpoint: `checkpoin
 
 ## Known gaps (disclosed)
 
-* Close-path behavior has NO CI coverage on this head: the ten replica tests are skipped by design. TestCascadeCloseClassifyOnlySmoke skips when autoharness is absent. Copilot's review states that the CI test job does not install autoharness; this is NOT yet confirmed in ci.yml (FC6FE1D5 item 2 asks for confirmation before treating it as CI evidence).
+* Close-path behavior has NO CI coverage on this head: the ten replica tests are skipped by design. CONFIRMED in `.github/workflows/ci.yml`: autoharness is installed only in `topology-check` (line 634). The test job (`expensive`, lines 181 to 255) and the `windows` job run `go test` without installing it, so TestCascadeCloseClassifyOnlySmoke skips there. Whether `topology-check` runs this test is not separately verified (FC6FE1D5 item 2).
 * 053.015-T is archived as done although its dependency list includes 053.013-T (queued). Re-verify 053.015-T after 053.013-T completes.
 * The archived 053.008-T implementation note still says BLOCKED. It is superseded by the completion comment added on 053.008-T; Ship does not edit planning text.
 * Pre-existing: shipment-reconcile step 8 prescribes `backlogit move <shipment> --status shipped`, which the harness notes the engine rejects (FAB0AA3B).
