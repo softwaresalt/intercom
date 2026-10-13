@@ -374,7 +374,7 @@ func TestRunRepoScan_SinkEscapesAndUnwrapsPathError(t *testing.T) {
 				return u4StubGit(c1Rel)
 			},
 			want: func(*testing.T, string) string {
-				return `internal/a\u009bb.go:6: write primitive 'os.Remove' found` + "\n"
+				return `internal/a\x9bb.go:6: write primitive 'os.Remove' found` + "\n"
 			},
 		},
 		{
