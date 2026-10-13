@@ -135,16 +135,26 @@ const (
 	rootResolveDisplay = "pathsafe.Root.Resolve"
 )
 
-// GitRunner runs `git ls-files -z -- internal/** cmd/**` rooted at root and
-// returns its raw stdout bytes: NUL-terminated records, parsed byte-exact by
-// scannedPathsFromListing with no pysem.GitText decoding. It returns an error
-// if the process could not be started or exited non-zero. It is injectable so
-// tests can simulate a missing/failing git without depending on the real
-// repository tree (M1-T8 AC: "an injectable gitRunner").
+// GitRunner runs `git ls-files -z -- internal cmd` rooted at root and returns
+// its raw stdout bytes: NUL-terminated records, parsed byte-exact by scanListing
+// with no pysem.GitText decoding. It returns an error if the process could not
+// be started or exited non-zero. It is injectable so tests can simulate a
+// missing/failing git without depending on the real repository tree (M1-T8 AC:
+// "an injectable gitRunner").
+//
+// The listing carries no file mode, so a gitlink or symlink record whose path is
+// absent from the working tree passes containment (G-9, LR-3). Closing that
+// residual needs a mode-bearing `ls-files -s -z`, which changes this output
+// contract (D-WB2-2 option B) and is deferred.
 type GitRunner func(root string) ([]byte, error)
 
 // DefaultGitRunner is the production GitRunner: it shells out to
-// `git ls-files -z -- internal/** cmd/**` with root as the working directory.
+// `git ls-files -z -- internal cmd` with root as the working directory. The
+// pathspecs are literal directory names, so a top-level record named exactly
+// internal or cmd (a symlink or gitlink) is listed as well; the former
+// `internal/** cmd/**` pathspecs never matched it. On a core.ignorecase host the
+// literal pathspecs can also list a case variant such as Internal/x.go, which
+// runRepoScan judges as a non-selected record (D-WB2-3, RR-4).
 // -z prints each name verbatim and NUL-terminated, so names containing quotes,
 // backslashes, spaces, newlines or non-ASCII bytes are never C-quoted.
 //
@@ -159,7 +169,7 @@ type GitRunner func(root string) ([]byte, error)
 // The wrapper's root discovery is a separate surface, captured in stash
 // DBE25DF5.
 func DefaultGitRunner(root string) ([]byte, error) {
-	cmd := exec.Command("git", "ls-files", "-z", "--", "internal/**", "cmd/**")
+	cmd := exec.Command("git", "ls-files", "-z", "--", "internal", "cmd")
 	cmd.Dir = root
 	cmd.Env = gitRunnerEnv(os.Environ())
 	var stdout, stderrBuf bytes.Buffer
@@ -221,43 +231,56 @@ var (
 	errListingControlRune   = errors.New("contains a control or line-separator character")
 )
 
-// scannedPathsFromListing parses the NUL-terminated `git ls-files -z` listing
-// and returns the paths shouldScan selects, in git's order. It fails closed on
-// anything that is not exactly a NUL-terminated list of non-empty records. A
-// record that shouldScan rejects is never read or echoed. A selected path must
-// be valid UTF-8 and must not contain a C0 control (U+0000 to U+001F), DEL
-// (U+007F), U+0085, U+2028 or U+2029, because selected paths are echoed to CI
-// logs (D-BW-1a).
+// scanListing makes one pass over the NUL-terminated `git ls-files -z` listing
+// and splits its records into selected (shouldScan selects them) and others
+// (every other record), each in git's order. It fails closed on anything that is
+// not exactly a NUL-terminated list of non-empty records. Faults are reported in
+// listing order, so the first one encountered wins (G-3). The NUL-termination
+// check runs before any record is classified (R2-5). A selected path must be
+// valid UTF-8 and must not contain a C0 control (U+0000 to U+001F), DEL (U+007F),
+// U+0085, U+2028 or U+2029, because selected paths are echoed to CI logs
+// (D-BW-1a). Other records are not rune-checked: runRepoScan tests their
+// containment, and any refusal echoes them only through logLine (SEC-11).
 //
 // Only the records this gate will scan are judged for UTF-8 and control runes.
 // retiredarch's selectRepoPaths judges every listed record instead; that
 // asymmetry is tracked by stash 31F33EFE.
-func scannedPathsFromListing(out []byte) ([]string, error) {
+func scanListing(out []byte) (selected, others []string, err error) {
 	if len(out) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if out[len(out)-1] != 0 {
-		return nil, errListingNotTerminated
+		return nil, nil, errListingNotTerminated
 	}
-	var selected []string
 	for _, p := range strings.Split(string(out[:len(out)-1]), "\x00") {
 		if p == "" {
-			return nil, errListingEmptyRecord
+			return nil, nil, errListingEmptyRecord
 		}
 		if !shouldScan(p) {
-			continue // by design: never read or echoed
+			others = append(others, p)
+			continue
 		}
 		if !utf8.ValidString(p) {
-			return nil, fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)
+			return nil, nil, fmt.Errorf("path %q: %w", p, pysem.ErrInvalidUTF8)
 		}
 		for _, r := range p {
 			if r < 0x20 || r == 0x7f || r == 0x85 || r == 0x2028 || r == 0x2029 {
-				return nil, fmt.Errorf("path %q %w", p, errListingControlRune)
+				return nil, nil, fmt.Errorf("path %q %w", p, errListingControlRune)
 			}
 		}
 		selected = append(selected, p)
 	}
-	return selected, nil
+	return selected, others, nil
+}
+
+// scannedPathsFromListing returns the selected records of scanListing: the paths
+// shouldScan selects, in git's order, under scanListing's error contract. Case
+// variants such as Internal/x.go and CMD/y.go are neither selected nor an error
+// (D-WB2-3). scanListing places them in others, where runRepoScan judges them
+// only by containment.
+func scannedPathsFromListing(out []byte) ([]string, error) {
+	selected, _, err := scanListing(out)
+	return selected, err
 }
 
 // nextOccurrence returns the byte offset of the first occurrence of sel in
@@ -850,9 +873,59 @@ type Result struct {
 // errorLine formats a one-line, "::error::"-prefixed ED-2 message: the
 // replacement for what would otherwise be an uncaught Python exception
 // (a git failure, a file read failure, or invalid UTF-8) propagating as a
-// traceback. context names the file or operation that failed.
+// traceback. context names the file or operation that failed. Both context
+// and the error text pass through escapeLogText so neither can break the line.
 func errorLine(context string, err error) string {
-	return fmt.Sprintf("::error::%s: %v\n", context, err)
+	return logLine("::error::" + escapeLogText(context) + ": " + escapeLogText(fmt.Sprint(err)))
+}
+
+// logLine is the print-site chokepoint for every composed output line (SEC-11).
+// It escapes the whole line before appending the "\n" terminator, so the
+// terminator is the only raw line break. Escaping is idempotent, so a benign
+// line is unchanged.
+func logLine(line string) string {
+	return escapeLogText(line) + "\n"
+}
+
+// unwrapPathError returns the cause wrapped by a *fs.PathError, so a read error
+// never echoes the absolute path. Any other error is returned unchanged (SB-8).
+func unwrapPathError(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
+}
+
+// escapeLogText makes s safe to embed in a single-line log message (ED-2).
+// Each invalid UTF-8 byte becomes \xNN. Each rune that strconv.IsPrint rejects
+// becomes \xNN (r <= 0xFF), \uNNNN (r <= 0xFFFF) or \UNNNNNNNN. Printable
+// text, including printable non-ASCII, is copied unchanged. The backslash is
+// deliberately not escaped: an attacker-written literal \x0a is
+// indistinguishable from an escaped newline. That is cosmetic only, because a
+// workflow command needs a real line break to take effect.
+// Keep in sync with any retiredarch copy; the planned home is pysem when
+// 36BE1F61 lands.
+func escapeLogText(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, width := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && width == 1:
+			fmt.Fprintf(&b, `\x%02x`, s[i])
+		case strconv.IsPrint(r):
+			b.WriteString(s[i : i+width])
+		case r <= 0xFF:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case r <= 0xFFFF:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			fmt.Fprintf(&b, `\U%08x`, r)
+		}
+		i += width
+	}
+	return b.String()
 }
 
 // containedRegularFile reports whether rel, a repo-relative '/'-separated path
@@ -868,9 +941,11 @@ func errorLine(context string, err error) string {
 // returns ok=true, so a deleted tracked file keeps the existing read-error
 // text. Any other Lstat error fails closed. The *fs.PathError wrapper is
 // stripped so CI logs show only repo-relative prefixes (SEC-4). Stdlib only:
-// no filepath.Abs and no filepath.EvalSymlinks. A retiredarch copy exists
-// (retiredarch.containedRegularFile): keep the two in sync by hand, because a
-// fix to one must be checked against the other.
+// no filepath.Abs and no filepath.EvalSymlinks. The walk is a time-of-check
+// only: scanFile reads the file later, so a file swapped for a link between that
+// check and the read is still followed (TOCTOU). A retiredarch copy
+// exists (retiredarch.containedRegularFile): keep the two in sync by hand,
+// because a fix to one must be checked against the other.
 func containedRegularFile(root, rel string) (bool, string) {
 	parts := strings.Split(rel, "/")
 	for _, part := range parts {
@@ -910,22 +985,48 @@ func containedRegularFile(root, rel string) (bool, string) {
 	return true, ""
 }
 
-// runRepoScan performs the repo-mode invariant scan: enumerate every
-// tracked internal/**, cmd/** Go source (via git, injectable), scan each,
-// and fail closed on a git error, a per-file read/decode error (ED-2), a
-// selected path that is not a contained regular file (D44D8BDF: a symlink or
-// junction is never followed), any finding, or an empty selection (ED-7).
-// A malformed listing (not NUL-terminated, or an empty record), or a selected
-// path that is not valid UTF-8 or contains a forbidden rune, fails closed with
-// an output error before any file is read.
+// runRepoScan performs the repo-mode invariant scan: enumerate every tracked
+// record under internal/ and cmd/ (via git, injectable), scan each selected Go
+// source, and fail closed on a git error, a malformed listing, a record that is
+// not a contained regular file (D44D8BDF: a symlink or junction is never
+// followed), a per-file read/decode error (ED-2), any finding, or an empty
+// selection (ED-7). A malformed listing (not NUL-terminated, or an empty record),
+// or a selected path that is not valid UTF-8 or contains a forbidden rune, fails
+// closed with an output error before any file is read.
+//
+// The checks run in this order. Listing faults fail first. Then every
+// non-selected record is checked for containment in git order (outcome 4). A
+// symlink, gitlink or other directory, a symlinked ancestor, or any other
+// non-regular file is refused as `::error::<rel>: not a contained regular file:
+// <reason>`, including a record named exactly internal or cmd. That check runs
+// before ED-7 and before any selected file is read. Then ED-7. Then each selected
+// file is checked for containment and scanned in git order, as before. A record
+// absent from disk passes (fs.ErrNotExist, G-9).
+//
+// Case-variant records such as Internal/x.go and CMD/y.go are neither selected
+// nor an error (D-WB2-3). On a core.ignorecase host the literal pathspecs can
+// list them; they pass if they are regular files (RR-4).
+//
+// Accepted residuals: a hard link to a file outside the repository is a regular
+// file to Lstat, so it passes (A8FB0682). A gitlink or symlink record absent from
+// disk passes (G-9). A Windows junction as the final component is refused as
+// non-regular, because Go reports a mount point as ModeIrregular (LR-4). Selected
+// files are read after the containment walk, so a file swapped for a link between
+// the Lstat in containedRegularFile and the read in scanFile is still followed
+// (TOCTOU).
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)
 	if err != nil {
 		return Result{Stderr: errorLine("git ls-files", err), Code: 1}
 	}
-	relPaths, err := scannedPathsFromListing(out)
+	relPaths, others, err := scanListing(out)
 	if err != nil {
 		return Result{Stderr: errorLine("git ls-files output", err), Code: 1}
+	}
+	for _, rel := range others {
+		if ok, reason := containedRegularFile(root, rel); !ok {
+			return Result{Stderr: errorLine(rel, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
+		}
 	}
 
 	if len(relPaths) == 0 {
@@ -942,7 +1043,7 @@ func runRepoScan(root string, git GitRunner) Result {
 		}
 		fileFindings, err := scanFile(root, rel)
 		if err != nil {
-			return Result{Stderr: errorLine(rel, err), Code: 1}
+			return Result{Stderr: errorLine(rel, unwrapPathError(err)), Code: 1}
 		}
 		findings = append(findings, fileFindings...)
 	}
@@ -950,18 +1051,17 @@ func runRepoScan(root string, git GitRunner) Result {
 	if len(findings) > 0 {
 		var b strings.Builder
 		for _, f := range findings {
-			b.WriteString(f)
-			b.WriteByte('\n')
+			b.WriteString(logLine(f))
 		}
-		_, _ = fmt.Fprintf(&b,
+		b.WriteString(logLine(fmt.Sprintf(
 			"::error::a destructive filesystem write primitive was found under internal/** or cmd/**. "+
 				"This trips the write-path precondition recorded in %s and tracked in %s. "+
 				"RETIREMENT PROCEDURE: re-evaluate every finding in the risk register against this new "+
 				"write call site, land a mitigation (or an explicit, re-justified acceptance) in the SAME "+
 				"change, and update both the register and the Constitution Check exception to reflect the "+
-				"arrival of a real write path.\n",
+				"arrival of a real write path.",
 			exceptionName, registerName,
-		)
+		)))
 		return Result{Stderr: b.String(), Code: 1}
 	}
 
@@ -985,16 +1085,24 @@ func runFixtureSelfTest(root string) Result {
 
 	info, statErr := os.Stat(fixtureDir)
 	if statErr != nil || !info.IsDir() {
-		return Result{Stderr: fmt.Sprintf("fixture dir not found: %s\n", fixtureDirPosix), Code: 1}
+		return Result{Stderr: logLine(fmt.Sprintf("fixture dir not found: %s", fixtureDirPosix)), Code: 1}
 	}
 
 	entries, err := os.ReadDir(fixtureDir)
 	if err != nil {
-		return Result{Stderr: fmt.Sprintf("fixture dir not found: %s\n", fixtureDirPosix), Code: 1}
+		return Result{Stderr: logLine(fmt.Sprintf("fixture dir not found: %s", fixtureDirPosix)), Code: 1}
 	}
 	var names []string
 	for _, e := range entries {
 		if e.IsDir() {
+			// A directory named *.go is refused during collection, before any
+			// fixture is read, so it cannot pass as a silently skipped fixture.
+			// Other directories stay skipped. Accepted residual (A8FB0682): a
+			// hard link to a file outside the repository is a regular file to
+			// Lstat, so containedRegularFile passes it.
+			if strings.HasSuffix(e.Name(), ".go") {
+				return Result{Stderr: errorLine("scripts/testdata/writepath/"+e.Name(), errors.New("fixture is a directory; names ending in .go must be regular files")), Code: 1}
+			}
 			continue
 		}
 		if strings.HasSuffix(e.Name(), ".go") {
@@ -1004,7 +1112,7 @@ func runFixtureSelfTest(root string) Result {
 	sort.Strings(names)
 
 	if len(names) == 0 {
-		return Result{Stderr: fmt.Sprintf("no fixtures discovered under %s\n", fixtureDirPosix), Code: 1}
+		return Result{Stderr: logLine(fmt.Sprintf("no fixtures discovered under %s", fixtureDirPosix)), Code: 1}
 	}
 
 	var stdout strings.Builder
@@ -1016,13 +1124,13 @@ func runFixtureSelfTest(root string) Result {
 		}
 		findings, err := scanFile(root, relPath)
 		if err != nil {
-			return Result{Stderr: errorLine(relPath, err), Code: 1}
+			return Result{Stderr: errorLine(relPath, unwrapPathError(err)), Code: 1}
 		}
 		rejected := len(findings) > 0
 		switch {
 		case strings.HasPrefix(name, "reject-"):
 			if rejected {
-				_, _ = fmt.Fprintf(&stdout, "PASS %s: rejected as expected\n", name)
+				stdout.WriteString(logLine(fmt.Sprintf("PASS %s: rejected as expected", name)))
 			} else {
 				failures = append(failures, fmt.Sprintf("%s: expected rejection (write primitive), got clean", name))
 			}
@@ -1030,7 +1138,7 @@ func runFixtureSelfTest(root string) Result {
 			if rejected {
 				failures = append(failures, fmt.Sprintf("%s: expected clean, got findings: %s", name, strings.Join(findings, "; ")))
 			} else {
-				_, _ = fmt.Fprintf(&stdout, "PASS %s: clean as expected\n", name)
+				stdout.WriteString(logLine(fmt.Sprintf("PASS %s: clean as expected", name)))
 			}
 		default:
 			failures = append(failures, fmt.Sprintf("%s: fixture filename must start with 'accept-' or 'reject-'", name))
@@ -1040,7 +1148,7 @@ func runFixtureSelfTest(root string) Result {
 	if len(failures) > 0 {
 		var b strings.Builder
 		for _, f := range failures {
-			b.WriteString("FAIL " + f + "\n")
+			b.WriteString(logLine("FAIL " + f))
 		}
 		return Result{Stdout: stdout.String(), Stderr: b.String(), Code: 1}
 	}
