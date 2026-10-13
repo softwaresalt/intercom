@@ -1,5 +1,7 @@
 # Capture pre-close writer evidence before a CASCADE close
 
+> **Superseded in part (2026-10-12, shipment 043-S / feature 053-F).** The "never use the mutating form" guidance (the blanket prohibition on the mutating `autoharness shipment cascade-close` under "What not to do") is superseded. The mutating command is now the single sanctioned CASCADE executor, run only after per-closure operator approval that dark mode does not waive, and every close starts with `--classify-only`. Source decision: `docs/decisions/2026-10-11-intercom-go-closure-tooling-batch-1-deliberation.md` (D-CT-1). The historical text below is retained for the record.
+
 Date: 2026-10-11. Source: shipment 042-S closure (feature 052-F, PR #123). Related: the 041-S closure residual `cascade-evidence-record-missing` (docs/closure/041-S-051-F-post-merge-closure.md).
 
 ## Problem

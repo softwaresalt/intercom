@@ -3,6 +3,7 @@ package integration
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -11,15 +12,24 @@ import (
 // Supplemental 33-row static contract test, per
 // docs/plans/2026-09-13-intercom-go-ship-feature-completion-decided-plan.md
 // §6/§6.1. Every PRESENT/ABSENT needle below is a verbatim substring cut from
-// the plan's §4.2 pinned replacement wording (or, for guard/anchor rows, from
-// the plan's own H0 measurement of the pre-existing installed text) -- never
-// authored from prose or intent, per the plan's Derivation rule.
+// the installed instruction text (the plan's pinned replacement wording, or,
+// for guard/anchor rows, the pre-existing installed text) -- never authored
+// from prose or intent, per the plan's Derivation rule.
+//
+// The 053-F expand/contract migration is complete, so this file is STRICT:
+// every row pins the new contract text only. Rows that retired contract text
+// (classify-close-path, CLASSIFICATION_BINDING, classification_binding,
+// RECONCILE_FAIL_CLASSIFICATION, RECONCILE_FAIL_CASCADE_UNBOUND, CLOSE_PATH_VERDICT,
+// fully-covered-root and their refusal wording) assert that the retired token is
+// ABSENT from the surface that carried it. The policy version-history table keeps
+// fully-covered-root verbatim, so the policy absence check skips those history
+// rows (see liveLines).
 //
 // Per Stage deliberation D-2 (001-DL), this static needle test is
-// SUPPLEMENTAL evidence only: it proves the instruction/skill prose says the
-// right thing. It cannot by itself satisfy IV-1..IV-5; the fixture-backed
-// behavioral tests in shipment_close_path_behavior_test.go are the
-// authoritative acceptance surface for those invariants.
+// SUPPLEMENTAL evidence only: it proves the instruction/skill prose states the
+// required contract and no longer states the retired one. It cannot by itself
+// satisfy the close-path invariants IV-1..IV-5; those rest on behavioral
+// evidence of the cascade-close command, not on prose.
 // ---------------------------------------------------------------------------
 
 func loadInstructionSurfaces(t *testing.T) map[string]string {
@@ -102,6 +112,58 @@ func assertOrderedBefore(t *testing.T, content, first, second, row string) {
 	}
 }
 
+// assertAbsentPattern fails when pattern matches anywhere in content.
+func assertAbsentPattern(t *testing.T, content, pattern, row string) {
+	t.Helper()
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("row %s: invalid pattern %q: %v", row, pattern, err)
+	}
+	if loc := re.FindStringIndex(content); loc != nil {
+		t.Fatalf("row %s: expected pattern to be ABSENT, but it matched at byte %d: %q", row, loc[0], pattern)
+	}
+}
+
+// policyVersionHistoryRow matches one row of the policy version-history table,
+// whose rows keep retired tokens verbatim as history.
+var policyVersionHistoryRow = regexp.MustCompile(`^\| 1\.\d+\.\d+\s+\|\s+\d{4}-\d{2}-\d{2}`)
+
+// liveLines returns content without the policy version-history table rows, so
+// absence checks against live policy text skip the history.
+func liveLines(content string) string {
+	var b strings.Builder
+	for _, line := range strings.SplitAfter(content, "\n") {
+		if policyVersionHistoryRow.MatchString(line) {
+			continue
+		}
+		b.WriteString(line)
+	}
+	return b.String()
+}
+
+// policySection returns the policy text from the line containing heading up to,
+// but not including, the next line that starts with "## P-". It fails the test
+// when the heading is missing.
+func policySection(t *testing.T, policy, heading string) string {
+	t.Helper()
+	var b strings.Builder
+	in := false
+	for _, line := range strings.SplitAfter(policy, "\n") {
+		if !in && strings.Contains(line, heading) {
+			in = true
+		} else if in && strings.HasPrefix(line, "## P-") {
+			break
+		}
+		if in {
+			b.WriteString(line)
+		}
+	}
+	if !in {
+		t.Fatalf("policy section heading not found: %q", heading)
+	}
+	return b.String()
+}
+
 func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	files := loadInstructionSurfaces(t)
 	ship := files["ship"]
@@ -135,11 +197,12 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_4_CS4_delegation_boundary", func(t *testing.T) {
-		assertPresent(t, ship, "the `shipment-reconcile` skill's read-only `mode: classify-close-path` boundary selects the close path", "4")
+		assertPresent(t, ship, "`autoharness shipment cascade-close --classify-only --shipment {shipment_id}", "4")
+		assertAbsent(t, ship, "classify-close-path", "4")
 	})
 
 	t.Run("row_5_CS1_p015_merge_commit", func(t *testing.T) {
-		assertPresent(t, ship, "also re-read `P-015` and verify the merge commit", "5")
+		assertPresent(t, ship, "Mandatory pre-self-close context reload", "5")
 	})
 	t.Run("row_6_CS1_authority_escalation", func(t *testing.T) {
 		assertPresent(t, ship, "A context reload MUST NOT widen the authority envelope", "6")
@@ -155,20 +218,25 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 
 	t.Run("row_9a_CS4_predicate_absent", func(t *testing.T) {
 		assertAbsent(t, ship, "permitted **only** when, for **every** feature member of the manifest: it is a", "9a")
+		assertAbsent(t, skill, "permitted **only** when, for **every** feature member of the manifest: it is a", "9a")
 	})
 	t.Run("row_9b_CS4_predicate_absent", func(t *testing.T) {
 		assertAbsent(t, ship, "enumerates to zero children, that childlessness is **positively verified**", "9b")
+		assertAbsent(t, skill, "enumerates to zero children, that childlessness is **positively verified**", "9b")
 	})
 	t.Run("row_9c_CS4_predicate_absent", func(t *testing.T) {
 		assertAbsent(t, ship, "The manifest must contain nothing beyond the", "9c")
+		assertAbsent(t, skill, "The manifest must contain nothing beyond the", "9c")
 	})
 	t.Run("row_9d_CS4_predicate_absent", func(t *testing.T) {
 		assertAbsent(t, ship, "qualification is never per-member, and no feature ID is ever special-cased.", "9d")
+		assertAbsent(t, skill, "qualification is never per-member, and no feature ID is ever special-cased.", "9d")
 	})
 
 	t.Run("row_10_CS2_direct_status_gone_pointer_present", func(t *testing.T) {
 		assertPresentExactly(t, ship, "<shipment_id> --status shipped", "10")
-		assertPresent(t, ship, "the authoritative close sequence defined by the `shipment-reconcile` skill", "10")
+		assertAbsent(t, ship, "`backlogit move <shipment_id> --status", "10")
+		assertPresent(t, ship, "`shipment-reconcile` is authoritative", "10")
 	})
 
 	t.Run("row_11_CS1_scoped_role_boundary_only", func(t *testing.T) {
@@ -210,8 +278,7 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 
 	t.Run("row_19_CS9_scoped_to_safe_close", func(t *testing.T) {
 		assertAbsent(t, ship, "proves the protected set and halts fail-closed on any cascade or provenance", "19")
-		assertPresent(t, ship, "proves the protected set on the safe-close path", "19")
-		assertPresent(t, ship, "no protected set by construction", "19")
+		assertPresent(t, ship, "must not be re-derived here", "19")
 	})
 
 	t.Run("row_20a_CS10_grant_in_policy", func(t *testing.T) {
@@ -226,46 +293,59 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_21a_CS11_binding_input_row", func(t *testing.T) {
-		assertPresent(t, skill, "digest returned by `mode: classify-close-path`", "21a")
+		assertPresent(t, skill, "`--classify-only` first, on every close.", "21a")
+		assertAbsent(t, skill, "digest returned by `mode: classify-close-path`", "21a")
 	})
 	t.Run("row_21b_CS12_three_verdict_tokens", func(t *testing.T) {
-		assertPresent(t, skill, "CLOSE_PATH_VERDICT: CASCADE", "21b")
-		assertPresent(t, skill, "CLOSE_PATH_VERDICT: SAFE_CLOSE", "21b")
-		assertPresent(t, skill, "CLOSE_PATH_VERDICT: BLOCK", "21b")
+		assertPresent(t, skill, "0 (`CASCADE`)", "21b")
+		assertPresent(t, skill, "3 (`SAFE_CLOSE` selected: classifier `SAFE_CLOSE`, or engine `UNVERIFIED`)", "21b")
+		assertPresent(t, skill, "HALT. Nothing was mutated.", "21b")
+		assertAbsent(t, skill, "CLOSE_PATH_VERDICT", "21b")
 	})
 	t.Run("row_21c_CS11_classify_close_path_count", func(t *testing.T) {
-		assertPresentAtLeast(t, skill, "classify-close-path", 2, "21c")
+		assertPresentAtLeast(t, skill, "cascade-close --classify-only", 2, "21c")
+		assertAbsent(t, skill, "classify-close-path", "21c")
 	})
 
 	t.Run("row_22a_CS12_section_heading", func(t *testing.T) {
-		assertPresent(t, skill, "### Classify-Close-Path Mode", "22a")
+		assertPresent(t, skill, "**Command routing (192-F): `--classify-only` first, on every close.**", "22a")
+		assertAbsent(t, skill, "### Classify-Close-Path Mode", "22a")
 	})
 	t.Run("row_22b_CS12_no_mutation_clause", func(t *testing.T) {
-		assertPresent(t, skill, "performs no archive, no status transition and no record mutation", "22b")
+		assertPresent(t, skill, "(an existing `pre_close` record exits 2 and is left untouched)", "22b")
+		assertAbsent(t, skill, "performs no archive, no status transition and no record mutation", "22b")
 	})
 	t.Run("row_22c_CS12_failclosed_block_clause", func(t *testing.T) {
-		assertPresent(t, skill, "every unsupported, mixed, ambiguous, torn, missing or incompletely enumerated case returns `CLOSE_PATH_VERDICT: BLOCK`", "22c")
+		assertPresent(t, skill, "any other or unrecognized exit (including 1)", "22c")
+		assertAbsent(t, skill, "returns `CLOSE_PATH_VERDICT: BLOCK`", "22c")
 	})
 
 	t.Run("row_23a_CS13_bound_refusal_and_branch_selects", func(t *testing.T) {
-		assertPresent(t, skill, "every other bound verdict halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_REFUSED`", "23a")
-		assertPresent(t, skill, "the bound verdict alone selects the branch", "23a")
+		assertPresent(t, skill, "HALT. Nothing was mutated.", "23a")
+		assertPresent(t, skill, "Route on the command's exit code", "23a")
+		assertAbsent(t, skill, "RECONCILE_FAIL_CLASSIFICATION", "23a")
+		assertAbsent(t, skill, "the bound verdict alone selects the branch", "23a")
 	})
-	t.Run("row_23b_CS13_default_gone_bound_only_present", func(t *testing.T) {
+	t.Run("row_23b_CS13_default_bullet_absent_exit3_only", func(t *testing.T) {
 		assertAbsent(t, skill, "* **SAFE_CLOSE selected** (default, including any classifier error,", "23b")
-		assertPresent(t, skill, "(bound verdict `SAFE_CLOSE` only)", "23b")
+		assertPresent(t, skill, "Safe-close steps 1", "23b")
 	})
 	t.Run("row_23c_CS13_unbound_D1_refusal", func(t *testing.T) {
-		assertPresent(t, skill, "halts before any close mutation with `RECONCILE_FAIL_CASCADE_UNBOUND`", "23c")
-		assertPresent(t, skill, "performs zero archive, zero status transition and zero record mutation", "23c")
+		assertPresent(t, skill, "HALT. Nothing was mutated.", "23c")
+		assertPresent(t, skill, "Nothing was mutated", "23c")
+		assertAbsent(t, skill, "RECONCILE_FAIL_CASCADE_UNBOUND", "23c")
+		assertAbsent(t, skill, "performs zero archive, zero status transition and zero record mutation", "23c")
 	})
 	t.Run("row_23d_CS13_invalid_binding_refusal", func(t *testing.T) {
-		assertPresent(t, skill, "halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_INVALID`", "23d")
+		assertPresent(t, skill, "HALT. Nothing was mutated.", "23d")
+		assertAbsent(t, skill, "RECONCILE_FAIL_CLASSIFICATION_INVALID", "23d")
 	})
 
 	t.Run("row_24a_CS14_drift_token_and_readonly", func(t *testing.T) {
-		assertPresent(t, skill, "RECONCILE_FAIL_CLASSIFICATION_DRIFT", "24a")
-		assertPresent(t, skill, "**`mode: classify-close-path` is strictly READ-ONLY.**", "24a")
+		assertPresent(t, skill, "any difference from the `cascade`-selected `--classify-only` record", "24a")
+		assertPresent(t, skill, "(an existing `pre_close` record exits 2 and is left untouched)", "24a")
+		assertAbsent(t, skill, "RECONCILE_FAIL_CLASSIFICATION_DRIFT", "24a")
+		assertAbsent(t, skill, "**`mode: classify-close-path` is strictly READ-ONLY.**", "24a")
 	})
 	t.Run("row_24b_guard_four_mode_names_survive", func(t *testing.T) {
 		assertPresentAtLeast(t, skill, "mode: detect-mixed-role", 1, "24b")
@@ -275,87 +355,129 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	})
 
 	t.Run("row_25_CS3_unknown_token_halt", func(t *testing.T) {
-		assertPresent(t, ship, "HALT on any result token the installed classification did not name", "25")
+		assertPresent(t, ship, "exit-code routing table lives in the", "25")
+		assertAbsent(t, ship, "HALT on any result token the installed classification did not name", "25")
 	})
 
 	t.Run("row_26_CS5_binding_carried", func(t *testing.T) {
 		assertAbsent(t, ship, "in place of the safe-close sequence above for this shipment's", "26")
-		assertPresent(t, ship, "carrying the returned `CLASSIFICATION_BINDING` into that call", "26")
+		assertAbsent(t, ship, "CLASSIFICATION_BINDING", "26")
+		assertPresent(t, ship, "`close_evidence` (the evidence record path)", "26")
 	})
 
 	t.Run("row_27_CS6_never_unbound", func(t *testing.T) {
-		assertPresent(t, ship, "Ship MUST NOT invoke `mode: safe-close` without a `classification_binding`", "27")
+		assertAbsent(t, ship, "classification_binding", "27")
+		assertPresent(t, ship, "whose closure the closure-evidence gate refuses.", "27")
 	})
 
 	t.Run("row_28_CS10_self_contained_in_policy", func(t *testing.T) {
 		assertPresent(t, policy, "the descendant graph union the feature is set-equal to the manifest", "28")
 		assertPresent(t, policy, "scoped to the manifest of the shipment this session has claimed and whose live status is exactly `active`", "28")
+		assertAbsent(t, liveLines(policy), "fully-covered-root", "28")
+	})
+
+	t.Run("guard_inv6_engine_inertness_in_p015", func(t *testing.T) {
+		p015 := policySection(t, policy, "## P-015:")
+		assertPresent(t, p015, "**INV-6 (Engine-inertness containment gate).**", "guard")
+	})
+
+	t.Run("guard_policy_no_unconditional_cascade_never_called", func(t *testing.T) {
+		assertAbsent(t, policy, "and the cascade `backlogit_ship_shipment` was never called", "guard")
+		assertPresent(t, policy, "on the SAFE_CLOSE path, the cascade `backlogit_ship_shipment` was never called", "guard")
 	})
 
 	t.Run("row_29_CS15_intake_before_claim", func(t *testing.T) {
 		const intakeNeedle = "Intake reconciliation check — run BEFORE the claim"
 		const claimNeedle = "Record `shipment_id` as the session scope"
-		assertPresent(t, ship, intakeNeedle, "29")
+		assertPresentExactly(t, ship, intakeNeedle, "29")
+		assertPresentExactly(t, ship, claimNeedle, "29")
 		assertOrderedBefore(t, ship, intakeNeedle, claimNeedle, "29")
 	})
 
 	t.Run("row_30_CS12_cascade_within_section_block", func(t *testing.T) {
-		const sectionHeading = "### Classify-Close-Path Mode"
-		const nextSectionHeading = "### Safe-Close Mode"
+		const sectionHeading = "### Step 0(c) Command Routing: cascade-close --classify-only (192-F)"
+		const sectionEnd = "<!-- cascade-close-routing:END step-0c -->"
 		startIdx := strings.Index(skill, sectionHeading)
 		if startIdx < 0 {
 			t.Fatalf("row 30: section heading not found: %q", sectionHeading)
 		}
-		endIdx := strings.Index(skill[startIdx:], nextSectionHeading)
+		endIdx := strings.Index(skill[startIdx:], sectionEnd)
 		if endIdx < 0 {
-			t.Fatalf("row 30: could not bound section block: %q not found after heading", nextSectionHeading)
+			t.Fatalf("row 30: could not bound section block: %q not found after heading", sectionEnd)
 		}
 		block := skill[startIdx : startIdx+endIdx]
-		assertPresent(t, block, "CLOSE_PATH_VERDICT: CASCADE", "30")
+		assertPresent(t, block, "0 (`CASCADE`)", "30")
+		assertAbsent(t, skill, "### Classify-Close-Path Mode", "30")
+		assertAbsent(t, skill, "CLOSE_PATH_VERDICT: CASCADE", "30")
 	})
 
 	t.Run("row_31_CS16_binding_carried_old_literal_gone", func(t *testing.T) {
 		assertAbsent(t, ship, "skill with `mode: safe-close`, `shipment_id`, and the", "31")
-		assertPresent(t, ship, "carrying the `classification_binding` from the preceding", "31")
-		assertPresent(t, ship, "An unbound safe-close invocation is refused by the skill", "31")
+		assertAbsent(t, ship, "carrying the `classification_binding` from the preceding", "31")
+		assertPresent(t, ship, "every close, on either path, starts", "31")
+		assertPresent(t, ship, "whose closure the closure-evidence gate refuses.", "31")
 	})
-
 	t.Run("row_32_CS6_handles_every_refusal_token", func(t *testing.T) {
-		assertPresent(t, ship, "RECONCILE_FAIL_CASCADE_UNBOUND", "32")
-		assertPresent(t, ship, "as a HALT with no mutation performed", "32")
+		assertPresent(t, ship, "exit-code routing table lives in the", "32")
+		assertAbsent(t, ship, "RECONCILE_FAIL_CASCADE_UNBOUND", "32")
+		assertAbsent(t, ship, "as a HALT with no mutation performed", "32")
 	})
-
 	t.Run("row_33_CS13_migration_no_success_shaped_fallback", func(t *testing.T) {
-		assertPresent(t, skill, "Unbound invocations are rejected, not defaulted", "33")
-		assertPresent(t, skill, "refused, never served on a legacy path", "33")
-		assertPresent(t, skill, "no deprecation window, no grace period and no success-shaped fallback", "33")
+		assertPresent(t, skill, "never substitute `SAFE_CLOSE`", "33")
+		assertPresent(t, skill, "there is no hand-run fallback", "33")
+		assertPresent(t, skill, "do not fall back to cascade", "33")
+		assertAbsent(t, skill, "Unbound invocations are rejected, not defaulted", "33")
+		assertAbsent(t, skill, "refused, never served on a legacy path", "33")
+		assertAbsent(t, skill, "no deprecation window, no grace period and no success-shaped fallback", "33")
 	})
 
 	t.Run("guard_no_018_dot_in_ship", func(t *testing.T) {
 		assertAbsent(t, ship, "018.", "guard")
 	})
+
+	t.Run("guard_no_imperative_direct_cascade_call", func(t *testing.T) {
+		for _, needle := range []string{"Invoke `backlogit_ship_shipment`", "Invoke `backlogit shipment ship`"} {
+			assertAbsent(t, ship, needle, "guard")
+			assertAbsent(t, skill, needle, "guard")
+		}
+	})
+
+	t.Run("guard_disposition_gates_post_mode", func(t *testing.T) {
+		assertPresent(t, skill, "only `DISPOSITION_COMPLETE` proceeds to post-mode", "guard")
+		assertPresent(t, ship, "DISPOSITION_COMPLETE", "guard")
+	})
 }
 
-// TestCascadeRoutesThroughSafeClose is the 029.005-T contract test (plan
-// docs/plans/2026-09-18-intercom-go-ship-pipeline-contract-repair-plan.md
-// §3.3, PIN-830/PIN-861). Its single red->green assertion pair is cut
-// VERBATIM from the pinned replacement wording per the binding compound rule
-// in docs/compound/workflow-issues/cross-artifact-contract-closure-requires-
-// every-surface-2026-09-13.md: needles are never authored from prose or
-// intent.
-//
-// PRESENT (post-repair only): "designates `shipment-reconcile` `mode: safe-
-// close`" -- introduced by PIN-830, absent from the pre-repair file.
-// ABSENT (post-repair): "invoke the cascade" -- the pre-repair `:861` opener,
-// replaced in full by PIN-861.
-//
-// This is deliberately the ONLY assertion in this test (plan §3.2: "SINGLE
-// red-to-green assertion only"); the earlier green-on-arrival second
-// assertion is intentionally not implemented here.
-func TestCascadeRoutesThroughSafeClose(t *testing.T) {
+// TestCascadeRoutesThroughCommand pins the post-migration close-path routing
+// (053-F, plan U11). CASCADE routes only through the mutating
+// `autoharness shipment cascade-close` command, after explicit operator
+// approval for that closure; the direct `backlogit shipment ship` route stays
+// forbidden. The a0 lifecycle gate, the a1 covering-feature completion gate and
+// the 6.0 Post-Merge Branch Protocol heading must remain present. No retired
+// classification token may appear in the Ship agent, and the 029.005-T
+// "invoke the cascade" opener stays absent (the "invoke the cascade-close" form
+// is allowed). The opener stays absent in any case, and the shipment-reconcile
+// skill must carry no direct-ship call, intercom auto-check, or retired
+// classifier wording.
+func TestCascadeRoutesThroughCommand(t *testing.T) {
 	files := loadInstructionSurfaces(t)
 	ship := files["ship"]
+	skill := files["skill"]
 
-	assertPresent(t, ship, "designates `shipment-reconcile` `mode: safe-close`", "U2-T3")
-	assertAbsent(t, ship, "invoke the cascade", "U2-T3")
+	assertPresent(t, ship, "obtain explicit operator approval for this specific closure **before** the mutating run. Only then run `autoharness shipment cascade-close` with no `--classify-only`", "U11-a")
+	assertPresent(t, ship, "never calls `backlogit shipment ship` / `backlogit_ship_shipment` directly, for any verdict", "U11-a")
+
+	assertPresent(t, ship, "a0. **TOPOLOGY_GATE: lifecycle", "U11-b")
+	assertPresent(t, ship, "a1. **Covering-feature completion gate**", "U11-b")
+	assertPresent(t, ship, "#### Step 6.0: Post-Merge Branch Protocol", "U11-b")
+
+	for _, retired := range []string{"classify-close-path", "CLASSIFICATION_BINDING", "classification_binding"} {
+		assertAbsent(t, ship, retired, "U11-c")
+	}
+	assertAbsentPattern(t, ship, `(?i)invoke the cascade([^-]|$)`, "U11-c")
+
+	for _, retired := range []string{"Invoke `backlogit_ship_shipment(", "intercom auto-check", "default, including any classifier error", "Classify the close path"} {
+		assertAbsent(t, skill, retired, "U11-d")
+	}
+	assertPresent(t, ship, "Never add `--replace-pre-close` without the same per-closure operator approval", "U11-e")
 }

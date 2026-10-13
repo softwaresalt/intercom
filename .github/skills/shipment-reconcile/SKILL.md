@@ -1,6 +1,6 @@
 ---
 name: shipment-reconcile
-description: "GI/GR reconciliation gate for shipment manifests — verifies every manifest item exists in queue (pre-mode) or archive (post-mode) with the expected status, and closes shipments with the single-artifact safe-close procedure that archives ONLY manifest item IDs and closes the shipment record via live `shipped` -> verify -> explicit archive -> verify `archived_status: shipped`, instead of the destructive cascade backlogit_ship_shipment — except for the narrow, machine-verified P-015 fully-covered-root case, where the cascade op is the permitted and independently-verified close path."
+description: "GI/GR reconciliation gate for shipment manifests — verifies every manifest item exists in queue (pre-mode) or archive (post-mode) with the expected status, and closes shipments with the single-artifact safe-close procedure that archives ONLY manifest item IDs one at a time and closes the shipment record via live `shipped` -> verify -> explicit archive -> verify `archived_status: shipped`, instead of the destructive cascade backlogit_ship_shipment. The destructive CASCADE close runs only through `autoharness shipment cascade-close` after per-closure operator approval, and only for the narrow, machine-verified P-015 engine-inertness case."
 ---
 
 # Shipment Reconcile
@@ -10,9 +10,12 @@ Provides a double-entry (GI/GR) integrity check for shipment manifests. Run
 restore steps complete. Run `mode: safe-close` **in place of** the destructive
 cascade `backlogit_ship_shipment` call to archive only the shipment manifest's
 explicit item IDs one artifact at a time, verifying after each that the parent
-feature and any unshipped sibling tasks survive — safe-close's own Step 0 first
-runs the P-015 verified fully-covered-root classification and, only when every
-precondition holds, delegates to the Cascade Close Sub-Procedure instead.
+feature and any unshipped sibling tasks survive. The `--classify-only` route in
+Step 0(c) Command Routing (below) performs and records the P-015 engine-inertness
+classification first; safe-close is entered only when that route exits 3
+(`safe_close` recorded), and Ship never re-derives the close path. A CASCADE
+result (exit 0) runs only the mutating `autoharness shipment cascade-close`
+command, after per-closure operator approval.
 
 > **Why safe-close exists.** `backlogit_ship_shipment` treats a shipment as a
 > proxy for its covering feature and cascade-archives the whole feature subtree.
@@ -24,13 +27,15 @@ precondition holds, delegates to the Cascade Close Sub-Procedure instead.
 
 ## When to Use
 
-* **Ship Step 6 closure** (mandatory): run `mode: pre`, then `mode: safe-close`
+* **Ship Step 6 closure** (mandatory): run `mode: pre`, then, on the exit 3 `safe_close` record only, `mode: safe-close`
   **instead of** the cascade `backlogit_ship_shipment` call, then `mode: post`.
-  Safe-close's own Step 0 selects the close path from the machine-checkable
-  P-015 classification; it archives manifest item IDs individually and never
-  calls the cascade op directly **unless** that classification confirms the
-  narrow verified fully-covered-root exception, in which case the Cascade
-  Close Sub-Procedure runs (and is itself independently verified) instead.
+  The `--classify-only` route (Step 0(c) Command Routing, below) selects and
+  records the close path from the machine-checkable P-015 classification.
+  Safe-close is entered only on exit 3 (`safe_close` recorded), archives
+  manifest item IDs individually, and never calls the cascade op. Exit 0
+  (`CASCADE`) routes to the Cascade Close Sub-Procedure, which runs only
+  through the mutating run of the cascade-close command (`autoharness shipment cascade-close`)
+  after per-closure operator approval. Ship never re-derives the close path.
 * **Ship Step 0.5** (sanity check): pre-mode at intake with `expected_status: queued`
   (or `active` if the shipment was already claimed in a prior session)
   to catch Stage-side over-inclusion before any build work begins.
@@ -53,11 +58,10 @@ precondition holds, delegates to the Cascade Close Sub-Procedure instead.
 
 | Parameter | Required | Values | Notes |
 |---|---|---|---|
-| `mode` | yes | `pre` \| `post` \| `safe-close` \| `classify-close-path` \| `detect-mixed-role` | Controls which check/close/detect phase runs |
-| `shipment_id` | yes for `pre`/`post`/`safe-close`/`classify-close-path`; optional for `detect-mixed-role` | e.g. `004-S` | The shipment to reconcile; for `detect-mixed-role`, omit to scan ALL shipments via `backlogit_list_shipments` |
+| `mode` | yes | `pre` \| `post` \| `safe-close` \| `detect-mixed-role` | Controls which check/close/detect phase runs |
+| `shipment_id` | yes for `pre`/`post`/`safe-close`; optional for `detect-mixed-role` | e.g. `004-S` | The shipment to reconcile; for `detect-mixed-role`, omit to scan ALL shipments via `backlogit_list_shipments` |
 | `expected_status` | pre-mode only | `queued` \| `active` \| `done` | `queued` for fresh intake; `active` when shipment already claimed in a prior session; `done` for pre-ship check |
 | `merge_commit_sha` | post-mode and safe-close | git SHA | The merge commit that closed the PR; recorded on archived items for traceability |
-| `classification_binding` | yes for `safe-close` | safe-close only | digest returned by `mode: classify-close-path`; when present, safe-close revalidates it **before any mutation** and halts on drift or on a bound non-`CASCADE` verdict; **when absent, safe-close refuses** |
 
 ## Output
 
@@ -252,14 +256,6 @@ mutated or repaired by this mode.
   diagnostic report, audit-log entry, and telemetry event are additive-only
   writes to non-backlog-state locations). DEGRADED (backlogit unreachable)
   is REPORTED and the mode HALTS — it never guesses or acts blind.
-* **`mode: classify-close-path` is strictly READ-ONLY.** It NEVER archives, NEVER
-  transitions any status, NEVER calls `backlogit_ship_shipment`, and requires NO `file-lock`
-  acquisition because no backlog/shipment artifact is ever mutated — its classification report
-  is an additive-only write to a non-backlog-state location. DEGRADED (backlogit unreachable)
-  is REPORTED as `CLOSE_PATH_VERDICT: BLOCK` and the mode HALTS. A recomputed binding that
-  drifts from a previously supplied one is reported as `RECONCILE_FAIL_CLASSIFICATION_DRIFT`
-  by the calling `mode: safe-close` invocation (§CS13), never by this mode itself — this mode
-  only ever emits `CLOSE_PATH_VERDICT` values.
 
 ## Required Protocol
 
@@ -272,6 +268,8 @@ mutated or repaired by this mode.
 
 2. **Load manifest** via `backlogit_get_shipment(shipment_id)`.
    Extract the `items` list.
+
+   Classification is read-only, so Pre-Mode stays detect-and-report only.
 
 3. **Check each manifest item**:
    * Attempt to locate the file at `.backlogit/queue/{id}.*`
@@ -344,9 +342,11 @@ mutated or repaired by this mode.
    If any are absent, flag them in the report.
 
 3. **Deleted-file guard** (known `backlogit_ship_shipment` quirk — see P-007):
-   Run `git status -- ".backlogit/archive/"` and inspect for deletions.
-   If any archive files are reported as deleted, recommend
-   `git restore .backlogit/archive/` before the commit step.
+   Run `git status --short -- ".backlogit/archive/"` and inspect for deletions.
+   If any archive files are reported as deleted (` D`), restore only the
+   individual paths that `git status --short -- .backlogit/archive/` lists as
+   deleted, one `git restore -- <path>` per listed path (never a whole
+   directory), before the commit step.
 
 4. **Produce post-mode report** per the same schema.
 
@@ -360,110 +360,111 @@ mutated or repaired by this mode.
    Invoke `file-lock` release for `.backlogit/queue/{shipment_id}.md`.
    If release fails, log a warning — stale locks are operator-recoverable.
 
-### Classify-Close-Path Mode (READ-ONLY, pre-mutation boundary)
+### Step 0(c) Command Routing: cascade-close --classify-only (192-F)
 
-Required input: `shipment_id`. Accepts **no** `merge_commit_sha` and **no** `expected_status`.
+<!-- cascade-close-routing:BEGIN step-0c -->
+**Command routing (192-F): `--classify-only` first, on every close.**
+Every close, on either path, first runs
+`autoharness shipment cascade-close --classify-only --shipment <shipment_id> --feature <feature_id> --sha <merge_commit_sha> --json`,
+where `<feature_id>` is the shipment's covering feature (derived as
+safe-close step 2 derives it). That command performs (a)–(c) below:
+the manifest load, the Step 0(b) snapshot, the classification, the
+engine-semantics gate, the close-path selection, and the
+linked-deliberation disposition snapshot. It records them in the
+evidence record
+`docs/closure/evidence/{shipment_id}-{feature_id}-close-evidence.json`
+(the fixed path `build_evidence_path` builds), whose
+`pre_close.engine_semantics`, `pre_close.close_path_selection`, and
+`pre_close.linked_deliberation_disposition` fields carry the Step 0(c)
+engine-semantics decision, close-path selection, and disposition
+snapshot. The same record carries the path-specific baseline:
+`pre_close.observation_set` on a selected `safe_close`, and
+`pre_close.out_of_manifest_descendants` on either path. The prose in
+(a)–(c) below stays the specification the command implements; Ship
+never re-derives these values by hand.
 
-This mode performs no archive, no status transition and no record mutation, acquires no
-single-writer lock, and stops at the Step 0 dispatch — it never enters the cascade path and
-never continues into safe-close steps 1–10. It runs the same Step 0(a) manifest load,
-Step 0(b) snapshot and Step 0(c) classification that `mode: safe-close` performs internally,
-with the single, exhaustively specified divergence recorded below: the default-case token
-differs. The selecting predicates are unchanged; only the token emitted on the default branch
-differs.
+Plain `--classify-only` needs no operator approval: it is no-clobber
+(an existing `pre_close` record exits 2 and is left untouched) and only
+creates a new record. `--classify-only --replace-pre-close` overwrites
+an existing `pre_close` record and needs the same destructive-command
+approval as the mutating run. The mutating
+`autoharness shipment cascade-close` invocation (no `--classify-only`)
+**is** the destructive command: it needs the same operator approval
+that a direct `backlogit shipment ship` call needs (explicit operator approval
+for this closure; no automated check, allowlist, or activation record satisfies
+it). A direct
+`backlogit_ship_shipment` MCP or `backlogit shipment ship` CLI call is
+a **P-005 deviation** on either path, and the closure-evidence gate
+refuses the closure it produces, because no valid evidence record
+backs it.
 
-It emits `CLOSE_PATH_VERDICT: CASCADE`, `CLOSE_PATH_VERDICT: SAFE_CLOSE` or
-`CLOSE_PATH_VERDICT: BLOCK` with `VERDICT_REASON`, `VERDICT_EVIDENCE` and
-`CLASSIFICATION_BINDING`, returned as machine-consumable output.
+Route on the command's exit code:
 
-**Condition → verdict mapping (exhaustive, normative):**
-
-| Step 0(c) condition | `classify-close-path` token |
-|---|---|
-| Every feature member is a root, fully covered at every depth, set-equal to the manifest | `CASCADE` / `FULLY_COVERED_ROOT` |
-| A qualifying-but-partial feature member (genuine partial-feature shipment) | `SAFE_CLOSE` / `PARTIAL_FEATURE` |
-| Manifest member is not a descendant of any qualifying feature | `BLOCK` / `MANIFEST_MEMBER_NOT_DESCENDANT` |
-| Snapshot ambiguous / torn (present in both queue **and** archive) | `BLOCK` / `SNAPSHOT_AMBIGUOUS` |
-| Snapshot missing (present in neither location) | `BLOCK` / `SNAPSHOT_MISSING` |
-| Descendant enumeration errored or was incomplete | `BLOCK` / `ENUMERATION_INCOMPLETE` |
-| Mixed qualification across feature members | `BLOCK` / `MIXED_QUALIFICATION` |
-| Classifier error of any other kind | `BLOCK` / `CLASSIFIER_ERROR` |
-
-**Fail closed:** every unsupported, mixed, ambiguous, torn, missing or incompletely enumerated case returns `CLOSE_PATH_VERDICT: BLOCK` with a reason token, never a silent `SAFE_CLOSE`.
-DEGRADED (backlogit unreachable) is REPORTED as `CLOSE_PATH_VERDICT: BLOCK` and the mode HALTS.
-
-**Machine-consumable result fields:**
-
-| Field | Values | Meaning |
+| Mode | Exit | Skill action |
 |---|---|---|
-| `CLOSE_PATH_VERDICT` | `CASCADE` \| `SAFE_CLOSE` \| `BLOCK` | The selected close path, or a refusal |
-| `VERDICT_REASON` | one stable token | e.g. `FULLY_COVERED_ROOT`, `PARTIAL_FEATURE`, `MANIFEST_MEMBER_NOT_DESCENDANT`, `SNAPSHOT_AMBIGUOUS`, `SNAPSHOT_MISSING`, `ENUMERATION_INCOMPLETE`, `MIXED_QUALIFICATION`, `CLASSIFIER_ERROR` |
-| `VERDICT_EVIDENCE` | per-member evidence set | For every manifest member: its ID, `artifact_type`, declared `status`, `parent_id`, resolved location, and which precondition it satisfied or failed |
-| `CLASSIFICATION_BINDING` | a digest | See "Canonical binding" below |
-| `CLASSIFIED_AT` | timestamp | Capture moment of the snapshot |
+| `--classify-only` | 0 (`CASCADE`) AND `selected_close_path` is `cascade`; otherwise HALT | Obtain destructive-command approval, then run the mutating `cascade-close` (Cascade Close Sub-Procedure); never routed to safe-close steps |
+| `--classify-only` | 3 (`SAFE_CLOSE` selected: classifier `SAFE_CLOSE`, or engine `UNVERIFIED`); exit 3 AND `selected_close_path` is `safe_close`; otherwise HALT | Safe-close steps 1–10, then the Linked-Deliberation Disposition step, citing the verdict record as `close_evidence` |
+| mutating | 0 | Run the Linked-Deliberation Disposition step with its inputs from the evidence record, then write the closure artifact with `close_path: cascade` and `close_evidence` |
+| mutating | 3 | Reached only when no `cascade`-selected `--classify-only` record preceded the run, which the routing above never does. Nothing was mutated: HALT, operator review, and never `SAFE_CLOSE` on this result (the Cascade Close Sub-Procedure's No-substitution rule). A selected-path change after a `CASCADE` `--classify-only` selection is exit 4, never 3 |
+| either | 2, 4 | HALT. Nothing was mutated. Exit 4 includes an engine re-probe difference and any difference from the `cascade`-selected `--classify-only` record, and is never answered with `SAFE_CLOSE`. Fix the input, or ask the operator |
+| either | 5, 6, 7, 8 | HALT. Operator review. No commit of the backlog root, no retry, no direct call |
+| either | any other or unrecognized exit (including 1) | HALT (CLI too old or unexpected; do not fall back to cascade). Never call `backlogit shipment ship` directly and never substitute `SAFE_CLOSE`; ask the operator |
 
-**Canonical binding.** `CLASSIFICATION_BINDING` is a SHA-256 digest over a canonical
-serialisation of exactly the state the classification consumed plus the identity of the
-classification itself:
+**Minimum version**: The pre-flight probe is the capability test:
+`autoharness shipment --help` must exit 0 and list `cascade-close`; an older CLI
+exits 1 and HALTs. Do not infer capability from the version string. Upgrade
+autoharness before closing; there is no hand-run fallback.
+<!-- cascade-close-routing:END step-0c -->
+
+**Approval is not waivable by dark mode.** The approval for the mutating `autoharness shipment cascade-close` run is not waivable by dark mode: a `DARK_MODE_ACTIVE` activation record under P-017 never satisfies it, and it is required in dark mode on the same terms as in interactive operation (Constitution Principle VII, Destructive Command Approval, NON-NEGOTIABLE).
+
+**Consume `selected_close_path`.** Ship reads the close path from the `selected_close_path` field of the command's `--json` output (mirrored as `pre_close.close_path_selection` in the evidence record) and never routes on `classifier_verdict` alone. A `CASCADE` classifier verdict with an `UNVERIFIED` engine verdict selects `safe_close`, and only `selected_close_path: cascade` in the command's JSON output (recorded in the evidence record as `pre_close.close_path_selection`) permits the mutating run.
+
+**Exit codes (verbatim from `autoharness shipment --help`):**
 
 ```text
-line 1      : "v1"                                  # binding format version
-line 2      : "shipment=" + shipment_id             # WHICH shipment was classified
-line 3      : "verdict="  + CLOSE_PATH_VERDICT      # WHICH verdict is bound
-line 4      : "reason="   + VERDICT_REASON
-line 5      : "skill="    + sha256(SKILL.md bytes)  # WHICH classifier produced it
-line 6      : "engine="   + backlogit --version     # WHICH engine resolved the records
-line 7      : "manifest=" + join(",", sort(manifest item IDs))
-line 8      : "deps="     + join(",", sort(shipment.dependencies))
-line 9      : "status="   + shipment declared status
-line 10..n  : one line per member of the combined pre-close snapshot Step 0(b)/(c) already
-              builds, rendered as
-                 id + "\x1f" + artifact_type + "\x1f" + declared_status + "\x1f" +
-                 (parent_id or "-") + "\x1f" + resolved_location
-              with the lines sorted bytewise by id
-final       : the lines joined with "\n", NO trailing newline; SHA-256 of the UTF-8 bytes
+  0  mutating: all postconditions passed; --classify-only: CASCADE selected.
+  2  input, I/O, no-clobber refusal, planning error, or pre-invocation write failure.
+  3  the selected close path is not CASCADE; verdict recorded, nothing invoked.
+  4  pre-invocation revalidation drift; nothing invoked. Never answer with SAFE_CLOSE.
+  5  a postcondition failed (operator review).
+  6  backlogit exited non-zero, timed out, or its output did not parse (operator review).
+  7  the pair lock is already held, or an existing evidence record needs review
+     (invoking, unreadable, ambiguous, or another pair); nothing invoked
+     (operator review). The lock is
+     .autoharness/gates/cascade-close/{S}-{F}.lock; it is never broken
+     automatically, and removing a stale lock is an operator-only action
+     (agents must not delete it).
+  8  the post-close evidence write failed after invocation (operator review).
+Exits 5, 6, 7, and 8 forbid committing the backlog root, re-running
+cascade-close, calling `backlogit shipment ship` directly, or substituting
+SAFE_CLOSE until an operator reviews the backlog state and the record.
 ```
-
-`\x1f` (ASCII Unit Separator) is the intra-tuple delimiter and is not a legal character in any
-of the five fields, so no field value can forge a tuple boundary.
-
-**Persistence — optional, post-verdict only, and omitted here.** The mode MAY additionally
-record the result fields at
-`.backlogit/reconcile/{shipment_id}-classify-close-path-{timestamp}.md`, but persistence is
-**strictly post-verdict**: it happens only after the verdict is already computed and about to
-be returned, is **disabled for read-only invocation**, and is **non-blocking on failure** — a
-persistence failure never changes the returned verdict or fails the call. **The simplest
-conforming implementation omits optional persistence entirely**, which this skill does: no
-report file is written by this mode under any invocation.
-
-**Independent invocability.** `mode: classify-close-path` is invocable by any caller — Ship,
-an operator, or a future gate — without entering the mutating path, exactly as
-`mode: detect-mixed-role` is today. It has no prerequisite mode, no lock and no ordering
-constraint.
 
 ### Safe-Close Mode
 
-Runs **in place of** the destructive cascade `backlogit_ship_shipment` call —
-**except** in the narrow P-015 verified fully-covered-root case selected by
-Step 0 below, where the cascade op is the *permitted* close path and safe-close
-steps 1–10 are skipped entirely. Archives only the shipment manifest's explicit
+Runs **in place of** the destructive cascade `backlogit_ship_shipment` call.
+Safe-close runs only on the exit 3 `safe_close` record from the `--classify-only`
+route in Step 0(c) Command Routing (above). An exit 0 (`CASCADE`) record HALTs in
+this mode and is never executed here; CASCADE is routed only to the Cascade Close
+Sub-Procedure. Archives only the shipment manifest's explicit
 item IDs, one artifact at a time, verifying after each archival that the parent
 feature and any unshipped sibling tasks survive. Invoked between pre-mode
 (`PROCEED`) and post-mode, under the lock pre-mode already holds. If invoked
 standalone, acquire the lock per pre-mode step 1 first and release it on
-completion.
+completion. A standalone invocation first runs `autoharness shipment cascade-close --classify-only` and proceeds only on exit 3 with `selected_close_path` `safe_close`; a stale record alone never authorizes the path.
 
-0. **Load manifest, snapshot pre-close state, then select close path (P-015
-   verified fully-covered-root exception — select from the verified check,
-   never from prose alone)**: safe-close is the default.
-   a. **Load the manifest first**, regardless of which path is ultimately
-      selected: invoke `backlogit_get_shipment(shipment_id)` and extract the
+0. **Load manifest, snapshot pre-close state, and confirm the recorded close path
+   (the path is selected by the `--classify-only` route, never re-selected here)**:
+   safe-close runs only on the exit 3 `safe_close` record.
+   a. **On the SAFE_CLOSE path, load the manifest first**: invoke `backlogit_get_shipment(shipment_id)` and extract the
       `items` list. This load happens here in Step 0 — not deferred to step 1
-      below — because the classification in (c) and the cascade
-      pre/post-comparison in the Cascade Close Sub-Procedure both require it,
-      and the cascade path skips steps 1–10 entirely.
-   b. **Snapshot pre-close `parent_id` and declared `status` for every task
-      item** in the manifest by reading each task's current frontmatter from
+      below — because the Step 0(b) snapshot requires it. The cascade path skips steps
+      1–10 entirely and takes its baseline from the `pre_close` section of the
+      evidence record instead.
+   b. **On the SAFE_CLOSE path, snapshot pre-close `parent_id` and declared `status` for every explicit
+      manifest item regardless of `artifact_type`**, by reading each item's current
+      frontmatter from
       whichever of `.backlogit/queue/` or
       `.backlogit/archive/` currently contains it — a manifest
       task item may already be
@@ -475,9 +476,9 @@ completion.
       with `RECONCILE_FAIL_SNAPSHOT_AMBIGUOUS` or
       `RECONCILE_FAIL_SNAPSHOT_MISSING` respectively — never guess which
       copy or location is authoritative. Retain this snapshot in memory
-      for the duration of this close operation; it is the baseline the
-      Cascade Close Sub-Procedure's step 4 parent-preservation check and
-      step 3 declared-status two-set gate both compare against, and it must
+      for the duration of this close operation; it is the SAFE_CLOSE baseline for this close operation (the cascade
+      path's baseline is the `pre_close` section of the evidence record, never
+      this snapshot), and it must
       be captured **before** any mutating call (cascade or otherwise) runs,
       never reconstructed after the fact.
 
@@ -494,115 +495,16 @@ completion.
       would report `archived` for everything the cascade just archived,
       collapsing `required_ids` (Cascade Close Sub-Procedure step 3) to
       empty and silently disabling the completeness check entirely. Never a
-      freshly-read or assumed value.
-   c. **Classify the close path**: run the machine-checkable classification
-      described in P-015 over the manifest `items` loaded in (a). Workspaces
-      with a Python implementation installed reuse a
-      `classify_shipment_close_path(manifest_items, workspace_backlog_dir)`-shaped
-      function (this self-hosting repository's own implementation lives at
-      `src/autoharness/gates/shipment_closure.py`); other workspaces implement
-      the equivalent check directly against `.backlogit/queue/` +
-      `.backlogit/archive/`. The cascade close path is permitted
-      **only** when, for **every** feature member of the manifest: it is a
-      root (no `parent_id`); it is fully covered (every one of its
-      **descendants — at every depth, not only direct children** —
-      enumerated by walking the full `parent_id` graph live from
-      `.backlogit/queue/` + `.backlogit/archive/`
-      starting at the feature, is also a manifest member); and, if it
-      enumerates to zero descendants, that childlessness is **positively
-      verified** against the live workspace (never inferred from an
-      incomplete or failed enumeration) and the feature is additionally
-      terminal (no manifest member declares it as parent). **A
-      direct-children-only check is insufficient** (155-S, PR #407 review,
-      thread PRRT_kwDORzpWpM6b2MJv): Backlogit's own `releaseScopeItemIDs`
-      recursively adds every descendant of each manifest item — not just
-      the feature's immediate children — before `collectArchiveCandidateIDs`
-      archives terminal descendants, so a manifest such as `[feature, task]`
-      where that task has an out-of-manifest subtask (of any
-      `artifact_type`, not only `task`) would otherwise wrongly qualify for
-      `CASCADE`, and the destructive cascade would archive that subtask
-      before the Cascade Close Sub-Procedure's step 3 gate ever sees it —
-      halting only **after** the mutation. The manifest must contain nothing
-      beyond the qualifying root feature(s) and their descendants at every
-      depth. If **any** feature member fails **any** precondition, the
-      **whole manifest** falls back to safe-close (steps 1–10 below) —
-      qualification is never per-member, and no feature ID is ever
-      special-cased.
-
-      **When this classification identifies qualifying feature members**
-      (i.e. selects `CASCADE`): extend the same pre-close declared-status
-      snapshot from (b) — still **before** the cascade invocation, never
-      after — with each qualifying feature member's own declared `status`
-      field, read the identical way (frontmatter's own `status` field only,
-      never inferred from `queue/`/`archive/` location). The resulting
-      combined map (manifest task statuses captured in (b), plus qualifying
-      feature statuses added here) is the single pre-close declared-status
-      snapshot the Cascade Close Sub-Procedure's step 3 two-set gate reads
-      from; "qualifying feature members" for that gate means exactly the set
-      this classification determines here — never a separate
-      re-derivation, and independent of *how* the engine happens to
-      transition any given member.
-
-      **Linked-deliberation snapshot extension (155-S, PR #407 review).**
-      Backlogit's own cascade engine (`internal/core/shipment_lifecycle.go`
-      `collectArchiveCandidateIDs`) appends, for every explicit qualifying
-      feature member, that feature's `linkedDeliberationIDs` — collected
-      from the feature's `custom_fields.source_deliberation_id` (taken as a
-      complete literal ID string, never regex-scanned), plus any
-      deliberation ID embedded in the feature's description, and any
-      deliberation the feature references — the latter two, and only the
-      latter two, scanned with the engine's own
-      `internal/core.deliberationIDPattern` matcher (given exactly below) —
-      never a broader "any embedded deliberation ID" reading, which can
-      match a substring the engine's own matcher would not — de-duplicated,
-      and restricted to
-      IDs that resolve to an **existing** artifact whose own `artifact_type`
-      is `deliberation` — before `archiveItems` runs. A qualifying feature
-      with such a live linked deliberation therefore archives it during the
-      same cascade invocation. To keep the two-set gate strict without a
-      blanket allowance for arbitrary IDs, extend Step 0(c)'s classification
-      here, still **before** the cascade invocation: for each qualifying
-      feature member, independently collect its linked deliberation IDs
-      using exactly those same three engine-defined sources — the literal
-      `custom_fields.source_deliberation_id` string taken as-is, and the
-      description/references text scanned with the identical
-      `\b(?:DL\d+|[0-9]+(?:\.[0-9]+)*-DL)\b` matcher, never a wording-level
-      approximation of it — and the
-      identical existence / `artifact_type: deliberation` validation — never
-      any other ID, and never an ID that fails either check. For each
-      validated linked deliberation ID, resolve its record location the
-      identical way Step 0(b) resolves a manifest task item: if found in
-      **both** `.backlogit/queue/` and
-      `.backlogit/archive/` (an ambiguous/torn state) or in
-      **neither** (missing), halt immediately with
-      `RECONCILE_FAIL_SNAPSHOT_AMBIGUOUS` or
-      `RECONCILE_FAIL_SNAPSHOT_MISSING` respectively — never guess which
-      copy or location is authoritative, and never compute `required_ids`
-      from an arbitrary copy before the destructive cascade invocation.
-      Once resolved to its single authoritative location, read its own
-      declared `status` field (frontmatter only, never location-inferred)
-      into the same combined
-      pre-close declared-status snapshot as the qualifying feature statuses
-      above. The further-extended combined map (manifest task statuses from
-      (b), qualifying feature statuses, and now qualifying-feature
-      linked-deliberation statuses, all added here in (c)) is what the
-      Cascade Close Sub-Procedure's step 3 two-set gate reads from; "linked
-      deliberation of a qualifying feature member" for that gate means
-      exactly the set this sub-step determines here — never a separate
-      re-derivation, and independent of whether the engine transitions,
-      skips (already truly archived), or otherwise handles any given one of
-      them.
-   * **Bound-classification revalidation (before any mutation).** When `classification_binding` is supplied, recompute the binding from the Step 0(a)/(b)/(c) snapshot just taken. A value that is not a well-formed `v1` binding halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_INVALID`. A recomputed digest that differs from the supplied one halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_DRIFT`. On match **the bound verdict alone selects the branch**: `CASCADE` enters the Cascade Close Sub-Procedure, `SAFE_CLOSE` continues to step 1 below, and **every other bound verdict halts before any close mutation with `RECONCILE_FAIL_CLASSIFICATION_REFUSED`**.
-   * **Unbound invocations are rejected, not defaulted.** When no `classification_binding` is supplied, `mode: safe-close` **halts before any close mutation with `RECONCILE_FAIL_CASCADE_UNBOUND`**: it **performs zero archive, zero status transition and zero record mutation**, enters neither the Cascade Close Sub-Procedure nor steps 1–10, and releases any lock it acquired.
-   * **Migration.** Every caller of `mode: safe-close` migrates by invoking `mode: classify-close-path` first and passing the returned `CLASSIFICATION_BINDING` into the close call. An invocation that does not is **refused, never served on a legacy path**: there is **no deprecation window, no grace period and no success-shaped fallback**.
-   * **CASCADE selected** → skip directly to the **Cascade Close
-     Sub-Procedure** below (reusing the manifest and snapshot from (a)/(b)/(c)
-     above — do not reload) in place of steps 1–10, then proceed to
-     post-mode.
-   * **SAFE_CLOSE selected** (bound verdict `SAFE_CLOSE` only) → continue
-     to step 1 below (step 1's own manifest load is idempotent with (a)
-     above — reuse the already-loaded manifest rather than issuing a
-     second call).
+      freshly-read or assumed value. An absent, null, or unparseable `selected_close_path`, `pre_close` snapshot entry, `parent_id`, `declared_status`, `out_of_manifest_descendants`, or `linked_deliberation_disposition` value is a HALT; a missing value is never read as empty or as not archived.
+   c. **Entry gate (no classification in this mode)**: entry is only after
+      `cascade-close --classify-only` exited 3 and the `selected_close_path` field of the command's JSON output
+      (recorded in the evidence record as `pre_close.close_path_selection`) is
+      `safe_close`. Do not re-classify to CASCADE here. If
+      the evidence record's `pre_close.close_path_selection` is not `safe_close`, HALT with
+      operator review and do not call the cascade operation. Safe-close never
+      evaluates the P-015 classification to choose a path, and never invokes the
+      cascade operation; CASCADE is governed only by the Cascade Close
+      Sub-Procedure gate.
 
 1. **Load manifest** via `backlogit_get_shipment(shipment_id)`. Extract the
    `items` list. These IDs are the **only** artifacts safe-close may move or
@@ -669,10 +571,12 @@ completion.
 
 6. **git-revert-on-cascade**: If the invariant fails (a protected-set artifact was
    archived or deleted by the preceding archival):
-   * **Cascade detected.** Immediately restore the unintended change:
-     `git restore -- .backlogit/queue/ .backlogit/archive/`
-     for working-tree moves/deletions, or `git revert <commit>` if the cascade was
-     already committed.
+   * **Cascade detected.** Immediately restore the unintended change, one path at a
+     time: `git restore -- <path>` for each path that this run touched (the paths the
+     step-5 `git status --short -- ".backlogit/"` output shows as changed relative to
+     the step-3 baseline), never a whole directory such as `.backlogit/queue/` or
+     `.backlogit/archive/`, for working-tree moves/deletions, or `git revert <commit>` if
+     the cascade was already committed.
    * Re-run the invariant to confirm the protected set is intact again.
    * Halt with `HALT — cascade detected, revert required`, emit a **P-005**
      violation event (naming the cascaded artifact IDs), and do **NOT** commit the
@@ -704,18 +608,84 @@ completion.
 
 10. **Gate decision**:
     * All manifest items `matched` or `pre-archived`, the shipment record archived,
-      and the protected set intact → `recommendation: CLOSED`. Proceed to post-mode.
+      and the protected set intact → `recommendation: CLOSED`. Run the Linked-Deliberation
+      Disposition step; only `DISPOSITION_COMPLETE` proceeds to post-mode.
     * Any cascade detected → `recommendation: HALT — cascade detected, revert required`
       (see step 6). Do not proceed to the commit step.
 
-### Cascade Close Sub-Procedure (P-015 verified fully-covered-root exception ONLY)
+### Cascade Close Sub-Procedure (P-015 `CASCADE` exception ONLY)
 
-Runs **only** when Step 0 of Safe-Close Mode above selects `CASCADE`, and
-reuses the manifest and pre-close `parent_id`/declared-`status` snapshot
-Step 0 already captured in (a)/(b)/(c) — this sub-procedure never reloads
-the manifest or attempts to reconstruct pre-close state after the fact.
+Runs **only** when the `--classify-only` route in Step 0(c) Command Routing (above)
+exits 0 (`CASCADE` selected), never from Safe-Close Mode Step 0. The cascade
+baseline is the pre-close record written by `autoharness shipment cascade-close --classify-only`
+(the `pre_close` section of the evidence record); the mutating
+command re-verifies that baseline itself. Safe-close Step 0(b) and 0(c) do not
+apply to the CASCADE path. This sub-procedure never reloads the manifest or
+attempts to reconstruct pre-close state after the fact.
 Replaces steps 1–10 above entirely for this shipment's closure; there is no
 partial mixing of the two paths.
+
+The mutating `autoharness shipment cascade-close` command is the ONLY caller of the cascade primitive (`backlogit shipment ship`, MCP `backlogit_ship_shipment`) in this workflow. No other path, including Ship, invokes the cascade primitive directly.
+
+<!-- cascade-close-routing:BEGIN cascade-sub-procedure -->
+**Command routing (192-F): the mutating `cascade-close` runs this
+sub-procedure.** The pre-invocation revalidation below (the classifier
+re-run, the linked-deliberation re-collection, and the engine-semantics
+re-probe), the baseline-fingerprint capture, step 1's invocation, and
+steps 2–6 are performed by the mutating
+`autoharness shipment cascade-close --shipment <shipment_id> --feature <feature_id> --sha <merge_commit_sha> --message=<merge_commit_message> --author=<merge_commit_author> --json`. Pass both as argv in the equals form; values must not begin with `-` and must not contain newlines or control characters.
+Ship runs it only after the Step 0(c) `--classify-only` run exited 0
+(`CASCADE` selected) and only with the destructive-command approval Step
+0(c) names. Before it invokes anything, the command re-checks the
+`cascade`-selected `--classify-only` record: any difference from that
+record, and any engine re-probe difference, exits 4 with nothing mutated.
+Its exit 0 is step 6's `recommendation: CLOSED`, and the record it
+finalizes (phase `post_close`) is step 5's cascade-close report and the
+closure artifact's `close_evidence`. Every other exit follows the Step 0(c)
+routing table: HALT, never a `SAFE_CLOSE` substitution. Ship never performs
+these steps by hand and never invokes the cascade operation directly: a
+direct `backlogit_ship_shipment` MCP or `backlogit shipment ship` CLI call is
+a **P-005 deviation**. The command never archives a disposition-set
+deliberation; the Linked-Deliberation Disposition step stays its only
+archiver. The prose below stays the specification the command implements.
+
+**Timeout sizing (192-F).** The mutating run's `--timeout` is 30-3600
+seconds (default 1800). On expiry the command kills the engine mid-cascade
+and exits 6 (`mutation_possible: indeterminate`), so Ship sizes it before
+the run. Let N = |closure_scope(S)| (the manifest items plus the shipment
+record) and compute the budget `B = ceil(1.5 * (F + P * N))` seconds, where
+F and P are the fixed and per-artifact `backlogit shipment ship` costs
+re-derived from the workspace's own backlogit event logs (reference values,
+backlogit 1.11.0: F = 133 s, P = 35 s). If B <= 1800, the default suffices.
+If 1800 < B <= 3600, Ship adds `--timeout B` to the invocation above. If
+B > 3600, Ship does not start the mutating run and HALTs for an operator
+decision; it never invokes the command with a timeout known to be too
+short.
+The B > 3600 HALT bounds `--timeout`, not the whole command: `--timeout`
+bounds only the `backlogit shipment ship` child, and the command's runner
+alone owns that child's expiry. The engine probes, preflight, and
+revalidation run before that timer starts, and child cleanup, postcondition
+checks, evidence persistence, and lock release run after it, so Ship
+supervises the command for its supervision budget: the effective timeout (B,
+or the 1800 default) + a fixed 600 s supervision margin (two 30 s engine
+probes, the bounded kill and reader-join cleanup of each spawned process, at
+most 70 s each, and headroom for the untimed workspace reads and writes), at
+most 4200 s. Whenever the supervision budget exceeds the agent runtime's
+synchronous tool-call limit, Ship MUST start the mutating run in the
+runtime's background/async mode, attached to the session (never detached
+from it), and poll until the command exits; if the runtime cannot keep the
+process alive for the full supervision budget, Ship HALTs before the
+mutating run. A runtime that kills the command mid-run leaves `backlogit`
+running unsupervised in its own process group, the evidence record at
+`invoking`, and the pair lock in place, so the next run exits 7. Ship stays
+attached to the run until the command exits and never abandons or kills it
+on an agent-tool wait or before the supervision budget elapses. For this run
+the supervision budget is the stall bound: the circuit-breaker Stall
+Detection table's `autoharness shipment cascade-close` (mutating mode) row
+sets it in place of the "Other commands" 5-minute stall timeout.
+<!-- cascade-close-routing:END cascade-sub-procedure -->
+
+**Approval is not waivable by dark mode.** Approval for the mutating `autoharness shipment cascade-close` run is never waived by dark mode, under P-017 or otherwise, and is required on the same terms as in interactive operation (Constitution Principle VII, Destructive Command Approval, NON-NEGOTIABLE).
 
 **Pre-archived manifest members (expected and tolerated)**: before invoking
 step 1 below, classify each manifest member's **location** as `queued` or
@@ -728,7 +698,7 @@ record's own declared `status` field. A record residing in
 `.backlogit/archive/` while declaring `status: done` is **not**
 truly archived; only a declared `status: archived` is truly archived for
 step 3's two-set gate below. The sole authority for "truly archived" is the
-declared-status snapshot Step 0(b)/(c) already captured before this
+declared-status pre-close snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`) already captured before this
 sub-procedure runs.
 
 A `pre-archived` (by location) manifest member is **expected and tolerated
@@ -744,9 +714,9 @@ precondition wording is unchanged.
 This tolerance applies to **manifest members only** — it does not
 restate, weaken, or cross-apply to the protected set, which has no
 pre-archived exemption (see Safe-Close Mode steps 3/5 above). A manifest
-that qualifies for `CASCADE` has no protected set by construction (full
-coverage is itself a Step 0(c) precondition), so no protected set arises
-on this path.
+that qualifies for `CASCADE` has no protected set by construction (the
+P-015 INV-6 engine-inertness predicate governs out-of-manifest descendants), so no
+protected set arises on this path.
 
 **`archived_ids` is a transition log, not a manifest echo.** The cascade
 operation invoked in step 1 below reports, in `archived_ids`, only the
@@ -754,19 +724,18 @@ artifacts it **actually transitioned** to archived during that invocation
 (backlogit engine source, `internal/core/shipment_lifecycle.go`
 `archiveItems()`: an item whose declared `status` is already `archived` is
 skipped and never appended to the slice that becomes `archived_ids`). A
-manifest task item, or a qualifying feature member's validated linked
-deliberation, that was already truly `status: archived` before the call
+manifest task item that was already truly `status: archived` before the call
 therefore has no transition to report and is **correctly absent** from
 `archived_ids` — this is expected engine behavior, not an anomaly and not a
 cascade failure. **This never extends to the shipment record or to a
 qualifying feature member itself** (155-S, PR #407 review, thread
 PRRT_kwDORzpWpM6b0kit): step 3 below makes both unconditionally required
 regardless of their own pre-close declared status, so neither can ever be
-"correctly absent" the way a task item or linked deliberation can — see
+"correctly absent" the way a task item can — see
 step 3 for the full statement of that rule. The live fail-closed guard
 over this result is the two-set `allowed_ids` / `required_ids` gate
-specified in step 3 below, evaluated **against the Step 0(b)/(c) pre-close
-declared-status snapshot** — never against location, and never against a
+specified in step 3 below, evaluated **against the pre-close
+declared-status snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`)** — never against location, and never against a
 post-close re-read.
 
    **SUPERSESSION NOTE (155-S, 2026-08-24).** This paragraph previously
@@ -788,7 +757,7 @@ post-close re-read.
    step 3 below, keyed on declared pre-close status rather than a full-set
    echo of the manifest.
 
-**No-substitution rule**: once Step 0 selects `CASCADE`, that verdict is
+**No-substitution rule**: once the `--classify-only` route selects `cascade` (exit 0), that verdict is
 final for this closure — between the verdict and step 1's invocation
 below, substituting manual safe-close is a **P-005 process deviation**,
 never a permitted fallback, regardless of the manifest's archival state.
@@ -798,7 +767,7 @@ executed: together the two rules close both the pre-execution and
 post-execution substitution windows. The asymmetry is intentional and
 one-directional — this rule forbids `CASCADE -> manual safe-close`
 substitution only; it grants no license to invoke cascade when Step 0
-selects `SAFE_CLOSE`, which remains governed by the P-015 default
+selects `safe_close`, which remains governed by the P-015 default
 prohibition. If a genuine unhandled error occurs during the cascade
 operation, halt and disclose it per the verification steps below — never
 silently switch to safe-close instead.
@@ -808,9 +777,9 @@ cascade operation in step 1 below performs all remaining archival
 itself, consistent with the "no partial mixing of the two paths" rule
 above.
 
-1. Invoke `backlogit_ship_shipment(shipment_id, merge_commit_sha)` directly
-   (CLI: `backlogit shipment ship <shipment_id> --sha <merge_commit_sha>
-   --message <merge_commit_message> --author <merge_commit_author>`).
+1. Executed only by the mutating `autoharness shipment cascade-close` command, which
+   is the single caller of the cascade primitive. No agent step invokes
+   `backlogit_ship_shipment` or `backlogit shipment ship`.
 2. **Verify the result matches the classifier's own precondition**:
    `returned_ids` MUST be empty (`[]`). A non-empty `returned_ids` means the
    live engine found an unreleased descendant the classifier's live-workspace
@@ -822,26 +791,9 @@ above.
 3. **Verify `archived_ids` against the two-set `allowed_ids` / `required_ids`
    gate** (replaces exact full-set equality — see the SUPERSESSION NOTE
    above and the P-015 policy's own supersession note for why):
-   * **Compute `allowed_ids`** = the manifest's task items + every
-     qualifying feature member identified by Step 0(c)'s own classification
-     (defined by reference to that determination — never a separate
-     re-derivation — and independent of *how* the engine happens to
-     transition any given member) + every validated linked deliberation ID
-     of each qualifying feature member captured by Step 0(c)'s
-     linked-deliberation snapshot extension above (same reference-only
-     rule: never a separate re-derivation, and never any ID beyond what
-     that engine-defined, existence-and-`artifact_type`-validated
-     collection produced) + the shipment record itself.
-   * **Compute `required_ids`** = the shipment record and every qualifying
-     feature member (**both unconditionally** — never omitted, and never
-     conditioned on either artifact's own pre-close declared status) +
-     every other `allowed_ids` member (a manifest task item, or a
-     qualifying feature member's validated linked deliberation) that was
-     **not** truly `status: archived` in the pre-close declared-status
-     snapshot (Step 0(b) for manifest task items, extended by Step 0(c) for
-     qualifying feature members and their validated linked deliberations —
-     all captured **before** this step 1 invocation, never a freshly-read or
-     assumed post-close value).
+   * Apply the flat `allowed_ids` / `required_ids` postcondition sets defined in the
+     section "Cascade Close Postconditions: Flat" (single definition; do not restate
+     them here).
    * **Two separately-labelled, independently-failing conditions.** Neither
      may be evaluated as a precondition of the other, and the two MUST NOT
      be merged into a single combined test (conflating two questions into
@@ -855,18 +807,13 @@ above.
        is non-empty, halt with
        `HALT — cascade did not archive required artifact {id}` and emit a
        **P-005** violation.
-   * An `allowed_ids` **non-shipment** member (a manifest task item, or a
-     qualifying feature member's validated linked deliberation — never the
-     qualifying feature member itself, which is unconditionally required;
-     see below) that was already truly `status: archived` in the pre-close
-     snapshot MAY be included in or omitted from `archived_ids` by
-     the engine — neither outcome fails either check (it is outside
-     `required_ids` by construction, and if present in `archived_ids` it is
-     still inside `allowed_ids`). This is exactly the 147-F → archived
-     027-DL case: 027-DL is a linked deliberation already truly
-     `status: archived` pre-close, so its absence from `archived_ids` is
-     tolerated by construction, and its presence, if the engine reports it,
-     is equally tolerated. **This tolerance never extends to the shipment
+   * An `allowed_ids` **non-shipment, non-feature** member (a manifest item that is
+     neither the shipment record nor a qualifying feature member; the qualifying
+     feature member itself is unconditionally required, see below) that was already
+     truly `status: archived` in the pre-close snapshot MAY be included in or omitted
+     from `archived_ids` by the engine — neither outcome fails either check (it is
+     outside `required_ids` by construction, and if present in `archived_ids` it is
+     still inside `allowed_ids`). **This tolerance never extends to the shipment
      record itself**, which is unconditionally a `required_ids` member per
      the computation above regardless of its own
      pre-close declared status: if the shipment record were ever reported
@@ -898,36 +845,494 @@ above.
      — so the feature is always appended to the candidate list
      `archiveItems` archives. A qualifying feature member can therefore
      never be "correctly absent" from `archived_ids` the way a truly
-     pre-archived manifest task item or linked deliberation can — its
+     pre-archived manifest task item can — its
      absence is always an anomaly, never expected engine behavior. A
      qualifying feature member is therefore an unconditional `required_ids`
      member exactly like the shipment record, and is never eligible for
      this tolerance.
 4. **Verify no `parent_id` was cleared**: re-read every archived task's
    frontmatter and confirm `parent_id` is unchanged from the pre-close
-   snapshot captured in Step 0(b) — never a freshly-read or assumed value,
+   snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`) — never a freshly-read or assumed value,
    since the field being verified is the very one a cascade could have just
    cleared. Any cleared or altered `parent_id` is a
    cascade-detection failure equivalent to step 6 of safe-close: halt with
    `HALT — cascade cleared parent_id on {id}, revert required` and emit a
    **P-005** violation; do NOT commit the mutated backlog state.
 5. **Produce cascade-close report** recording the classifier's verdict,
-   qualifying feature IDs, and their validated linked deliberation IDs
+   qualifying feature IDs
    (all Step 0(c)), the pre-close declared-status
-   snapshot (Step 0(b)/(c)), the `backlogit_ship_shipment` result
+   snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`), the `backlogit_ship_shipment` result
    (`shipment_status`, `archived_ids`, `returned_ids`, `commit_sha`),
    `allowed_ids`, `required_ids`, and both set differences
    (`archived_ids - allowed_ids` and `required_ids - archived_ids`) — so a
    vacuous `required_ids` is visible in the report rather than silent — and
-   the parent_id-preservation verification outcome (against the Step 0(b)
-   snapshot).
+   the parent_id-preservation verification outcome (against the pre-close
+   snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`)).
 6. **Gate decision**: `returned_ids` empty, `archived_ids - allowed_ids`
    empty (no unexpected artifact archived), `required_ids - archived_ids`
    empty (no required artifact left unarchived), and every `parent_id`
-   preserved (against the Step 0(b) snapshot) →
-   `recommendation: CLOSED`. Proceed to
-   post-mode. Any verification failure above → the corresponding `HALT`; do
+   preserved (against the pre-close snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`)) →
+   `recommendation: CLOSED`. Run the Linked-Deliberation Disposition
+   step; only `DISPOSITION_COMPLETE` proceeds to post-mode. Any verification failure above → the corresponding `HALT`; do
    not proceed to post-mode or any commit step.
+
+### Cascade Close Postconditions: Flat `allowed_ids` / `required_ids` Sets
+
+3. **Verify `archived_ids` against the two-set `allowed_ids` / `required_ids`
+   gate** (replaces exact full-set equality — see the SUPERSESSION NOTE
+   above and the P-015 policy's own supersession note for why):
+   * **Compute `allowed_ids`** = `closure_scope(S)`: every explicit manifest
+     item ID from `items(S)`, regardless of `artifact_type`, plus the
+     shipment record itself. This is the flat set. A disposition-set
+     deliberation is **not** added merely because it is linked from a
+     manifest member; linked deliberations are handled only by INV-12.
+     H10 carve-out: if a deliberation ID is itself an explicit manifest
+     member, it is an ordinary `closure_scope(S)` / `allowed_ids` member,
+     and its presence in `archived_ids` MUST NOT trip the
+     unexpected-artifact check merely because its `artifact_type` is
+     `deliberation`.
+   * **Compute `required_ids`** = the shipment record and every qualifying
+     feature member (**both unconditionally** — never omitted, and never
+     conditioned on either artifact's own pre-close declared status) + every
+     other manifest item that was **not** truly `status: archived` in the all-member pre-close declared-status snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`). Because the pre-close snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`) covers every explicit manifest member regardless of
+     `artifact_type`, no Step 0(c) linked-deliberation extension participates
+     in this set. A disposition-set deliberation that is not an explicit
+     manifest member is never a `required_ids` member.
+   * **Two separately-labelled, independently-failing conditions.** Neither
+     may be evaluated as a precondition of the other, and the two MUST NOT
+     be merged into a single combined test (conflating two questions into
+     one condition is the documented root cause of external defect
+     `B57F9E24`):
+     - **Unexpected-artifact check**: if `archived_ids - allowed_ids` is
+       non-empty, halt with
+       `HALT — cascade archived unexpected artifact {id}` and emit a
+       **P-005** violation. A disposition-set deliberation that is not an
+       explicit manifest member and appears in `archived_ids` fails this
+       check: that is engine drift under the verified flat line.
+     - **Missing-required-artifact check**: if `required_ids - archived_ids`
+       is non-empty, halt with
+       `HALT — cascade did not archive required artifact {id}` and emit a
+       **P-005** violation.
+   * An `allowed_ids` **non-shipment, non-feature** member (any explicit
+     manifest item that is neither the shipment record nor a qualifying
+     feature member, including an explicit-member deliberation under H10)
+     that was already truly `status: archived` in the all-member
+     pre-close snapshot recorded in the evidence record (the pre_close section written by `autoharness shipment cascade-close --classify-only`) MAY be included in or omitted from `archived_ids` by
+     the engine — neither outcome fails either check (it is outside
+     `required_ids` by construction, and if present in `archived_ids` it is
+     still inside `allowed_ids`). **This tolerance never extends to the
+     shipment record itself**, which is unconditionally a `required_ids`
+     member per the computation above regardless of its own pre-close
+     declared status: if the shipment record were ever reported pre-close as
+     already truly `status: archived` — an anomalous state for an artifact
+     this same closure step is actively transitioning to `shipped` — its
+     absence from `archived_ids` still fails the missing-required-artifact
+     check exactly as any other missing `required_ids` member would; no
+     engine behavior toward the shipment record ever gets a pass under this
+     tolerance.
+
+     **Nor does it extend to a qualifying feature member itself (155-S, PR
+     #407 review, thread PRRT_kwDORzpWpM6bzlFl).** Backlogit's own
+     `ShipShipment` (`internal/core/shipment_lifecycle.go`) unconditionally
+     calls `setArtifactStatus(featureID, models.StatusDone, "feature
+     released")` for every explicit shipment-member feature — regardless of
+     that feature's own pre-close declared status, including an already
+     truly `status: archived` one — **before** `collectArchiveCandidateIDs`
+     runs. `setArtifactStatus` only no-ops when the artifact's current
+     status already equals the requested one, and the requested status here
+     is `done`, never `archived`, so an already-archived qualifying feature
+     is unconditionally relocated to `done` first, with no terminal-status
+     bypass of the kind `completeReleaseScope` grants a non-feature manifest
+     item already truly `status: archived` (that non-feature skip is exactly
+     what makes the tolerance above valid for those members, and it has no
+     counterpart in the feature-forcing loop). By the time
+     `collectArchiveCandidateIDs` loads the feature, its declared status is
+     therefore always `done`, never still `archived` — that function's own
+     `feature.Status != models.StatusArchived` check is always true for it
+     — so the feature is always appended to the candidate list
+     `archiveItems` archives. A qualifying feature member can therefore
+     never be "correctly absent" from `archived_ids` the way a truly
+     pre-archived non-feature manifest member can — its absence is always an
+     anomaly, never expected engine behavior. A qualifying feature member is
+     therefore an unconditional `required_ids` member exactly like the
+     shipment record, and is never eligible for this tolerance.
+
+### Linked-Deliberation Disposition (P-015 INV-12)
+
+Runs once per closure, after the selected close path's gate returns
+`recommendation: CLOSED` (safe-close step 10, or Cascade Close Sub-Procedure
+step 6) and before post-mode, under the lock pre-mode already holds. The step
+is path-independent and separately sanctioned by **INV-12**: it never widens
+`closure_scope(S)`, `allowed_ids(S)`, or `required_ids(S)`, and it mutates a
+disposition-set deliberation only through a single-artifact, non-cascading
+archive, one ID at a time.
+
+0. **Inputs.** The step consumes these values from Step 0 and the selected
+   close path, and never substitutes a recomputed set for the snapshot.
+   <!-- cascade-close-routing:BEGIN disposition-inputs -->
+   It takes every input from the evidence record
+   (`docs/closure/evidence/{shipment_id}-{feature_id}-close-evidence.json`,
+   written by the Step 0(c) `autoharness shipment cascade-close` run), never
+   from in-session Step 0(c) state, and never recomputes one:
+   <!-- cascade-close-routing:END disposition-inputs -->
+   * the selected close path and its reason (Step 0(c) close-path selection),
+     from `pre_close.close_path_selection`;
+   * the Step 0(c) engine-semantics decision (`probe_surface`, `version`,
+     `commit`, and verdict/reason), from `pre_close.engine_semantics`,
+     rebuilt with `engine_semantics_from_record` (this self-hosting
+     repository's own implementation lives at
+     `src/autoharness/gates/cascade_evidence.py`);
+   * the Step 0(c) linked-deliberation disposition snapshot (the
+     **disposition snapshot**), from
+     `pre_close.linked_deliberation_disposition`;
+   * the path-specific baseline: the safe-close step 3 observation-set
+     fingerprints, from `pre_close.observation_set` (`safe_close`), or the
+     Cascade Close Sub-Procedure's out-of-manifest descendant baseline
+     fingerprints, from `pre_close.out_of_manifest_descendants` (`cascade`).
+
+   The input source is the only thing the evidence record changes here:
+   steps 1–6 below run exactly as stated, with the recorded engine decision
+   as step 1's `engine=` argument. Under an `UNVERIFIED` engine the step
+   still mutates nothing, and it stays the only archiver of a
+   disposition-set deliberation.
+
+1. **Plan.** Workspaces with a Python implementation installed plan each
+   disposition-set deliberation's outcome with
+   `compute_linked_deliberation_disposition(manifest_items, shipment_id, workspace_backlog_dir, engine=<the Step 0(c) engine-semantics decision>)`
+   (this self-hosting repository's own implementation lives at
+   `src/autoharness/gates/shipment_closure.py`). The call passes no
+   `stash_path`, so the planner reads the active stash file at
+   `.backlogit/stash.jsonl`. The planner result is consumed in this order. Check `planning_error` first: when `planning_error` is present, it
+   is exempt from the planner-vs-snapshot equality check because the
+   planner returns `dispositions=()`; the equality check applies only
+   when the planner returns without `planning_error`. Before any archive,
+   when the planner returns without `planning_error`, the planner's disposition
+   set (deliberation IDs, link kinds, linking members, record paths, and
+   record hashes) MUST equal the Step 0(c) disposition snapshot, and for
+   every deliberation the snapshot already settled as `retained_read_error`,
+   `retained_ambiguous`, or `already-archived`, the planner's outcome and
+   `reason_code` (and, for `retained_read_error`, its `path`) MUST equal the
+   snapshot's settled outcome data, and the planner's `unresolved_references`
+   set (exact `{id, reason_code}` pairs) MUST equal the snapshot's,
+   so a fresh plan never upgrades snapshot-settled evidence to a planned
+   `archive` or drops snapshot evidence. Any difference halts with `HALT — linked-deliberation disposition failed {id}`;
+   emit **P-005** once; no mutation. `{id}` is the first differing
+   deliberation ID, or the shipment ID for a set-level added/removed-ID
+   difference. Other workspaces apply the same stated rules and
+   first-match precedence over the eight `LinkedDeliberationOutcome` values
+   that INV-12 names (P-015 Vocabulary and Invariant Summary below). The
+   list below is the precedence order; other outcome enumerations in this
+   skill are unordered:
+   `retained_read_error`, `retained_ambiguous`, `already-archived`,
+   `retained_engine_unverified`, `retained_live_status`,
+   `retained_shared_reference`, `retained_description_mention`, and otherwise
+   a planned `archive`. The planned `archive` is the pre-mutation form of the
+   `archived` outcome, which only step 4 below assigns. The disposition set,
+   its link kinds, and the shared-reference guard's live-referrer scan all use
+   the Step 0(c) matcher, referenced here by name and never restated. The
+   shared-reference guard counts, as live referrers when they link the
+   deliberation: work items outside
+   `closure_scope(S)` that are not truly archived, shipments other than this
+   one that are not truly archived, and active stash entries. It never counts
+   the deliberation itself, any other deliberation, docs, or archived records.
+   A planner `planning_error` carries no planned `archive`. Preserve outcomes
+   already settled by the Step 0(c) disposition snapshot (`retained_read_error`,
+   `retained_ambiguous`, and `already-archived`); for every remaining snapshot
+   deliberation, report outcome `retained_ambiguous` with `reason_code:
+   planning_error`, and exclude `already-archived` deliberations from the
+   `stranded_linked_deliberation` advisory. Also preserve the snapshot's
+   `unresolved_references` set, because the planner returns none on
+   `planning_error`.
+
+   **Engine UNVERIFIED means no mutation.** When the Step 0(c)
+   engine-semantics verdict is `UNVERIFIED`, every disposition-set
+   deliberation that an earlier rule (`retained_read_error`,
+   `retained_ambiguous`, `already-archived`) does not settle is
+   `retained_engine_unverified`, and nothing is mutated, on every close path.
+   This includes a classifier `CASCADE` that Step 0(c) routed to `safe_close`
+   with reason `ENGINE_SEMANTICS_UNVERIFIED`.
+
+2. **Disposition baseline.** Before the first archive call, capture the
+   disposition baseline from these components:
+   * (i) the path-specific set: the safe-close observation-set fingerprints,
+     or the CASCADE out-of-manifest descendant fingerprints (disposition step 0);
+   * (ii) the disposition snapshot;
+   * (iii) a pre-disposition `git status --porcelain -- ".backlogit/"`
+     capture, together with a location-and-SHA-256 fingerprint of every
+     path under `.backlogit/` other than the exempt paths named below,
+     because porcelain status codes alone are not byte identity (a path
+     that is already modified or untracked keeps the same entry when its
+     bytes change again); enumerate those paths without following any
+     symlink, junction, or other reparse point, and before reading any
+     path's bytes, at this capture and at every later invariance comparison
+     in steps 4 and 6, apply the Step 0(c) containment checks to it (lexical
+     and canonical containment in the backlog root, and no symlink,
+     junction, or other reparse point);
+   * minus the `closure_scope(S)` IDs this run already archived (their
+     queue→archive moves are the completed closure, not drift). This
+     subtraction applies to the (iii) porcelain capture only: the (iii)
+     fingerprint is taken after the closure, so it covers those records'
+     post-closure bytes and any later change to them violates the baseline.
+
+   Relative to this baseline, an archive call may change only backlogit
+   `ArchiveItem`'s own side effects (verified at `v1.11.0`
+   `internal/core/archive.go`):
+   * the target deliberation's own queue→archive move;
+   * the target's frontmatter keys `status`, `archived_status`, and
+     `archived_from`;
+   * the gitignored item event log (`.backlogit/logs/`) and backlogit's
+     own index, which is exactly `.backlogit/backlogit.db` and its SQLite
+     sidecars `.backlogit/backlogit.db-wal`, `.backlogit/backlogit.db-shm`,
+     and `.backlogit/backlogit.db-journal` at the backlog storage root
+     (no other `.db` file, at the root or below it, is part of the index);
+   * lock and hook-queue files.
+
+   `ArchiveItem` also calls `ArchiveLinkedStashEntries`
+   (`internal/core/stash.go`), which archives every active stash entry that
+   the engine's stash-link index links to the target, rewriting
+   `.backlogit/stash.jsonl` and appending to
+   `.backlogit/archive/stash.jsonl`. That write is never an allowed side
+   effect: the step 3 engine stash-link guard's provenance key check and
+   exact relation check together retain every target that carries such a
+   link, so the call is a no-op for every archived target. Any
+   change to `.backlogit/stash.jsonl` or `.backlogit/archive/stash.jsonl`,
+   or to any other path outside these allowed side effects, violates the
+   disposition baseline.
+
+   The exempt paths, excluded from the (iii) fingerprint, are only the
+   gitignored item event log, the four index paths enumerated above, lock and
+   hook-queue files, and this
+   run's own closure report path under `.backlogit/reconcile/` (written by
+   step 5). Every other `.backlogit/reconcile/` path stays in the baseline.
+
+   A path that fails those checks, or cannot be read, while capturing this
+   baseline is never opened or hashed and does not halt: record it in the
+   (iii) fingerprint by its workspace-relative path and `reason_code`
+   (`path_escape`, `symlink_or_reparse_point`, or `unreadable_file`) instead
+   of a SHA-256, as Step 0(c) records a read-error record path. At every later
+   comparison in steps 4 and 6, compare such a path by location and
+   `reason_code` only, never by following or reading it. Any other path that
+   fails those checks at a later comparison, or a recorded path whose
+   location or `reason_code` changed, is never read or hashed and fails that
+   step's verification (step 4 or step 6).
+
+3. **Archive each planned `archive`, one at a time, in ascending ID order.**
+   * Immediately before each call, re-run the SHA-256 check after first
+     re-listing the deliberation ID's record
+     paths under `.backlogit/queue/` and `.backlogit/archive/` and require
+     exactly the disposition snapshot's single path, then reapply the Step
+     0(c) containment checks to that record path before reading any of its
+     bytes (lexical and canonical containment in the backlog root, and no
+     symlink, junction, or other reparse point), then check that record
+     path against its disposition-snapshot hash **and** the shared-reference
+     guard for that ID, so nothing that changed since
+     the snapshot is archived (TOCTOU). Retain the record bytes this re-check
+     read; step 4 compares against them.
+   * A containment failure at this re-check is never opened, hashed, or
+     archived; it halts identically with `HALT — linked-deliberation
+     disposition failed {id}`; emit a **P-005** violation once through D6,
+     scoped to the disposition archive of {id}; no mutation, and the
+     completed close-path closure is never rolled back.
+   * A record-path re-list mismatch halts identically with `HALT —
+     linked-deliberation disposition failed {id}`; emit a **P-005**
+     violation once through D6, scoped to the disposition archive of
+     {id}; the completed close-path closure is never rolled back.
+   * A hash mismatch halts with `HALT — linked-deliberation disposition failed {id}`;
+     emit a **P-005** violation once through D6, scoped to the disposition
+     archive of {id}; the completed close-path closure is never rolled back.
+   * These retention rules apply in the order listed, and the first that
+     applies settles the ID.
+   * **Archive-resident target.** A target whose disposition-snapshot record
+     path lies under `.backlogit/archive/` rather than
+     `.backlogit/queue/` is never archived: record outcome
+     `retained_ambiguous` with `reason_code: archive_resident_unarchived` for
+     that ID, with no mutation, and the loop continues. For such a record,
+     `ArchiveItem` stamps `archived_from` with a path that is not a
+     disposition-snapshot queue record path (the engine's canonical queue
+     restore path when the record already sits at its archive path), so step
+     4 could never verify it.
+   * **Engine stash-link guard.** Two checks run in order, and both must
+     clear before the target is archived.
+     * *Provenance key check.* A target whose retained record bytes declare
+       a `custom_fields.source_stash_id` key, with any value, is never
+       archived: record outcome `retained_shared_reference` with
+       `reason_code: engine_stash_link` and the declared value as its
+       referrer for that ID, with no mutation, and the loop continues. In
+       `v1.11.0`, `ArchiveLinkedStashEntries` reads the engine's stash-link
+       index through `GetStashLinksForItem`; harvest, index rehydration, and
+       verified provenance corrections write every production row of that
+       index, and each such row names an item whose
+       `custom_fields.source_stash_id` equals the linked stash ID. This check
+       ignores whether that stash entry still looks active, because the
+       index can lag the stash file, so it deliberately retains every
+       harvest-created deliberation, even one whose link is no longer
+       active, and such a deliberation stays in the
+       `stranded_linked_deliberation` advisory.
+     * *Exact relation check.* A stash-link row need not carry that key (the
+       backlogit `v1.11.0` test `TestArchiveItem_ArchivesLinkedStashEntries`
+       links an item that has no `source_stash_id`), so the key check alone
+       cannot prove the archive is stash-inert. After the key check clears,
+       and immediately before the archive call, run the exact relation that
+       `ArchiveLinkedStashEntries` reads through `GetStashLinksForItem`
+       (`internal/db/stash.go`) against the engine index
+       `.backlogit/backlogit.db`, bound to the target ID:
+       `SELECT sl.stash_id FROM stash_links sl JOIN stash_entries se ON se.stash_id = sl.stash_id WHERE sl.item_id = ? AND se.state = 'active'`.
+       Open the index **read-only** through the SQLite URI
+       `file:.backlogit/backlogit.db?mode=ro` and run only that
+       `SELECT`; never write, migrate, sync, rehydrate, or hand-edit the
+       index (Data Ownership rule), and never substitute the public stash
+       views, which do not expose item links. The index path lies inside the
+       backlog storage root that the Step 0(c) containment checks already
+       bound; reapply those checks to it before opening it.
+       If the query returns any row, the target is never archived: record
+       outcome `retained_shared_reference` with `reason_code:
+       engine_stash_link` and the returned stash IDs, in ascending order, as
+       its referrers for that ID, with no mutation, and the loop continues.
+       If the index is missing, fails the containment checks, cannot be
+       opened read-only, or lacks the `stash_links` or `stash_entries` table
+       or a queried column, so the query cannot run, the target is never
+       archived (fail-closed): record outcome `retained_engine_unverified`
+       with `reason_code: engine_stash_link_unverifiable` for that ID, with
+       no mutation, and the loop continues. Only an error-free query that
+       returns zero rows clears this check.
+     * Together, the two checks make the `ArchiveLinkedStashEntries` call
+       inside `ArchiveItem` a no-op for every archived target. The step 4
+       disposition-baseline invariance check, which halts on any change to
+       `.backlogit/stash.jsonl` or
+       `.backlogit/archive/stash.jsonl`, remains the backstop for a
+       link written between the query and the archive call.
+   * A new live referrer records `retained_shared_reference: [referrer IDs]`
+     for that ID with no mutation, and the loop continues.
+   * Otherwise archive that single artifact via `backlogit_archive_item`
+     (CLI fallback `backlogit archive {id}`) on the probed surface, the same
+     `probe_surface` the Step 0(c) engine-semantics gate recorded. Pass **no
+     cascade flag**.
+
+4. **Verify-after-each** (immediately after each archive call). All of the
+   following must hold:
+   * the queue copy is absent, and the archive copy is present exactly once;
+   * the archive copy passes the Step 0(c) containment checks (lexical and
+     canonical containment in the backlog root, and no symlink, junction, or
+     other reparse point) before any of its bytes are read;
+   * the archive copy declares `status: archived`;
+   * its `archived_status` equals the deliberation's declared status in the
+     disposition snapshot;
+   * its `archived_from` provenance is present and well-formed, naming the
+     deliberation's disposition-snapshot queue record path by exact string
+     match, workspace-relative with `/` separators (step 3 archives only
+     queue-resident targets, so that path always exists; missing or
+     ill-formed provenance fails verification);
+   * its frontmatter, compared **semantically** (parsed YAML, because
+     `ArchiveItem` re-serializes it), equals the frontmatter of the record
+     bytes retained at the step 3 re-check, except for the three engine keys
+     `status`, `archived_status`, and `archived_from`;
+   * its Markdown body after the closing frontmatter delimiter is
+     **byte-exact** against those retained record bytes;
+   * disposition-baseline invariance holds: nothing changed relative to the
+     step 2 disposition baseline except that call's allowed `ArchiveItem`
+     side effects and the side effects of earlier disposition archives in
+     this step that already passed verification.
+
+   Any failure: `HALT — linked-deliberation disposition failed {id}`; follow
+   the D6 sequence of safe-close step 6, scoped to the disposition archive of
+   {id} (capture evidence → HALT → emit P-005 once → request EXPLICIT
+   operator approval → REVALIDATE → execute ONLY the approved rollback). There is no retry and
+   no rollback of the completed closure: the close path's gate already
+   passed, so the closure is complete and only the disposition is not. Do not
+   advance to post-mode, and never commit a torn disposition (a partially
+   verified archive state; the self-hosting repository records this lesson in
+   `docs/compound/2026-08-15-torn-archive-log-entry-without-file-mutation-must-not-be-committed.md`).
+
+5. **Report.** Add to the closure report (safe-close step 9 or cascade-close
+   step 5):
+   * `linked_deliberation_disposition: [{id, link_kinds, linking_members, outcome, reason_code, path, referrers, pre_sha256, post_sha256, archived_status}]`,
+     one entry per disposition-set deliberation, where `outcome` is a
+     `LinkedDeliberationOutcome` value (`archived`, `already-archived`,
+     `retained_read_error`, `retained_ambiguous`,
+     `retained_engine_unverified`, `retained_live_status`,
+     `retained_shared_reference`, or `retained_description_mention`),
+     `reason_code` is always present and is copied verbatim from the planner
+     for every planner outcome other than the planned `archive` (never
+     re-derived; an unknown code is carried as-is), except that a verified
+     `archived` outcome carries `reason_code: archived` (the outcome-value
+     default, replacing the planner's pre-mutation `archive`), a planned
+     `archive` that the step 3 re-check settles as
+     `retained_shared_reference` carries `reason_code:
+     retained_shared_reference`, one that the step 3 engine stash-link guard
+     settles carries `reason_code: engine_stash_link` (or, when its exact
+     relation check cannot run, outcome `retained_engine_unverified` with
+     `reason_code: engine_stash_link_unverifiable`), one that step 3
+     settles as an archive-resident target carries `reason_code:
+     archive_resident_unarchived`, an outcome preserved from the Step 0(c)
+     disposition snapshot keeps that snapshot's own `reason_code` (for
+     example a read error's `path_escape`), and an outcome synthesized for a
+     `planning_error` (only the remaining snapshot deliberations) carries
+     `reason_code: planning_error`, `path` is present
+     for `retained_read_error`, `referrers` lists the live referrer IDs of a
+     `retained_shared_reference` (for `engine_stash_link`, the declared
+     `source_stash_id` value from the provenance key check, or the stash IDs
+     the exact relation check returned), and `post_sha256` and `archived_status` are
+     present for an `archived` outcome. Report keys map to planner/code fields
+     as follows: `id` → `deliberation_id`, `linking_members` →
+     `linking_member_ids`, `referrers` → `referrer_ids`, and `pre_sha256`
+     records one pre-archive SHA-256 per record. When the planner reports
+     `planning_error`, record the `planning_error`. Preserve outcomes already
+     settled by the Step 0(c) disposition snapshot (`retained_read_error`,
+     `retained_ambiguous`, and `already-archived`); for every remaining snapshot
+     deliberation, report outcome `retained_ambiguous` with `reason_code:
+     planning_error`, and exclude `already-archived` deliberations from the
+     `stranded_linked_deliberation` advisory, and report the snapshot's
+     `unresolved_references` set. An empty disposition set records
+     `linked_deliberation_disposition: []`;
+   * `unresolved_references` (`{id, reason_code}`), plus every planner read
+     failure (`{path, reason_code}`);
+   * the durable advisories, carried into the closure summary:
+     `ENGINE_SEMANTICS_UNVERIFIED` with the Step 0(c) reason whenever the
+     engine-semantics verdict is `UNVERIFIED`, and
+     `ENGINE_LINE_UNVERIFIED_ADVISORY` naming the probed version whenever its
+     minor line is not a P-015 verified engine-semantics line;
+   * a `stranded_linked_deliberation` advisory listing every `retained_*`
+     outcome, so a deliberation that stays live across closures stays visible
+     to the operator.
+
+6. **Gate decision.**
+   * Every disposition-set deliberation has exactly one outcome, every
+     `archived` outcome passed step 4, and a final disposition-baseline
+     invariance check, run after the step 5 report write, passes (nothing
+     changed relative to the step 2 disposition baseline except the allowed
+     side effects of the verified disposition archives and this run's own
+     closure report path) → `recommendation: DISPOSITION_COMPLETE`.
+     Proceed to post-mode. Retained outcomes are reported, never halt, and
+     never block this gate. `linked_deliberation_disposition: []` is valid
+     only when the Step 0(c) disposition snapshot is empty; a `planning_error`
+     over a non-empty snapshot preserves snapshot-settled outcomes and reports
+     only the remaining deliberations as `retained_ambiguous` with
+     `reason_code: planning_error`.
+   * A failure of that final invariance check halts with `HALT —
+     linked-deliberation disposition failed {id}`, where `{id}` is the
+     shipment ID; follow the D6 sequence of safe-close step 6, scoped to the
+     diverging paths plus this run's disposition archives (when the run
+     archived nothing, the scope is the diverging paths alone), and emit
+     **P-005** once. Do not proceed to post-mode.
+   * Any halt above → `recommendation: HALT — linked-deliberation disposition failed {id}`.
+     Do not proceed to post-mode or to any commit step. On a disposition HALT,
+     keep the shipment lock held through the D6 sequence (approval → REVALIDATE
+     → approved rollback) and release it only after D6 finishes — either the
+     approved rollback is complete or the operator declines — following
+     pre-mode step 7's rule to release the lock on pre-mode HALT while retaining
+     it after `PROCEED` from Ship Step 6 until post-mode completes.
+
+**Action risk (ProposedAction / ActionRisk).** `backlogit_archive_item` on a
+linked deliberation is ActionRisk **medium**: it is reversible with
+`backlogit restore`, and it is gated by the shared-reference guard, the
+pre-archive hash re-check, and verify-after-each. The engine-version probe is
+ActionRisk **none** (read-only). This step adds no other mutation.
+
+**Sanctioned successor.** This step is the sanctioned successor to the
+operator-approved 190-S closure deviation, in which the operator approved a
+one-off standalone archive of a linked deliberation that the cascade had left
+live. That archive now happens only here, under the guards above; no closure
+repeats it as an ad hoc deviation.
 
 ### Mixed-Role Detection Mode (`mode: detect-mixed-role`, operator-invoked, READ-ONLY)
 
@@ -1108,15 +1513,15 @@ If pre-mode cannot acquire the lock because another process holds it:
 
 * `mode: pre` runs before closing a shipment in Ship Step 6
 * `mode: pre` with `expected_status: queued` (or `active` for already-claimed shipments) runs at Ship Step 0.5 intake
-* `mode: safe-close` runs **in place of** the cascade `backlogit_ship_shipment` call and archives only the manifest item IDs (one artifact at a time) plus the shipment record itself — **except** when Step 0's P-015 verified fully-covered-root classification selects `CASCADE`, in which case the Cascade Close Sub-Procedure runs instead and safe-close steps 1–10 are skipped entirely
-* Close-path selection is made **only** from the machine-checkable classification result (Step 0), never inferred from prose or manifest shape alone; any classifier error, ambiguity, or unresolved precondition falls back to safe-close
-* Step 0(c)'s "fully covered" check walks the qualifying feature's **full descendant tree, at every depth** (via a full `parent_id` graph, not a single-level scan of direct children only) — a manifest such as `[feature, task]` where that task has an out-of-manifest subtask must fall back to safe-close, never wrongly qualify for `CASCADE` (155-S, PR #407 review, thread PRRT_kwDORzpWpM6b2MJv)
-* The Cascade Close Sub-Procedure independently verifies `returned_ids` is empty, `archived_ids` against the two-set `allowed_ids` / `required_ids` gate (step 3: `allowed_ids` = manifest tasks + qualifying feature members + each qualifying feature member's validated linked deliberation IDs (Step 0(c), same engine-defined `source_deliberation_id` (taken as a complete literal string, never regex-scanned) / description / references sources — the latter two scanned with the exact `\b(?:DL\d+|[0-9]+(?:\.[0-9]+)*-DL)\b` matcher Backlogit's own `internal/core.deliberationIDPattern` uses, never a broader "any embedded deliberation ID" reading — and existence-and-`artifact_type: deliberation` validation Backlogit's own `collectArchiveCandidateIDs` uses — never a blanket allowance for arbitrary IDs) + the shipment record; `required_ids` = the shipment record and every qualifying feature member, both unconditionally, plus every other allowed member (a manifest task item, or a qualifying feature member's validated linked deliberation) NOT truly `status: archived` in the Step 0(b)/(c) pre-close declared-status snapshot; `archived_ids - allowed_ids` non-empty halts with `HALT — cascade archived unexpected artifact {id}`, `required_ids - archived_ids` non-empty halts with `HALT — cascade did not archive required artifact {id}`, evaluated as two independent, never-merged conditions — a truly pre-archived **non-shipment, non-feature** allowed member (i.e. a manifest task item, or a qualifying feature's linked deliberation, e.g. 147-F's already-archived 027-DL) has no transition to report and is correctly, expectedly absent from `archived_ids`, never a mismatch, but this tolerance never extends to the shipment record itself, which remains unconditionally required regardless of its own pre-close declared status, nor does it extend to a qualifying feature member itself, which is likewise unconditionally required regardless of its own pre-close declared status — since Backlogit's own `ShipShipment` forces every explicit qualifying feature member through `status: done` before archive-candidate collection ever runs, so it is never still `archived` by that point either), and no `parent_id` was cleared — a mismatch on any of these halts fail-closed with a P-005 violation even though the cascade path was itself permitted
+* `mode: safe-close` runs **in place of** the cascade `backlogit_ship_shipment` call and archives only the manifest item IDs (one artifact at a time) plus the shipment record itself. Safe-close runs only on the `--classify-only` route's exit 3 (`safe_close`) record; an exit 0 (`CASCADE`) record HALTs in this mode and is routed only to the Cascade Close Sub-Procedure
+* Close-path selection is made **only** from the machine-checkable `--classify-only` result (the `selected_close_path` field of the command's JSON output, recorded in the evidence record as `pre_close.close_path_selection`; Step 0(c)), never inferred from prose or manifest shape alone; any classifier error, ambiguity, or unresolved precondition HALTs under the Step 0(c) routing table, and only exit 3 routes to safe-close
+* The P-015 INV-6 "fully covered" check (evaluated by the Step 0(c) `--classify-only` run) walks the qualifying feature's **full descendant tree, at every depth** (via a full `parent_id` graph, not a single-level scan of direct children only) — a manifest such as `[feature, task]` where that task has an out-of-manifest subtask must select `safe_close` (exit 3), never wrongly qualify for `CASCADE` (155-S, PR #407 review, thread PRRT_kwDORzpWpM6b2MJv)
+* The Cascade Close Sub-Procedure independently verifies `returned_ids` is empty, `archived_ids` against the two-set `allowed_ids` / `required_ids` gate (step 3 applies the flat `allowed_ids` / `required_ids` sets defined in "Cascade Close Postconditions: Flat"; `archived_ids - allowed_ids` non-empty halts with `HALT — cascade archived unexpected artifact {id}`, `required_ids - archived_ids` non-empty halts with `HALT — cascade did not archive required artifact {id}`, evaluated as two independent, never-merged conditions — a truly pre-archived **non-shipment, non-feature** allowed member (i.e. a manifest task item) has no transition to report and is correctly, expectedly absent from `archived_ids`, never a mismatch, but this tolerance never extends to the shipment record itself, which remains unconditionally required regardless of its own pre-close declared status, nor does it extend to a qualifying feature member itself, which is likewise unconditionally required regardless of its own pre-close declared status — since Backlogit's own `ShipShipment` forces every explicit qualifying feature member through `status: done` before archive-candidate collection ever runs, so it is never still `archived` by that point either), and no `parent_id` was cleared — a mismatch on any of these halts fail-closed with a P-005 violation even though the cascade path was itself permitted
 * Safe-close computes the protected set (parent feature + unshipped siblings) from expected IDs and proves it is fully present in queue at a baseline gate before archiving anything
 * Safe-close verifies the protected set survives after every single-item archival (verify-after-each invariant), with no pre-archived exemption for protected-set members
 * Safe-close moves the shipment record to live `shipped`, verifies it, explicitly archives only that record, and verifies `archived_status: shipped` before closure completes
 * Safe-close archives the shipment record as its own single artifact and never via the cascade op
-* Safe-close reverts on cascade detection (`git restore`/`git revert`) and halts with a P-005 violation; it never auto-prunes the manifest
+* Safe-close reverts on cascade detection (`git restore -- <path>` per touched path, or `git revert`) and halts with a P-005 violation; it never auto-prunes the manifest
 * `mode: post` runs after the safe-close archive sequence in Ship Step 6
 * All five item classifications are represented in the schema
 * Pre-mode adds a shipment-record-status classification (`record-consistent` /
@@ -1167,8 +1572,8 @@ If pre-mode cannot acquire the lock because another process holds it:
 * `.github/skills/file-lock/SKILL.md` — lock acquisition/release primitives
 * `.github/agents/_ship.agent.md` — integration points (Step 0.5, Step 6 safe-close)
 * `.github/agents/_stage.agent.md` — scope guard (Step 5.5)
-* `.github/policies/workflow-policies.md` — P-007 archive integrity policy; P-015 single-artifact closure (cascade prohibition) plus the verified fully-covered-root exception
-* `src/autoharness/gates/shipment_closure.py` — optional upstream reference: this self-hosting repository's own `classify_shipment_close_path` implementation, reused by Step 0 of Safe-Close Mode when present. This installed skill markdown is authoritative; the path is an upstream reference that may be absent in other workspaces.
+* `.github/policies/workflow-policies.md` — P-007 archive integrity policy; P-015 single-artifact closure (cascade prohibition) plus the flat-manifest `CASCADE` exception
+* `src/autoharness/gates/shipment_closure.py` — optional upstream reference: this self-hosting repository's own `classify_shipment_close_path` implementation, reused by the Step 0(c) classification specification when present. This installed skill markdown is authoritative; the path is an upstream reference that may be absent in other workspaces.
 
 ## Model Routing
 

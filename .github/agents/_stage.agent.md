@@ -1098,11 +1098,10 @@ halt without first following this auto-escalation directive
    engram for analysis, and halt. The
    agent MUST NOT re-execute the failing operation after its circuit is open.
    The handoff is for asynchronous or operator review, not a fourth attempt.
-5. **`ESCALATION_DEGRADED` fallback**: when the route is unavailable, engram
-   is unavailable, or the same-route guard fires, fall back to the existing
-   operator-halt behavior described at each gate above (e.g., halt and
-   require operator intervention) exactly as before — this directive never
-   replaces that fallback or authorizes another execution attempt.
+5. **`ESCALATION_DEGRADED` fallback**: when `ESCALATION_DEGRADED` is declared,
+   the halting agent MUST fall back to its existing **operator-halt** path (the
+   Stop Conditions escalation prompt already defined in its own agent template)
+   rather than proceeding as though escalation succeeded.
 
 This is a **reasoning escalation only** — it never self-authorizes
 promotion to plan, harvest, shipment assembly, or any operation this

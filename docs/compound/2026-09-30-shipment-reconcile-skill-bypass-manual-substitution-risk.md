@@ -7,6 +7,15 @@ tags: [backlogit, shipment-reconcile, p-005, p-021, dark-mode, closure]
 
 # A skill document's mode-dispatch sequence must still be followed even absent a CLI wrapper
 
+> **Superseded in part (2026-10-12, shipment 043-S / feature 053-F).** The rule
+> "never call the cascade primitive outside a live `mode: safe-close` invocation"
+> and the binding-based close steps in this entry are retired. The destructive
+> CASCADE close runs only through `autoharness shipment cascade-close`, after
+> per-closure operator approval that dark mode does not waive; SAFE_CLOSE runs
+> the shipment-reconcile safe-close sequence. The manual-substitution risk
+> described below remains the reason for these rules. Source decision:
+> `docs/decisions/2026-10-11-intercom-go-closure-tooling-batch-1-deliberation.md` (D-CT-1).
+
 ## Symptom
 
 During 035-S's post-merge closure, no dedicated `classify-close-path`
