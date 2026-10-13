@@ -10,7 +10,7 @@ context: "P-020 post-merge compaction for shipment 040-S / feature 050-F."
 * **Memory files compacted:** 1 (`040-S-red-evidence.md`, 16,119 bytes; this release unit's only memory record)
 * **Compacted summary:** `docs/memory/compacted/2026-10-08-040-s-050-f-compacted.md`
 * **Verbose originals archived:** 1, at `docs/archive/memory/2026-10-07/040-S-red-evidence.md` (moved with `git mv`, nothing deleted)
-* **Active task checkpoints preserved:** 1. The live session record `docs/memory/2026-10-08/ship-040s-post-merge-closure-memory.md` is the most recent checkpoint for the still-open closure PR, so it was not compacted.
+* **Active task checkpoints preserved:** 1. The live session record `docs/memory/2026-10-08/ship-040s-post-merge-closure-memory.md` (moved to `docs/archive/memory/ship-040s-post-merge-closure-memory.md` by the 043-S P-020 compaction on 2026-10-12) was the most recent checkpoint for the then still-open closure PR #113 (since merged), so it was not compacted at that time.
 * **Plans consolidated:** 0.
   * `docs/plans/2026-10-07-intercom-go-retiredarch-correctness-plan.md` is a Stage-owned planning artifact.
   * It also governs the deferred Option B residuals (DC921AF6, 3750C37C and 0ECC1895 return to deliberation; 4537B2F6 and D44D8BDF are tracked separately).
