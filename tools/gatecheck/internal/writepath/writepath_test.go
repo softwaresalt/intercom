@@ -1653,6 +1653,62 @@ func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
 	}
 }
 
+// TestRunFixtureSelfTest_DirectoryFixtureRefusals pins how fixture collection
+// treats directories. A directory whose name ends in .go must fail closed
+// during collection, before any fixture is read (U8). Rows (d1) and (d2) are
+// red: collection skips every directory silently, so the self-test passes.
+// Row (d3) is a characterization row, green on arrival: a directory without a
+// .go suffix stays skipped (SB-7). Every row also holds a valid fixture, so a
+// "no fixtures discovered" result cannot satisfy a red row (G-2).
+func TestRunFixtureSelfTest_DirectoryFixtureRefusals(t *testing.T) {
+	const (
+		fixtureRel   = "scripts/testdata/writepath"
+		validFixture = "PASS accept-ok.go: clean as expected\n"
+		dirRefusal   = "fixture is a directory; names ending in .go must be regular files"
+	)
+	rows := []struct {
+		name       string
+		dirName    string
+		wantCode   int
+		wantStdout string
+		wantStderr string
+	}{
+		{
+			name:       "(red) directory accept-d.go fails closed",
+			dirName:    "accept-d.go",
+			wantCode:   1,
+			wantStderr: errorLine(fixtureRel+"/accept-d.go", errors.New(dirRefusal)),
+		},
+		{
+			name:       "(red) directory reject-d.go fails closed",
+			dirName:    "reject-d.go",
+			wantCode:   1,
+			wantStderr: errorLine(fixtureRel+"/reject-d.go", errors.New(dirRefusal)),
+		},
+		{
+			name:       "(characterization) directory harness without .go suffix is skipped",
+			dirName:    "harness",
+			wantCode:   0,
+			wantStdout: validFixture,
+		},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			fixtureDir := filepath.Join(root, filepath.FromSlash(fixtureRel))
+			u4WriteText(t, filepath.Join(fixtureDir, "accept-ok.go"), u4CleanGo)
+			u4Mkdir(t, filepath.Join(fixtureDir, tc.dirName))
+
+			res := runFixtureSelfTest(root)
+			assertNoRawControl(t, res.Stderr)
+			if res.Code != tc.wantCode || res.Stdout != tc.wantStdout || res.Stderr != tc.wantStderr {
+				t.Fatalf("got (Code=%d, stdout=%q, stderr=%q), want (Code=%d, stdout=%q, stderr=%q)",
+					res.Code, res.Stdout, res.Stderr, tc.wantCode, tc.wantStdout, tc.wantStderr)
+			}
+		})
+	}
+}
+
 // allowedCreateFileArgs is the only argument shape D-2' admits.
 const allowedCreateFileArgs = "p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"
 

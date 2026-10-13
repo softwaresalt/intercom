@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // unixTwoPrimitivesGo holds two write primitives, so a fixture built from it
@@ -98,4 +100,56 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 				res.Code, res.Stdout, res.Stderr, wantPrefix)
 		}
 	})
+}
+
+// TestRunFixtureSelfTest_FIFOFixtureRefused is a characterization row, green on
+// arrival (FIFO already refused by containment). A named pipe reject-fifo.go
+// beside a valid fixture must be refused as not a regular file. The self-test
+// runs in a goroutine, so a regression that opens the FIFO fails at the timeout
+// instead of hanging. Cleanup opens the FIFO O_RDWR|O_NONBLOCK, which unblocks a
+// stuck opener, then waits for the goroutine. No t.Skip.
+func TestRunFixtureSelfTest_FIFOFixtureRefused(t *testing.T) {
+	const (
+		fixtureRel = "scripts/testdata/writepath"
+		waitLimit  = 10 * time.Second
+	)
+	root := t.TempDir()
+	fixtureDir := filepath.Join(root, filepath.FromSlash(fixtureRel))
+	unixWriteFixture(t, filepath.Join(fixtureDir, "accept-ok.go"), u4CleanGo)
+	fifo := filepath.Join(fixtureDir, "reject-fifo.go")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatalf("mkfifo %s: %v", fifo, err)
+	}
+
+	results := make(chan Result, 1)
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		results <- runFixtureSelfTest(root)
+	}()
+	t.Cleanup(func() {
+		if f, err := os.OpenFile(fifo, os.O_RDWR|syscall.O_NONBLOCK, 0); err == nil {
+			_ = f.Close()
+		}
+		select {
+		case <-finished:
+		case <-time.After(waitLimit):
+			t.Errorf("runFixtureSelfTest still blocked %v after the FIFO was unblocked", waitLimit)
+		}
+	})
+
+	var res Result
+	select {
+	case res = <-results:
+	case <-time.After(waitLimit):
+		t.Fatalf("runFixtureSelfTest did not return within %v: it may have opened the FIFO", waitLimit)
+	}
+
+	wantPrefix := `::error::scripts/testdata/writepath/reject-fifo.go: ` +
+		`not a contained regular file: scripts/testdata/writepath/reject-fifo.go is not a regular file (mode `
+	assertNoRawControl(t, res.Stderr)
+	if res.Code != 1 || !strings.HasPrefix(res.Stderr, wantPrefix) {
+		t.Fatalf("got (Code=%d, stdout=%q, stderr=%q), want (1, prefix %q)",
+			res.Code, res.Stdout, res.Stderr, wantPrefix)
+	}
 }
