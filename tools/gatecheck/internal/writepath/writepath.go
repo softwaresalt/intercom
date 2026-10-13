@@ -853,7 +853,25 @@ type Result struct {
 // traceback. context names the file or operation that failed. Both context
 // and the error text pass through escapeLogText so neither can break the line.
 func errorLine(context string, err error) string {
-	return fmt.Sprintf("::error::%s: %s\n", escapeLogText(context), escapeLogText(fmt.Sprint(err)))
+	return logLine("::error::" + escapeLogText(context) + ": " + escapeLogText(fmt.Sprint(err)))
+}
+
+// logLine is the print-site chokepoint for every composed output line (SEC-11).
+// It escapes the whole line before appending the "\n" terminator, so the
+// terminator is the only raw line break. Escaping is idempotent, so a benign
+// line is unchanged.
+func logLine(line string) string {
+	return escapeLogText(line) + "\n"
+}
+
+// unwrapPathError returns the cause wrapped by a *fs.PathError, so a read error
+// never echoes the absolute path. Any other error is returned unchanged (SB-8).
+func unwrapPathError(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
 }
 
 // escapeLogText makes s safe to embed in a single-line log message (ED-2).
@@ -974,7 +992,7 @@ func runRepoScan(root string, git GitRunner) Result {
 		}
 		fileFindings, err := scanFile(root, rel)
 		if err != nil {
-			return Result{Stderr: errorLine(rel, err), Code: 1}
+			return Result{Stderr: errorLine(rel, unwrapPathError(err)), Code: 1}
 		}
 		findings = append(findings, fileFindings...)
 	}
@@ -982,18 +1000,17 @@ func runRepoScan(root string, git GitRunner) Result {
 	if len(findings) > 0 {
 		var b strings.Builder
 		for _, f := range findings {
-			b.WriteString(f)
-			b.WriteByte('\n')
+			b.WriteString(logLine(f))
 		}
-		_, _ = fmt.Fprintf(&b,
+		b.WriteString(logLine(fmt.Sprintf(
 			"::error::a destructive filesystem write primitive was found under internal/** or cmd/**. "+
 				"This trips the write-path precondition recorded in %s and tracked in %s. "+
 				"RETIREMENT PROCEDURE: re-evaluate every finding in the risk register against this new "+
 				"write call site, land a mitigation (or an explicit, re-justified acceptance) in the SAME "+
 				"change, and update both the register and the Constitution Check exception to reflect the "+
-				"arrival of a real write path.\n",
+				"arrival of a real write path.",
 			exceptionName, registerName,
-		)
+		)))
 		return Result{Stderr: b.String(), Code: 1}
 	}
 
@@ -1017,12 +1034,12 @@ func runFixtureSelfTest(root string) Result {
 
 	info, statErr := os.Stat(fixtureDir)
 	if statErr != nil || !info.IsDir() {
-		return Result{Stderr: fmt.Sprintf("fixture dir not found: %s\n", fixtureDirPosix), Code: 1}
+		return Result{Stderr: logLine(fmt.Sprintf("fixture dir not found: %s", fixtureDirPosix)), Code: 1}
 	}
 
 	entries, err := os.ReadDir(fixtureDir)
 	if err != nil {
-		return Result{Stderr: fmt.Sprintf("fixture dir not found: %s\n", fixtureDirPosix), Code: 1}
+		return Result{Stderr: logLine(fmt.Sprintf("fixture dir not found: %s", fixtureDirPosix)), Code: 1}
 	}
 	var names []string
 	for _, e := range entries {
@@ -1036,7 +1053,7 @@ func runFixtureSelfTest(root string) Result {
 	sort.Strings(names)
 
 	if len(names) == 0 {
-		return Result{Stderr: fmt.Sprintf("no fixtures discovered under %s\n", fixtureDirPosix), Code: 1}
+		return Result{Stderr: logLine(fmt.Sprintf("no fixtures discovered under %s", fixtureDirPosix)), Code: 1}
 	}
 
 	var stdout strings.Builder
@@ -1048,13 +1065,13 @@ func runFixtureSelfTest(root string) Result {
 		}
 		findings, err := scanFile(root, relPath)
 		if err != nil {
-			return Result{Stderr: errorLine(relPath, err), Code: 1}
+			return Result{Stderr: errorLine(relPath, unwrapPathError(err)), Code: 1}
 		}
 		rejected := len(findings) > 0
 		switch {
 		case strings.HasPrefix(name, "reject-"):
 			if rejected {
-				_, _ = fmt.Fprintf(&stdout, "PASS %s: rejected as expected\n", name)
+				stdout.WriteString(logLine(fmt.Sprintf("PASS %s: rejected as expected", name)))
 			} else {
 				failures = append(failures, fmt.Sprintf("%s: expected rejection (write primitive), got clean", name))
 			}
@@ -1062,7 +1079,7 @@ func runFixtureSelfTest(root string) Result {
 			if rejected {
 				failures = append(failures, fmt.Sprintf("%s: expected clean, got findings: %s", name, strings.Join(findings, "; ")))
 			} else {
-				_, _ = fmt.Fprintf(&stdout, "PASS %s: clean as expected\n", name)
+				stdout.WriteString(logLine(fmt.Sprintf("PASS %s: clean as expected", name)))
 			}
 		default:
 			failures = append(failures, fmt.Sprintf("%s: fixture filename must start with 'accept-' or 'reject-'", name))
@@ -1072,7 +1089,7 @@ func runFixtureSelfTest(root string) Result {
 	if len(failures) > 0 {
 		var b strings.Builder
 		for _, f := range failures {
-			b.WriteString("FAIL " + f + "\n")
+			b.WriteString(logLine("FAIL " + f))
 		}
 		return Result{Stdout: stdout.String(), Stderr: b.String(), Code: 1}
 	}
