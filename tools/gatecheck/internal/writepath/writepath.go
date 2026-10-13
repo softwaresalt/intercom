@@ -850,15 +850,42 @@ type Result struct {
 // errorLine formats a one-line, "::error::"-prefixed ED-2 message: the
 // replacement for what would otherwise be an uncaught Python exception
 // (a git failure, a file read failure, or invalid UTF-8) propagating as a
-// traceback. context names the file or operation that failed.
+// traceback. context names the file or operation that failed. Both context
+// and the error text pass through escapeLogText so neither can break the line.
 func errorLine(context string, err error) string {
-	return fmt.Sprintf("::error::%s: %v\n", context, err)
+	return fmt.Sprintf("::error::%s: %s\n", escapeLogText(context), escapeLogText(fmt.Sprint(err)))
 }
 
-// escapeLogText is a red-phase stub that returns s unchanged. U2 replaces it
-// with the ED-2 escape: non-printable runes and invalid UTF-8 bytes become
-// visible \xNN, \uNNNN or \UNNNNNNNN escapes.
-func escapeLogText(s string) string { return s }
+// escapeLogText makes s safe to embed in a single-line log message (ED-2).
+// Each invalid UTF-8 byte becomes \xNN. Each rune that strconv.IsPrint rejects
+// becomes \xNN (r <= 0xFF), \uNNNN (r <= 0xFFFF) or \UNNNNNNNN. Printable
+// text, including printable non-ASCII, is copied unchanged. The backslash is
+// deliberately not escaped: an attacker-written literal \x0a is
+// indistinguishable from an escaped newline. That is cosmetic only, because a
+// workflow command needs a real line break to take effect.
+// Keep in sync with any retiredarch copy; the planned home is pysem when
+// 36BE1F61 lands.
+func escapeLogText(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, width := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && width == 1:
+			fmt.Fprintf(&b, `\x%02x`, s[i])
+		case strconv.IsPrint(r):
+			b.WriteString(s[i : i+width])
+		case r <= 0xFF:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case r <= 0xFFFF:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			fmt.Fprintf(&b, `\U%08x`, r)
+		}
+		i += width
+	}
+	return b.String()
+}
 
 // containedRegularFile reports whether rel, a repo-relative '/'-separated path
 // exactly as `git ls-files` prints it, names a regular file reached without
