@@ -941,9 +941,11 @@ func escapeLogText(s string) string {
 // returns ok=true, so a deleted tracked file keeps the existing read-error
 // text. Any other Lstat error fails closed. The *fs.PathError wrapper is
 // stripped so CI logs show only repo-relative prefixes (SEC-4). Stdlib only:
-// no filepath.Abs and no filepath.EvalSymlinks. A retiredarch copy exists
-// (retiredarch.containedRegularFile): keep the two in sync by hand, because a
-// fix to one must be checked against the other.
+// no filepath.Abs and no filepath.EvalSymlinks. The walk is a time-of-check
+// only: scanFile reads the file later, so a file swapped for a link between that
+// check and the read is still followed (TOCTOU, D44D8BDF). A retiredarch copy
+// exists (retiredarch.containedRegularFile): keep the two in sync by hand,
+// because a fix to one must be checked against the other.
 func containedRegularFile(root, rel string) (bool, string) {
 	parts := strings.Split(rel, "/")
 	for _, part := range parts {
@@ -1008,7 +1010,10 @@ func containedRegularFile(root, rel string) (bool, string) {
 // Accepted residuals: a hard link to a file outside the repository is a regular
 // file to Lstat, so it passes (A8FB0682). A gitlink or symlink record absent from
 // disk passes (G-9). A Windows junction as the final component is refused as
-// non-regular, because Go reports a mount point as ModeIrregular (LR-4).
+// non-regular, because Go reports a mount point as ModeIrregular (LR-4). Selected
+// files are read after the containment walk, so a file swapped for a link between
+// the Lstat in containedRegularFile and the read in scanFile is still followed
+// (TOCTOU, D44D8BDF).
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)
 	if err != nil {
