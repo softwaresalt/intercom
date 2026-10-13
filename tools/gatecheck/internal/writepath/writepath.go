@@ -1090,6 +1090,14 @@ func runFixtureSelfTest(root string) Result {
 	var names []string
 	for _, e := range entries {
 		if e.IsDir() {
+			// A directory named *.go is refused during collection, before any
+			// fixture is read, so it cannot pass as a silently skipped fixture.
+			// Other directories stay skipped. Accepted residual (A8FB0682): a
+			// hard link to a file outside the repository is a regular file to
+			// Lstat, so containedRegularFile passes it.
+			if strings.HasSuffix(e.Name(), ".go") {
+				return Result{Stderr: errorLine("scripts/testdata/writepath/"+e.Name(), errors.New("fixture is a directory; names ending in .go must be regular files")), Code: 1}
+			}
 			continue
 		}
 		if strings.HasSuffix(e.Name(), ".go") {
