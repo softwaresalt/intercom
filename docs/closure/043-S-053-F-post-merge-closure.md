@@ -14,8 +14,10 @@ date: 2026-10-12
 mode: post-merge
 shipment: 043-S
 feature: 053-F
-pr: 131
+pr: 129
 feature_pr: 129
+retirement_pr: 131
+closure_pr: 132
 merge_commit: 5764a2f9d908d601555530d627d6f74eca37aa18
 merge_commit_sha: 5764a2f9d908d601555530d627d6f74eca37aa18
 feature_merge_commit_sha: 312988e784465c85bb6a76559a21980e93a73e1d
@@ -95,7 +97,7 @@ Captured for this shipment (P-021 C2 capture-only, each with the six-field paylo
 * `BAB25951`: the comment at `tests/integration/ship_feature_completion_contract_test.go` lines 31-32 says IV-1 to IV-5 rest on behavioral evidence of the cascade-close command, which overstates the remaining evidence. Cross-referenced to `5C44AC0D` (same wording family, different location; not reused).
 * `92708A06`: pre-existing dead pointers in `AGENTS.md` lines 323, 325, 326, 327 to `docs/ARCHITECTURE.md`, `docs/product-specs/`, `docs/QUALITY_SCORE.md` and `docs/references/`. Unrelated to this closure.
 * `A744E584`: the Ship Step 6 item 1.b.3 and the shipment-reconcile skill prescribe `--message=<value>` and `--author=<value>`; `autoharness shipment cascade-close` rejects the `=` form and accepts space-separated arguments. This also inverts the premise of `9C6C2078`, which should be re-examined with it.
-* `9B7E94E9`: Ship Step 6 item 1.a says manifest items must be present in queue with status `done`, but backlogit archives a task on move to `done`, so done members are always pre-archived. The shipment-reconcile pre-mode classification (`pre-archived`) is the correct contract. Note: the entry's text states "provisional priority: low"; the CLI priority field was set to `medium` by default. Stage reconciles.
+* `9B7E94E9`: Ship Step 6 item 1.a says manifest items must be present in queue with status `done`, but backlogit archives a task on move to `done`, so done members are always pre-archived. The shipment-reconcile pre-mode classification (`pre-archived`) is the correct contract. Its own text states "provisional priority: low", but its structured priority field is `medium` (the CLI default was applied; the entry is not amended, because P-021 makes captured entries single-write and re-prioritization is Stage-only). Stage reconciles the two values at intake (C6). Note: the entry's text states "provisional priority: low"; the CLI priority field was set to `medium` by default. Stage reconciles.
 
 Existing captures that remain open or changed state:
 
@@ -105,6 +107,17 @@ Existing captures that remain open or changed state:
 * `FAB0AA3B`: shipment-reconcile safe-close step 8 prescribes `backlogit move <shipment> --status shipped`, which the engine rejects. Not exercised by this closure (CASCADE path). Stage triage.
 * `F4FE2A35`, `F2759510`, `8E1E2D80`, `6E8381D9`, `8134B7B7`, `5CC5532E`, `E16EB224`, `A298D760`, `53E63C81`, `5CE8BC95`, `5C44AC0D`, `78E00644`, `D5D103A1`, `BD952D5E`, `B93DDAAC`, `724FA2FB`, `8F7B16E6`, `4B2EB2FB`, `762A4FCA`, `9C6C2078`, `0606E72F`, `FC6FE1D5`: remain captured stash entries for Stage. `FC6FE1D5`, `FAB0AA3B` and `F4FE2A35` are routed to Stage for a later batch by operator disposition and are not fixed here.
 * `0A215E0B`: R1-R3 routing decisions remain out of 043-S (operator disposition).
+
+## U15 re-verification after 053.013-T
+
+053.015-T (U15, end-to-end verification) was marked done while its dependency 053.013-T was still queued. Its required checks were re-run on the closure branch after 053.013-T completed (Copilot thread `PRRT_kwDOTPuhps6rtdJs`):
+
+* `autoharness verify-workspace --workspace .`: 0 blockers, 0 strict-schema blockers, no `ROUTE_VARIABLE_STALE`. Every targeted check PASSes except `escalation_route_resolution` (FAIL, `ESCALATION_DEGRADED` for the Stage same-route case). That is the one failure U15 expects (stash `0A215E0B`, operator decision R1). One `{{VARIABLE}}` placeholder remains in the staged render `.autoharness/staging/.github/agents/_ship.agent.md:377`. That is the pre-existing template leak captured as `D5D103A1`; the live `.github/agents/_ship.agent.md` is not affected.
+* `go build ./...` and `go vet ./...`: pass. `go test ./... -count=1 -timeout 30m`: `tests/integration` ok (176 s) and every package ok except the root `tools/gatecheck` package. Its 19 failing tests invoke bash wrappers that exit 127 on this Windows host (`cygpath` not found). That is the pre-existing environment class captured with `D5D103A1` and the environment captures; CI on Linux runs them green on the merged head `9e4ad07`.
+* Retired-token scan of the live surfaces (`.github`, `scripts`, `AGENTS.md`, `README.md`, `tests`, `tools`, `cmd`, `internal`): zero references to `computeBinding`, `shipment_close_path_*`, `TestSafeClose_B*` and `TestClassifyClosePath_*`. `classify-close-path` and `CLASSIFICATION_BINDING` appear only as `assertAbsent` negative needles in `tests/integration/ship_feature_completion_contract_test.go`, which the U15 allowlist permits.
+* Not performed by Ship: the design-doc matrix record update (U15's record step). `docs/design-docs/2026-10-11-closure-contract-surface-matrix.md` is a planning and design record that Ship may not edit. It is captured as `86381564` for Stage.
+
+Result: the U15 verification obligations are re-verified on current evidence. The only open U15 item is the Stage-owned matrix record (`86381564`).
 
 ## Follow-ups (operator-dispositioned routing)
 
