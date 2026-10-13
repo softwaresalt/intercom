@@ -14,7 +14,7 @@ source_files:
 
 # 043-S / 053-F Ship session checkpoints 1-3: compacted memory (2026-10-12)
 
-This summary replaces checkpoints 1 to 3 (14,090 bytes in total). The verbatim originals are archived at `docs/archive/memory/2026-10-12/043-s-ship-session-checkpoint-1.md`, `...-2.md` and `...-3.md`. Checkpoint 4 stays in place at `docs/memory/2026-10-12/043-s-ship-session-checkpoint-4.md`. It is the most recent record, supersedes checkpoint 3, and records the merge and the closure halt.
+This summary replaces checkpoints 1 to 3 (14,090 bytes in total). The verbatim originals are archived at `docs/archive/memory/2026-10-12/043-s-ship-session-checkpoint-1.md`, `...-2.md` and `...-3.md`. Checkpoint 4 stays in place at `docs/memory/2026-10-12/043-s-ship-session-checkpoint-4.md`. It supersedes checkpoint 3 and records the merge and the closure halt. Checkpoint 4 is no longer the most recent record: the shipment is closed, and the closure record is `docs/memory/2026-10-12/043-s-ship-closure-session-memory.md`, which supersedes checkpoint 4 and the halted state it describes.
 
 ## Claim and intake (checkpoint 1)
 
@@ -70,4 +70,4 @@ This summary replaces checkpoints 1 to 3 (14,090 bytes in total). The verbatim o
 
 ## Outcome carried forward
 
-Checkpoints 1 to 3 are superseded by checkpoint 4, which records the merge of PR #129 as `312988e` and the closure halt. The remaining closure gaps and resume steps live in checkpoint 4 and are not repeated here.
+Checkpoints 1 to 3 are superseded by checkpoint 4, which records the merge of PR #129 as `312988e` and the closure halt. Checkpoint 4 is itself superseded: the shipment is closed (PR #131 merged at `5764a2f`, cascade close run `18c76f50e949496ebc945c5d35523332`), and the closure record is `docs/memory/2026-10-12/043-s-ship-closure-session-memory.md`. The remaining closure gaps and resume steps of checkpoint 4 are no longer open and are not repeated here.

@@ -52,7 +52,7 @@ Shipment and feature final state: shipment 043-S `archived` with `archived_statu
 | P-018 Copilot review gate | `SATISFIED` on `9e4ad07`; last-mile re-check `SATISFIED` immediately before merge |
 | CI on `9e4ad07` | all required checks pass: `ci gate`, `test`, `lint`, `security`, `merge-strategy structural verification`, `pipeline-topology (ambient)`, `gitignore append-only + un-ignore regression`, four cross-compile targets, `test (windows, advisory)` |
 
-Branch scope: `post-merge/053-f-closure-043-s` carries the archival commit `dafdf57` (20 files: 19 backlog files and the close evidence record `docs/closure/evidence/043-S-053-F-close-evidence.json`) and this closure commit (9 changed paths: this artifact, the session memory, two compaction summaries, four compaction renames, and `.backlogit/stash.jsonl` with two new capture entries).
+Branch scope: `post-merge/053-f-closure-043-s` carries the archival commit `dafdf57` (20 files: 19 backlog files and the close evidence record `docs/closure/evidence/043-S-053-F-close-evidence.json`), the closure commit `3bba2a8` (9 changed paths: this artifact, the session memory, two compaction summaries, four compaction renames and `.backlogit/stash.jsonl` with two new capture entries), and the review-remediation commits on this PR (`01d24a8` and any later commit on the branch), which change only this artifact and the compacted summary.
 
 ## Review and remediation record
 
