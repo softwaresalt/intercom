@@ -58,6 +58,6 @@ Supersedes: checkpoint 3 (halted before merge). Backlogit checkpoint: `checkpoin
 * Files compacted: 13 originals to 8 summaries in `docs/memory/compacted/` (2026-10-12-*). Originals moved with `git mv` to `docs/archive/memory/`.
 * Space recovered: about 32 KB net (60.7 KB moved; about 28.7 KB of summaries added).
 * Active checkpoints preserved: 6.
-* Plans consolidated into decided-plans: 0. Closure records compacted: 0 (docs/plans and docs/closure were outside the allowed change scope).
+* Plans consolidated into decided-plans: 0. Closure records compacted: 0 (docs/plans and closure records were outside the compaction scope). Separately, one closure cross-reference (`docs/closure/2026-10-08-040-s-compact-context-report.md`, line 13) was updated to repair a path changed by this compaction. That is a pointer repair, not a compaction.
 * Skipped deliberately: 2026-09-28 top-level (exactly 14 days, not older); 2026-10-01 post-m4 (open 038-F); 2026-10-07 retiredarch (open residuals); 2026-10-11 stage-closure-tooling and gatecheck-batch-2 (active or governing records); all 2026-10-12 files (they name 043-S and 053-F).
 * Status: completed (not degraded). Closure-artifact compaction status: not recorded, because no post-merge closure artifact exists while closure is halted.
