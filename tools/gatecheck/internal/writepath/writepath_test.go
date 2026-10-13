@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"unicode"
 
 	"github.com/softwaresalt/intercom-go/tools/gatecheck/internal/pysem"
 )
@@ -317,10 +319,114 @@ func TestRunRepoScan_DeletedTrackedFile_KeepsReadError(t *testing.T) {
 	if readErr == nil {
 		t.Fatal("scanFile for deleted tracked path returned nil error")
 	}
-	want := errorLine(rel, readErr)
+	want := errorLine(rel, fsPathErrorInner(t, readErr))
 	res := runRepoScan(root, u4StubGit(rel))
 	if res.Code != 1 || res.Stderr != want {
 		t.Fatalf("got (Code=%d, stderr=%q), want (1, %q)", res.Code, res.Stderr, want)
+	}
+}
+
+// fsPathErrorInner returns the cause wrapped by the *fs.PathError in err, so a
+// pinned expectation names the bare cause and never the absolute path.
+func fsPathErrorInner(t *testing.T, err error) error {
+	t.Helper()
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("error %v (%T) does not wrap *fs.PathError", err, err)
+	}
+	return pathErr.Err
+}
+
+// TestRunRepoScan_SinkEscapesAndUnwrapsPathError pins the repo-scan sinks (U3,
+// red phase). A runner error, a finding and a read error must each stay on one
+// output line, and a read error must name only the bare cause, never the
+// absolute root. The runner-error and non-PathError rows are characterization
+// rows, green on arrival, because errorLine already escapes its text. The
+// U+009B and PathError rows are red against the unchanged runRepoScan.
+func TestRunRepoScan_SinkEscapesAndUnwrapsPathError(t *testing.T) {
+	const (
+		c1Rel      = "internal/a\u009bb.go"
+		deletedRel = "internal/gone.go"
+		badRel     = "internal/bad.go"
+	)
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, root string) GitRunner
+		want  func(t *testing.T, root string) string
+		exact bool
+	}{
+		{
+			name: "runner error with LF and ::error:: stays on one line (characterization)",
+			setup: func(*testing.T, string) GitRunner {
+				return func(string) ([]byte, error) {
+					return nil, errors.New("fatal\n::error::x")
+				}
+			},
+			want: func(*testing.T, string) string {
+				return `::error::git ls-files: fatal\x0a::error::x` + "\n"
+			},
+			exact: true,
+		},
+		{
+			name: "selected name with U+009B prints its finding escaped",
+			setup: func(t *testing.T, root string) GitRunner {
+				u4WriteRejectFixture(t, filepath.Join(root, filepath.FromSlash(c1Rel)))
+				return u4StubGit(c1Rel)
+			},
+			want: func(*testing.T, string) string {
+				return `internal/a\u009bb.go:6: write primitive 'os.Remove' found` + "\n"
+			},
+		},
+		{
+			name: "deleted tracked file: read error names the bare cause, no absolute path",
+			setup: func(t *testing.T, root string) GitRunner {
+				u4Mkdir(t, filepath.Join(root, "internal"))
+				return u4StubGit(deletedRel)
+			},
+			want: func(t *testing.T, root string) string {
+				_, readErr := scanFile(root, deletedRel)
+				return errorLine(deletedRel, fsPathErrorInner(t, readErr))
+			},
+			exact: true,
+		},
+		{
+			name: "non-PathError read error passes through unchanged (SB-8, characterization)",
+			setup: func(t *testing.T, root string) GitRunner {
+				u4Mkdir(t, filepath.Join(root, "internal"))
+				if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(badRel)), []byte("package p\n\xff\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return u4StubGit(badRel)
+			},
+			want: func(*testing.T, string) string {
+				return "::error::" + badRel + ": " + pysem.ErrInvalidUTF8.Error() + "\n"
+			},
+			exact: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			git := tc.setup(t, root)
+			want := tc.want(t, root)
+			res := runRepoScan(root, git)
+			if res.Code != 1 {
+				t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+			}
+			first := strings.SplitN(res.Stderr, "\n", 2)[0]
+			if strings.ContainsFunc(first, unicode.IsControl) {
+				t.Fatalf("first stderr line echoes a raw control character: %q", first)
+			}
+			if strings.Contains(res.Stderr, root) {
+				t.Fatalf("stderr echoes absolute root %q: %q", root, res.Stderr)
+			}
+			if tc.exact && res.Stderr != want {
+				t.Fatalf("stderr = %q, want exactly %q", res.Stderr, want)
+			}
+			if !strings.HasPrefix(res.Stderr, want) {
+				t.Fatalf("stderr = %q, want it to start with %q", res.Stderr, want)
+			}
+		})
 	}
 }
 
