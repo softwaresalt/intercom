@@ -37,7 +37,7 @@ func unixWriteFixture(t *testing.T, path, src string) {
 // embed a newline, which Windows cannot create. The PASS and FAIL lines and the
 // joined findings must escape that name, and no output may echo the absolute
 // root. The not-a-contained-regular-file line is a characterization row, because
-// errorLine already escapes it. The PASS and FAIL rows are green since U3.
+// errorLine already escapes it. The PASS and FAIL rows are green since U4.
 func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 	const (
 		fixtureRel = "scripts/testdata/writepath"

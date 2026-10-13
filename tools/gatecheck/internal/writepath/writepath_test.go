@@ -396,7 +396,7 @@ func fsPathErrorInner(t *testing.T, err error) error {
 // and a read error must name only the bare cause, never the absolute root. The
 // runner-error and non-PathError rows are characterization rows, because
 // errorLine already escapes its text. The U+009B and PathError rows are green
-// since U3. The hostile non-selected name row pins the outcome-4 escape and is
+// since U4. The hostile non-selected name row pins the outcome-4 escape and is
 // characterization too.
 func TestRunRepoScan_SinkEscapesAndUnwrapsPathError(t *testing.T) {
 	const (
@@ -607,7 +607,7 @@ func nonSelectedFixture(t *testing.T) (root, outside string) {
 // TestRunRepoScan_NonSelectedRecordContainment checks every listed record under
 // internal/** and cmd/** for containment, not only the selected paths (D-WB2-3,
 // U5). Rows (a1)-(a5) are refusal rows: each non-selected record fails with
-// "not a contained regular file", as it has since U5. Rows (c1)-(c3) are
+// "not a contained regular file", as it has since U6. Rows (c1)-(c3) are
 // characterization rows pinning the controls that must keep passing under the
 // wider containment check.
 func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
@@ -707,8 +707,11 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 }
 
 // TestRunRepoScan_ChecksRunInOutcomeOrder pins the order of runRepoScan's
-// checks: a listing fault is reported before any non-selected record is tested
-// for containment, and a non-selected refusal is reported before ED-7.
+// checks: a runner error or a listing fault is reported before any non-selected
+// record is tested for containment, and a non-selected refusal is reported
+// before ED-7. The runner-error, unterminated-listing and listing-fault rows are
+// characterization rows, green on arrival (rows 1 and 2 of the outcome matrix
+// are unchanged).
 func TestRunRepoScan_ChecksRunInOutcomeOrder(t *testing.T) {
 	t.Run("non-selected directory alone is refused before ED-7", func(t *testing.T) {
 		root := t.TempDir()
@@ -723,12 +726,38 @@ func TestRunRepoScan_ChecksRunInOutcomeOrder(t *testing.T) {
 			t.Fatalf("stderr = %q, must not reach the ED-7 empty-selection check", res.Stderr)
 		}
 	})
-	t.Run("listing fault beside a non-selected directory is reported first", func(t *testing.T) {
+	t.Run("listing fault beside a non-selected directory is reported first (characterization)", func(t *testing.T) {
 		root := t.TempDir()
 		u4Mkdir(t, filepath.Join(root, "internal", "sub"))
 
 		res := runRepoScan(root, u4StubGit("internal/sub", "internal/a\xff.go"))
 		want := `::error::git ls-files output: path "internal/a\xff.go": ` + pysem.ErrInvalidUTF8.Error() + "\n"
+		if res.Code != 1 || res.Stderr != want {
+			t.Fatalf("Code = %d, stderr = %q, want Code 1 and exactly %q", res.Code, res.Stderr, want)
+		}
+	})
+	t.Run("runner error beside a non-selected directory is reported first (characterization)", func(t *testing.T) {
+		root := t.TempDir()
+		u4Mkdir(t, filepath.Join(root, "internal", "sub"))
+		git := func(string) ([]byte, error) {
+			return lsFilesListing("internal/sub"), errors.New("fatal")
+		}
+
+		res := runRepoScan(root, git)
+		want := "::error::git ls-files: fatal\n"
+		if res.Code != 1 || res.Stderr != want {
+			t.Fatalf("Code = %d, stderr = %q, want Code 1 and exactly %q", res.Code, res.Stderr, want)
+		}
+	})
+	t.Run("unterminated listing beside a non-selected directory is reported first (characterization)", func(t *testing.T) {
+		root := t.TempDir()
+		u4Mkdir(t, filepath.Join(root, "internal", "sub"))
+		git := func(string) ([]byte, error) {
+			return []byte("internal/sub\x00internal/ok.go"), nil
+		}
+
+		res := runRepoScan(root, git)
+		want := "::error::git ls-files output: " + errListingNotTerminated.Error() + "\n"
 		if res.Code != 1 || res.Stderr != want {
 			t.Fatalf("Code = %d, stderr = %q, want Code 1 and exactly %q", res.Code, res.Stderr, want)
 		}
@@ -1236,7 +1265,7 @@ func u5bRealGitRepo(t *testing.T, mode, record, clean string) string {
 // repository, because a link named exactly internal or cmd cannot share an index
 // with internal/ok.go (a directory/file conflict, R2-2). Each row asserts that the
 // production runner's listing contains the record and that runRepoScan refuses it
-// with "not a contained regular file". The rows are green since U5b and U6: the
+// with "not a contained regular file". The rows are green since U6: the
 // literal pathspecs `-- internal cmd` match a bare top-level name, so the
 // listing carries the record, and runRepoScan refuses every non-selected record
 // that it lists.
@@ -1779,7 +1808,8 @@ func TestRunFixtureSelfTest_DirectoryFixtureRefusals(t *testing.T) {
 
 // TestRunFixtureSelfTest_HostileFixtureNameEscapesPassLine checks the fixture
 // sink with a name that holds U+009B: the PASS line escapes it, and no raw
-// U+009B reaches stdout. The name is creatable on NTFS.
+// U+009B reaches stdout. The name is creatable on NTFS. This is a
+// characterization row, green on arrival: the PASS-line escape already exists.
 func TestRunFixtureSelfTest_HostileFixtureNameEscapesPassLine(t *testing.T) {
 	const fixtureRel = "scripts/testdata/writepath"
 	root := t.TempDir()
@@ -3450,7 +3480,7 @@ func TestHarness_049007_D1aFixtureSetRemainsFrozen(t *testing.T) {
 // TestEscapeLogText_Table pins the ED-2 escape format (U1). Every rune with
 // !strconv.IsPrint becomes \xNN, \uNNNN or \UNNNNNNNN in lowercase hex, an
 // invalid UTF-8 byte becomes \xNN, and everything else, including the backslash,
-// is byte-identical. The non-printable rows are green since U1. The printable and
+// is byte-identical. The non-printable rows are green since U2. The printable and
 // backslash rows are characterization rows. Escaping is idempotent (SEC-12), so
 // each output must also be a fixed point of escapeLogText.
 func TestEscapeLogText_Table(t *testing.T) {
@@ -3493,7 +3523,7 @@ func TestEscapeLogText_Table(t *testing.T) {
 // TestErrorLine_EscapesControlSequences pins the errorLine sink (U1). Benign
 // text keeps the golden line, and a newline followed by "::error::x" in the
 // context or the error text must not split the output into more than one line.
-// The benign row is characterization. The newline rows are green since U1.
+// The benign row is characterization. The newline rows are green since U2.
 func TestErrorLine_EscapesControlSequences(t *testing.T) {
 	tests := []struct {
 		name    string
