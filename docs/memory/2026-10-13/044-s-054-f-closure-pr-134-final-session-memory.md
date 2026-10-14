@@ -15,7 +15,7 @@
 1. **Review-fix cycle limit extended for PR 134 (operator-authorized).** The three-cycle circuit breaker stopped fix pushes on `3c8967e` (comment at 04:45:44Z, pending operator decision). The operator decided to extend the limit under the standing instruction above. The two open findings are factual errors in the audit text of the closure being shipped. They are in scope, so they are fixed, not declined or captured under P-021.
 2. **One commit for the fixes.** It corrects the takeover wording in every place it appears, fixes other factual errors found in a proactive scan, and adds this file.
 3. **Archived originals changed minimally.** The only edit to `docs/archive/memory/044-s-closure-resumed-session-memory.md` replaces a dangling pointer ("operator Do-list step 7") with "Remaining steps item 6". No history was rewritten.
-4. **Checkpoint 165942 stays active until after merge.** It is resolved only after the merge is confirmed.
+4. **Checkpoint 165942 stays active until after merge.** It is to be resolved only after the merge is confirmed, and that step is still pending at the time of this commit.
 5. **Checkpoint 150837 is not touched.** It needs an explicit operator archive, abandon, or resolve decision. `cleanup_checkpoints` must not run.
 
 ## Cascade-close record (corrected)
