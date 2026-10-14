@@ -21,7 +21,7 @@
 ## Decisions and rationale
 
 * The mutating run needed per-closure approval. That approval was the operator reply `Approved` at 2026-10-13T20:53 -07:00, which named 044-S, 054-F and sha 19ad28f. Dark mode did not satisfy it, and it covered no other command.
-* Checkpoint 165942 is kept `active` through the destructive run and the closure PR. Resolving it earlier would remove the recovery pointer for the riskiest window. It is resolved after the closure PR merges (operator Do-list step 7).
+* Checkpoint 165942 is kept `active` through the destructive run and the closure PR. Resolving it earlier would remove the recovery pointer for the riskiest window. It is resolved after the closure PR merges (Remaining steps item 6 below).
 * No new stash entry was captured. The `=`-form defect is re-observed and reuses `A744E584` (P-021 reuse). The git-launcher and engram issues are environment residuals, not scope expansions.
 * The informational `stash-*` labels on 054-F are NOT `source_stash_id` references, so no stash was archived by Ship. Stage owns their triage.
 
