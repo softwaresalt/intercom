@@ -31,7 +31,7 @@
 2. **System Git installation.** Repair the Git for Windows installation so `cmd\git.exe` finds `mingw64\bin\git.exe`.
 3. **CLI versus skill argument form.** Stage should correct the `--message=`/`--author=` instructions in the Ship agent and the shipment-reconcile skill (`A744E584`).
 4. **Stash triage.** Stage to triage the `stash-EDC18D59`, `stash-EEE39D23` and `stash-858516B9` labels on 054-F.
-5. **Gate output defect.** `autoharness gate closure-evidence` printed an unresolved `{{DOCS_CLOSURE}}` placeholder in `canonical_pattern`. Report to the operator for the autoharness install template.
+5. **Gate output defect.** `autoharness gate closure-evidence` printed an unresolved DOCS_CLOSURE template placeholder (double-brace form, not expanded) in `canonical_pattern`. Report to the operator for the autoharness install template.
 
 ## Remaining steps (closure PR)
 

@@ -31,7 +31,7 @@ conditions:
   - id: "reconcile-argv-form-retry"
     description: "The first mutating cascade-close attempt used the --message=/--author= equals form and the CLI refused it with exit 2 before any mutation (mutation_possible: no). The retry used the documented space-separated form with identical values and exited 0."
     satisfied: true
-    evidence: "Closure body, Deviations item 4; docs/closure/evidence/044-S-054-F-close-evidence.json (post_close); .backlogit/reconcile/044-S-post-2026-10-14T04-10-30Z.md"
+    evidence: "Closure body, Deviations item 4; docs/closure/evidence/044-S-054-F-close-evidence.json (post_close); .backlogit/reconcile/044-S-post-2026-10-14T04-12-29Z.md"
   - id: "engram-prune-gate-satisfied"
     description: "Checkpoint checkpoint-20261013-165942.json was restored only after a healthy engram daemon probe and two read-only engram reads. The restored state is already a bounded structured summary, so no superseded history was dropped; the active cursor, checkpoint pointer and recorded gate verdicts were preserved."
     satisfied: true
@@ -75,10 +75,10 @@ PR 133 changed 17 files (+1274, -82). The product runtime surfaces declared in `
 
 * Pre-close (read-only): `autoharness shipment cascade-close --classify-only --shipment 044-S --feature 054-F --sha 19ad28f0d79bdfe0b0bd211456d0f74edaf9a7b6` exit 0 at 2026-10-13T16:58:43Z. `classifier_verdict: CASCADE`, `engine_verdict: VERIFIED` (backlogit 1.11.0, cli, verified line 1.11), `selected_close_path: cascade`, `out_of_manifest_descendants: []`, zero linked-deliberation dispositions. Run id `51cba89d7ac2440880f41ae4bafadd76`.
 * Gate a1 (covering-feature completion): all five conditions verified on live records before the single authorized transition (prior session). 054-F moved `active -> done` with `backlogit move`, exit 0, no force flags. Re-read `done`.
-* Pre-mode reconcile (`expected_status: done`): `PROCEED`, all 10 manifest members `pre-archived`, zero orphans, shipment record `record-consistent`. Reports `.backlogit/reconcile/044-S-pre-2026-10-13T17-05-30Z-done.md` (prior session) and `.backlogit/reconcile/044-S-pre-2026-10-14T04-09-00Z-done.md` (resumed session).
-* Mutating run: `autoharness shipment cascade-close --shipment 044-S --feature 054-F --sha 19ad28f0d79bdfe0b0bd211456d0f74edaf9a7b6 --message ... --author "Derek Williams" --json`. Exit 0, `phase_written: post_close`, `postcondition_verdict: pass`, `selected_close_path: cascade`, `mutation_possible: yes`, `failures: []`. The run finished about 2026-10-14T04:09:50Z.
+* Pre-mode reconcile (`expected_status: done`): `PROCEED`, all 10 manifest members `pre-archived`, zero orphans, shipment record `record-consistent`. Reports `.backlogit/reconcile/044-S-pre-2026-10-13T17-05-30Z-done.md` (prior session) and `.backlogit/reconcile/044-S-pre-2026-10-14T04-08-22Z-done.md` (resumed session).
+* Mutating run: `autoharness shipment cascade-close --shipment 044-S --feature 054-F --sha 19ad28f0d79bdfe0b0bd211456d0f74edaf9a7b6 --message ... --author "Derek Williams" --json`. Exit 0, `phase_written: post_close`, `postcondition_verdict: pass`, `selected_close_path: cascade`, `mutation_possible: yes`, `failures: []`. The run finished at `2026-10-14T04:11:31.574314Z` (`invocation.finished_at` in the `post_close` record).
 * Engine postconditions: `returned_ids: []`; `archived_ids` equals `allowed_ids` and `required_ids` (11 of 11: 044-S, 054-F, 054.001-T to 054.009-T); `unexpected_archived: []`; `missing_required: []`; `parent_id_preserved: true`; `baseline_invariant: true`; `disposition_byte_identical: true`; `linked_deliberation_drift: []`. Engine `commit_sha` 19ad28f; `shipment_status: shipped`.
-* Post-mode reconcile: `PROCEED`. Report `.backlogit/reconcile/044-S-post-2026-10-14T04-10-30Z.md`. All 11 members present in the archive with the expected declared status. P-007: zero deleted archive entries, so no restore was needed.
+* Post-mode reconcile: `PROCEED`. Report `.backlogit/reconcile/044-S-post-2026-10-14T04-12-29Z.md`. All 11 members present in the archive with the expected declared status. P-007: zero deleted archive entries, so no restore was needed.
 * Linked-deliberation disposition (P-015 INV-12): `DISPOSITION_COMPLETE` with zero linked deliberations.
 
 ## Deviations and reconciliation record
