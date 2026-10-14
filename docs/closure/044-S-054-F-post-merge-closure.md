@@ -1,7 +1,7 @@
 ---
 title: "044-S / 054-F post-merge operational closure"
 description: "Post-merge closure for write-path gate completeness and CI-log output safety (044-S, covering feature 054-F): PR 133 merged at 19ad28f, the cascade close of 044-S under per-closure operator approval, the resumed checkpoint 165942, and disclosure of every reconciliation deviation and residual."
-status: ready
+status: ready_with_conditions
 tags:
   - closure
   - post-merge

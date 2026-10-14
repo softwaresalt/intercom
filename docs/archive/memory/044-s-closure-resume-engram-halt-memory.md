@@ -5,7 +5,7 @@
 - **Covering feature:** 054-F (status `done`, archived by the a1 gate in the prior session)
 - **PR:** #133 merged as a merge commit, `19ad28f0d79bdfe0b0bd211456d0f74edaf9a7b6` (P-009)
 - **Outcome:** `DARK_MODE_HALTED`. The owner-scoped resume was NOT confirmed. The mutating `autoharness shipment cascade-close` was NOT run. No commit, no push, no PR, no resolve.
-- **Prior halt memory:** `docs/memory/2026-10-13/044-s-closure-halt-memory.md`
+- **Prior halt memory:** `docs/archive/memory/044-s-closure-halt-memory.md`
 
 ## Operator approval (recorded)
 
@@ -42,7 +42,7 @@ That is three failed `engram daemon-status` attempts, which also hits the operat
 
 ## Workspace state left behind
 
-- Branch `post-merge/054-f-closure-044-s` (checked out). Uncommitted, as the prior session left it: `.backlogit/queue/054-F.md` deleted (moved by the a1 S4 transition), `.backlogit/archive/054-F.md`, `.backlogit/reconcile/044-S-pre-2026-10-13T17-05-30Z-done.md`, `docs/closure/evidence/044-S-054-F-close-evidence.json` (pre_close only), `docs/memory/2026-10-13/044-s-closure-halt-memory.md`, and this file.
+- Branch `post-merge/054-f-closure-044-s` (checked out). Uncommitted, as the prior session left it: `.backlogit/queue/054-F.md` deleted (moved by the a1 S4 transition), `.backlogit/archive/054-F.md`, `.backlogit/reconcile/044-S-pre-2026-10-13T17-05-30Z-done.md`, `docs/closure/evidence/044-S-054-F-close-evidence.json` (pre_close only), `docs/archive/memory/044-s-closure-halt-memory.md`, and this file.
 - Checkpoint `checkpoint-20261013-165942.json`: still `active`. NOT resolved, because the resume was not confirmed.
 - Shipment 044-S: `active`. Feature 054-F: `done` (archived).
 - Compaction (P-020): `pending`. No closure artifact written. No closure PR.
