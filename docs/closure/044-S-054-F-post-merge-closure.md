@@ -65,7 +65,7 @@ Final shipment state: 044-S `archived` with `archived_status: shipped`. Feature 
 | Merge strategy | merge commit: `19ad28f` has two parents (`bf141ae` and `76db3af`). No squash or rebase (P-009) |
 | Merge ancestry | `git merge-base --is-ancestor 19ad28f origin/main`: exit 0 |
 | Local review readiness (PR 133 body) | `READY_WITH_FOLLOWUPS`; P0=0, P1=0 at `bfd0f1d`; delta `bfd0f1d..76db3af` is backlog and docs only |
-| P-018 Copilot review gate | `SATISFIED` on `76db3af`, rounds 9, zero unresolved threads, not forced (`copilot-gate-wait-1.json`) |
+| P-018 Copilot review gate | `SATISFIED` on `76db3af`, rounds 9, zero unresolved threads, not forced (session evidence file `copilot-gate-wait-1.json`, not committed) |
 | CI on PR head `76db3af` (workflow run 38433778306) | all 14 check runs `SUCCESS`: detect code changes, gitignore append-only, pipeline-topology (ambient), merge-strategy structural verification, test, test (windows, advisory), lint, security, load cross-compile targets, cross-compile (linux/amd64, windows/amd64, darwin/amd64, darwin/arm64), ci gate |
 
 ## Scope of the merged change
