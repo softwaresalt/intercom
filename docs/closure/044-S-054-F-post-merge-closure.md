@@ -15,6 +15,7 @@ shipment: 044-S
 feature: 054-F
 pr: 133
 feature_pr: 133
+closure_pr: 134
 merge_commit: 19ad28f0d79bdfe0b0bd211456d0f74edaf9a7b6
 merge_commit_sha: 19ad28f0d79bdfe0b0bd211456d0f74edaf9a7b6
 feature_merge_commit_sha: 19ad28f0d79bdfe0b0bd211456d0f74edaf9a7b6
