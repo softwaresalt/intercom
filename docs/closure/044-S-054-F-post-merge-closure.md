@@ -26,7 +26,7 @@ closure_branch: post-merge/054-f-closure-044-s
 close_path: cascade
 close_evidence: docs/closure/evidence/044-S-054-F-close-evidence.json
 closure_status: READY_WITH_CONDITIONS
-compaction_status: pending
+compaction_status: done
 conditions:
   - id: "reconcile-argv-form-retry"
     description: "The first mutating cascade-close attempt used the --message=/--author= equals form and the CLI refused it with exit 2 before any mutation (mutation_possible: no). The retry used the documented space-separated form with identical values and exited 0."
@@ -43,7 +43,7 @@ conditions:
   - id: "approval-scope-recorded"
     description: "The mutating cascade-close was approved per closure by the operator reply 'Approved' at 2026-10-13T20:53 -07:00 for 044-S / 054-F / merge SHA 19ad28f. Dark mode did not satisfy that approval, and it covered no other shipment or command."
     satisfied: true
-    evidence: "docs/memory/2026-10-13/044-s-closure-resume-engram-halt-memory.md, Operator approval (recorded)"
+    evidence: "docs/archive/memory/044-s-closure-resume-engram-halt-memory.md, Operator approval (recorded)"
 ---
 
 # 044-S / 054-F post-merge operational closure
@@ -137,3 +137,10 @@ Other items, which are not captured stash entries and are routed to the operator
 * **Owner:** Derek Williams (operator). Ship is the observer of the closure record.
 * **Releasability evidence (`READY_WITH_CONDITIONS`):** CI is green on `76db3af`. The P-018 Copilot gate is SATISFIED on `76db3af` with zero threads. The local readiness outcome `READY_WITH_FOLLOWUPS` has zero P0 and zero P1. The merge is a merge commit with no admin fallback. The close evidence is written and its postconditions pass. Each reconciliation deviation is dispositioned in `conditions` above. Compaction is recorded in the operational-closure fields below.
 * **Intercom:** no intercom tool was available in this session. Broadcasts were skipped and that degraded state is recorded here.
+
+## Compaction (P-020)
+
+* Status: `done`. `compact-context` ran with `target: all`, bounded to the just-closed release unit (the skill's Tier-1 floor).
+* Compacted summary: `docs/memory/compacted/2026-10-13-044-s-054-f-closure-session-compacted.md`.
+* Verbose originals moved with `git mv`, not deleted, to `docs/archive/memory/`: `044-s-write-path-memory.md`, `044-s-closure-halt-memory.md`, `044-s-closure-resume-engram-halt-memory.md`, `044-s-closure-resumed-session-memory.md`.
+* Other memory folders (`2026-09-18` through `2026-10-12`) were out of this pass's scope and were not touched.
