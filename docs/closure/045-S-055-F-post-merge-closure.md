@@ -102,8 +102,7 @@ Twelve commits from `9e42d16` to `df7d8fd` on the feature branch. Git history is
   Backlogit archived 055-F as a routing effect of the done status.
 * Pre-archive reconciliation (pre mode, expected_status done): record `active` classified
   `record-consistent`, 055-F pre-archived with status done, the seven tasks pre-archived, no orphans.
-  Verdict PROCEED.
-* Classify-only close (`autoharness shipment cascade-close --classify-only`): exit 0, verdict CASCADE,
+  Verdict PROCEED. The pre-mode report file was not persisted to `.backlogit/reconcile/` and is not reconstructed here. (`autoharness shipment cascade-close --classify-only`): exit 0, verdict CASCADE,
   engine VERIFIED (backlogit 1.11.0), `selected_close_path` cascade, `mutation_possible` no (classify
   command output). Evidence written to `docs/closure/evidence/045-S-055-F-close-evidence.json`.
 * Mutating cascade close: run by the operator with explicit per-closure approval. The evidence
@@ -113,7 +112,7 @@ Twelve commits from `9e42d16` to `df7d8fd` on the feature branch. Git history is
   `post_close`.
 * Post-mode reconciliation: `.backlogit/reconcile/045-S-post-20261015T173631Z.md`. Recommendation
   PROCEED. Every archive file is present, the P-007 guard finds no deletions under `.backlogit/archive/`,
-  and no lock is held.
+  and no shipment lock is held.
 * Archive relocation: committed on `post-merge/045-s-archive-relocation`. The queue deletions and the
   archive additions are the operator run's changes. Ship stages only those paths, plus the stash
   captures and this record. It does not stage the operator's `.autoharness/config.yaml` routing edit.
