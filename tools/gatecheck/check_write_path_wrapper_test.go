@@ -353,14 +353,16 @@ const errorPrivilegeNotHeld = 1314
 // engine must run with ROOT equal to the checkout; false when the wrapper must
 // fail closed and never invoke the engine.
 type wrongTreeRow struct {
-	name       string
-	layout     wrongTreeLayout
-	ambient    string
-	subdir     string
-	cwdDecoy   bool
-	wantEngine bool
-	wantExit   int
-	wantDiag   string
+	name           string
+	layout         wrongTreeLayout
+	ambient        string
+	subdir         string
+	cwdDecoy       bool
+	cwdOutside     bool
+	readonlyGitDir bool
+	wantEngine     bool
+	wantExit       int
+	wantDiag       string
 }
 
 // writePathWrapperRel is the write-path wrapper, repo-relative.
@@ -368,9 +370,11 @@ const writePathWrapperRel = "scripts/check-write-path-precondition.sh"
 
 // wrongTreeRows is the shared wrong-tree table (055.001-T, 055.003-T). Both
 // gate wrappers that anchor through gatecheck_repo_root run these rows, so they
-// cannot drift apart. The decoy, mixed-case, subdirectory and nested rows are
-// red at the red commit; the control, symlink and no-repository rows are green
-// on arrival (characterization).
+// cannot drift apart. At the red commit the decoy, mixed-case and nested rows
+// are red for both wrappers, and so is the subdirectory row for the write-path
+// wrapper; the subdirectory row is green on arrival for the retired-arch wrapper
+// (regression guard). The control, symlink, no-repository, caller-outside and
+// readonly rows are characterization rows, green on current code.
 func wrongTreeRows() []wrongTreeRow {
 	return []wrongTreeRow{
 		{name: "decoy GIT_DIR and GIT_WORK_TREE", layout: layoutOwnRepo, ambient: "decoy", wantEngine: true},
@@ -380,6 +384,8 @@ func wrongTreeRows() []wrongTreeRow {
 		{name: "symlinked checkout directory", layout: layoutSymlink, wantEngine: true},
 		{name: "no repository", layout: layoutNoRepo, wantExit: 128, wantDiag: "not a git repository"},
 		{name: "no repository, caller inside a decoy repository", layout: layoutNoRepo, cwdDecoy: true, wantExit: 128, wantDiag: "not a git repository"},
+		{name: "caller outside any work tree", layout: layoutOwnRepo, cwdOutside: true, wantExit: 128, wantDiag: "not a git repository"},
+		{name: "readonly GIT_DIR refuses before git runs", layout: layoutOwnRepo, readonlyGitDir: true, wantExit: 2, wantDiag: "cannot unset GIT_DIR"},
 		{name: "nested checkout", layout: layoutNested, wantExit: 2, wantDiag: "is not the top level of its repository"},
 	}
 }
@@ -453,16 +459,35 @@ func runWrongTreeRow(t *testing.T, bash, base, wrapperRel string, row wrongTreeR
 	if row.cwdDecoy {
 		cwd = decoy
 	}
+	if row.cwdOutside {
+		outside := filepath.Join(rowDir, "outside")
+		if err := os.MkdirAll(outside, 0o755); err != nil {
+			t.Fatalf("create caller directory outside any work tree: %v", err)
+		}
+		cwd = outside
+		t.Setenv("GIT_CEILING_DIRECTORIES", filepath.ToSlash(rowDir))
+	}
+	if row.readonlyGitDir {
+		bashEnv := filepath.Join(rowDir, "readonly-git-dir.sh")
+		body := "export GIT_DIR='" + filepath.ToSlash(filepath.Join(decoy, ".git")) + "'\nreadonly GIT_DIR\n"
+		if err := os.WriteFile(bashEnv, []byte(body), 0o644); err != nil {
+			t.Fatalf("write readonly environment file: %v", err)
+		}
+		t.Setenv("BASH_ENV", toBashPath(bashEnv))
+	}
 
 	trace, exitCode := runWritePathWrapperInDir(t, bash, toBashPath(script), cwd)
 	marker := strings.TrimSpace(readOptionalFile(t, filepath.Join(rowDir, "generated-binary-calls.log")))
 
 	if !row.wantEngine {
+		if row.wantDiag == "" {
+			t.Fatalf("fail-closed row %q names no diagnostic to assert", row.name)
+		}
 		if exitCode != row.wantExit {
 			t.Errorf("exit code = %d, want %d for a checkout that must fail closed (trace=%q)", exitCode, row.wantExit, trace)
 		}
-		if !strings.Contains(trace, row.wantDiag) {
-			t.Errorf("trace lacks the fail-closed diagnostic %q (trace=%q)", row.wantDiag, trace)
+		if !diagnosticOnOutputLine(trace, row.wantDiag) {
+			t.Errorf("no output line carries the fail-closed diagnostic %q (trace=%q)", row.wantDiag, trace)
 		}
 		if marker != "" {
 			t.Errorf("engine was invoked for a checkout that must fail closed (marker=%q, trace=%q)", marker, trace)
@@ -546,6 +571,22 @@ func applyWrongTreeAmbient(t *testing.T, kind, decoy string) {
 	default:
 		t.Fatalf("unknown ambient kind %q", kind)
 	}
+}
+
+// diagnosticOnOutputLine reports whether diag appears on a line the wrapper
+// wrote, not on a bash -x trace line (trace lines start with "+"). Without this
+// a diagnostic that reaches the trace only as an echoed command would pass with
+// its redirect to stderr removed.
+func diagnosticOnOutputLine(trace, diag string) bool {
+	for _, line := range strings.Split(trace, "\n") {
+		if strings.HasPrefix(line, "+") {
+			continue
+		}
+		if strings.Contains(line, diag) {
+			return true
+		}
+	}
+	return false
 }
 
 func readOptionalFile(t *testing.T, p string) string {
