@@ -1,0 +1,115 @@
+{
+  "feature_id": "055-F",
+  "merge_commit_sha": "526fccf46669891c4b9a191dc97449cd30e797a2",
+  "phase": "pre_close",
+  "pre_close": {
+    "captured_at": "2026-10-15T08:12:12Z",
+    "classifier_reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted",
+    "classifier_verdict": "CASCADE",
+    "close_path_selection": {
+      "reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted; backlogit 1.11.0 (cli) is on verified engine minor line 1.11",
+      "selected_close_path": "cascade"
+    },
+    "engine_semantics": {
+      "invocation_surface": "cli",
+      "minor_line": [
+        1,
+        11
+      ],
+      "probe_surface": "cli",
+      "probed_commit": "131577c",
+      "probed_version": "1.11.0",
+      "reason": "backlogit 1.11.0 (cli) is on verified engine minor line 1.11",
+      "verdict": "VERIFIED"
+    },
+    "linked_deliberation_disposition": {
+      "dispositions": [],
+      "planning_error": null,
+      "read_failures": [],
+      "unresolved_references": []
+    },
+    "manifest_members": [
+      {
+        "artifact_type": "feature",
+        "declared_status": "done",
+        "id": "055-F",
+        "location": "archive",
+        "parent_id": null,
+        "sha256": "253c562685ae212ebc75003200a897f9377a5f173c2be9694f6c95f7ba5694ce"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "055.001-T",
+        "location": "archive",
+        "parent_id": "055-F",
+        "sha256": "94c8c39469b0503a50b57cbd2d10cfdc2f164bb8f85e80403214e84d9f182ab4"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "055.002-T",
+        "location": "archive",
+        "parent_id": "055-F",
+        "sha256": "71cb6dc9529ff20fc684f0ca60a8b0c98d487702ad699d6e0119df481918a3c0"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "055.003-T",
+        "location": "archive",
+        "parent_id": "055-F",
+        "sha256": "11cf1cd48d713bb017570b16744eb2fa1f4f8cc51b80128060a5286beceeaabc"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "055.004-T",
+        "location": "archive",
+        "parent_id": "055-F",
+        "sha256": "662becbd07dff187be1384e03c36a41d82861107b3afbd97ea2f03722f4a6469"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "055.005-T",
+        "location": "archive",
+        "parent_id": "055-F",
+        "sha256": "4fe60dd880307485cc91079eef0dacd88f17e92c153b1ebd969a1e58836ff8fd"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "055.006-T",
+        "location": "archive",
+        "parent_id": "055-F",
+        "sha256": "ba6b6f8187c5ce2c90e17fc7043ef48b61989129f5004e59fa284cbdd5ee16bc"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "055.007-T",
+        "location": "archive",
+        "parent_id": "055-F",
+        "sha256": "097e6cfa1eef10be99d5ba579ae51dac734e3603c42d0c6376ac2b200cdfa776"
+      }
+    ],
+    "out_of_manifest_descendants": [],
+    "qualifying_feature_ids": [
+      "055-F"
+    ],
+    "shipment_record": {
+      "declared_status": "active",
+      "location": "queue",
+      "sha256": "6618c250fdb3611cc03aea50195a9c5ccd5d7f2d2b9c27e7593d4ef005807a88"
+    }
+  },
+  "run_id": "6a69b9399b8840999912eb02f9961e54",
+  "schema_version": 1,
+  "shipment_id": "045-S",
+  "tool": {
+    "binary_path": "C:\\Tools\\backlogit.EXE",
+    "binary_sha256": "e822756bb661435f7351811c54554ec8e76f69868ca386b6590bb56ae1489f3a",
+    "version_excerpt": "{\n  \"version\": \"1.11.0\",\n  \"current\": \"1.11.0\",\n  \"latest\": \"\",\n  \"update_available\": false,\n  \"update_check\": \"skipped\",\n  \"commit\": \"131577c\",\n  \"build_date\": \"2026-09-29T00:15:25Z\",\n  \"go_version\": \"go1.24.13\"\n}\n"
+  }
+}

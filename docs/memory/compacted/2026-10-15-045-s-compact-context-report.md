@@ -1,0 +1,93 @@
+---
+title: "045-S closure compact-context report (P-020, scan-only with deferred candidates)"
+date: 2026-10-15
+shipment: 045-S
+feature: 055-F
+agent: Ship
+mode: post-merge closure
+compaction_status: pending
+threshold_days: 14
+---
+
+# 045-S closure compact-context report
+
+## Result
+
+compact-context was invoked for target `all` at the 045-S post-merge closure (P-020). Phase 1
+(assess) and Phase 2 (identify candidates) ran. Phase 3 (compact) ran for no group. The
+compaction status is recorded as `pending`, because the deferred work is incomplete and P-020 blocks routing on pending. Phase 3 did not run, so the
+candidate groups were not compacted in this run.
+
+## Why Phase 3 was deferred
+
+The skill's candidate rule excludes any memory file referenced by an active work item. Two
+Three candidate memory files in the oldest group could not be cleared on this run:
+
+* `docs/memory/2026-09-18/026-F-shipment-scoped-harness-contract-amendment-blocked.md` cites the
+  backlog item 026-F, which is `blocked` in the live backlog. A blocked item is not done, so it
+  counts as referenced and the file is excluded.
+* `docs/memory/2026-09-18/021-001-T-harness-execution-model-decision-blocked.md` cites 021.001-T.
+  That item is archived with status done (`.backlogit/archive/021.001-T.md`), so it is not held by
+  a live reference. The file is still held by the open audit for its group.
+* `docs/memory/2026-09-18/stage-ship-contract-and-gate-reliability-staging-cycle.md` has no
+  verified reference audit yet.
+
+Compacting these files without the audit could remove context that a live item still needs. The
+Ship agent does not make that call on its own, so the audit and the compaction are captured as a
+follow-up.
+
+## Phase 1: assessment
+
+| Group | Files | Oldest threshold status |
+|---|---|---|
+| 2026-09-18 | 3 | 27 days, older than 14 |
+| 2026-10-01 | 1 (19134 bytes) | 14 days, at the boundary (not older) |
+| 2026-10-07 | 1 (11833 bytes) | 8 days, within threshold |
+| 2026-10-11 | 1 | 4 days, within threshold |
+| 2026-10-12 | 3 | 3 days, within threshold |
+| 2026-10-13 | 1 | 2 days (044-S closure note; its closure is compacted, see docs/memory/compacted) |
+| 2026-10-14 | 2 | current release unit (045-S); not closed, so not a candidate |
+| 2026-10-15 | this report and the 045-S closure notes | current |
+
+`docs/memory/compacted/` holds 56 prior compacted records. Nothing in this run changed them.
+
+## Phase 2: candidates
+
+* Eligible by age: the 2026-09-18 group only. The 2026-10-01 group is at the 14-day boundary and is not older than the threshold. The stash follow-up 51117F2D lists a wider group set for audit; only 2026-09-18 is eligible by age now.
+* Excluded by reference: `026-F-shipment-scoped-harness-contract-amendment-blocked.md` (blocked
+  item 026-F).
+* Not verified: the other eligible files, pending the reference audit described above.
+* Not eligible: 2026-10-13 and 2026-10-14 (within threshold or current release unit).
+
+## Completed-work candidates (P-020 rule)
+
+The completed-work rule also makes a memory file a candidate when its feature or chore is complete,
+whatever its age. Two groups qualify and were not compacted in this run:
+
+* 2026-10-12 043-S group: `043-s-ship-closure-session-memory.md` and
+  `043-s-ship-session-checkpoint-4.md`. Part of this content is covered by
+  `docs/memory/compacted/2026-10-12-043-s-053-f-ship-checkpoints-1-3-compacted.md`. The rest needs a
+  content check before compaction.
+* 2026-10-13 044-S closure halt note. Its closure is compacted under
+  `docs/memory/compacted/2026-10-13-044-s-054-f-closure-session-compacted.md`, but the original is
+  still in place.
+
+Both are captured as follow-up stash entry 3D161831.
+
+## Phase 3: compaction
+
+Not run in this session. No file was moved, and nothing was written to `docs/archive/memory/`.
+
+## Phase 4: report
+
+* Files compacted: 0
+* Space recovered: 0 bytes
+* Active task checkpoints preserved: 1 (the operator-held checkpoint `checkpoint-20261013-150837.json`
+  is untouched, and the 045-S checkpoints are preserved)
+* Plans consolidated into decided-plans: 0
+* Closure records compacted: 0
+
+## Follow-up
+
+Capture a follow-up stash entry for the reference audit and the compaction of the eligible memory
+groups (see the 045-S closure artifact, stash follow-ups).
