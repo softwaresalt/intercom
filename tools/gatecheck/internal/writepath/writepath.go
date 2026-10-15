@@ -187,7 +187,10 @@ func DefaultGitRunner(root string) ([]byte, error) {
 // gitRunnerEnv returns the environment for the gate-owned git child process
 // (D7BF9F74): environ with every entry whose name (the text before the first
 // '=', ASCII-case-folded) starts with GIT_ removed, except
-// GIT_CEILING_DIRECTORIES, followed by GIT_CONFIG_NOSYSTEM=1 and
+// GIT_CEILING_DIRECTORIES, and every entry named MSYS or CYGWIN, or starting
+// with MSYS2_, removed too (055.006-T: Git Bash and Cygwin path translation
+// variables would rewrite the child's arguments). It is followed by
+// GIT_CONFIG_NOSYSTEM=1 and
 // GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM pointed at os.DevNull. Windows
 // "=C:"-style per-drive entries have an empty name and are kept. It is copied,
 // not shared (D-BW-2, 5A8EC1BC): keep in sync by hand with
@@ -205,6 +208,9 @@ func gitRunnerEnv(environ []string) []string {
 			}
 		}
 		if strings.HasPrefix(string(folded), "GIT_") && string(folded) != "GIT_CEILING_DIRECTORIES" {
+			continue
+		}
+		if string(folded) == "MSYS" || string(folded) == "CYGWIN" || strings.HasPrefix(string(folded), "MSYS2_") {
 			continue
 		}
 		env = append(env, kv)
