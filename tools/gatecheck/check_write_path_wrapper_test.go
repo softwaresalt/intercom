@@ -238,7 +238,7 @@ unexpected "$*"
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	cmd := exec.Command(bash, "-c", "command -v go")
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("locate go shim: %v (output: %q)", err, output)
 	}
@@ -265,7 +265,7 @@ elif command -v wslpath >/dev/null 2>&1; then
   directory="$(wslpath -u "$directory")"
 fi
 cd "$directory" && pwd`, "bash", windowsOrNativePath)
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("resolve Bash path for %q: %v (output: %q)", windowsOrNativePath, err, output)
 	}
@@ -357,7 +357,10 @@ type wrongTreeRow struct {
 	layout     wrongTreeLayout
 	ambient    string
 	subdir     string
+	cwdDecoy   bool
 	wantEngine bool
+	wantExit   int
+	wantDiag   string
 }
 
 // TestCheckWritePathWrapper_WrongTreeRootAnchoring proves the write-path
@@ -377,8 +380,9 @@ func wrongTreeRows() []wrongTreeRow {
 		{name: "GIT_DIR alone from a subdirectory", layout: layoutOwnRepo, ambient: "dir-only", subdir: "internal", wantEngine: true},
 		{name: "no ambient control", layout: layoutOwnRepo, wantEngine: true},
 		{name: "symlinked checkout directory", layout: layoutSymlink, wantEngine: true},
-		{name: "no repository", layout: layoutNoRepo, wantEngine: false},
-		{name: "nested checkout", layout: layoutNested, wantEngine: false},
+		{name: "no repository", layout: layoutNoRepo, wantExit: 128, wantDiag: "not a git repository"},
+		{name: "no repository, caller inside a decoy repository", layout: layoutNoRepo, cwdDecoy: true, wantExit: 128, wantDiag: "not a git repository"},
+		{name: "nested checkout", layout: layoutNested, wantExit: 2, wantDiag: "is not the top level of its repository"},
 	}
 }
 
@@ -447,13 +451,19 @@ func runWrongTreeRow(t *testing.T, bash, base, wrapperRel string, row wrongTreeR
 	if row.subdir != "" {
 		cwd = filepath.Join(checkout, row.subdir)
 	}
+	if row.cwdDecoy {
+		cwd = decoy
+	}
 
 	trace, exitCode := runWritePathWrapperInDir(t, bash, toBashPath(script), cwd)
 	marker := strings.TrimSpace(readOptionalFile(t, filepath.Join(rowDir, "generated-binary-calls.log")))
 
 	if !row.wantEngine {
-		if exitCode == 0 {
-			t.Errorf("exit code = 0, want nonzero for a checkout that must fail closed (trace=%q)", trace)
+		if exitCode != row.wantExit {
+			t.Errorf("exit code = %d, want %d for a checkout that must fail closed (trace=%q)", exitCode, row.wantExit, trace)
+		}
+		if !strings.Contains(trace, row.wantDiag) {
+			t.Errorf("trace lacks the fail-closed diagnostic %q (trace=%q)", row.wantDiag, trace)
 		}
 		if marker != "" {
 			t.Errorf("engine was invoked for a checkout that must fail closed (marker=%q, trace=%q)", marker, trace)

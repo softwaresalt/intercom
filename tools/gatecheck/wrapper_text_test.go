@@ -288,7 +288,7 @@ const writePathRootBinding = `ROOT="$(gatecheck_repo_root)"`
 // rootBindingPattern matches a code line that assigns ROOT, including forms
 // such as `local ROOT=` or `export ROOT=`, but not suffixed names such as
 // GATECHECK_ROOT.
-var rootBindingPattern = regexp.MustCompile(`(^|[^A-Za-z0-9_])ROOT=`)
+var rootBindingPattern = regexp.MustCompile(`(^|[^A-Za-z0-9_])ROOT\+?=`)
 
 // wrapperRootBindingProblems asserts ROOT is bound on exactly one non-comment
 // code line and that the line is the shared-function call. Comments are
@@ -335,6 +335,7 @@ func assertRootBindingPin(t *testing.T, live string) {
 		"git binding":    `ROOT="$(git rev-parse --show-toplevel)"`,
 		"local binding":  "local " + writePathRootBinding,
 		"export binding": "export " + writePathRootBinding,
+		"append binding": writePathRootBinding + "\nROOT+=\"$(git rev-parse --show-toplevel)\"",
 	} {
 		mutated := mustMutate(t, live, writePathRootBinding, repl)
 		if p := wrapperRootBindingProblems(mutated); len(p) == 0 {
