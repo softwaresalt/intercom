@@ -1,6 +1,6 @@
 ---
 title: "045-S / 055-F post-merge operational closure"
-description: "Post-merge closure for gatecheck root anchoring and MSYS environment stripping (045-S, covering feature 055-F): PR 135 merged at 526fccf, the classify-only close path (CASCADE, engine VERIFIED), and the mutating cascade close halted for per-closure operator approval."
+description: "Post-merge closure for gatecheck root anchoring and MSYS environment stripping (045-S, covering feature 055-F): feature PR 135 and closure PR 136 merged, the operator-approved cascade close (postcondition pass), the archive relocation, and the P-020 compaction that remains pending."
 status: ready_with_conditions
 tags:
   - closure
@@ -15,25 +15,30 @@ shipment: 045-S
 feature: 055-F
 pr: 135
 feature_pr: 135
-closure_pr: pending
+closure_pr: 136
 merge_commit: 526fccf46669891c4b9a191dc97449cd30e797a2
 merge_commit_sha: 526fccf46669891c4b9a191dc97449cd30e797a2
 feature_merge_commit_sha: 526fccf46669891c4b9a191dc97449cd30e797a2
 releasability: READY_WITH_CONDITIONS
 conditions:
   - id: cascade-close-operator-approval
-    description: "Explicit per-closure operator approval for the mutating autoharness shipment cascade-close run (classify-only selected cascade). Dark-mode authority does not satisfy it."
-    satisfied: false
+    description: "Explicit per-closure operator approval for the mutating autoharness shipment cascade-close run. The operator ran the command and approved it. Ship did not re-run it."
+    satisfied: true
     evidence: docs/closure/evidence/045-S-055-F-close-evidence.json
-  - id: post-approval-archive-and-closure-gate
-    description: "Backlog archive commit after the approved cascade close, then the closure-evidence gate exits 0 before completion is declared."
+  - id: archive-relocation-and-postcondition
+    description: "Archive relocation of 045-S and its nine manifest items, committed on the archive branch after the post-mode PROCEED. The evidence postcondition verdict is pass, with no failures and no unexpected archived IDs."
+    satisfied: true
+    evidence: .backlogit/reconcile/045-S-post-20261015T173631Z.md
+  - id: p020-compaction-completion
+    description: "P-020 compaction of the remaining candidates recorded in the compaction report completes, and compaction_status is then set to done. Until then the closure is not complete, and routing for the next shipment stays blocked."
     satisfied: false
-    evidence: docs/closure/evidence/045-S-055-F-close-evidence.json
+    evidence: docs/memory/compacted/2026-10-15-045-s-compact-context-report.md
 head_sha_reviewed: df7d8fd6baf46af3b698e5d50da49311b6c66a09
 code_sha_reviewed: df7d8fd
 base_sha: f038032
 closure_base_sha: 526fccf46669891c4b9a191dc97449cd30e797a2
 closure_branch: post-merge/055-f-closure-045-s
+archive_branch: post-merge/045-s-archive-relocation
 close_path: cascade
 close_evidence: docs/closure/evidence/045-S-055-F-close-evidence.json
 closure_status: READY_WITH_CONDITIONS
@@ -47,35 +52,38 @@ compaction_status: pending
 Shipment 045-S delivered covering feature 055-F: the gatecheck write-path and retired-architecture
 wrappers derive their root only from their own checkout through `gatecheck_repo_root`, fail closed
 when the checkout is not a repository top, and the Go git children drop Git Bash and Cygwin
-translation variables. Feature PR 135 merged at `526fccf` after the Copilot review gate passed
-for head `df7d8fd`.
+translation variables. Feature PR 135 merged at `526fccf`. Closure PR 136 merged at `1b06f4c`
+with the closure record.
 
-The closure is not complete. The classify-only close path selected `cascade`, and the mutating
-`autoharness shipment cascade-close` run needs per-closure operator approval, which dark-mode
-authority does not satisfy. Shipment 045-S therefore remains `active`, and the successor shipment
-046-S is queued and depends on 045-S, so it is not claimed. P-001 holds the next top-level unit while 045-S is active, until the close is approved and completed.
+The mutating cascade close was run by the operator with explicit per-closure approval. Ship did not
+re-run it. The evidence record reports `postcondition_verdict: pass`, no failures, no unexpected
+archived IDs, and nine archived IDs (045-S, 055-F, and seven tasks). Shipment 045-S is now
+`archived` with status `shipped`. This branch carries the archive relocation and the post-mode
+reconciliation record.
+
+The closure is not declared complete. P-020 compaction is `pending`, so the closure-evidence gate
+reports `frontmatter_predicate` until that work completes. Routing for the next shipment stays
+blocked until then.
 
 ## Merge and gate record
 
 * Feature PR 135, head `df7d8fd6baf46af3b698e5d50da49311b6c66a09`, merged head-pinned with a merge
-  commit (`gh pr merge 135 --merge --match-head-commit df7d8fd...`, no admin flag). Merge commit
-  `526fccf46669891c4b9a191dc97449cd30e797a2`, confirmed as an ancestor of `origin/main`.
+  commit (no admin flag). Merge commit `526fccf46669891c4b9a191dc97449cd30e797a2`, confirmed as an
+  ancestor of `origin/main`. Parents: `f038032` and `df7d8fd`.
 * P-009: repository allows merge commits only (`allow_merge_commit` true, squash and rebase false).
-* P-016: `pipeline-topology` gates passed at pre_claim, post_claim, and lifecycle (both before the
-  feature PR and before closure).
-* CI on head `df7d8fd`: all required checks passed (ci gate, cross-compile on four targets, lint,
-  test, security, merge-strategy, topology, gitignore regression; Windows test advisory passed).
-* P-018 copilot-review gate: `NOT_APPLICABLE` before the review was requested. The review was
-  requested through the approved GraphQL route after the operator's resumption instruction.
-  Copilot reviewed `df7d8fd` with "Approval recommended" and zero open findings. No inline threads
-  and no body findings required disposition. The gate returned `SATISFIED` and was re-run
-  unconditionally before the merge.
-* Local review (P-014): three rounds on the feature diff. Final readiness `READY_WITH_FOLLOWUPS`,
-  P0 0, P1 0. Follow-ups are recorded below.
+* P-016: `pipeline-topology` passed at pre_claim, post_claim, and lifecycle.
+* CI on head `df7d8fd`: required checks passed.
+* P-018 copilot-review gate on PR 135: `SATISFIED` on `df7d8fd` after Copilot approved the head with
+  zero findings.
+* Closure PR 136, head `5f01138`, merged head-pinned with a merge commit (no admin flag). Merge
+  commit `1b06f4c6030eec30bd7105196ebabb220e98ef41`, confirmed in `origin/main` history.
+* P-018 on PR 136: one Copilot finding (compaction status), fixed in `5f01138`, replied and resolved.
+  The re-review on `5f01138` had zero open findings, and the gate returned `SATISFIED`.
 
 ## Scope of the merged change
 
-* scripts/lib/gatecheck-run.sh: `gatecheck_repo_root` (scrubbed, checkout-anchored, fail-closed root).
+* scripts/lib/gatecheck-run.sh: `gatecheck_repo_root` (scrubbed, checkout-anchored, fail-closed root,
+  refusal on a readonly `GIT_*` variable and on an unexportable config pin).
 * scripts/check-write-path-precondition.sh and scripts/check-retired-architecture.sh: `ROOT` bound
   through `gatecheck_repo_root`, caller precondition kept.
 * tools/gatecheck/internal/writepath/writepath.go and retiredarch/select.go and pin.go:
@@ -88,70 +96,72 @@ Twelve commits from `9e42d16` to `df7d8fd` on the feature branch. Git history is
 ## Close path
 
 * Lifecycle topology gate (a0): exit 0.
-* Covering-feature completion gate (a1): all five conditions held. Every manifest task was `done`
-  and archived, no live descendant remained at any depth, the descendant set equalled the
-  manifest, containment held, and 055-F was `active`. Single permitted transition `active -> done`
-  on 055-F, re-read as `done`. No force flags.
-* Pre-archive reconciliation (pre mode, expected_status done): lock acquired on
-  `.backlogit/queue/045-S.md`, record `active` classified   `record-consistent`, 055-F pre-archived with declared status `done` (a1 moved it to `.backlogit/archive/`, the routing backlogit applies to done items), seven tasks `pre-archived`, and no orphans. Verdict PROCEED. Lock released after the
-  classification stopped at the approval boundary.
-* Classify-only close (`autoharness shipment cascade-close --classify-only --shipment 045-S
-  --feature 055-F --sha 526fccf46669891c4b9a191dc97449cd30e797a2 --json`): exit 0, classifier
-  verdict `CASCADE`, engine verdict `VERIFIED` (backlogit 1.11.0 on the verified 1.11 minor line),
-  `selected_close_path` `cascade`, `mutation_possible` `no` (classify command output). Evidence written to
-  `docs/closure/evidence/045-S-055-F-close-evidence.json` (phase `pre_close`, not hand-edited).
-* Mutating cascade close: NOT RUN. It needs explicit per-closure operator approval, which dark-mode
-  authority does not satisfy (Constitution Principle VII). Halted here.
-* Post-merge backlog archive commit (`chore: archive 045-S backlog artifacts`): NOT RUN. It follows
-  the mutating close and is therefore blocked with it.
+* Covering-feature completion gate (a1): all five conditions held. Every manifest task was `done` and
+  archived, no live descendant remained at any depth, the descendant set equalled the manifest,
+  containment held, and 055-F was `active`. Single transition `active -> done`, re-read as `done`.
+  Backlogit archived 055-F as a routing effect of the done status.
+* Pre-archive reconciliation (pre mode, expected_status done): record `active` classified
+  `record-consistent`, 055-F pre-archived with status done, the seven tasks pre-archived, no orphans.
+  Verdict PROCEED.
+* Classify-only close (`autoharness shipment cascade-close --classify-only`): exit 0, verdict CASCADE,
+  engine VERIFIED (backlogit 1.11.0), `selected_close_path` cascade, `mutation_possible` no (classify
+  command output). Evidence written to `docs/closure/evidence/045-S-055-F-close-evidence.json`.
+* Mutating cascade close: run by the operator with explicit per-closure approval. The evidence
+  record's `invocation` section shows the backlogit shipment ship call, exit 0, mutation state
+  completed, started 2026-10-15T17:34:16Z, finished 2026-10-15T17:36:31Z. Its `shipment_status` is
+  `shipped`, with `commit_sha` 526fccf and the nine archived IDs. The record's `phase` is
+  `post_close`.
+* Post-mode reconciliation: `.backlogit/reconcile/045-S-post-20261015T173631Z.md`. Recommendation
+  PROCEED. Every archive file is present, the P-007 guard finds no deletions under `.backlogit/archive/`,
+  and no lock is held.
+* Archive relocation: committed on `post-merge/045-s-archive-relocation`. The queue deletions and the
+  archive additions are the operator run's changes. Ship stages only those paths, plus the stash
+  captures and this record. It does not stage the operator's `.autoharness/config.yaml` routing edit.
 
 ## Deviations and reconciliation record
 
-1. Feature commit ded479b carries a test-support harness change (shim installed once per table).
-   No assertion changed. The red state was re-verified against the pre-change production files
-   with the restructured harness.
+1. Feature commit ded479b carries a test-support harness change (shim installed once per table). No
+   assertion changed. The red state was re-verified against the pre-change production files with the
+   restructured harness.
 2. Commit footers end with the Co-authored-by trailer requested by the operator. The literal
    `- Generated by Copilot` line appears before the trailer.
-3. 055.003-T acceptance criterion 1 expected the retired-architecture subdirectory row to be red.
-   It is green on arrival, because `git -C "$GATECHECK_SRC"` anchors the worktree to the checkout.
-   The row stays as a regression guard. Acceptance criteria are planning fields that Ship does not
-   edit, so the deviation is recorded here.
-4. Ship did not formally invoke the safety-modes skill for U10, U12, U14 and U15 (careful mode).
-   The blast radius was enumerated by hand and each pair was gated before commit.
-5. Local review round 1 was blocked by an adversarial P1 (the `-C` anchor was not required by any
-   test). Fixed by commit 841d1b4 and mutation-verified. Round 2 found a P1 (readonly refusal
-   untested) and a P2 (diagnostic matched trace lines). Fixed by df7d8fd and mutation-verified.
-6. Host note: on this Windows host `bash` on PATH is WSL. The serialized suite ran with Git Bash
-   first on PATH. Shim-based wrapper tests can flake under package-parallel load on this host
-   (shared Git Bash `/tmp` mount). CI on Linux is unaffected, and CI on head `df7d8fd` passed.
-7. Copilot request route: the MCP tool was not available in the first session. The Orchestrator
-   requested review through the approved GraphQL route. Copilot re-review after any future push must
-   use the same route.
+3. 055.003-T acceptance criterion 1 expected the retired-architecture subdirectory row to be red. It
+   is green on arrival, because `git -C "$GATECHECK_SRC"` anchors the worktree to the checkout. The
+   row stays as a regression guard. Acceptance criteria are planning fields that Ship does not edit,
+   so the deviation is recorded here.
+4. Ship did not formally invoke the safety-modes skill for U10, U12, U14 and U15 (careful mode). The
+   blast radius was enumerated by hand, and each pair was gated before commit.
+5. The mutating cascade close was run by the operator, not by Ship. The operator's approval is
+   recorded in the conditions above.
+6. P-020 compaction was run as a partial pass and remains `pending`. See the compaction section.
+7. Host note: on this Windows host `bash` on PATH is WSL. The serialized suite ran with Git Bash
+   first on PATH. Shim-based wrapper tests can flake under package-parallel load on this host. CI on
+   Linux is unaffected, and CI on head `df7d8fd` passed.
 
 ## Risky action record
 
-* a1 covering-feature transition `active -> done` on 055-F: low risk, backlog state only, relocates 055-F to `.backlogit/archive/`, reversible
-  by a backlog move. Recorded here because it is the only backlog mutation made before approval.
+* a1 covering-feature transition `active -> done` on 055-F: backlog state only. Its routing effect
+  archived 055-F. Reversible by a backlog move.
+* Mutating cascade close (operator-run, explicit per-closure approval): recorded in the evidence
+  record.
 * No ProposedAction entries affected rollout or rollback. The feature changes CI gate scripts only.
 
 ## Source artifact cleanup
 
 * 055-F and its seven tasks declare no `source_stash_id` and no `source_deliberation_id`. No source
-  stash entry was archived.
-* The stash labels `stash-DBE25DF5` and `stash-2613D248` on the 055 items record the stash entries
-  that the shipped scope addresses. They are not declared source fields, and archiving them would
-  be a discretionary stash archive, which Ship does not perform. DBE25DF5 is addressed for the
-  write-path and retired-architecture wrappers. Its remaining scope (the unignore and merge-strategy
-  wrappers) stays with stash 1B85D0F4.
-* Deliberation disposition: `linked_deliberation_disposition` is empty in the pre_close record.
+  stash entry was archived by Ship.
+* The stash labels `stash-DBE25DF5` and `stash-2613D248` on the 055 items record the stash entries the
+  shipped scope addresses. They are not declared source fields, and archiving them would be a
+  discretionary stash archive, which Ship does not perform. DBE25DF5 is addressed for the write-path
+  and retired-architecture wrappers. Its remaining scope (the unignore and merge-strategy wrappers)
+  stays with stash 1B85D0F4.
+* `linked_deliberation_disposition` is empty in the pre_close record, and the post_close record reports
+  no drift.
 
 ## Stash follow-ups (visible to Stage)
 
-Captured during the review remediation as `DEFERRED SCOPE EXPANSION` entries (P-021 C2,
-capture-only):
+Captured during the review remediation as `DEFERRED SCOPE EXPANSION` entries (P-021 C2, capture-only):
 
-* 51117F2D: reference audit and compaction of the eligible memory groups (P-020 follow-up).
-* 3D161831: compaction of the completed-work memory candidates (P-020 follow-up).
 * 83C1369E: Linux-discriminating recorder for the case-insensitive scrub and config pins.
 * 815C2B28: export-pin refusal row for an unexported readonly `GIT_CONFIG_GLOBAL`.
 * C37F75D5: shell-side MSYS scope decision (the shell scrub keeps MSYS, CYGWIN and MSYS2_*).
@@ -159,43 +169,55 @@ capture-only):
 * EF11062A: move the shared wrong-tree harness to a harness file.
 * 63BCA7C6: write-path header paragraph and PS4/LC_ALL hygiene in the xtrace filter.
 
-Existing entries cited, not duplicated: 5A8EC1BC (gitRunnerEnv copy and parity), 585FCD6D (Unicode
-and Windows case folding, safe.directory), 1B85D0F4 (unignore and merge-strategy wrapper roots),
-4372BAD4 (relative git in writepath), 49982A4E (engine-side top-level check), 36BE1F61 (main.go sinks, the third accepted residual named in the 055-F definition of done).
+Closure follow-ups (P-020):
+
+* 51117F2D: reference audit and compaction of the eligible memory groups.
+* 3D161831: compaction of the completed-work memory candidates.
+
+Accepted residuals named in the 055-F definition of done: 1B85D0F4 (other wrappers), 49982A4E
+(engine `--root`), and 36BE1F61 (main.go sinks). Existing entries are cited, not duplicated:
+5A8EC1BC (gitRunnerEnv copy and parity), 585FCD6D (Unicode and Windows case folding, safe.directory),
+4372BAD4 (relative git in writepath).
 
 ## Operational closure fields
 
-* **Invariants to preserve:** gatecheck roots derive only from the checkout; a non-top-level
-  checkout, a readonly `GIT_*` variable, or a failed config pin refuses with exit 2 or 128 and never
-  reaches the engine; the MSYS filter stays identical in both gitRunnerEnv copies.
-* **Validator evidence:** runtime verification not applicable. The change touches CI gate scripts
-  and gatecheck tools only, with no runtime surface.
-* **Pre-deploy audits:** none. Merge-only path, no deployment.
+* **Invariants to preserve:** gatecheck roots derive only from the checkout. A non-top-level checkout,
+  a readonly `GIT_*` variable, or a failed config pin refuses with exit 2 or 128, and never reaches the
+  engine. The MSYS filter stays identical in both gitRunnerEnv copies.
+* **Validator evidence:** runtime verification not applicable. The change touches CI gate scripts and
+  gatecheck tools only.
+* **Pre-deploy audits:** none. Merge-only path.
 * **Deployment or rollout path:** merge-only, already merged at `526fccf`.
-* **Post-deploy checks:** the CI run on `main` for `526fccf` (ci gate, test, lint, security) must be
-  green. The next gatecheck run on `main` must pass the wrong-tree and pin tests.
-* **Healthy signals:** main CI green; gatecheck tests green on Linux (the blocking lane).
-* **Failure signals:** a red gatecheck test on main, or a wrapper that resolves a root other than
-  its checkout.
-* **Monitoring plan:** the CI workflow on `main` and the advisory Windows test lane.
-* **Rollback trigger:** a red gatecheck test on `main` attributable to 526fccf.
-* **Rollback procedure:** revert merge commit `526fccf` with `git revert -m 1 526fccf` on a new
-  branch, through a reviewed PR. Never push directly to main.
+* **Post-deploy checks:** the CI run on `main` for `1b06f4c` (ci gate, test, lint, security) must be green.
+  The next gatecheck run on `main` must pass the wrong-tree and pin tests.
+* **Healthy signals:** main CI green, and gatecheck tests green on Linux (the blocking lane).
+* **Failure signals:** a red gatecheck test on main, or a wrapper that resolves a root other than its
+  checkout.
+* **Monitoring plan:** the CI workflow on `main`, and the advisory Windows test lane.
+* **Rollback trigger:** a red gatecheck test on `main` attributable to `526fccf`.
+* **Rollback procedure:** revert merge commit `526fccf` with `git revert -m 1 526fccf` on a new branch,
+  through a reviewed PR. Never push directly to main.
 * **Validation window:** until the first green CI run on `main` after the closure merges.
 * **Owner:** the operator. The Ship agent reports and does not own the window.
-* **Releasability evidence:** `READY_WITH_CONDITIONS`. Condition: explicit per-closure operator
-  approval for the mutating cascade close, then the archive commit and the closure-evidence gate
-  pass. The conditions are unsatisfied, so the closure is not declared complete and the successor
-  shipment stays blocked.
+* **Releasability evidence:** `READY_WITH_CONDITIONS`. The operator approval and the archive relocation
+  are satisfied. P-020 compaction is the one unsatisfied condition.
 
 ## Compaction (P-020)
 
-`compaction_status: pending`. compact-context was invoked for target `all` and ran Phase 1 and
-Phase 2 (assessment and candidate selection). Phase 3 compacted no group. This is a partial run: the
-age-eligible group is held by blocked item 026-F and an unverified reference audit, and the
-completed-work candidates (the 043-S memory group and the 044-S halt note) are deferred. P-020
-keeps `pending` for incomplete work. This run did not fail, so `degraded` would wrongly satisfy routing. The pending reading is
-therefore the correct status until the deferred work completes. The report is
-`docs/memory/compacted/2026-10-15-045-s-compact-context-report.md`. Pending blocks routing under
-P-020. The reference audit and the completed-work compaction are captured as stash entries
-51117F2D and the closure follow-up recorded in the report.
+`compaction_status: pending`. compact-context ran Phase 1 and Phase 2 at the closure. Phase 3 compacted
+nothing in that run. The run's report is `docs/memory/compacted/2026-10-15-045-s-compact-context-report.md`.
+
+Remaining candidates, pending their compaction:
+
+* Age-eligible: `docs/memory/2026-09-18/021-001-T-harness-execution-model-decision-blocked.md` (its
+  item 021.001-T is archived and done) and `docs/memory/2026-09-18/stage-ship-contract-and-gate-reliability-staging-cycle.md`.
+* Completed-work: `docs/memory/2026-10-12/043-s-ship-closure-session-memory.md`,
+  `docs/memory/2026-10-12/043-s-ship-session-checkpoint-4.md`, and the 2026-10-13 044-S closure
+  memory.
+* Excluded for now: `docs/memory/2026-09-18/026-F-shipment-scoped-harness-contract-amendment-blocked.md`.
+  It is the record of blocked item 026-F, which is still live.
+
+The reference audit used the direction the skill defines: no backlog item in the queue or archive names
+any candidate file. The candidate stems were also checked against the live queue. Compacting is an
+archive-only move with a dense summary. It was not run in this closure. The remaining set is tracked as
+stash follow-ups 51117F2D and 3D161831, and the closure stays incomplete until it completes.
