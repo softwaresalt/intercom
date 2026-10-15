@@ -111,9 +111,9 @@ gatecheck_repo_root() {
           ;;
       esac
     done < <(compgen -e)
-    export GIT_CONFIG_NOSYSTEM=1
-    export GIT_CONFIG_GLOBAL=/dev/null
-    export GIT_CONFIG_SYSTEM=/dev/null
+    export GIT_CONFIG_NOSYSTEM=1 || { echo "::error::gatecheck: cannot set GIT_CONFIG_NOSYSTEM" >&2; exit 2; }
+    export GIT_CONFIG_GLOBAL=/dev/null || { echo "::error::gatecheck: cannot set GIT_CONFIG_GLOBAL" >&2; exit 2; }
+    export GIT_CONFIG_SYSTEM=/dev/null || { echo "::error::gatecheck: cannot set GIT_CONFIG_SYSTEM" >&2; exit 2; }
     git -C "${GATECHECK_SRC}" rev-parse --show-toplevel
   )" || return $?
   if [ ! "${top}" -ef "${GATECHECK_SRC}" ]; then
