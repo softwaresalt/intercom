@@ -21,13 +21,14 @@ candidate groups were not compacted in this run.
 ## Why Phase 3 was deferred
 
 The skill's candidate rule excludes any memory file referenced by an active work item. Two
-candidate memory files in the oldest group could not be cleared on this run:
+Three candidate memory files in the oldest group could not be cleared on this run:
 
 * `docs/memory/2026-09-18/026-F-shipment-scoped-harness-contract-amendment-blocked.md` cites the
   backlog item 026-F, which is `blocked` in the live backlog. A blocked item is not done, so it
   counts as referenced and the file is excluded.
-* `docs/memory/2026-09-18/021-001-T-harness-execution-model-decision-blocked.md` cites 021.001-T,
-  which did not resolve in the live backlog. Its archive status was not verified in this run.
+* `docs/memory/2026-09-18/021-001-T-harness-execution-model-decision-blocked.md` cites 021.001-T.
+  That item is archived with status done (`.backlogit/archive/021.001-T.md`), so it is not held by
+  a live reference. The file is still held by the open audit for its group.
 * `docs/memory/2026-09-18/stage-ship-contract-and-gate-reliability-staging-cycle.md` has no
   verified reference audit yet.
 
@@ -57,6 +58,21 @@ follow-up.
   item 026-F).
 * Not verified: the other eligible files, pending the reference audit described above.
 * Not eligible: 2026-10-13 and 2026-10-14 (within threshold or current release unit).
+
+## Completed-work candidates (P-020 rule)
+
+The completed-work rule also makes a memory file a candidate when its feature or chore is complete,
+whatever its age. Two groups qualify and were not compacted in this run:
+
+* 2026-10-12 043-S group: `043-s-ship-closure-session-memory.md` and
+  `043-s-ship-session-checkpoint-4.md`. Part of this content is covered by
+  `docs/memory/compacted/2026-10-12-043-s-053-f-ship-checkpoints-1-3-compacted.md`. The rest needs a
+  content check before compaction.
+* 2026-10-13 044-S closure halt note. Its closure is compacted under
+  `docs/memory/compacted/2026-10-13-044-s-054-f-closure-session-compacted.md`, but the original is
+  still in place.
+
+Both are captured as follow-up stash entry 3D161831.
 
 ## Phase 3: compaction
 

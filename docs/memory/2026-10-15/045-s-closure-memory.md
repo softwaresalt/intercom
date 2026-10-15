@@ -68,8 +68,8 @@ reviewer flags. The DARK_MODE_ACTIVE record and its scope (045-S only, no admin)
 ## Stash follow-ups from the review remediation
 
 `83C1369E`, `815C2B28`, `C37F75D5`, `BEFE6DF2`, `EF11062A`, `63BCA7C6` (DEFERRED SCOPE EXPANSION),
-plus `51117F2D` (closure compaction follow-up). Existing entries cited: 5A8EC1BC, 585FCD6D,
-1B85D0F4, 4372BAD4, 49982A4E.
+plus `51117F2D` and `3D161831` (closure compaction follow-ups). Existing entries cited: 5A8EC1BC, 585FCD6D,
+1B85D0F4, 4372BAD4, 49982A4E, 36BE1F61.
 
 ## Operator action needed to finish
 

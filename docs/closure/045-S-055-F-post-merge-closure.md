@@ -98,7 +98,7 @@ Twelve commits from `9e42d16` to `df7d8fd` on the feature branch. Git history is
 * Classify-only close (`autoharness shipment cascade-close --classify-only --shipment 045-S
   --feature 055-F --sha 526fccf46669891c4b9a191dc97449cd30e797a2 --json`): exit 0, classifier
   verdict `CASCADE`, engine verdict `VERIFIED` (backlogit 1.11.0 on the verified 1.11 minor line),
-  `selected_close_path` `cascade`, `mutation_possible` `no`. Evidence written to
+  `selected_close_path` `cascade`, `mutation_possible` `no` (classify command output). Evidence written to
   `docs/closure/evidence/045-S-055-F-close-evidence.json` (phase `pre_close`, not hand-edited).
 * Mutating cascade close: NOT RUN. It needs explicit per-closure operator approval, which dark-mode
   authority does not satisfy (Constitution Principle VII). Halted here.
@@ -151,6 +151,7 @@ Captured during the review remediation as `DEFERRED SCOPE EXPANSION` entries (P-
 capture-only):
 
 * 51117F2D: reference audit and compaction of the eligible memory groups (P-020 follow-up).
+* 3D161831: compaction of the completed-work memory candidates (P-020 follow-up).
 * 83C1369E: Linux-discriminating recorder for the case-insensitive scrub and config pins.
 * 815C2B28: export-pin refusal row for an unexported readonly `GIT_CONFIG_GLOBAL`.
 * C37F75D5: shell-side MSYS scope decision (the shell scrub keeps MSYS, CYGWIN and MSYS2_*).
@@ -160,7 +161,7 @@ capture-only):
 
 Existing entries cited, not duplicated: 5A8EC1BC (gitRunnerEnv copy and parity), 585FCD6D (Unicode
 and Windows case folding, safe.directory), 1B85D0F4 (unignore and merge-strategy wrapper roots),
-4372BAD4 (relative git in writepath), 49982A4E (engine-side top-level check).
+4372BAD4 (relative git in writepath), 49982A4E (engine-side top-level check), 36BE1F61 (main.go sinks, the third accepted residual named in the 055-F definition of done).
 
 ## Operational closure fields
 
@@ -190,9 +191,11 @@ and Windows case folding, safe.directory), 1B85D0F4 (unignore and merge-strategy
 ## Compaction (P-020)
 
 `compaction_status: degraded`. compact-context was invoked for target `all` and ran Phase 1 and
-Phase 2 (assessment and candidate selection). Phase 3 compacted no group, because the eligible memory
-groups could not be cleared against live references in this run (blocked item 026-F, and an
-unverified reference audit for the rest). The report is
+Phase 2 (assessment and candidate selection). Phase 3 compacted no group. This is a partial run: the
+age-eligible group is held by blocked item 026-F and an unverified reference audit, and the
+completed-work candidates (the 043-S memory group and the 044-S halt note) are deferred. P-020
+defines `degraded` as invoked-but-failed, and this run did not fail. The degraded reading is
+therefore a judgment on a partial run, and the Orchestrator should confirm it. The report is
 `docs/memory/compacted/2026-10-15-045-s-compact-context-report.md`. Degraded is non-blocking under
-P-020. The Orchestrator treats it as satisfied, and the reference audit and compaction are
-captured as stash entry 51117F2D.
+P-020. The reference audit and the completed-work compaction are captured as stash entries
+51117F2D and the closure follow-up recorded in the report.
