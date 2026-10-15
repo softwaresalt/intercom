@@ -264,3 +264,21 @@ func retiredArchWrapperPath(t *testing.T) string {
 	}
 	return toBashPath(filepath.Join(repoRoot, "scripts", "check-retired-architecture.sh"))
 }
+
+// retiredArchWrapperRel is the retired-architecture wrapper, repo-relative.
+const retiredArchWrapperRel = "scripts/check-retired-architecture.sh"
+
+// TestCheckRetiredArchitectureWrapper_WrongTreeRootAnchoring runs the shared
+// wrong-tree table against the retired-architecture wrapper (055.003-T). Its
+// ROOT is bound through gatecheck_repo_root. The ambient decoy is ignored (the
+// checkout stays the root) and the nested parent is refused, as for the
+// write-path wrapper.
+func TestCheckRetiredArchitectureWrapper_WrongTreeRootAnchoring(t *testing.T) {
+	bash := requireBash(t)
+	base := filepath.Dir(installGoShim(t, bash))
+	for _, row := range wrongTreeRows() {
+		t.Run(row.name, func(t *testing.T) {
+			runWrongTreeRow(t, bash, base, retiredArchWrapperRel, row)
+		})
+	}
+}

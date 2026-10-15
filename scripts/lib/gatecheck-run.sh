@@ -12,6 +12,7 @@
 #
 # Provided to wrappers after sourcing:
 #   GATECHECK_SRC     - absolute repo root, derived from this file's path.
+#   gatecheck_repo_root - prints the repository top level of GATECHECK_SRC, or fails closed.
 #   gatecheck_build   - builds the binary once; sets GATECHECK_TMP/GATECHECK_BIN.
 #   gatecheck_invoke  - runs a gatecheck subcommand; streams stdout/stderr;
 #                       returns (never exits) the binary's status.
@@ -29,6 +30,7 @@
 # Anchored on this file's location, not $PWD (the same convention the
 # retired Python engines followed with __file__/SCRIPT_DIR).
 # $(dirname "${BASH_SOURCE[0]}") is scripts/lib; ../.. is the repo root.
+unset CDPATH
 GATECHECK_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # gatecheck_build builds the gatecheck binary into a fresh mktemp -d
@@ -74,4 +76,49 @@ gatecheck_cleanup() {
     rm -rf -- "${GATECHECK_TMP}"
   fi
   GATECHECK_TMP=""
+}
+
+# gatecheck_repo_root prints the top level of the repository that GATECHECK_SRC
+# belongs to, and fails closed unless that top level is GATECHECK_SRC itself
+# (D-WB2-4, AR-1). Root discovery never reads the caller's working directory or
+# the ambient Git environment. Inside a subshell, every exported GIT_* variable
+# is removed except GIT_CEILING_DIRECTORIES. The three config pins the Go child
+# uses are set on this git call only (SEC-9). The name match is a locale-free glob with a
+# case-insensitive exact match for the one kept variable (SEC-4; bash 3.2
+# compatible, no ${name^^}). The scrub wraps only the git call. The result is
+# captured in the function scope, so every failure returns explicitly, prints
+# its diagnostic to stderr only, and never prints a partial path (RR-2, RR-7).
+#
+# Intentional refusals (false positives by design, RR-3):
+#   * a vendored copy or a monorepo subdirectory, whose enclosing repository is
+#     not GATECHECK_SRC;
+#   * a tarball or Docker copy with no .git at or above GATECHECK_SRC, where git
+#     itself fails;
+#   * git's dubious-ownership refusal, where git fails and the caller exits with
+#     git's status.
+# Wrappers that do not yet call this function are tracked in stash 1B85D0F4
+# (RR-5). Returns 0 with the top level on stdout; otherwise returns nonzero.
+gatecheck_repo_root() {
+  local top
+  top="$(
+    while IFS= read -r name; do
+      case "${name}" in
+        [Gg][Ii][Tt]_*)
+          case "${name}" in
+            [Gg][Ii][Tt]_[Cc][Ee][Ii][Ll][Ii][Nn][Gg]_[Dd][Ii][Rr][Ee][Cc][Tt][Oo][Rr][Ii][Ee][Ss]) ;;
+            *) unset "${name}" || { echo "::error::gatecheck: cannot unset ${name}; refusing to run git with it" >&2; exit 2; } ;;
+          esac
+          ;;
+      esac
+    done < <(compgen -e)
+    export GIT_CONFIG_NOSYSTEM=1 || { echo "::error::gatecheck: cannot set GIT_CONFIG_NOSYSTEM" >&2; exit 2; }
+    export GIT_CONFIG_GLOBAL=/dev/null || { echo "::error::gatecheck: cannot set GIT_CONFIG_GLOBAL" >&2; exit 2; }
+    export GIT_CONFIG_SYSTEM=/dev/null || { echo "::error::gatecheck: cannot set GIT_CONFIG_SYSTEM" >&2; exit 2; }
+    git -C "${GATECHECK_SRC}" rev-parse --show-toplevel
+  )" || return $?
+  if [ ! "${top}" -ef "${GATECHECK_SRC}" ]; then
+    echo "::error::gatecheck: ${GATECHECK_SRC} is not the top level of its repository (git reports ${top})" >&2
+    return 2
+  fi
+  printf '%s\n' "${top}"
 }

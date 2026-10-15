@@ -131,6 +131,9 @@ func gitRunnerEnv(environ []string) []string {
 		if strings.HasPrefix(string(folded), "GIT_") && string(folded) != "GIT_CEILING_DIRECTORIES" {
 			continue
 		}
+		if string(folded) == "MSYS" || string(folded) == "CYGWIN" || strings.HasPrefix(string(folded), "MSYS2_") {
+			continue
+		}
 		env = append(env, kv)
 	}
 	return append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
