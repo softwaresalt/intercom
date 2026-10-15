@@ -32,6 +32,7 @@ conditions:
 head_sha_reviewed: df7d8fd6baf46af3b698e5d50da49311b6c66a09
 code_sha_reviewed: df7d8fd
 base_sha: f038032
+closure_base_sha: 526fccf46669891c4b9a191dc97449cd30e797a2
 closure_branch: post-merge/055-f-closure-045-s
 close_path: cascade
 close_evidence: docs/closure/evidence/045-S-055-F-close-evidence.json
@@ -52,7 +53,7 @@ for head `df7d8fd`.
 The closure is not complete. The classify-only close path selected `cascade`, and the mutating
 `autoharness shipment cascade-close` run needs per-closure operator approval, which dark-mode
 authority does not satisfy. Shipment 045-S therefore remains `active`, and the successor shipment
-046-S stays blocked by P-001 and P-020 until the close is approved and completed.
+046-S is queued and depends on 045-S, so it is not claimed. P-001 holds the next top-level unit while 045-S is active, until the close is approved and completed.
 
 ## Merge and gate record
 
@@ -92,8 +93,7 @@ Twelve commits from `9e42d16` to `df7d8fd` on the feature branch. Git history is
   manifest, containment held, and 055-F was `active`. Single permitted transition `active -> done`
   on 055-F, re-read as `done`. No force flags.
 * Pre-archive reconciliation (pre mode, expected_status done): lock acquired on
-  `.backlogit/queue/045-S.md`, record `active` classified `record-consistent`, 055-F matched in
-  queue, seven tasks `pre-archived`, no orphans. Verdict PROCEED. Lock released after the
+  `.backlogit/queue/045-S.md`, record `active` classified   `record-consistent`, 055-F pre-archived with declared status `done` (a1 moved it to `.backlogit/archive/`, the routing backlogit applies to done items), seven tasks `pre-archived`, and no orphans. Verdict PROCEED. Lock released after the
   classification stopped at the approval boundary.
 * Classify-only close (`autoharness shipment cascade-close --classify-only --shipment 045-S
   --feature 055-F --sha 526fccf46669891c4b9a191dc97449cd30e797a2 --json`): exit 0, classifier
@@ -130,7 +130,7 @@ Twelve commits from `9e42d16` to `df7d8fd` on the feature branch. Git history is
 
 ## Risky action record
 
-* a1 covering-feature transition `active -> done` on 055-F: low risk, backlog state only, reversible
+* a1 covering-feature transition `active -> done` on 055-F: low risk, backlog state only, relocates 055-F to `.backlogit/archive/`, reversible
   by a backlog move. Recorded here because it is the only backlog mutation made before approval.
 * No ProposedAction entries affected rollout or rollback. The feature changes CI gate scripts only.
 

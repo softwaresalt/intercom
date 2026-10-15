@@ -45,7 +45,7 @@ reviewer flags. The DARK_MODE_ACTIVE record and its scope (045-S only, no admin)
 * a1 (covering-feature completion): all five conditions held. 055-F moved `active -> done`
   (re-read `done`). No force flags.
 * Pre-archive reconciliation (pre mode): lock acquired and then released. The record is `active`
-  (record-consistent), 055-F matched in queue, the seven tasks are pre-archived, and there are no
+  (record-consistent), 055-F pre-archived with status done (a1 moved it to the archive), the seven tasks pre-archived, and no
   orphans. Verdict PROCEED.
 * Classify-only (`autoharness shipment cascade-close --classify-only`): exit 0, verdict CASCADE,
   engine VERIFIED (backlogit 1.11.0), `selected_close_path` cascade, `mutation_possible` no.
@@ -83,8 +83,8 @@ plus `51117F2D` (closure compaction follow-up). Existing entries cited: 5A8EC1BC
 ## State left behind
 
 * Branch `post-merge/055-f-closure-045-s` is checked out. Closure commits are on it, and it is
-  pushed as the closure PR.
+  local until the closure PR is opened.
 * Working tree: the operator's `config.yaml` routing edit is restored (from stash 84aabe4). Backlog
   queue, archive, and `stash.jsonl` carry-forward changes are uncommitted, as before.
 * Shipment 045-S and feature 055-F: the feature is `done`, and the shipment remains `active` until
-  the approved cascade close. P-001 keeps 046-S blocked.
+  the approved cascade close. 046-S is queued and depends on 045-S; P-001 holds the next top-level unit.

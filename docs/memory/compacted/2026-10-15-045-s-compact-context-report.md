@@ -39,11 +39,11 @@ follow-up.
 
 | Group | Files | Oldest threshold status |
 |---|---|---|
-| 2026-09-18 | 3 | older than 14 days |
-| 2026-10-01 | 1 (19134 bytes) | older than 14 days |
-| 2026-10-07 | 1 (11833 bytes) | older than 14 days |
-| 2026-10-11 | 1 | older than 14 days |
-| 2026-10-12 | 3 | older than 14 days |
+| 2026-09-18 | 3 | 27 days, older than 14 |
+| 2026-10-01 | 1 (19134 bytes) | 14 days, at the boundary (not older) |
+| 2026-10-07 | 1 (11833 bytes) | 8 days, within threshold |
+| 2026-10-11 | 1 | 4 days, within threshold |
+| 2026-10-12 | 3 | 3 days, within threshold |
 | 2026-10-13 | 1 | 2 days (044-S closure note; its closure is compacted, see docs/memory/compacted) |
 | 2026-10-14 | 2 | current release unit (045-S); not closed, so not a candidate |
 | 2026-10-15 | this report and the 045-S closure notes | current |
@@ -52,7 +52,7 @@ follow-up.
 
 ## Phase 2: candidates
 
-* Eligible by age: the 2026-09-18, 2026-10-01, 2026-10-07, 2026-10-11, and 2026-10-12 groups.
+* Eligible by age: the 2026-09-18 group only. The 2026-10-01 group is at the 14-day boundary and is not older than the threshold. The stash follow-up 51117F2D lists a wider group set for audit; only 2026-09-18 is eligible by age now.
 * Excluded by reference: `026-F-shipment-scoped-harness-contract-amendment-blocked.md` (blocked
   item 026-F).
 * Not verified: the other eligible files, pending the reference audit described above.
