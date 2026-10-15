@@ -365,10 +365,13 @@ type wrongTreeRow struct {
 // environment or the caller's working directory (055.001-T, DBE25DF5, AS-5).
 // The go shim records the --root the wrapper hands the generated binary, so
 // each row compares that root with the checkout by file identity.
-func TestCheckWritePathWrapper_WrongTreeRootAnchoring(t *testing.T) {
-	bash := requireBash(t)
-	base := filepath.Dir(installGoShim(t, bash))
-	rows := []wrongTreeRow{
+// writePathWrapperRel is the write-path wrapper, repo-relative.
+const writePathWrapperRel = "scripts/check-write-path-precondition.sh"
+
+// wrongTreeRows is the shared wrong-tree table (055.001-T, 055.003-T). Every
+// gate wrapper runs the same rows, so the wrappers cannot drift apart.
+func wrongTreeRows() []wrongTreeRow {
+	return []wrongTreeRow{
 		{name: "decoy GIT_DIR and GIT_WORK_TREE", layout: layoutOwnRepo, ambient: "decoy", wantEngine: true},
 		{name: "mixed-case ambient names", layout: layoutOwnRepo, ambient: "mixed-case", wantEngine: true},
 		{name: "GIT_DIR alone from a subdirectory", layout: layoutOwnRepo, ambient: "dir-only", subdir: "internal", wantEngine: true},
@@ -377,19 +380,30 @@ func TestCheckWritePathWrapper_WrongTreeRootAnchoring(t *testing.T) {
 		{name: "no repository", layout: layoutNoRepo, wantEngine: false},
 		{name: "nested checkout", layout: layoutNested, wantEngine: false},
 	}
-	for _, row := range rows {
+}
+
+// TestCheckWritePathWrapper_WrongTreeRootAnchoring proves the write-path
+// wrapper derives ROOT from its own checkout, never from the ambient Git
+// environment or the caller's working directory (055.001-T, DBE25DF5, AS-5).
+// The go shim records the --root the wrapper hands the generated binary, so
+// each row compares that root with the checkout by file identity.
+func TestCheckWritePathWrapper_WrongTreeRootAnchoring(t *testing.T) {
+	bash := requireBash(t)
+	base := filepath.Dir(installGoShim(t, bash))
+	for _, row := range wrongTreeRows() {
 		t.Run(row.name, func(t *testing.T) {
-			runWrongTreeRow(t, bash, base, row)
+			runWrongTreeRow(t, bash, base, writePathWrapperRel, row)
 		})
 	}
 }
 
-// runWrongTreeRow runs one row inside its own directory under base, the shim's
-// base directory. The shim is installed once for the whole table: the shim
-// directory is the managed TMP itself, so a per-row install would make Git Bash
-// spell the same directory two ways (/tmp and /c/...) and fail the self-check.
-// Each row's logs are addressed by their /c/... form instead.
-func runWrongTreeRow(t *testing.T, bash, base string, row wrongTreeRow) {
+// runWrongTreeRow runs one row of the wrong-tree table against the wrapper at
+// wrapperRel inside its own directory under base, the shim's base directory.
+// The shim is installed once per test: the shim directory is the managed TMP
+// itself, so a per-row install would make Git Bash spell the same directory
+// two ways (/tmp and /c/...) and fail the self-check. Each row's logs are
+// addressed by their /c/... form instead.
+func runWrongTreeRow(t *testing.T, bash, base, wrapperRel string, row wrongTreeRow) {
 	t.Helper()
 
 	rowDir := filepath.Join(base, strings.NewReplacer(" ", "_").Replace(row.name))
@@ -403,8 +417,8 @@ func runWrongTreeRow(t *testing.T, bash, base string, row wrongTreeRow) {
 	writeWrongTreeTree(t, decoy)
 	initWrongTreeRepo(t, decoy)
 	writeWrongTreeTree(t, checkout)
-	copyWrapperFixture(t, checkout)
-	script := filepath.Join(checkout, "scripts", "check-write-path-precondition.sh")
+	copyWrapperFixture(t, checkout, wrapperRel)
+	script := filepath.Join(checkout, filepath.FromSlash(wrapperRel))
 	cwd := checkout
 
 	switch row.layout {
@@ -420,7 +434,7 @@ func runWrongTreeRow(t *testing.T, bash, base string, row wrongTreeRow) {
 			t.Fatalf("create checkout symlink: %v", err)
 		}
 		cwd = link
-		script = filepath.Join(link, "scripts", "check-write-path-precondition.sh")
+		script = filepath.Join(link, filepath.FromSlash(wrapperRel))
 	case layoutNoRepo:
 		t.Setenv("GIT_CEILING_DIRECTORIES", filepath.ToSlash(rowDir))
 	case layoutNested:
@@ -483,12 +497,12 @@ func initWrongTreeRepo(t *testing.T, dir string) {
 	runIsolatedGit(t, dir, "init", "-q")
 }
 
-// copyWrapperFixture copies the live write-path wrapper and its shared runner
+// copyWrapperFixture copies the live wrapper at wrapperRel and the shared runner
 // into checkout, so the wrapper derives GATECHECK_SRC from the copy's location.
-func copyWrapperFixture(t *testing.T, checkout string) {
+func copyWrapperFixture(t *testing.T, checkout, wrapperRel string) {
 	t.Helper()
 	repo := gatecheckRepoRoot(t)
-	for _, rel := range []string{"scripts/check-write-path-precondition.sh", "scripts/lib/gatecheck-run.sh"} {
+	for _, rel := range []string{wrapperRel, "scripts/lib/gatecheck-run.sh"} {
 		data, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(rel)))
 		if err != nil {
 			t.Fatalf("read %s: %v", rel, err)

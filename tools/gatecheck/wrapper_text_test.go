@@ -290,10 +290,10 @@ const writePathRootBinding = `ROOT="$(gatecheck_repo_root)"`
 // GATECHECK_ROOT.
 var rootBindingPattern = regexp.MustCompile(`(^|[^A-Za-z0-9_])ROOT=`)
 
-// writePathRootBindingProblems asserts ROOT is bound on exactly one non-comment
+// wrapperRootBindingProblems asserts ROOT is bound on exactly one non-comment
 // code line and that the line is the shared-function call. Comments are
 // ignored, so a retired binding may be described without tripping the pin.
-func writePathRootBindingProblems(text string) []string {
+func wrapperRootBindingProblems(text string) []string {
 	var bindings []string
 	for _, line := range wrapperCodeLines(text) {
 		if rootBindingPattern.MatchString(line) {
@@ -314,8 +314,20 @@ func writePathRootBindingProblems(text string) []string {
 // it is trusted, and is never the only red evidence: the behavioural rows in
 // TestCheckWritePathWrapper_WrongTreeRootAnchoring are the primary proof.
 func TestWritePathWrapperText_RootBindingShapeAllowlist(t *testing.T) {
-	live := readWrapperText(t, "scripts/check-write-path-precondition.sh")
-	if p := writePathRootBindingProblems(live); len(p) != 0 {
+	assertRootBindingPin(t, readWrapperText(t, "scripts/check-write-path-precondition.sh"))
+}
+
+// TestRetiredArchWrapperText_RootBindingShapeAllowlist applies the same ROOT
+// pin to the retired-architecture wrapper (055.003-T, D-WB2-4).
+func TestRetiredArchWrapperText_RootBindingShapeAllowlist(t *testing.T) {
+	assertRootBindingPin(t, readWrapperText(t, "scripts/check-retired-architecture.sh"))
+}
+
+// assertRootBindingPin checks the live wrapper text, then runs the violation
+// and comment mutations against it.
+func assertRootBindingPin(t *testing.T, live string) {
+	t.Helper()
+	if p := wrapperRootBindingProblems(live); len(p) != 0 {
 		t.Fatalf("live wrapper: %v", p)
 	}
 	for name, repl := range map[string]string{
@@ -325,12 +337,12 @@ func TestWritePathWrapperText_RootBindingShapeAllowlist(t *testing.T) {
 		"export binding": "export " + writePathRootBinding,
 	} {
 		mutated := mustMutate(t, live, writePathRootBinding, repl)
-		if p := writePathRootBindingProblems(mutated); len(p) == 0 {
+		if p := wrapperRootBindingProblems(mutated); len(p) == 0 {
 			t.Errorf("mutation %q unexpectedly passed", name)
 		}
 	}
 	commented := mustMutate(t, live, writePathRootBinding, "# ROOT=\"$(git rev-parse --show-toplevel)\" was retired\n"+writePathRootBinding)
-	if p := writePathRootBindingProblems(commented); len(p) != 0 {
+	if p := wrapperRootBindingProblems(commented); len(p) != 0 {
 		t.Errorf("a comment mentioning a retired binding must not trip the pin: %v", p)
 	}
 }
