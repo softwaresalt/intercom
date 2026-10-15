@@ -116,6 +116,13 @@ set -euo pipefail
 # stdout/stderr bytes are preserved (ED-3/ED-5 are the only permitted
 # deltas; see m1.md for the parent-vs-head parity evidence).
 #
+# ROOT anchoring (D-WB2-4, 055.002-T): ROOT is the top level of the repository
+# that contains this script, resolved by gatecheck_repo_root
+# (scripts/lib/gatecheck-run.sh). It is never the caller's working directory or
+# an ambient GIT_* variable, and the wrapper fails closed when its own tree is
+# not a repository top (vendored or tarball copies, nested checkouts). The
+# caller-cwd rev-parse is kept only as the exit-128 work-tree precondition.
+#
 # Usage:
 #   scripts/check-write-path-precondition.sh
 #     Scans tracked, non-test Go files under internal/** and cmd/**. Exits 0
@@ -143,11 +150,16 @@ for arg in "$@"; do
   esac
 done
 
+unset CDPATH
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/gatecheck-run.sh
 source "${SCRIPT_DIR}/lib/gatecheck-run.sh"
 
-ROOT="$(git rev-parse --show-toplevel)"
+# Caller-cwd precondition (exit 128 outside a work tree). Its result is
+# discarded: ROOT is anchored by gatecheck_repo_root, never by the caller's
+# working directory (D-WB2-4).
+git rev-parse --show-toplevel >/dev/null
+ROOT="$(gatecheck_repo_root)"
 
 cleanup() {
   gatecheck_cleanup

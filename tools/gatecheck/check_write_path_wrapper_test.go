@@ -367,6 +367,7 @@ type wrongTreeRow struct {
 // each row compares that root with the checkout by file identity.
 func TestCheckWritePathWrapper_WrongTreeRootAnchoring(t *testing.T) {
 	bash := requireBash(t)
+	base := filepath.Dir(installGoShim(t, bash))
 	rows := []wrongTreeRow{
 		{name: "decoy GIT_DIR and GIT_WORK_TREE", layout: layoutOwnRepo, ambient: "decoy", wantEngine: true},
 		{name: "mixed-case ambient names", layout: layoutOwnRepo, ambient: "mixed-case", wantEngine: true},
@@ -378,18 +379,27 @@ func TestCheckWritePathWrapper_WrongTreeRootAnchoring(t *testing.T) {
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
-			runWrongTreeRow(t, bash, row)
+			runWrongTreeRow(t, bash, base, row)
 		})
 	}
 }
 
-func runWrongTreeRow(t *testing.T, bash string, row wrongTreeRow) {
+// runWrongTreeRow runs one row inside its own directory under base, the shim's
+// base directory. The shim is installed once for the whole table: the shim
+// directory is the managed TMP itself, so a per-row install would make Git Bash
+// spell the same directory two ways (/tmp and /c/...) and fail the self-check.
+// Each row's logs are addressed by their /c/... form instead.
+func runWrongTreeRow(t *testing.T, bash, base string, row wrongTreeRow) {
 	t.Helper()
 
-	goShimLog := installGoShim(t, bash)
-	base := filepath.Dir(goShimLog)
-	decoy := filepath.Join(base, "decoy")
-	checkout := filepath.Join(base, "checkout")
+	rowDir := filepath.Join(base, strings.NewReplacer(" ", "_").Replace(row.name))
+	if err := os.MkdirAll(rowDir, 0o755); err != nil {
+		t.Fatalf("create row directory: %v", err)
+	}
+	t.Setenv("GATECHECK_SENTINEL_LOG", path.Join(toBashPath(rowDir), "generated-binary-calls.log"))
+	t.Setenv("GATECHECK_ARGS_LOG", path.Join(toBashPath(rowDir), "generated-binary-args.log"))
+	decoy := filepath.Join(rowDir, "decoy")
+	checkout := filepath.Join(rowDir, "checkout")
 	writeWrongTreeTree(t, decoy)
 	initWrongTreeRepo(t, decoy)
 	writeWrongTreeTree(t, checkout)
@@ -402,7 +412,7 @@ func runWrongTreeRow(t *testing.T, bash string, row wrongTreeRow) {
 		initWrongTreeRepo(t, checkout)
 	case layoutSymlink:
 		initWrongTreeRepo(t, checkout)
-		link := filepath.Join(base, "link")
+		link := filepath.Join(rowDir, "link")
 		if err := os.Symlink(checkout, link); err != nil {
 			if isPrivilegeNotHeld(err) {
 				t.Skipf("symlink creation needs a privilege this host does not grant: %v", err)
@@ -412,9 +422,9 @@ func runWrongTreeRow(t *testing.T, bash string, row wrongTreeRow) {
 		cwd = link
 		script = filepath.Join(link, "scripts", "check-write-path-precondition.sh")
 	case layoutNoRepo:
-		t.Setenv("GIT_CEILING_DIRECTORIES", filepath.ToSlash(base))
+		t.Setenv("GIT_CEILING_DIRECTORIES", filepath.ToSlash(rowDir))
 	case layoutNested:
-		initWrongTreeRepo(t, base)
+		initWrongTreeRepo(t, rowDir)
 	default:
 		t.Fatalf("unknown layout %d", row.layout)
 	}
@@ -425,7 +435,7 @@ func runWrongTreeRow(t *testing.T, bash string, row wrongTreeRow) {
 	}
 
 	trace, exitCode := runWritePathWrapperInDir(t, bash, toBashPath(script), cwd)
-	marker := strings.TrimSpace(readOptionalFile(t, filepath.Join(base, "generated-binary-calls.log")))
+	marker := strings.TrimSpace(readOptionalFile(t, filepath.Join(rowDir, "generated-binary-calls.log")))
 
 	if !row.wantEngine {
 		if exitCode == 0 {
@@ -443,7 +453,7 @@ func runWrongTreeRow(t *testing.T, bash string, row wrongTreeRow) {
 	if marker != "invoked" {
 		t.Fatalf("engine marker = %q, want %q: the shim must have run (trace=%q)", marker, "invoked", trace)
 	}
-	root := recordedRootArg(t, filepath.Join(base, "generated-binary-args.log"))
+	root := recordedRootArg(t, filepath.Join(rowDir, "generated-binary-args.log"))
 	if !sameDirectory(t, bash, root, toBashPath(checkout)) {
 		t.Errorf("engine was handed --root %q, want the wrapper checkout %q (trace=%q)", root, checkout, trace)
 	}
