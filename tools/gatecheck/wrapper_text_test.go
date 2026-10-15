@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -277,5 +278,59 @@ func TestWritePathWrapperText_PureBashDispatch(t *testing.T) {
 		if p := writePathPureBashProblems(mutated); len(p) == 0 {
 			t.Errorf("mutation %q unexpectedly passed", name)
 		}
+	}
+}
+
+// writePathRootBinding is the single shape the write-path wrapper may use to
+// bind ROOT (055.002-T, D-WB2-4): the shared gatecheck_repo_root call.
+const writePathRootBinding = `ROOT="$(gatecheck_repo_root)"`
+
+// rootBindingPattern matches a code line that assigns ROOT, including forms
+// such as `local ROOT=` or `export ROOT=`, but not suffixed names such as
+// GATECHECK_ROOT.
+var rootBindingPattern = regexp.MustCompile(`(^|[^A-Za-z0-9_])ROOT=`)
+
+// writePathRootBindingProblems asserts ROOT is bound on exactly one non-comment
+// code line and that the line is the shared-function call. Comments are
+// ignored, so a retired binding may be described without tripping the pin.
+func writePathRootBindingProblems(text string) []string {
+	var bindings []string
+	for _, line := range wrapperCodeLines(text) {
+		if rootBindingPattern.MatchString(line) {
+			bindings = append(bindings, strings.TrimSpace(line))
+		}
+	}
+	if len(bindings) != 1 {
+		return []string{fmt.Sprintf("want exactly one ROOT binding, found %d: %q", len(bindings), bindings)}
+	}
+	if bindings[0] != writePathRootBinding {
+		return []string{"ROOT binding is not the shared-function call: " + bindings[0]}
+	}
+	return nil
+}
+
+// TestWritePathWrapperText_RootBindingShapeAllowlist is the text pin for the
+// write-path ROOT binding. It runs against the real committed wrapper before
+// it is trusted, and is never the only red evidence: the behavioural rows in
+// TestCheckWritePathWrapper_WrongTreeRootAnchoring are the primary proof.
+func TestWritePathWrapperText_RootBindingShapeAllowlist(t *testing.T) {
+	live := readWrapperText(t, "scripts/check-write-path-precondition.sh")
+	if p := writePathRootBindingProblems(live); len(p) != 0 {
+		t.Fatalf("live wrapper: %v", p)
+	}
+	for name, repl := range map[string]string{
+		"second binding": writePathRootBinding + "\nROOT=\"$(git rev-parse --show-toplevel)\"",
+		"git binding":    `ROOT="$(git rev-parse --show-toplevel)"`,
+		"local binding":  "local " + writePathRootBinding,
+		"export binding": "export " + writePathRootBinding,
+	} {
+		mutated := mustMutate(t, live, writePathRootBinding, repl)
+		if p := writePathRootBindingProblems(mutated); len(p) == 0 {
+			t.Errorf("mutation %q unexpectedly passed", name)
+		}
+	}
+	commented := mustMutate(t, live, writePathRootBinding, "# ROOT=\"$(git rev-parse --show-toplevel)\" was retired\n"+writePathRootBinding)
+	if p := writePathRootBindingProblems(commented); len(p) != 0 {
+		t.Errorf("a comment mentioning a retired binding must not trip the pin: %v", p)
 	}
 }
