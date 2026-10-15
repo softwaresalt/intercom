@@ -777,6 +777,7 @@ func TestGitRunnerEnv(t *testing.T) {
 		"GIT_CONFIG_GLOBAL=/decoy/gitconfig",
 		"HOME=/home/u",
 		"GIT_CONFIG_NOSYSTEM=0",
+		// Strip rows are red at the red commit; the keep and boundary rows below are characterization (green on arrival).
 		"MSYS=1",
 		"msys=1",
 		"CYGWIN=x",

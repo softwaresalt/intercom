@@ -337,7 +337,7 @@ const (
 	layoutOwnRepo wrongTreeLayout = iota
 	// layoutSymlink: the wrapper is invoked through a symlink to an own-repo checkout.
 	layoutSymlink
-	// layoutNoRepo: no .git exists at or above the checkout (GIT_CEILING_DIRECTORIES stops discovery at the fixture base).
+	// layoutNoRepo: no .git exists at or above the checkout (GIT_CEILING_DIRECTORIES stops discovery at the row directory).
 	layoutNoRepo
 	// layoutNested: the checkout sits inside a parent repository without its own .git.
 	layoutNested
@@ -363,16 +363,14 @@ type wrongTreeRow struct {
 	wantDiag   string
 }
 
-// TestCheckWritePathWrapper_WrongTreeRootAnchoring proves the write-path
-// wrapper derives ROOT from its own checkout, never from the ambient Git
-// environment or the caller's working directory (055.001-T, DBE25DF5, AS-5).
-// The go shim records the --root the wrapper hands the generated binary, so
-// each row compares that root with the checkout by file identity.
 // writePathWrapperRel is the write-path wrapper, repo-relative.
 const writePathWrapperRel = "scripts/check-write-path-precondition.sh"
 
-// wrongTreeRows is the shared wrong-tree table (055.001-T, 055.003-T). Every
-// gate wrapper runs the same rows, so the wrappers cannot drift apart.
+// wrongTreeRows is the shared wrong-tree table (055.001-T, 055.003-T). Both
+// gate wrappers that anchor through gatecheck_repo_root run these rows, so they
+// cannot drift apart. The decoy, mixed-case, subdirectory and nested rows are
+// red at the red commit; the control, symlink and no-repository rows are green
+// on arrival (characterization).
 func wrongTreeRows() []wrongTreeRow {
 	return []wrongTreeRow{
 		{name: "decoy GIT_DIR and GIT_WORK_TREE", layout: layoutOwnRepo, ambient: "decoy", wantEngine: true},
@@ -389,8 +387,9 @@ func wrongTreeRows() []wrongTreeRow {
 // TestCheckWritePathWrapper_WrongTreeRootAnchoring proves the write-path
 // wrapper derives ROOT from its own checkout, never from the ambient Git
 // environment or the caller's working directory (055.001-T, DBE25DF5, AS-5).
-// The go shim records the --root the wrapper hands the generated binary, so
-// each row compares that root with the checkout by file identity.
+// The generated binary records every argument it receives, so each engine row
+// reads the --root the wrapper hands it and compares that root with the
+// checkout by file identity.
 func TestCheckWritePathWrapper_WrongTreeRootAnchoring(t *testing.T) {
 	bash := requireBash(t)
 	base := filepath.Dir(installGoShim(t, bash))
