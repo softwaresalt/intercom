@@ -82,8 +82,8 @@ gatecheck_cleanup() {
 # belongs to, and fails closed unless that top level is GATECHECK_SRC itself
 # (D-WB2-4, AR-1). Root discovery never reads the caller's working directory or
 # the ambient Git environment. Inside a subshell, every exported GIT_* variable
-# is removed except GIT_CEILING_DIRECTORIES, and the three config pins of the Go
-# child are set (SEC-9). The name match is a locale-free glob with a
+# is removed except GIT_CEILING_DIRECTORIES. The three config pins the Go child
+# uses are set on this git call only (SEC-9). The name match is a locale-free glob with a
 # case-insensitive exact match for the one kept variable (SEC-4; bash 3.2
 # compatible, no ${name^^}). The scrub wraps only the git call. The result is
 # captured in the function scope, so every failure returns explicitly, prints
@@ -106,7 +106,7 @@ gatecheck_repo_root() {
         [Gg][Ii][Tt]_*)
           case "${name}" in
             [Gg][Ii][Tt]_[Cc][Ee][Ii][Ll][Ii][Nn][Gg]_[Dd][Ii][Rr][Ee][Cc][Tt][Oo][Rr][Ii][Ee][Ss]) ;;
-            *) unset "${name}" ;;
+            *) unset "${name}" || { echo "::error::gatecheck: cannot unset ${name}; refusing to run git with it" >&2; exit 2; } ;;
           esac
           ;;
       esac
