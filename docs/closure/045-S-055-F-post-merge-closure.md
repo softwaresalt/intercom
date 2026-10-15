@@ -37,7 +37,7 @@ closure_branch: post-merge/055-f-closure-045-s
 close_path: cascade
 close_evidence: docs/closure/evidence/045-S-055-F-close-evidence.json
 closure_status: READY_WITH_CONDITIONS
-compaction_status: degraded
+compaction_status: pending
 ---
 
 # 045-S / 055-F post-merge operational closure
@@ -190,12 +190,12 @@ and Windows case folding, safe.directory), 1B85D0F4 (unignore and merge-strategy
 
 ## Compaction (P-020)
 
-`compaction_status: degraded`. compact-context was invoked for target `all` and ran Phase 1 and
+`compaction_status: pending`. compact-context was invoked for target `all` and ran Phase 1 and
 Phase 2 (assessment and candidate selection). Phase 3 compacted no group. This is a partial run: the
 age-eligible group is held by blocked item 026-F and an unverified reference audit, and the
 completed-work candidates (the 043-S memory group and the 044-S halt note) are deferred. P-020
-defines `degraded` as invoked-but-failed, and this run did not fail. The degraded reading is
-therefore a judgment on a partial run, and the Orchestrator should confirm it. The report is
-`docs/memory/compacted/2026-10-15-045-s-compact-context-report.md`. Degraded is non-blocking under
+keeps `pending` for incomplete work. This run did not fail, so `degraded` would wrongly satisfy routing. The pending reading is
+therefore the correct status until the deferred work completes. The report is
+`docs/memory/compacted/2026-10-15-045-s-compact-context-report.md`. Pending blocks routing under
 P-020. The reference audit and the completed-work compaction are captured as stash entries
 51117F2D and the closure follow-up recorded in the report.

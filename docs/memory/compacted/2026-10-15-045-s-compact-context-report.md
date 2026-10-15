@@ -5,7 +5,7 @@ shipment: 045-S
 feature: 055-F
 agent: Ship
 mode: post-merge closure
-compaction_status: degraded
+compaction_status: pending
 threshold_days: 14
 ---
 
@@ -15,7 +15,7 @@ threshold_days: 14
 
 compact-context was invoked for target `all` at the 045-S post-merge closure (P-020). Phase 1
 (assess) and Phase 2 (identify candidates) ran. Phase 3 (compact) ran for no group. The
-compaction status is recorded as `degraded`, which is non-blocking under P-020, because the
+compaction status is recorded as `pending`, because the deferred work is incomplete and P-020 blocks routing on pending. Phase 3 did not run, so the
 candidate groups were not compacted in this run.
 
 ## Why Phase 3 was deferred

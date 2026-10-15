@@ -57,7 +57,7 @@ reviewer flags. The DARK_MODE_ACTIVE record and its scope (045-S only, no admin)
   archive plus closure-evidence gate after approval). The closure-evidence gate fails only on
   `frontmatter_predicate`, which is expected while a condition is unsatisfied. Completion is not
   declared.
-* Compaction (P-020): `degraded`. Phase 1 and 2 ran. Phase 3 compacted nothing, because the eligible
+* Compaction (P-020): `pending`. Phase 1 and 2 ran; Phase 3 is deferred, so routing stays blocked.
   memory groups were not cleared against live references (blocked item 026-F, and an unverified
   audit for the rest). Stash follow-up 51117F2D captures the audit.
 * Source artifact cleanup: none declared on 055-F or its tasks. The stash labels on the 055 items
