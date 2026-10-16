@@ -45,7 +45,7 @@ func TestCheckWritePathWrapper_RejectsRootInjectionBeforeBuild(t *testing.T) {
 func TestCheckWritePathWrapper_LegitimateModesReachBuild(t *testing.T) {
 	bash := requireBash(t)
 	script := writePathWrapperPath(t)
-	shimDir := installGoShimDir(t, bash)
+	shimDir := installGoShim(t, bash)
 
 	for _, tc := range []struct {
 		name string
@@ -211,7 +211,7 @@ func writePathWrapperPath(t *testing.T) string {
 // checkout by file identity.
 func TestCheckWritePathWrapper_WrongTreeRootAnchoring(t *testing.T) {
 	bash := requireBash(t)
-	base := installGoShimDir(t, bash)
+	base := installGoShim(t, bash)
 	for _, row := range wrongTreeRows() {
 		t.Run(row.name, func(t *testing.T) {
 			runWrongTreeRow(t, bash, base, writePathWrapperRel, row)

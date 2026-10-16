@@ -54,10 +54,8 @@ func workspaceTempDir(t *testing.T) string {
 	return dir
 }
 
-// installGoShimDir installs the go shim and returns the shim directory.
-// installGoShim is the transitional wrapper that still returns the shim's call
-// log path; 057.023-T removes it.
-func installGoShimDir(t *testing.T, bash string) string {
+// installGoShim installs the go shim and returns the shim directory.
+func installGoShim(t *testing.T, bash string) string {
 	t.Helper()
 
 	dir := workspaceTempDir(t)
@@ -126,11 +124,6 @@ unexpected "$*"
 		t.Fatalf("go resolves to %q, want test shim %q", got, want)
 	}
 	return dir
-}
-
-func installGoShim(t *testing.T, bash string) string {
-	t.Helper()
-	return filepath.Join(installGoShimDir(t, bash), "go-calls.log")
 }
 
 func platformGoExe() string {
