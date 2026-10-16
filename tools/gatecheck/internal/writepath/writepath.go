@@ -1171,25 +1171,31 @@ func runFixtureSelfTest(root string) Result {
 // Run dispatches the top-level CLI-style modes exactly like
 // scripts/check-write-path-precondition.sh's case statement:
 //
-//	flag == ""                      -> repo-mode scan only
-//	flag == "--self-test"           -> fixture self-test, then repo scan,
-//	                                    then a trailing banner on success
-//	flag == "--self-test-integrity" -> fixture self-test only, then a
+//	flag == ""                      -> notice mode=repo, then repo-mode scan only
+//	flag == "--self-test"           -> notice mode=self-test, then fixture
+//	                                    self-test, then repo scan, then a
 //	                                    trailing banner on success
-//	anything else                   -> usage to stderr, exit 2
+//	flag == "--self-test-integrity" -> notice mode=self-test-integrity, then
+//	                                    fixture self-test only, then a
+//	                                    trailing banner on success
+//	anything else                   -> usage to stderr, exit 2, NO notice
 //
+// The `::notice::write-path gate mode=X` line goes to stdout first, mirroring
+// retiredarch.Run (058.005-T).//
 // It writes ordered stdout/stderr bytes to the given writers and returns
 // the process-style exit code (M1-T8; M1-T10 wires this into
 // `gatecheck write-path`).
 func Run(flag, root string, git GitRunner, stdout, stderr io.Writer) int {
 	switch flag {
 	case "":
+		_, _ = io.WriteString(stdout, logLine("::notice::write-path gate mode=repo"))
 		res := runRepoScan(root, git)
 		_, _ = io.WriteString(stdout, res.Stdout)
 		_, _ = io.WriteString(stderr, res.Stderr)
 		return res.Code
 
 	case "--self-test":
+		_, _ = io.WriteString(stdout, logLine("::notice::write-path gate mode=self-test"))
 		res := runFixtureSelfTest(root)
 		_, _ = io.WriteString(stdout, res.Stdout)
 		_, _ = io.WriteString(stderr, res.Stderr)
@@ -1206,6 +1212,7 @@ func Run(flag, root string, git GitRunner, stdout, stderr io.Writer) int {
 		return 0
 
 	case "--self-test-integrity":
+		_, _ = io.WriteString(stdout, logLine("::notice::write-path gate mode=self-test-integrity"))
 		res := runFixtureSelfTest(root)
 		_, _ = io.WriteString(stdout, res.Stdout)
 		_, _ = io.WriteString(stderr, res.Stderr)
