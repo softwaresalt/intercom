@@ -122,6 +122,40 @@ func TestRootGitignoreTextAt_HEAD_DirectoryGitignore_Errors(t *testing.T) {
 	}
 }
 
+// TestRootGitignoreTextAt_NonHEAD_DirectoryGitignore_Errors pins that a
+// baseline tree whose root .gitignore is a directory is rejected: `git show
+// <tree>:.gitignore` succeeds on a tree object and would print its listing.
+func TestRootGitignoreTextAt_NonHEAD_DirectoryGitignore_Errors(t *testing.T) {
+	git := newIsolatedGitRunner(t)
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		if _, stderr, err := git(dir, nil, args...); err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, stderr)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
+		t.Fatalf("mkdir .gitignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore", "inner"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write inner: %v", err)
+	}
+	run("add", ".gitignore/inner")
+	run("commit", "-q", "-m", "dir gitignore")
+
+	text, err := rootGitignoreTextAt(dir, "main", git)
+	if err == nil {
+		t.Fatalf("expected a directory baseline .gitignore to error, got text %q", text)
+	}
+	if text != "" {
+		t.Fatalf("text = %q, want empty alongside the error", text)
+	}
+	if !strings.Contains(err.Error(), "::error::") || !strings.Contains(err.Error(), "exists") {
+		t.Fatalf("error %q is not the ::error:: failed-read diagnostic", err)
+	}
+}
+
 func TestRootGitignoreTextAt_ValidRef(t *testing.T) {
 	git := newIsolatedGitRunner(t)
 	dir := t.TempDir()
@@ -359,7 +393,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			name: "option-like ref rejected before git even if show would succeed",
 			ref:  "--format=x",
 			replies: map[string]reply{
-				"show": {stdout: "x\n"},
+				"cat-file": {stdout: "x\n"},
 			},
 			wantSub: "not a valid ref",
 		},
@@ -392,7 +426,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {err: errors.New("exec: not found")},
+				"cat-file":  {err: errors.New("exec: not found")},
 			},
 			wantSub: "could not run",
 		},
@@ -401,7 +435,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {err: exitErr},
+				"cat-file":  {err: exitErr},
 				"ls-tree":   {err: exitErr},
 			},
 			wantSub: "ls-tree",
@@ -411,7 +445,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {err: exitErr},
+				"cat-file":  {err: exitErr},
 				"ls-tree":   {stdout: presentListing},
 			},
 			wantSub: "exists",
@@ -421,7 +455,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {err: exitErr},
+				"cat-file":  {err: exitErr},
 				"ls-tree":   {stdout: absentListing},
 			},
 		},
@@ -430,7 +464,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {stdout: "foo\n"},
+				"cat-file":  {stdout: "foo\n"},
 			},
 			wantText: "foo\n",
 		},
@@ -470,9 +504,9 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 					if want := []string{"rev-parse", "--verify", "--quiet", tc.ref + "^{tree}"}; strings.Join(call, " ") != strings.Join(want, " ") {
 						t.Fatalf("rev-parse args %v, want %v", call, want)
 					}
-				case "show":
-					if want := []string{"show", tree + ":.gitignore"}; strings.Join(call, " ") != strings.Join(want, " ") {
-						t.Fatalf("show args %v, want %v", call, want)
+				case "cat-file":
+					if want := []string{"cat-file", "blob", tree + ":.gitignore"}; strings.Join(call, " ") != strings.Join(want, " ") {
+						t.Fatalf("cat-file args %v, want %v", call, want)
 					}
 				case "ls-tree":
 					if want := []string{"ls-tree", "--full-tree", "-z", tree}; strings.Join(call, " ") != strings.Join(want, " ") {
