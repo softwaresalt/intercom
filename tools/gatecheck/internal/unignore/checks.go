@@ -1,6 +1,13 @@
 // This file (checks.go) ports the DENYLIST constant, run_denylist_check,
 // run_differential_check and run_ls_files_check from the
 // check-unignore-regression.sh Python heredoc (plan §6, M3-T5).
+//
+// "::error::" prefix convention (package-wide, checks.go, git.go and
+// checkignore.go alike): callees return errors and may start the message
+// with "::error::" or not (plain os/pysem errors). They must NOT add a
+// second prefix when wrapping a callee error. The print sites in
+// unignore.go (printError) own the single leading "::error::" on stderr and
+// strip one already present, so a prefix is never doubled or missing.
 package unignore
 
 import (

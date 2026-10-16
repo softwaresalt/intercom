@@ -23,21 +23,12 @@ func f() {
 }
 `
 
-// unixWriteFixture writes src at path, creating parent directories.
-func unixWriteFixture(t *testing.T, path, src string) {
-	t.Helper()
-	u4Mkdir(t, filepath.Dir(path))
-	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // TestRunFixtureSelfTest_SinkEscapesControlText pins the fixture self-test
-// sinks (U3). The rows live in a linux || darwin file because the fixture names
+// sinks. The rows live in a linux || darwin file because the fixture names
 // embed a newline, which Windows cannot create. The PASS and FAIL lines and the
 // joined findings must escape that name, and no output may echo the absolute
 // root. The not-a-contained-regular-file line is a characterization row, because
-// errorLine already escapes it. The PASS and FAIL rows are green since U4.
+// errorLine already escapes it. The PASS and FAIL rows pin the escape.
 func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 	const (
 		fixtureRel = "scripts/testdata/writepath"
@@ -48,7 +39,7 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 
 	t.Run("PASS line escapes the fixture name", func(t *testing.T) {
 		root := t.TempDir()
-		unixWriteFixture(t, filepath.Join(root, fixtureRel, rejectName), u4RejectGo)
+		writeText(t, filepath.Join(root, fixtureRel, rejectName), rejectGoSource)
 
 		res := runFixtureSelfTest(root)
 		assertNoRawControl(t, res.Stdout)
@@ -64,7 +55,7 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 
 	t.Run("FAIL line and joined findings escape the fixture name", func(t *testing.T) {
 		root := t.TempDir()
-		unixWriteFixture(t, filepath.Join(root, fixtureRel, acceptName), unixTwoPrimitivesGo)
+		writeText(t, filepath.Join(root, fixtureRel, acceptName), unixTwoPrimitivesGo)
 
 		res := runFixtureSelfTest(root)
 		assertNoRawControl(t, res.Stderr)
@@ -84,9 +75,9 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 		temp := t.TempDir()
 		root := filepath.Join(temp, "repo")
 		target := filepath.Join(temp, "outside", "y.go")
-		unixWriteFixture(t, target, u4RejectGo)
-		u4Mkdir(t, filepath.Join(root, fixtureRel))
-		u4CreateSymlink(t, target, filepath.Join(root, fixtureRel, linkName))
+		writeText(t, target, rejectGoSource)
+		mkdirAll(t, filepath.Join(root, fixtureRel))
+		createSymlink(t, target, filepath.Join(root, fixtureRel, linkName))
 
 		res := runFixtureSelfTest(root)
 		assertNoRawControl(t, res.Stderr)
@@ -102,15 +93,15 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 	})
 }
 
-// TestRunRepoScan_NewlineNonSelectedNameEscapes is the Linux-only outcome-4 row
+// TestRunRepoScan_NewlineNonSelectedNameEscapes is the outcome-4 row
 // for a real newline in a non-selected directory name. Windows cannot create
 // such a name, so the row lives in this linux || darwin file.
 func TestRunRepoScan_NewlineNonSelectedNameEscapes(t *testing.T) {
 	const rel = "internal/a\n::error::x"
 	root := t.TempDir()
-	u4Mkdir(t, filepath.Join(root, filepath.FromSlash(rel)))
+	mkdirAll(t, filepath.Join(root, filepath.FromSlash(rel)))
 
-	res := runRepoScan(root, u4StubGit(rel))
+	res := runRepoScan(root, stubGitListing(rel))
 	want := `::error::internal/a\x0a::error::x: not a contained regular file: `
 	if res.Code != 1 {
 		t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
@@ -137,7 +128,7 @@ func TestRunFixtureSelfTest_FIFOFixtureRefused(t *testing.T) {
 	)
 	root := t.TempDir()
 	fixtureDir := filepath.Join(root, filepath.FromSlash(fixtureRel))
-	unixWriteFixture(t, filepath.Join(fixtureDir, "accept-ok.go"), u4CleanGo)
+	writeText(t, filepath.Join(fixtureDir, "accept-ok.go"), cleanGoSource)
 	fifo := filepath.Join(fixtureDir, "reject-fifo.go")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
 		t.Fatalf("mkfifo %s: %v", fifo, err)

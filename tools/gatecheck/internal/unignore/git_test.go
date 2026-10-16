@@ -24,15 +24,34 @@ func TestExitCode_ExitError(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found on PATH")
 	}
-	// `git this-is-not-a-command` reliably exits 1.
-	cmd := exec.Command("git", "this-is-not-a-command")
-	err := cmd.Run()
-	if err == nil {
-		t.Fatal("expected git to fail on an unknown subcommand")
-	}
+	plantGitInterceptors(t)
+	err := realExitError(t)
 	if got := exitCode(err); got <= 0 {
 		t.Fatalf("exitCode(exec.ExitError) = %d, want > 0", got)
 	}
+}
+
+// plantGitInterceptors makes a user-level git alias and a git-* executable
+// on PATH both claim the unknown subcommand name used by the old
+// TestExitCode_ExitError, so a test that shells out to plain `git` for it
+// no longer fails with the expected non-zero exit.
+func plantGitInterceptors(t *testing.T) {
+	t.Helper()
+	const sub = "this-is-not-a-command"
+	binDir := t.TempDir()
+	name, body := "git-"+sub, "#!/bin/sh\nexit 0\n"
+	if runtime.GOOS == "windows" {
+		name, body = name+".cmd", "@exit /b 0\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(binDir, name), []byte(body), 0o755); err != nil {
+		t.Fatalf("write git-* executable: %v", err)
+	}
+	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(cfg, []byte("[alias]\n\t"+sub+" = version\n"), 0o644); err != nil {
+		t.Fatalf("write alias config: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
 }
 
 func TestRootGitignoreTextAt_HEAD_ReadsDiskDirectly(t *testing.T) {
@@ -100,6 +119,40 @@ func TestRootGitignoreTextAt_HEAD_DirectoryGitignore_Errors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("error %q does not report the non-regular-file rejection", err)
+	}
+}
+
+// TestRootGitignoreTextAt_NonHEAD_DirectoryGitignore_Errors pins that a
+// baseline tree whose root .gitignore is a directory is rejected: `git show
+// <tree>:.gitignore` succeeds on a tree object and would print its listing.
+func TestRootGitignoreTextAt_NonHEAD_DirectoryGitignore_Errors(t *testing.T) {
+	git := newIsolatedGitRunner(t)
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		if _, stderr, err := git(dir, nil, args...); err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, stderr)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
+		t.Fatalf("mkdir .gitignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore", "inner"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write inner: %v", err)
+	}
+	run("add", ".gitignore/inner")
+	run("commit", "-q", "-m", "dir gitignore")
+
+	text, err := rootGitignoreTextAt(dir, "main", git)
+	if err == nil {
+		t.Fatalf("expected a directory baseline .gitignore to error, got text %q", text)
+	}
+	if text != "" {
+		t.Fatalf("text = %q, want empty alongside the error", text)
+	}
+	if !strings.Contains(err.Error(), "::error::") || !strings.Contains(err.Error(), "exists") {
+		t.Fatalf("error %q is not the ::error:: failed-read diagnostic", err)
 	}
 }
 
@@ -340,7 +393,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			name: "option-like ref rejected before git even if show would succeed",
 			ref:  "--format=x",
 			replies: map[string]reply{
-				"show": {stdout: "x\n"},
+				"cat-file": {stdout: "x\n"},
 			},
 			wantSub: "not a valid ref",
 		},
@@ -373,7 +426,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {err: errors.New("exec: not found")},
+				"cat-file":  {err: errors.New("exec: not found")},
 			},
 			wantSub: "could not run",
 		},
@@ -382,7 +435,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {err: exitErr},
+				"cat-file":  {err: exitErr},
 				"ls-tree":   {err: exitErr},
 			},
 			wantSub: "ls-tree",
@@ -392,7 +445,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {err: exitErr},
+				"cat-file":  {err: exitErr},
 				"ls-tree":   {stdout: presentListing},
 			},
 			wantSub: "exists",
@@ -402,7 +455,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {err: exitErr},
+				"cat-file":  {err: exitErr},
 				"ls-tree":   {stdout: absentListing},
 			},
 		},
@@ -411,7 +464,7 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 			ref:  "main",
 			replies: map[string]reply{
 				"rev-parse": {stdout: tree + "\n"},
-				"show":      {stdout: "foo\n"},
+				"cat-file":  {stdout: "foo\n"},
 			},
 			wantText: "foo\n",
 		},
@@ -451,9 +504,9 @@ func TestRootGitignoreTextAt_NonHEADClassification(t *testing.T) {
 					if want := []string{"rev-parse", "--verify", "--quiet", tc.ref + "^{tree}"}; strings.Join(call, " ") != strings.Join(want, " ") {
 						t.Fatalf("rev-parse args %v, want %v", call, want)
 					}
-				case "show":
-					if want := []string{"show", tree + ":.gitignore"}; strings.Join(call, " ") != strings.Join(want, " ") {
-						t.Fatalf("show args %v, want %v", call, want)
+				case "cat-file":
+					if want := []string{"cat-file", "blob", tree + ":.gitignore"}; strings.Join(call, " ") != strings.Join(want, " ") {
+						t.Fatalf("cat-file args %v, want %v", call, want)
 					}
 				case "ls-tree":
 					if want := []string{"ls-tree", "--full-tree", "-z", tree}; strings.Join(call, " ") != strings.Join(want, " ") {

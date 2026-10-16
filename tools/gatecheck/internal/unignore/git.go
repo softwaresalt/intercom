@@ -88,10 +88,10 @@ func exitCode(err error) int {
 // ref == "HEAD" it reads the root .gitignore directly off disk (an absent
 // file is treated as empty content, not an error). At any other ref it
 // first resolves ref to a tree object (resolveBaselineTree), then reads
-// `git show <tree>:.gitignore`, the tree-qualified path. Resolving first
+// `git cat-file blob <tree>:.gitignore`, the tree-qualified path. Resolving first
 // means an unresolvable ref -- including an empty or option-like one that
-// `git show` could otherwise accept without resolving any ref -- is a
-// distinct non-nil error before `git show` ever runs. When `git show`
+// `git cat-file` could otherwise accept without resolving any ref -- is a
+// distinct non-nil error before `git cat-file` ever runs. When `git cat-file`
 // fails for a resolved tree, classifyShowFailure separates the two failure
 // modes that root_gitignore_text_at used to conflate (035-F): a tree with
 // no root .gitignore returns ("", nil), a legitimate empty baseline, while
@@ -131,7 +131,7 @@ func rootGitignoreTextAt(repoDir, ref string, git GitRunner) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	stdout, showStderr, err := git(repoDir, nil, "show", tree+":.gitignore")
+	stdout, showStderr, err := git(repoDir, nil, "cat-file", "blob", tree+":.gitignore")
 	if err != nil {
 		// 035-F: the tree already resolved, so only a positively absent
 		// root .gitignore is an empty baseline; anything else is an error.
@@ -186,7 +186,7 @@ func isHexObjectID(s string) bool {
 	return true
 }
 
-// classifyShowFailure decides what a failed `git show <tree>:.gitignore`
+// classifyShowFailure decides what a failed `git cat-file blob <tree>:.gitignore`
 // means once ref has already resolved to tree. git exits 128 both for a
 // missing path and for other read failures, and its stderr text is
 // locale-dependent, so neither is inspected. Instead git is asked a
@@ -199,7 +199,7 @@ func isHexObjectID(s string) bool {
 // output, or a .gitignore entry that exists but could not be shown.
 func classifyShowFailure(repoDir, ref, tree string, git GitRunner, showErr error, showStderr []byte) error {
 	if exitCode(showErr) < 0 {
-		return fmt.Errorf("::error::git show %s:.gitignore could not run while resolving ref %q: %v", tree, ref, showErr)
+		return fmt.Errorf("::error::git cat-file blob %s:.gitignore could not run while resolving ref %q: %v", tree, ref, showErr)
 	}
 	listing, lsStderr, lsErr := git(repoDir, nil, "ls-tree", "--full-tree", "-z", tree)
 	if lsErr != nil {
@@ -214,7 +214,7 @@ func classifyShowFailure(repoDir, ref, tree string, git GitRunner, showErr error
 	}
 	if present {
 		return fmt.Errorf(
-			"::error::git show %s:.gitignore failed although the root .gitignore exists at ref %q: %v: %s",
+			"::error::git cat-file blob %s:.gitignore failed although the root .gitignore exists at ref %q: %v: %s",
 			tree, ref, showErr, strings.TrimSpace(string(showStderr)),
 		)
 	}

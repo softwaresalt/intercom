@@ -602,11 +602,11 @@ func runRepoScan(root string, git GitRunner) Result {
 	var findings []string
 	for _, rel := range relPaths {
 		path := filepath.Join(root, filepath.FromSlash(rel))
-		// U3 (990AFA71): never read a selected path through a symlink,
+		// 990AFA71: never read a selected path through a symlink,
 		// junction or other non-regular component; report it as a
 		// fail-closed synthetic finding instead (INV-2).
 		if ok, reason := containedRegularFile(root, rel); !ok {
-			findings = append(findings, fmt.Sprintf("%s: not a contained regular file: %s (fail-closed synthetic finding)", filepath.ToSlash(path), reason))
+			findings = append(findings, fmt.Sprintf("%s: not a contained regular file: %s (fail-closed synthetic finding)", filepath.ToSlash(rel), reason))
 			continue
 		}
 		findings = append(findings, scanPath(path)...)
@@ -701,7 +701,7 @@ func runSelfTestAssertions(root string, git GitRunner, stdout, stderr io.Writer)
 	return 0
 }
 
-// containedRegularFile is the U3 (990AFA71) containment check run before a
+// containedRegularFile is the 990AFA71 containment check run before a
 // selected repo path is read. It walks rel ('/'-separated, exactly as
 // `git ls-files` prints it) one component at a time with os.Lstat, which
 // never follows a link. Every intermediate component must be a real

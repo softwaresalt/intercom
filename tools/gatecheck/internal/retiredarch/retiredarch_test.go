@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -607,8 +608,8 @@ func TestRunRepoScan_OnlyOutOfScopePaths_FailsClosed(t *testing.T) {
 }
 
 // u3StubGit returns a GitRunner that ignores the pathspecs and reports
-// exactly the given repo-relative paths, so a U3 containment scenario
-// needs no real git index (plan U3: containment is index-independent).
+// exactly the given repo-relative paths, so a 990AFA71 containment scenario
+// needs no real git index (plan 990AFA71: containment is index-independent).
 func u3StubGit(paths ...string) GitRunner {
 	return func(root string, pathspecs ...string) ([]byte, error) {
 		return lsFilesListing(paths...), nil
@@ -629,20 +630,25 @@ func u3Junction(t *testing.T, link, target string) {
 	}
 }
 
-// u3MustContain asserts a repo scan failed closed with the U3 synthetic
+// u3MustContain asserts a repo scan failed closed with the 990AFA71 synthetic
 // finding for rel.
 func u3MustContain(t *testing.T, res Result, root, rel string) {
 	t.Helper()
-	want := filepath.ToSlash(filepath.Join(root, filepath.FromSlash(rel))) + ": not a contained regular file: "
+	want := rel + ": not a contained regular file: "
 	if res.Code != 1 {
 		t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
 	}
-	if !strings.Contains(res.Stderr, want) || !strings.Contains(res.Stderr, "(fail-closed synthetic finding)") {
+	if !strings.HasPrefix(res.Stderr, want) || !strings.Contains(res.Stderr, "(fail-closed synthetic finding)") {
 		t.Fatalf("stderr = %q, want the U3 finding prefix %q", res.Stderr, want)
+	}
+	for _, echoed := range []string{root, filepath.ToSlash(root)} {
+		if strings.Contains(res.Stderr, echoed) {
+			t.Fatalf("stderr = %q echoes the absolute root %q", res.Stderr, echoed)
+		}
 	}
 }
 
-// TestRunRepoScan_FinalComponentSymlink_FailsClosed (U3 AC-1): a selected
+// TestRunRepoScan_FinalComponentSymlink_FailsClosed (990AFA71 AC-1): a selected
 // internal/x.go that is a symlink to a clean file outside root must not be
 // read through.
 func TestRunRepoScan_FinalComponentSymlink_FailsClosed(t *testing.T) {
@@ -655,17 +661,36 @@ func TestRunRepoScan_FinalComponentSymlink_FailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, filepath.Join(root, "internal", "x.go")); err != nil {
-		if runtime.GOOS == "windows" {
-			t.Skipf("os.Symlink unavailable on Windows without privilege: %v", err)
+		if symlinkPrivilegeMissing(err) {
+			t.Skipf("Windows symlink privilege unavailable; Linux CI expensive job (go test -race ./...) must run this case: %v", err)
 		}
 		t.Fatalf("os.Symlink: %v", err)
 	}
 	u3MustContain(t, runRepoScan(root, u3StubGit("internal/x.go")), root, "internal/x.go")
 }
 
-// TestRunRepoScan_FinalComponentJunction_FailsClosed (U3 AC-2, Windows):
+// symlinkPrivilegeMissing reports whether err is Windows
+// ERROR_PRIVILEGE_NOT_HELD (1314), the only symlink failure a test may skip.
+func symlinkPrivilegeMissing(err error) bool {
+	return runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314))
+}
+
+func TestSymlinkPrivilegeMissing_OnlyErrno1314OnWindows(t *testing.T) {
+	if got := symlinkPrivilegeMissing(errors.New("boom")); got {
+		t.Fatal("a non-errno error must not be skippable")
+	}
+	if got := symlinkPrivilegeMissing(&os.LinkError{Op: "symlink", Err: syscall.Errno(5)}); got {
+		t.Fatal("a non-1314 errno must not be skippable")
+	}
+	want := runtime.GOOS == "windows"
+	if got := symlinkPrivilegeMissing(&os.LinkError{Op: "symlink", Err: syscall.Errno(1314)}); got != want {
+		t.Fatalf("errno 1314 skippable = %v, want %v on %s", got, want, runtime.GOOS)
+	}
+}
+
+// TestRunRepoScan_FinalComponentJunction_FailsClosed (990AFA71 AC-2, Windows):
 // a selected internal/x.go that is a junction to an outside directory
-// yields the U3 text instead of the parent's directory read-error text.
+// yields the 990AFA71 text instead of the parent's directory read-error text.
 func TestRunRepoScan_FinalComponentJunction_FailsClosed(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("directory junctions are Windows-only")
@@ -678,7 +703,7 @@ func TestRunRepoScan_FinalComponentJunction_FailsClosed(t *testing.T) {
 	u3MustContain(t, runRepoScan(root, u3StubGit("internal/x.go")), root, "internal/x.go")
 }
 
-// TestRunRepoScan_IntermediateLink_FailsClosed (U3 AC-3): an intermediate
+// TestRunRepoScan_IntermediateLink_FailsClosed (990AFA71 AC-3): an intermediate
 // internal/d that is a symlink (Unix) or a junction (Windows) to an
 // outside directory holding clean y.go must not be traversed.
 func TestRunRepoScan_IntermediateLink_FailsClosed(t *testing.T) {
@@ -698,7 +723,7 @@ func TestRunRepoScan_IntermediateLink_FailsClosed(t *testing.T) {
 	u3MustContain(t, runRepoScan(root, u3StubGit("internal/d/y.go")), root, "internal/d/y.go")
 }
 
-// TestContainedRegularFile_RejectsMalformedComponents (U3 AC-4): these
+// TestContainedRegularFile_RejectsMalformedComponents (990AFA71 AC-4): these
 // rel shapes never pass shouldScanRepoPath, so they are direct unit rows.
 func TestContainedRegularFile_RejectsMalformedComponents(t *testing.T) {
 	root := t.TempDir()
@@ -731,7 +756,7 @@ func TestContainedRegularFile_AcceptsRegularAndMissing(t *testing.T) {
 	}
 }
 
-// TestRunRepoScan_DeletedFile_KeepsReadErrorText (U3 AC-4
+// TestRunRepoScan_DeletedFile_KeepsReadErrorText (990AFA71 AC-4
 // characterization): a selected-but-deleted file keeps the existing
 // scanPath read-error text byte-for-byte (SB-3, ED-11 unchanged).
 func TestRunRepoScan_DeletedFile_KeepsReadErrorText(t *testing.T) {
@@ -749,7 +774,7 @@ func TestRunRepoScan_DeletedFile_KeepsReadErrorText(t *testing.T) {
 	}
 }
 
-// TestContainedRegularFile_UnreadableIntermediate_FailsClosed (U3 AC-4b,
+// TestContainedRegularFile_UnreadableIntermediate_FailsClosed (990AFA71 AC-4b,
 // non-Windows): a 0o000 intermediate directory makes the child Lstat fail
 // with a permission error; that is not fs.ErrNotExist, so the component
 // type was never verified and the check fails closed with an lstat reason.

@@ -17,7 +17,7 @@ import (
 )
 
 // lsFilesListing is the fake `git ls-files -z` listing: each path is
-// NUL-terminated. U1 centralised this helper and U2 flipped the runner format
+// NUL-terminated. 4537B2F6 centralised this helper and flipped the runner format
 // from newline to NUL here, in one place.
 func lsFilesListing(paths ...string) []byte {
 	if len(paths) == 0 {
@@ -461,7 +461,7 @@ func isGitTrackedFile(t *testing.T, root, relPath string) bool {
 	return true
 }
 
-// TestMain doubles as a natively launchable fake git (U4/U6 helper; plan
+// TestMain doubles as a natively launchable fake git (D7BF9F74 helper; plan
 // S2-1, AS-2/G-1). copyFakeGit copies this test binary to dir/git(.exe);
 // when that copy is launched git-style (os.Args[1] is "ls-files" or "-C")
 // with RETIREDARCH_FAKE_GIT=1, it writes the RETIREDARCH_FAKE_GIT_MARKER
@@ -563,7 +563,7 @@ func fixtureGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// TestRunRepoScan_NonASCIIPath_IsScanned_RealGit is U2 bug evidence: real
+// TestRunRepoScan_NonASCIIPath_IsScanned_RealGit is 4537B2F6 bug evidence: real
 // git quotes a non-ASCII tracked filename in the parent's newline output,
 // so the parent silently omits this retired token and exits zero.
 func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
@@ -596,11 +596,11 @@ func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
 	}
 }
 
-// TestDefaultGitRunnerIgnoresGitEnv (U2/U6): GIT_* variables in the
+// TestDefaultGitRunnerIgnoresGitEnv (4537B2F6/D7BF9F74): GIT_* variables in the
 // gate's own environment must not change which files DefaultGitRunner
 // selects. The fixed expected baseline includes the non-ASCII path; the
-// per-vector comparison is against the observed baseline so U6's
-// isolation characterization remains green independently of U2.
+// per-vector comparison is against the observed baseline so D7BF9F74's
+// isolation characterization remains green independently of 4537B2F6.
 func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	root := t.TempDir()
 	for rel, body := range map[string]string{
@@ -636,32 +636,34 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 		name       string
 		env        map[string]string
 		minorFloor int
-		live       bool
+		// noLiveness, when non-empty, exempts the row from the liveness
+		// control and states why; every other row must prove its vector
+		// makes plain git fail, so a new row cannot omit the control silently.
+		noLiveness string
 	}{
 		{
-			name: "a_GIT_INDEX_FILE_nonexistent",
-			env:  map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")},
+			name:       "a_GIT_INDEX_FILE_nonexistent",
+			env:        map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")},
+			noLiveness: "a missing index file is read as empty, so plain git ls-files still exits 0",
 		},
 		{
-			name: "b_GIT_LITERAL_PATHSPECS",
-			env:  map[string]string{"GIT_LITERAL_PATHSPECS": "1"},
+			name:       "b_GIT_LITERAL_PATHSPECS",
+			env:        map[string]string{"GIT_LITERAL_PATHSPECS": "1"},
+			noLiveness: "literal pathspecs change the match set but git ls-files still exits 0",
 		},
 		{
 			name:       "c_GIT_CONFIG_COUNT_missing_key",
 			env:        map[string]string{"GIT_CONFIG_COUNT": "1"},
 			minorFloor: 31,
-			live:       true,
 		},
 		{
 			name: "d_GIT_CONFIG_PARAMETERS_malformed",
 			env:  map[string]string{"GIT_CONFIG_PARAMETERS": "not-a-valid-config"},
-			live: true,
 		},
 		{
 			name:       "e_GIT_CONFIG_GLOBAL_malformed",
 			env:        map[string]string{"GIT_CONFIG_GLOBAL": globalCfg},
 			minorFloor: 32,
-			live:       true,
 		},
 	}
 	versionOut, err := exec.Command("git", "--version").Output()
@@ -714,7 +716,7 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 			for k, val := range v.env {
 				t.Setenv(k, val)
 			}
-			if v.live {
+			if v.noLiveness == "" {
 				if err := livenessControl(t, v.env); err == nil {
 					t.Fatalf("liveness control for %v exited successfully, want non-zero", v.env)
 				} else {
@@ -737,7 +739,7 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	}
 }
 
-// TestDefaultGitRunnerRefusesRelativeGit (U4 scenario 3, AC-3): when PATH
+// TestDefaultGitRunnerRefusesRelativeGit (D7BF9F74 scenario 3, AC-3): when PATH
 // lookup resolves git to a relative path (here PATH="." with
 // GODEBUG=execerrdot=0), DefaultGitRunner refuses it before launching
 // anything.
@@ -750,7 +752,7 @@ func TestDefaultGitRunnerRefusesRelativeGit(t *testing.T) {
 	assertFakeGitNotRun(t, marker)
 }
 
-// TestDefaultGitRunnerMissingGitIsNotFound (U4 AC-4, characterization;
+// TestDefaultGitRunnerMissingGitIsNotFound (D7BF9F74 AC-4, characterization;
 // SB2-2): with no git reachable at all, cmd.Err is reported first, so the
 // error is exec.ErrNotFound and never the non-absolute refusal.
 func TestDefaultGitRunnerMissingGitIsNotFound(t *testing.T) {
@@ -763,7 +765,7 @@ func TestDefaultGitRunnerMissingGitIsNotFound(t *testing.T) {
 	}
 }
 
-// TestGitRunnerEnv (U4 scenario 1, AC-1): the pure environment filter.
+// TestGitRunnerEnv (D7BF9F74 scenario 1, AC-1): the pure environment filter.
 func TestGitRunnerEnv(t *testing.T) {
 	in := []string{
 		"PATH=/usr/bin",

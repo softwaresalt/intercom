@@ -910,8 +910,9 @@ func unwrapPathError(err error) error {
 // deliberately not escaped: an attacker-written literal \x0a is
 // indistinguishable from an escaped newline. That is cosmetic only, because a
 // workflow command needs a real line break to take effect.
-// Keep in sync with any retiredarch copy; the planned home is pysem when
-// 36BE1F61 lands.
+// No retiredarch copy exists today (retiredarch has no escapeLogText); if one is
+// added, keep the two in sync. The planned shared home is pysem when 36BE1F61
+// lands.
 func escapeLogText(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -937,7 +938,7 @@ func escapeLogText(s string) string {
 // containedRegularFile reports whether rel, a repo-relative '/'-separated path
 // exactly as `git ls-files` prints it, names a regular file reached without
 // following a link (D44D8BDF, writepath arm). It is a semantic copy of
-// retiredarch's containedRegularFile (retiredarch U3, 990AFA71). It is copied,
+// retiredarch's containedRegularFile (stash 990AFA71). It is copied,
 // not shared, because each gate package keeps its own surface (D-BA-3,
 // 5A8EC1BC). The walk uses os.Lstat one component at a time. Every
 // intermediate component must be a real directory (no ModeSymlink and no
@@ -945,11 +946,15 @@ func escapeLogText(s string) string {
 // must be regular. An empty, "." or ".." component, or on Windows a component
 // containing '\' or ':', is a containment violation. Only fs.ErrNotExist
 // returns ok=true, so a deleted tracked file keeps the existing read-error
-// text. Any other Lstat error fails closed. The *fs.PathError wrapper is
+// text. That includes a missing intermediate component: the walk returns true
+// at the first absent component and does not check the components after it.
+// Any other Lstat error fails closed. The *fs.PathError wrapper is
 // stripped so CI logs show only repo-relative prefixes (SEC-4). Stdlib only:
 // no filepath.Abs and no filepath.EvalSymlinks. The walk is a time-of-check
 // only: scanFile reads the file later, so a file swapped for a link between that
-// check and the read is still followed (TOCTOU). A retiredarch copy
+// check and the read is still followed (TOCTOU). So is a directory component
+// swapped for a link after its own Lstat, because the later reads resolve the
+// whole path again. A retiredarch copy
 // exists (retiredarch.containedRegularFile): keep the two in sync by hand,
 // because a fix to one must be checked against the other.
 func containedRegularFile(root, rel string) (bool, string) {
@@ -1018,7 +1023,8 @@ func containedRegularFile(root, rel string) (bool, string) {
 // disk passes (G-9). A Windows junction as the final component is refused as
 // non-regular, because Go reports a mount point as ModeIrregular (LR-4). Selected
 // files are read after the containment walk, so a file swapped for a link between
-// the Lstat in containedRegularFile and the read in scanFile is still followed
+// the Lstat in containedRegularFile and the read in scanFile is still followed,
+// and so is a directory component swapped for a link after its own Lstat
 // (TOCTOU).
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)
@@ -1037,7 +1043,7 @@ func runRepoScan(root string, git GitRunner) Result {
 
 	if len(relPaths) == 0 {
 		return Result{
-			Stderr: "::error::write-path repo scan matched no files under internal/** or cmd/** (ED-7)\n",
+			Stderr: logLine("::error::write-path repo scan matched no files under internal/** or cmd/** (ED-7)"),
 			Code:   1,
 		}
 	}
@@ -1126,11 +1132,11 @@ func runFixtureSelfTest(root string) Result {
 	for _, name := range names {
 		relPath := "scripts/testdata/writepath/" + name
 		if ok, reason := containedRegularFile(root, relPath); !ok {
-			return Result{Stderr: errorLine(relPath, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
+			return Result{Stdout: stdout.String(), Stderr: errorLine(relPath, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
 		}
 		findings, err := scanFile(root, relPath)
 		if err != nil {
-			return Result{Stderr: errorLine(relPath, unwrapPathError(err)), Code: 1}
+			return Result{Stdout: stdout.String(), Stderr: errorLine(relPath, unwrapPathError(err)), Code: 1}
 		}
 		rejected := len(findings) > 0
 		switch {
@@ -1196,7 +1202,7 @@ func Run(flag, root string, git GitRunner, stdout, stderr io.Writer) int {
 		if repoRes.Code != 0 {
 			return repoRes.Code
 		}
-		_, _ = io.WriteString(stdout, "self-test passed: fixtures matched expectations and the tracked tree is clean\n")
+		_, _ = io.WriteString(stdout, logLine("self-test passed: fixtures matched expectations and the tracked tree is clean"))
 		return 0
 
 	case "--self-test-integrity":
@@ -1206,7 +1212,7 @@ func Run(flag, root string, git GitRunner, stdout, stderr io.Writer) int {
 		if res.Code != 0 {
 			return res.Code
 		}
-		_, _ = io.WriteString(stdout, "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)\n")
+		_, _ = io.WriteString(stdout, logLine("self-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)"))
 		return 0
 
 	default:

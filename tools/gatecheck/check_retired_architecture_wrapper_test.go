@@ -275,7 +275,7 @@ const retiredArchWrapperRel = "scripts/check-retired-architecture.sh"
 // write-path wrapper.
 func TestCheckRetiredArchitectureWrapper_WrongTreeRootAnchoring(t *testing.T) {
 	bash := requireBash(t)
-	base := filepath.Dir(installGoShim(t, bash))
+	base := installGoShim(t, bash)
 	for _, row := range wrongTreeRows() {
 		t.Run(row.name, func(t *testing.T) {
 			runWrongTreeRow(t, bash, base, retiredArchWrapperRel, row)

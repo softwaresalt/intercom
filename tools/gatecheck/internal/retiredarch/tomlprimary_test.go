@@ -161,7 +161,7 @@ func TestScanTomlPrimary_ReopenedTableForbiddenToken(t *testing.T) {
 	}
 }
 
-// tomlDesyncRow is one U1 desync shape (plan U1 scenario 1): doc carries a
+// tomlDesyncRow is one 9FC28DB9 desync shape (plan 9FC28DB9 scenario 1): doc carries a
 // forbidden token at a key under a reopened/ancestor/interleaved table and
 // mirror is the identical shape with that key renamed to a token-free key.
 type tomlDesyncRow struct {
@@ -224,7 +224,7 @@ var tomlDesyncRows = []tomlDesyncRow{
 	},
 }
 
-// TestScanTomlPrimary_DesyncShapes_UseFallback is U1 scenario 1 (AC-1):
+// TestScanTomlPrimary_DesyncShapes_UseFallback is 9FC28DB9 scenario 1 (AC-1):
 // each shape must first desync walkTable (so the row exercises the
 // fallback path), then scanTomlPrimary must return exactly the key-path
 // finding(s) for the token document and zero findings for the mirror,
@@ -275,7 +275,7 @@ func TestScanTomlPrimary_DesyncShapes_UseFallback(t *testing.T) {
 	}
 }
 
-// TestWalkDecodedTOML_MatchesWalkTable_DesyncFree is U1 scenario 2 (AC-2,
+// TestWalkDecodedTOML_MatchesWalkTable_DesyncFree is 9FC28DB9 scenario 2 (AC-2,
 // characterization): on desync-free documents covering every decoded kind,
 // walkDecodedTOML (the sorted fallback walk) reports exactly the same
 // findings as walkTable (the cursor walk), compared as multisets.
@@ -321,7 +321,7 @@ func TestWalkDecodedTOML_MatchesWalkTable_DesyncFree(t *testing.T) {
 	}
 }
 
-// TestWalkDecodedTOML_UnexpectedType_FailsClosed is U1 scenario 3 (AC-3):
+// TestWalkDecodedTOML_UnexpectedType_FailsClosed is 9FC28DB9 scenario 3 (AC-3):
 // a decoded value outside BurntSushi/toml v1.6.0's decoded type set must
 // make the fallback walk fail closed with the "unexpected decoded type"
 // error rather than being silently skipped.
@@ -345,7 +345,7 @@ func TestWalkDecodedTOML_UnexpectedType_FailsClosed(t *testing.T) {
 	}
 }
 
-// TestScanTomlPrimaryWith_CompletenessOracle is U2 (AC-1..AC-3): on the
+// TestScanTomlPrimaryWith_CompletenessOracle is 9FC28DB9 (AC-1..AC-3): on the
 // cursor walk's success path the fallback walk runs as a completeness
 // oracle, so a cursor walk that drops or invents a finding, or a fallback
 // that fails, fails closed instead of returning the cursor findings.

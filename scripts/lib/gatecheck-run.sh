@@ -101,6 +101,7 @@ gatecheck_cleanup() {
 gatecheck_repo_root() {
   local top
   top="$(
+    names="$(compgen -e)" || { echo "::error::gatecheck: cannot list the environment; refusing to run git" >&2; exit 2; }
     while IFS= read -r name; do
       case "${name}" in
         [Gg][Ii][Tt]_*)
@@ -110,7 +111,7 @@ gatecheck_repo_root() {
           esac
           ;;
       esac
-    done < <(compgen -e)
+    done <<< "${names}"
     export GIT_CONFIG_NOSYSTEM=1 || { echo "::error::gatecheck: cannot set GIT_CONFIG_NOSYSTEM" >&2; exit 2; }
     export GIT_CONFIG_GLOBAL=/dev/null || { echo "::error::gatecheck: cannot set GIT_CONFIG_GLOBAL" >&2; exit 2; }
     export GIT_CONFIG_SYSTEM=/dev/null || { echo "::error::gatecheck: cannot set GIT_CONFIG_SYSTEM" >&2; exit 2; }
