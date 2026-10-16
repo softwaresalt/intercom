@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -655,12 +656,31 @@ func TestRunRepoScan_FinalComponentSymlink_FailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, filepath.Join(root, "internal", "x.go")); err != nil {
-		if runtime.GOOS == "windows" {
-			t.Skipf("os.Symlink unavailable on Windows without privilege: %v", err)
+		if symlinkPrivilegeMissing(err) {
+			t.Skipf("Windows symlink privilege unavailable; Linux CI expensive job (go test -race ./...) must run this case: %v", err)
 		}
 		t.Fatalf("os.Symlink: %v", err)
 	}
 	u3MustContain(t, runRepoScan(root, u3StubGit("internal/x.go")), root, "internal/x.go")
+}
+
+// symlinkPrivilegeMissing reports whether err is Windows
+// ERROR_PRIVILEGE_NOT_HELD (1314), the only symlink failure a test may skip.
+func symlinkPrivilegeMissing(err error) bool {
+	return runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314))
+}
+
+func TestSymlinkPrivilegeMissing_OnlyErrno1314OnWindows(t *testing.T) {
+	if got := symlinkPrivilegeMissing(errors.New("boom")); got {
+		t.Fatal("a non-errno error must not be skippable")
+	}
+	if got := symlinkPrivilegeMissing(&os.LinkError{Op: "symlink", Err: syscall.Errno(5)}); got {
+		t.Fatal("a non-1314 errno must not be skippable")
+	}
+	want := runtime.GOOS == "windows"
+	if got := symlinkPrivilegeMissing(&os.LinkError{Op: "symlink", Err: syscall.Errno(1314)}); got != want {
+		t.Fatalf("errno 1314 skippable = %v, want %v on %s", got, want, runtime.GOOS)
+	}
 }
 
 // TestRunRepoScan_FinalComponentJunction_FailsClosed (U3 AC-2, Windows):
