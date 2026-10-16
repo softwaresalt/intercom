@@ -24,15 +24,34 @@ func TestExitCode_ExitError(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found on PATH")
 	}
-	// `git this-is-not-a-command` reliably exits 1.
-	cmd := exec.Command("git", "this-is-not-a-command")
-	err := cmd.Run()
-	if err == nil {
-		t.Fatal("expected git to fail on an unknown subcommand")
-	}
+	plantGitInterceptors(t)
+	err := realExitError(t)
 	if got := exitCode(err); got <= 0 {
 		t.Fatalf("exitCode(exec.ExitError) = %d, want > 0", got)
 	}
+}
+
+// plantGitInterceptors makes a user-level git alias and a git-* executable
+// on PATH both claim the unknown subcommand name used by the old
+// TestExitCode_ExitError, so a test that shells out to plain `git` for it
+// no longer fails with the expected non-zero exit.
+func plantGitInterceptors(t *testing.T) {
+	t.Helper()
+	const sub = "this-is-not-a-command"
+	binDir := t.TempDir()
+	name, body := "git-"+sub, "#!/bin/sh\nexit 0\n"
+	if runtime.GOOS == "windows" {
+		name, body = name+".cmd", "@exit /b 0\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(binDir, name), []byte(body), 0o755); err != nil {
+		t.Fatalf("write git-* executable: %v", err)
+	}
+	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(cfg, []byte("[alias]\n\t"+sub+" = version\n"), 0o644); err != nil {
+		t.Fatalf("write alias config: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
 }
 
 func TestRootGitignoreTextAt_HEAD_ReadsDiskDirectly(t *testing.T) {
