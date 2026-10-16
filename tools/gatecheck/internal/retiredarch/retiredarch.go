@@ -606,7 +606,7 @@ func runRepoScan(root string, git GitRunner) Result {
 		// junction or other non-regular component; report it as a
 		// fail-closed synthetic finding instead (INV-2).
 		if ok, reason := containedRegularFile(root, rel); !ok {
-			findings = append(findings, fmt.Sprintf("%s: not a contained regular file: %s (fail-closed synthetic finding)", filepath.ToSlash(path), reason))
+			findings = append(findings, fmt.Sprintf("%s: not a contained regular file: %s (fail-closed synthetic finding)", filepath.ToSlash(rel), reason))
 			continue
 		}
 		findings = append(findings, scanPath(path)...)

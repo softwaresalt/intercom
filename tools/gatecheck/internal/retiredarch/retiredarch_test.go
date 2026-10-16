@@ -634,12 +634,17 @@ func u3Junction(t *testing.T, link, target string) {
 // finding for rel.
 func u3MustContain(t *testing.T, res Result, root, rel string) {
 	t.Helper()
-	want := filepath.ToSlash(filepath.Join(root, filepath.FromSlash(rel))) + ": not a contained regular file: "
+	want := rel + ": not a contained regular file: "
 	if res.Code != 1 {
 		t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
 	}
-	if !strings.Contains(res.Stderr, want) || !strings.Contains(res.Stderr, "(fail-closed synthetic finding)") {
+	if !strings.HasPrefix(res.Stderr, want) || !strings.Contains(res.Stderr, "(fail-closed synthetic finding)") {
 		t.Fatalf("stderr = %q, want the U3 finding prefix %q", res.Stderr, want)
+	}
+	for _, echoed := range []string{root, filepath.ToSlash(root)} {
+		if strings.Contains(res.Stderr, echoed) {
+			t.Fatalf("stderr = %q echoes the absolute root %q", res.Stderr, echoed)
+		}
 	}
 }
 
