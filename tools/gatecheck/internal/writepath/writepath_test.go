@@ -747,8 +747,9 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 // checks: a runner error or a listing fault is reported before any non-selected
 // record is tested for containment, and a non-selected refusal is reported
 // before ED-7. The runner-error, unterminated-listing and listing-fault rows are
-// characterization rows, green on arrival (rows 1 and 2 of the outcome matrix
-// are unchanged).
+// characterization rows, green on arrival (rows 1 to 3 of the outcome matrix
+// are unchanged: the runner error is row 1, the unterminated listing is row 2,
+// and the listing-fault subtest is row 3).
 func TestRunRepoScan_ChecksRunInOutcomeOrder(t *testing.T) {
 	t.Run("non-selected directory alone is refused before ED-7", func(t *testing.T) {
 		root := t.TempDir()
@@ -1353,8 +1354,9 @@ func TestRunRepoScan_RealGitTopLevelAndGitlinkRecords(t *testing.T) {
 // B83F53BB part 2; the environment shape it guards is from D7BF9F74. Vector
 // (a) is a false clean: an ambient GIT_INDEX_FILE listing only cmd/x/main.go
 // makes the gate exit 0 although tracked internal/bad.go holds a write
-// primitive. Vectors (b) and (c) are the same new contract through
-// GIT_LITERAL_PATHSPECS and GIT_CONFIG_PARAMETERS. Vector (d) is
+// primitive. Vector (b), GIT_LITERAL_PATHSPECS, is characterization only: the
+// runner already lists with literal pathspecs, so it changes nothing. Vector
+// (c), GIT_CONFIG_PARAMETERS, is the same new contract as (a). Vector (d) is
 // GIT_ICASE_PATHSPECS, which still changes the literal-pathspec listing once the
 // pathspecs are literal. The no-vector control must stay green before and after.
 func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
@@ -1875,9 +1877,10 @@ func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
 
 // TestRunFixtureSelfTest_DirectoryFixtureRefusals pins how fixture collection
 // treats directories. A directory whose name ends in .go must fail closed
-// during collection, before any fixture is read. Rows (d1) and (d2) are
-// refusal rows: collection refuses each one before the self-test
-// can pass. Row (d3) is a characterization row: a directory without a .go suffix
+// during collection, before any fixture is read. The two "(refusal)" rows,
+// directory accept-d.go and directory reject-d.go, are refusal rows: collection
+// refuses each one before the self-test
+// can pass. The "(characterization)" row, directory harness without a .go suffix,
 // stays skipped (SB-7). Every row also holds a valid fixture, so a "no fixtures
 // discovered" result cannot satisfy a refusal row (G-2).
 func TestRunFixtureSelfTest_DirectoryFixtureRefusals(t *testing.T) {
