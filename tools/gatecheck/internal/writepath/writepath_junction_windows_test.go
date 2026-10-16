@@ -67,7 +67,7 @@ func setMountPoint(link, target string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", link, err)
 	}
-	defer syscall.CloseHandle(h)
+	defer func() { _ = syscall.CloseHandle(h) }()
 	var returned uint32
 	if err := syscall.DeviceIoControl(h, fsctlSetReparsePoint, &buf[0], uint32(len(buf)), nil, 0, &returned, nil); err != nil {
 		return fmt.Errorf("set reparse point on %s: %w", link, err)
