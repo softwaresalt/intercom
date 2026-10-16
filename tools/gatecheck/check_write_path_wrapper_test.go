@@ -363,9 +363,13 @@ type wrongTreeRow struct {
 	// readonlyConfigGlobal sets an unexported readonly GIT_CONFIG_GLOBAL, which
 	// the environment scrub never sees, so only the export refusal arm catches it.
 	readonlyConfigGlobal bool
-	wantEngine           bool
-	wantExit             int
-	wantDiag             string
+	// failCompgen shadows compgen with a function that fails, the named test-only
+	// seam (exported into the wrapper through BASH_ENV) that forces a failed
+	// environment listing in gatecheck_repo_root (057.008-T).
+	failCompgen bool
+	wantEngine  bool
+	wantExit    int
+	wantDiag    string
 }
 
 // writePathWrapperRel is the write-path wrapper, repo-relative.
@@ -390,6 +394,7 @@ func wrongTreeRows() []wrongTreeRow {
 		{name: "caller outside any work tree", layout: layoutOwnRepo, cwdOutside: true, wantExit: 128, wantDiag: "not a git repository"},
 		{name: "readonly GIT_DIR refuses before git runs", layout: layoutOwnRepo, readonlyGitDir: true, wantExit: 2, wantDiag: "cannot unset GIT_DIR"},
 		{name: "unexported readonly GIT_CONFIG_GLOBAL refuses the config pin", layout: layoutOwnRepo, readonlyConfigGlobal: true, wantExit: 2, wantDiag: "cannot set GIT_CONFIG_GLOBAL"},
+		{name: "failed compgen listing refuses before git runs", layout: layoutOwnRepo, failCompgen: true, wantExit: 2, wantDiag: "cannot list the environment"},
 		{name: "nested checkout", layout: layoutNested, wantExit: 2, wantDiag: "is not the top level of its repository"},
 	}
 }
@@ -485,6 +490,15 @@ func runWrongTreeRow(t *testing.T, bash, base, wrapperRel string, row wrongTreeR
 		body := "readonly GIT_CONFIG_GLOBAL=/nonexistent/gitconfig\n"
 		if err := os.WriteFile(bashEnv, []byte(body), 0o644); err != nil {
 			t.Fatalf("write readonly environment file: %v", err)
+		}
+		t.Setenv("BASH_ENV", toBashPath(bashEnv))
+	}
+
+	if row.failCompgen {
+		bashEnv := filepath.Join(rowDir, "fail-compgen.sh")
+		body := "compgen() { return 1; }\nexport -f compgen\n"
+		if err := os.WriteFile(bashEnv, []byte(body), 0o644); err != nil {
+			t.Fatalf("write compgen seam file: %v", err)
 		}
 		t.Setenv("BASH_ENV", toBashPath(bashEnv))
 	}
