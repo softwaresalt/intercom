@@ -1,0 +1,394 @@
+{
+  "feature_id": "057-F",
+  "invocation": {
+    "argv_redacted": [
+      "C:\\Tools\\backlogit.EXE",
+      "--no-update-check",
+      "--jsonrpc",
+      "--cwd",
+      "C:\\Source\\GitHub\\intercom-go",
+      "shipment",
+      "ship",
+      "047-S",
+      "--sha",
+      "179b2ed0f0e41c29a7c4d32e5c9a220417fb22ae",
+      "--message",
+      "Merge pull request #143 from softwaresalt/feat/gatecheck-go-hardening-and-test-hygiene",
+      "--author",
+      "Derek Williams"
+    ],
+    "exit_code": 0,
+    "finished_at": "2026-10-16T23:36:47.277747Z",
+    "mutation_state": "completed",
+    "started_at": "2026-10-16T23:29:46.793252Z",
+    "stderr": {
+      "capture_truncated": false,
+      "excerpt": "time=2026-10-16T16:29:46.840-07:00 level=INFO msg=\"shipment command invoked\" operation=shipment-ship shipment_id=047-S\ntime=2026-10-16T16:29:46.843-07:00 level=INFO msg=\"INFO config loaded package=config workspace=C:\\\\Source\\\\GitHub\\\\intercom-go\\\\.backlogit\"\ntime=2026-10-16T16:29:46.861-07:00 level=INFO msg=\"workspace initialized\" storage_root=C:\\Source\\GitHub\\intercom-go\\.backlogit auto_recover=true duration_ms=20\ntime=2026-10-16T16:31:13.935-07:00 level=INFO msg=\"shipment status changed\" shipment_id=047-S new_status=shipped\ntime=2026-10-16T16:31:13.973-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=047-S artifact_type=shipment\ntime=2026-10-16T16:32:57.160-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.001-T artifact_type=task\ntime=2026-10-16T16:33:04.626-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.002-T artifact_type=task\ntime=2026-10-16T16:33:11.956-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.003-T artifact_type=task\ntime=2026-10-16T16:33:19.435-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.004-T artifact_type=task\ntime=2026-10-16T16:33:27.842-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.005-T artifact_type=task\ntime=2026-10-16T16:33:37.160-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.006-T artifact_type=task\ntime=2026-10-16T16:33:45.560-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.007-T artifact_type=task\ntime=2026-10-16T16:33:54.584-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.008-T artifact_type=task\ntime=2026-10-16T16:34:03.058-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.009-T artifact_type=task\ntime=2026-10-16T16:34:11.005-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.010-T artifact_type=task\ntime=2026-10-16T16:34:18.746-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.011-T artifact_type=task\ntime=2026-10-16T16:34:27.330-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.012-T artifact_type=task\ntime=2026-10-16T16:34:34.953-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.013-T artifact_type=task\ntime=2026-10-16T16:34:42.207-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.014-T artifact_type=task\ntime=2026-10-16T16:34:49.699-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.015-T artifact_type=task\ntime=2026-10-16T16:34:57.212-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.016-T artifact_type=task\ntime=2026-10-16T16:35:04.584-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.017-T artifact_type=task\ntime=2026-10-16T16:35:12.036-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.018-T artifact_type=task\ntime=2026-10-16T16:35:19.595-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.019-T artifact_type=task\ntime=2026-10-16T16:35:28.117-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.020-T artifact_type=task\ntime=2026-10-16T16:35:36.770-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.021-T artifact_type=task\ntime=2026-10-16T16:35:50.934-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.022-T artifact_type=task\ntime=2026-10-16T16:36:06.793-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.023-T artifact_type=task\ntime=2026-10-16T16:36:23.393-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057.024-T artifact_type=task\ntime=2026-10-16T16:36:39.244-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=047-S artifact_type=shipment\ntime=2026-10-16T16:36:47.178-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=057-F artifact_type=feature\ntime=2026-10-16T16:36:47.266-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=047-S artifact_type=shipment\n",
+      "redaction_applied": false,
+      "sha256": "b5663872f6c1958a793aee9484f4d772d2a4a2c7a0f7aaedadd6426d8d0f6cea",
+      "total_bytes": 3975,
+      "total_lines": 32
+    },
+    "stdout": {
+      "capture_truncated": false,
+      "excerpt": "{\"jsonrpc\":\"2.0\",\"id\":\"backlogit shipment ship\",\"result\":{\"archived_ids\":[\"057.001-T\",\"057.002-T\",\"057.003-T\",\"057.004-T\",\"057.005-T\",\"057.006-T\",\"057.007-T\",\"057.008-T\",\"057.009-T\",\"057.010-T\",\"057.011-T\",\"057.012-T\",\"057.013-T\",\"057.014-T\",\"057.015-T\",\"057.016-T\",\"057.017-T\",\"057.018-T\",\"057.019-T\",\"057.020-T\",\"057.021-T\",\"057.022-T\",\"057.023-T\",\"057.024-T\",\"047-S\",\"057-F\"],\"commit_sha\":\"179b2ed0f0e41c29a7c4d32e5c9a220417fb22ae\",\"returned_ids\":[],\"shipment_id\":\"047-S\",\"shipment_status\":\"shipped\"}}\n",
+      "redaction_applied": false,
+      "sha256": "28bbfe9a24348184136775e0a75a2835521bade37b11e4ab98c45519f82605d2",
+      "total_bytes": 505,
+      "total_lines": 1
+    },
+    "timed_out": false
+  },
+  "merge_commit_sha": "179b2ed0f0e41c29a7c4d32e5c9a220417fb22ae",
+  "phase": "post_close",
+  "post_close": {
+    "allowed_ids": [
+      "047-S",
+      "057-F",
+      "057.001-T",
+      "057.002-T",
+      "057.003-T",
+      "057.004-T",
+      "057.005-T",
+      "057.006-T",
+      "057.007-T",
+      "057.008-T",
+      "057.009-T",
+      "057.010-T",
+      "057.011-T",
+      "057.012-T",
+      "057.013-T",
+      "057.014-T",
+      "057.015-T",
+      "057.016-T",
+      "057.017-T",
+      "057.018-T",
+      "057.019-T",
+      "057.020-T",
+      "057.021-T",
+      "057.022-T",
+      "057.023-T",
+      "057.024-T"
+    ],
+    "baseline_invariant": true,
+    "disposition_byte_identical": true,
+    "failures": [],
+    "linked_deliberation_drift": [],
+    "missing_required": [],
+    "parent_id_preserved": true,
+    "parse_error": null,
+    "parsed_result": {
+      "archived_ids": [
+        "047-S",
+        "057-F",
+        "057.001-T",
+        "057.002-T",
+        "057.003-T",
+        "057.004-T",
+        "057.005-T",
+        "057.006-T",
+        "057.007-T",
+        "057.008-T",
+        "057.009-T",
+        "057.010-T",
+        "057.011-T",
+        "057.012-T",
+        "057.013-T",
+        "057.014-T",
+        "057.015-T",
+        "057.016-T",
+        "057.017-T",
+        "057.018-T",
+        "057.019-T",
+        "057.020-T",
+        "057.021-T",
+        "057.022-T",
+        "057.023-T",
+        "057.024-T"
+      ],
+      "commit_sha": "179b2ed0f0e41c29a7c4d32e5c9a220417fb22ae",
+      "returned_ids": [],
+      "shipment_id": "047-S",
+      "shipment_status": "shipped"
+    },
+    "postcondition_verdict": "pass",
+    "required_ids": [
+      "047-S",
+      "057-F",
+      "057.001-T",
+      "057.002-T",
+      "057.003-T",
+      "057.004-T",
+      "057.005-T",
+      "057.006-T",
+      "057.007-T",
+      "057.008-T",
+      "057.009-T",
+      "057.010-T",
+      "057.011-T",
+      "057.012-T",
+      "057.013-T",
+      "057.014-T",
+      "057.015-T",
+      "057.016-T",
+      "057.017-T",
+      "057.018-T",
+      "057.019-T",
+      "057.020-T",
+      "057.021-T",
+      "057.022-T",
+      "057.023-T",
+      "057.024-T"
+    ],
+    "shipment_archived_shipped": true,
+    "shipment_record_archived_status": "shipped",
+    "shipment_record_status": "archived",
+    "unexpected_archived": []
+  },
+  "pre_close": {
+    "captured_at": "2026-10-16T23:29:43Z",
+    "classifier_reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted",
+    "classifier_verdict": "CASCADE",
+    "close_path_selection": {
+      "reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted; backlogit 1.11.0 (cli) is on verified engine minor line 1.11",
+      "selected_close_path": "cascade"
+    },
+    "engine_semantics": {
+      "invocation_surface": "cli",
+      "minor_line": [
+        1,
+        11
+      ],
+      "probe_surface": "cli",
+      "probed_commit": "131577c",
+      "probed_version": "1.11.0",
+      "reason": "backlogit 1.11.0 (cli) is on verified engine minor line 1.11",
+      "verdict": "VERIFIED"
+    },
+    "linked_deliberation_disposition": {
+      "dispositions": [],
+      "planning_error": null,
+      "read_failures": [],
+      "unresolved_references": []
+    },
+    "manifest_members": [
+      {
+        "artifact_type": "feature",
+        "declared_status": "done",
+        "id": "057-F",
+        "location": "archive",
+        "parent_id": null,
+        "sha256": "c9828ec001486881901dd5d47c814ee9a951e9870a56c7714112a4025971b884"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.001-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "9cbfa33ff6d95a03be71007692de6fcda34ed40124dc407b6f280c08f48f4143"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.002-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "fe9fecb24cdac2dac7f1bd7fd1c6b1d704788772ed9647309cc5ae6b241c583a"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.003-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "6e26fe41e5f75d9b055c07faff22704a400f243cbb83fc7dd90bcbcf20bb10a6"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.004-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "4d80cdd30953e5b3565d0ac0faed0e90276cae2560f6ccfa382c57696e5fe9ff"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.019-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "e8fbe66d713e30cdb3871dfcc2f4b3b608d5a95c6a82f0037b228e7d06e9dec8"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.020-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "0cea81d76bd1eb4f1bef1772ff81c19cdd0f150d3bc443a70e2dba48b6a3bcea"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.005-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "05ebbcb7280661cef3e0a3f04d28b51d1b49f2e13533abe890094462c52db95a"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.006-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "0185f7b3150fdab4affe6d202e663a42a1c555d4faed50e2de40b9cef27c1c3b"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.021-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "d058d460d7b86b98acbc02310f847e2b53c93d6388c4bcb1baaa85bb80711d3b"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.022-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "d2baa015351c649ae1658a9c19cb1ecd4aa6534a5045e6e450954a74e14de079"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.007-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "4b18b3bd5c1dfb119696ffe7c01e78320182ebe73b63b7d5d36f2054a0a8ae40"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.008-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "2faaefdd88f3788b3e11c32160024d7d0f3f563cf21379cea6618e76e2539cea"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.009-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "28f80acea398aadc0e6c47b1b5df0ad5a7cded0c6abede4218d6d2f90ef52c2a"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.023-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "403e4b01bde6c04e9a1d1008eee8197da47a6bbdad1f8deaf0d1f9cd7ca3eb8b"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.010-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "9dc19646965776ef207c63ef254be20cf89593b5722c7e8270699bdb0043981c"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.011-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "8ef3b16a8aba286c261c343c967cd0eba3f3810d3c21df6ee21fe9a246d32f8d"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.012-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "1d063590988c0be45ad01cc3039e3fcdb4094fe6ebfd1989db1db02fafd160ab"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.013-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "10ce261c2e326e45cba79e467f55fdc01ccb617d1b11f33da4d34f4f513461c8"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.014-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "80dff12934972ecba8dfd450f24e4b94b06c6044de8f5517884e3ae64d0ccf0e"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.015-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "c1099b65d963bf44eb791e958e772125157e1337918aec1cd8a49c26a8195ad7"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.016-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "97aac4708eb2cf9cecb5c77ea3a083ab7bd50be4bb3e97cdb90beefb85d174a7"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.017-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "f7c8aa3f06c9b01047fe89eaf5604b84370a1095678a20d3118a16eeb91aa249"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.018-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "8feb860ce77399937c3218a6c661725d0e2e994db5d5651fe935896c1c0e2679"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "057.024-T",
+        "location": "archive",
+        "parent_id": "057-F",
+        "sha256": "7f58a364bb480b857278cfb73bbe883c274b67422f3e953ae5dd786a737f67ea"
+      }
+    ],
+    "out_of_manifest_descendants": [],
+    "qualifying_feature_ids": [
+      "057-F"
+    ],
+    "shipment_record": {
+      "declared_status": "active",
+      "location": "queue",
+      "sha256": "81f220b78761d53836fc336e4c6a34e1399a83531869781f434b34d4d70a101f"
+    }
+  },
+  "run_id": "410c48ddff7946f385f98c3f70637772",
+  "schema_version": 1,
+  "shipment_id": "047-S",
+  "tool": {
+    "binary_path": "C:\\Tools\\backlogit.EXE",
+    "binary_sha256": "e822756bb661435f7351811c54554ec8e76f69868ca386b6590bb56ae1489f3a",
+    "version_excerpt": "{\n  \"version\": \"1.11.0\",\n  \"current\": \"1.11.0\",\n  \"latest\": \"\",\n  \"update_available\": false,\n  \"update_check\": \"skipped\",\n  \"commit\": \"131577c\",\n  \"build_date\": \"2026-09-29T00:15:25Z\",\n  \"go_version\": \"go1.24.13\"\n}\n"
+  }
+}
