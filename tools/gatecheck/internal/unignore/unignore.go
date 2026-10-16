@@ -37,13 +37,23 @@ func pyListRepr(items []string) string {
 	return "[" + strings.Join(parts, ", ") + "]"
 }
 
+// errorPrefix is the GitHub Actions annotation prefix. The print sites in
+// this file own it: callees may return errors with or without it.
+const errorPrefix = "::error::"
+
+// printError writes err to w as one line carrying exactly one leading
+// errorPrefix, stripping any prefix the callee already added.
+func printError(w io.Writer, err error) {
+	_, _ = fmt.Fprintf(w, "%s%s\n", errorPrefix, strings.TrimPrefix(err.Error(), errorPrefix))
+}
+
 // doSelfTestLandingPrecondition reproduces do_self_test_landing_precondition:
 // the landing-precondition guard that every denylist entry is ignored at
 // HEAD. A failure prints to stderr; a pass prints to stdout.
 func doSelfTestLandingPrecondition(git GitRunner, repoDir, scratchRoot string, stdout, stderr io.Writer) bool {
 	evaluated, failures, err := runDenylistCheck(git, repoDir, scratchRoot)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "%v\n", err)
+		printError(stderr, err)
 		return false
 	}
 	if len(failures) > 0 {
@@ -131,13 +141,13 @@ func makeScenarioRepo(git GitRunner, tmpRoot, name, oldGitignore, newGitignore s
 func runScenario(git GitRunner, tmpRoot, name, oldGitignore, newGitignore string, existingPaths []string, expectReject bool, trackedPaths []string, stdout, stderr io.Writer) bool {
 	repoDir, baseRef, err := makeScenarioRepo(git, tmpRoot, name, oldGitignore, newGitignore, existingPaths, trackedPaths)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
+		printError(stderr, err)
 		return false
 	}
 	scratchRoot := filepath.Join(tmpRoot, name+"-scratch")
 	evaluated, failures, err := runDifferentialCheck(git, repoDir, scratchRoot, baseRef, "HEAD")
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
+		printError(stderr, err)
 		return false
 	}
 	rejected := len(failures) > 0
@@ -163,7 +173,7 @@ func runScenario(git GitRunner, tmpRoot, name, oldGitignore, newGitignore string
 func doSelfTestScenarios(git GitRunner, stdout, stderr io.Writer) bool {
 	tmpRoot, err := os.MkdirTemp("", "unignore-selftest-")
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
+		printError(stderr, err)
 		return false
 	}
 	defer func() { _ = os.RemoveAll(tmpRoot) }()
@@ -259,7 +269,7 @@ func Run(args []string, root string, git GitRunner, stdout, stderr io.Writer) in
 func runSelfTest(root string, git GitRunner, stdout, stderr io.Writer) int {
 	scratchRoot, err := os.MkdirTemp("", "unignore-scratch-")
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
+		printError(stderr, err)
 		return 1
 	}
 	defer func() { _ = os.RemoveAll(scratchRoot) }()
@@ -270,7 +280,7 @@ func runSelfTest(root string, git GitRunner, stdout, stderr io.Writer) int {
 
 	denylistEvaluated, denylistFailures, err := runDenylistCheck(git, root, scratchRoot)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "%v\n", err)
+		printError(stderr, err)
 		overallOK = false
 	} else {
 		if denylistEvaluated == 0 {
@@ -287,7 +297,7 @@ func runSelfTest(root string, git GitRunner, stdout, stderr io.Writer) int {
 
 	trackedIgnored, err := runLsFilesCheck(git, root)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "%v\n", err)
+		printError(stderr, err)
 		overallOK = false
 	} else if len(trackedIgnored) > 0 {
 		_, _ = fmt.Fprintf(stderr, "FAIL: tracked files are ignored (git ls-files -i -c): %s\n", pyListRepr(trackedIgnored))
@@ -338,19 +348,19 @@ func runCheck(root, baseRef, headRef string, git GitRunner, stdout, stderr io.Wr
 
 	scratchRoot, err := os.MkdirTemp("", "unignore-scratch-")
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "::error::%v\n", err)
+		printError(stderr, err)
 		return 1
 	}
 	defer func() { _ = os.RemoveAll(scratchRoot) }()
 
 	denylistEvaluated, denylistFailures, err := runDenylistCheck(git, root, scratchRoot)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "%v\n", err)
+		printError(stderr, err)
 		return 1
 	}
 	diffEvaluated, diffFailures, err := runDifferentialCheck(git, root, scratchRoot, baseRef, "HEAD")
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "%v\n", err)
+		printError(stderr, err)
 		return 1
 	}
 
@@ -372,7 +382,7 @@ func runCheck(root, baseRef, headRef string, git GitRunner, stdout, stderr io.Wr
 
 	trackedIgnored, err := runLsFilesCheck(git, root)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "%v\n", err)
+		printError(stderr, err)
 		ok = false
 	} else if len(trackedIgnored) > 0 {
 		_, _ = fmt.Fprintf(stderr, "::error::tracked files report as ignored (git ls-files -i -c --exclude-standard): %s\n", pyListRepr(trackedIgnored))

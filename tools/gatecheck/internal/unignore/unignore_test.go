@@ -2,10 +2,88 @@ package unignore
 
 import (
 	"bytes"
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
 )
+
+// failingGit wraps real so that every invocation of the given git
+// subcommand fails with a plain error, letting a test drive a chosen
+// callee failure through unignore's print sites.
+func failingGit(real GitRunner, subcommand string) GitRunner {
+	return func(dir string, stdin []byte, args ...string) ([]byte, []byte, error) {
+		if len(args) > 0 && args[0] == subcommand {
+			return nil, []byte("injected"), errors.New("boom")
+		}
+		return real(dir, stdin, args...)
+	}
+}
+
+// denylistRepo returns a committed repository whose root .gitignore ignores
+// every Denylist entry, so the only stderr lines a run emits are the
+// injected-failure diagnostics.
+func denylistRepo(t *testing.T) string {
+	t.Helper()
+	root := initRepoWithCommit(t, newIsolatedGitRunner(t))
+	if err := writeTestGitignore(root, strings.Join(Denylist, "\n")+"\n"); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+	return root
+}
+
+// assertSingleErrorPrefix requires every non-empty stderr line to start
+// with exactly one "::error::" prefix, whatever the callee error text was.
+func assertSingleErrorPrefix(t *testing.T, stderr string) {
+	t.Helper()
+	if strings.TrimSpace(stderr) == "" {
+		t.Fatal("stderr is empty, want at least one ::error:: line")
+	}
+	for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+		if !strings.HasPrefix(line, "::error::") {
+			t.Errorf("stderr line %q lacks the leading ::error:: prefix", line)
+		}
+		if strings.HasPrefix(line, "::error::::error::") {
+			t.Errorf("stderr line %q has a doubled ::error:: prefix", line)
+		}
+	}
+}
+
+// TestPrintSites_SingleErrorPrefix pins the print-site ownership
+// convention: callees may return errors with or without a leading
+// "::error::", and the print sites emit exactly one.
+func TestPrintSites_SingleErrorPrefix(t *testing.T) {
+	// "ls-files" yields a callee error already prefixed with ::error::;
+	// "init" yields a plain wrapped error.
+	for _, sub := range []string{"ls-files", "init"} {
+		t.Run("runScenario/"+sub, func(t *testing.T) {
+			git := failingGit(newIsolatedGitRunner(t), sub)
+			var stdout, stderr bytes.Buffer
+			ok := runScenario(git, t.TempDir(), "s", "a\n", "a\n", nil, false, nil, &stdout, &stderr)
+			if ok {
+				t.Fatal("expected the injected failure to fail the scenario")
+			}
+			assertSingleErrorPrefix(t, stderr.String())
+		})
+		t.Run("runSelfTest/"+sub, func(t *testing.T) {
+			git := failingGit(newIsolatedGitRunner(t), sub)
+			var stdout, stderr bytes.Buffer
+			if code := runSelfTest(denylistRepo(t), git, &stdout, &stderr); code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			assertSingleErrorPrefix(t, stderr.String())
+		})
+		t.Run("runCheck/"+sub, func(t *testing.T) {
+			git := failingGit(newIsolatedGitRunner(t), sub)
+			var stdout, stderr bytes.Buffer
+			root := denylistRepo(t)
+			if code := runCheck(root, "HEAD", "HEAD", git, &stdout, &stderr); code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			assertSingleErrorPrefix(t, stderr.String())
+		})
+	}
+}
 
 func TestPyListRepr(t *testing.T) {
 	if got := pyListRepr(nil); got != "[]" {
