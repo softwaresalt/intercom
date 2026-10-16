@@ -55,11 +55,13 @@ func assertSingleErrorPrefix(t *testing.T, stderr string) {
 func TestPrintSites_SingleErrorPrefix(t *testing.T) {
 	// "ls-files" yields a callee error already prefixed with ::error::;
 	// "init" yields a plain wrapped error.
+	// Distinct base/head contents let both scenario commits succeed so the
+	// injected failure is the one actually reached.
 	for _, sub := range []string{"ls-files", "init"} {
 		t.Run("runScenario/"+sub, func(t *testing.T) {
 			git := failingGit(newIsolatedGitRunner(t), sub)
 			var stdout, stderr bytes.Buffer
-			ok := runScenario(git, t.TempDir(), "s", "a\n", "a\n", nil, false, nil, &stdout, &stderr)
+			ok := runScenario(git, t.TempDir(), "s", "a\n", "a\n!b\n", nil, false, nil, &stdout, &stderr)
 			if ok {
 				t.Fatal("expected the injected failure to fail the scenario")
 			}

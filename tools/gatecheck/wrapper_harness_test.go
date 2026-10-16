@@ -292,7 +292,9 @@ func runWrongTreeRow(t *testing.T, bash, base, wrapperRel string, row wrongTreeR
 	}
 	if row.readonlyConfigGlobal {
 		bashEnv := filepath.Join(rowDir, "readonly-config-global.sh")
-		body := "readonly GIT_CONFIG_GLOBAL=/nonexistent/gitconfig\n"
+		// export -n drops any inherited export attribute so the variable is
+		// unexported regardless of the test process environment.
+		body := "export -n GIT_CONFIG_GLOBAL\nreadonly GIT_CONFIG_GLOBAL=/nonexistent/gitconfig\n"
 		if err := os.WriteFile(bashEnv, []byte(body), 0o644); err != nil {
 			t.Fatalf("write readonly environment file: %v", err)
 		}
