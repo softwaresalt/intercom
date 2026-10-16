@@ -1438,24 +1438,40 @@ func u5bIcaseFixture(t *testing.T) string {
 // repository is planted in the parent of the per-test temp root, and the
 // GIT_CEILING_DIRECTORIES bound must stop git from discovering it. Without the
 // bound git would find the planted repository and exit zero, so the failure
-// proves the ceiling is effective and does not depend on the host checkout. The
-// empty-output check pins only the runner's nil-on-error contract; the gate's
-// fail-closed behaviour on a git error is covered by runRepoScan's git error path.
+// shows the ceiling is what stops discovery. The no-ceiling control runs the same
+// layout with an empty ceiling and expects git to discover the planted parent
+// repository and succeed; that is what makes the ceiling failure meaningful
+// rather than a consequence of some other git error. Neither subtest depends on
+// the host checkout. The empty-output check pins only the runner's nil-on-error
+// contract; the gate's fail-closed behaviour on a git error is covered by
+// runRepoScan's git error path.
+//
+// Verification note for the Windows job (not asserted locally): an 8.3 short-name
+// spelling of the temp root (for example RUNNER~1) may not match the ceiling
+// entry textually, so the ceiling could be bypassed there.
 func TestDefaultGitRunner_NonRepository_FailsClosed(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatalf("git is required for this test: %v", err)
 	}
 	root := t.TempDir()
 	fixtureGit(t, filepath.Dir(root), "init", "-q")
-	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(root))
-	out, err := DefaultGitRunner(root)
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() == 0 {
-		t.Fatalf("DefaultGitRunner(%q) err = %v, want a non-zero git exit", root, err)
-	}
-	if len(out) != 0 {
-		t.Fatalf("DefaultGitRunner(%q) output = %q, want none on failure", root, out)
-	}
+	t.Run("ceiling stops discovery", func(t *testing.T) {
+		t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(root))
+		out, err := DefaultGitRunner(root)
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() == 0 {
+			t.Fatalf("DefaultGitRunner(%q) err = %v, want a non-zero git exit", root, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("DefaultGitRunner(%q) output = %q, want none on failure", root, out)
+		}
+	})
+	t.Run("no-ceiling control discovers planted parent", func(t *testing.T) {
+		t.Setenv("GIT_CEILING_DIRECTORIES", "")
+		if _, err := DefaultGitRunner(root); err != nil {
+			t.Fatalf("DefaultGitRunner(%q) err = %v, want the planted parent repository discovered when unbounded", root, err)
+		}
+	})
 }
 
 // TestGitRunnerEnv is the pure environment-filter table. It is kept identical to
@@ -1603,9 +1619,9 @@ func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
 		out  []byte
 		want string
 	}{
-		{"legacy newline listing", []byte(legacyNewlineListing), "not NUL-terminated"},
-		{"empty record", []byte("internal/a.go\x00\x00"), "empty record"},
-		{"lone NUL", []byte("\x00"), "empty record"},
+		{"legacy newline listing", []byte(legacyNewlineListing), "::error::git ls-files output: output is not NUL-terminated\n"},
+		{"empty record", []byte("internal/a.go\x00\x00"), "::error::git ls-files output: output has an empty record\n"},
+		{"lone NUL", []byte("\x00"), "::error::git ls-files output: output has an empty record\n"},
 		{"scanned path with LF", []byte("internal/a\nb.go\x00"), controlMsg},
 		{"scanned path with U+2028", []byte("internal/a\u2028b.go\x00"), controlMsg},
 		{"scanned path with U+0085", []byte("internal/a\u0085b.go\x00"), controlMsg},
@@ -1615,8 +1631,8 @@ func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
 		{"scanned path with US (0x1f)", []byte("internal/a\x1fb.go\x00"), controlMsg},
 		{"scanned path with TAB", []byte("internal/a\tb.go\x00"), controlMsg},
 		{"scanned path with CR", []byte("internal/a\rb.go\x00"), controlMsg},
-		{"scanned path with invalid UTF-8", []byte("internal/\xff.go\x00"), pysem.ErrInvalidUTF8.Error()},
-		{"all paths unscanned", lsFilesListing("internal/README.md"), "ED-7"},
+		{"scanned path with invalid UTF-8", []byte("internal/\xff.go\x00"), fmt.Sprintf("::error::git ls-files output: path %q: %s\n", "internal/\xff.go", pysem.ErrInvalidUTF8.Error())},
+		{"all paths unscanned", lsFilesListing("internal/README.md"), "::error::write-path repo scan matched no files under internal/** or cmd/** (ED-7)\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1638,12 +1654,12 @@ func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
 			if res.Code != 1 {
 				t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
 			}
+			want := tc.want
 			if tc.want == controlMsg {
-				if exact := prefix + tc.want + "\n"; res.Stderr != exact {
-					t.Fatalf("stderr = %q, want exactly %q", res.Stderr, exact)
-				}
-			} else if !strings.Contains(res.Stderr, prefix+tc.want) {
-				t.Fatalf("stderr = %q, want it to contain %q", res.Stderr, prefix+tc.want)
+				want = prefix + tc.want + "\n"
+			}
+			if res.Stderr != want {
+				t.Fatalf("stderr = %q, want exactly %q", res.Stderr, want)
 			}
 			assertNoRawControl(t, res.Stderr)
 		})
