@@ -89,6 +89,8 @@ func runStartScriptSnippet(t *testing.T, root, snippet string, env map[string]st
 // start.ps1's own functions accept an explicit exe path override) that
 // records its own invocation (arguments) to a marker file and exits with
 // exitCode.
+//
+//nolint:unparam // stdout is kept as part of the stable helper signature even though current callers pass "".
 func writeStubExecutable(t *testing.T, dir, name string, exitCode int, stdout string) string {
 	t.Helper()
 	path := filepath.Join(dir, name+".ps1")
