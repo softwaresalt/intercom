@@ -360,9 +360,12 @@ type wrongTreeRow struct {
 	cwdDecoy       bool
 	cwdOutside     bool
 	readonlyGitDir bool
-	wantEngine     bool
-	wantExit       int
-	wantDiag       string
+	// readonlyConfigGlobal sets an unexported readonly GIT_CONFIG_GLOBAL, which
+	// the environment scrub never sees, so only the export refusal arm catches it.
+	readonlyConfigGlobal bool
+	wantEngine           bool
+	wantExit             int
+	wantDiag             string
 }
 
 // writePathWrapperRel is the write-path wrapper, repo-relative.
@@ -386,6 +389,7 @@ func wrongTreeRows() []wrongTreeRow {
 		{name: "no repository, caller inside a decoy repository", layout: layoutNoRepo, cwdDecoy: true, wantExit: 128, wantDiag: "not a git repository"},
 		{name: "caller outside any work tree", layout: layoutOwnRepo, cwdOutside: true, wantExit: 128, wantDiag: "not a git repository"},
 		{name: "readonly GIT_DIR refuses before git runs", layout: layoutOwnRepo, readonlyGitDir: true, wantExit: 2, wantDiag: "cannot unset GIT_DIR"},
+		{name: "unexported readonly GIT_CONFIG_GLOBAL refuses the config pin", layout: layoutOwnRepo, readonlyConfigGlobal: true, wantExit: 2, wantDiag: "cannot set GIT_CONFIG_GLOBAL"},
 		{name: "nested checkout", layout: layoutNested, wantExit: 2, wantDiag: "is not the top level of its repository"},
 	}
 }
@@ -470,6 +474,15 @@ func runWrongTreeRow(t *testing.T, bash, base, wrapperRel string, row wrongTreeR
 	if row.readonlyGitDir {
 		bashEnv := filepath.Join(rowDir, "readonly-git-dir.sh")
 		body := "export GIT_DIR='" + filepath.ToSlash(filepath.Join(decoy, ".git")) + "'\nreadonly GIT_DIR\n"
+		if err := os.WriteFile(bashEnv, []byte(body), 0o644); err != nil {
+			t.Fatalf("write readonly environment file: %v", err)
+		}
+		t.Setenv("BASH_ENV", toBashPath(bashEnv))
+	}
+
+	if row.readonlyConfigGlobal {
+		bashEnv := filepath.Join(rowDir, "readonly-config-global.sh")
+		body := "readonly GIT_CONFIG_GLOBAL=/nonexistent/gitconfig\n"
 		if err := os.WriteFile(bashEnv, []byte(body), 0o644); err != nil {
 			t.Fatalf("write readonly environment file: %v", err)
 		}
