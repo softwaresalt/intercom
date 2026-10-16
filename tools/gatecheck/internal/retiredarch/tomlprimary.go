@@ -25,9 +25,9 @@
 // Some legal shapes (non-contiguous sibling tables, a table reopened after
 // an interleaved unrelated table) still defeat the lockstep cursor. For
 // those, scanTomlPrimary falls back to walkDecodedTOML, a deterministic
-// bytewise-sorted walk of the decoded tree (plan U1, INV-4), and returns
+// bytewise-sorted walk of the decoded tree (plan 9FC28DB9, INV-4), and returns
 // its findings. On the cursor walk's success path walkDecodedTOML also
-// runs as a completeness oracle (plan U2): its findings are compared as a
+// runs as a completeness oracle (plan 9FC28DB9): its findings are compared as a
 // multiset only, so its sort order never reaches the success path's
 // output, which keeps the cursor walk's declaration order.
 package retiredarch
@@ -278,9 +278,9 @@ func walkValue(posixPath string, prefix []string, value interface{}, cursor *tom
 	}
 }
 
-// walkDecodedTOML is the deterministic fallback walk (plan U1, INV-4) whose
+// walkDecodedTOML is the deterministic fallback walk (plan 9FC28DB9, INV-4) whose
 // findings are returned whenever the lockstep cursor walk (walkTable)
-// reports a cursor desync, and the completeness oracle (plan U2) that
+// reports a cursor desync, and the completeness oracle (plan 9FC28DB9) that
 // re-derives the findings on the cursor walk's success path.
 // It needs no MetaData.Keys() cursor: it visits every key of one decoded
 // table instance exactly once, in bytewise-sorted key order, reporting it
@@ -370,7 +370,7 @@ func scanTomlPrimary(path string) []string {
 // Production always passes walkTable (the ordered cursor walk) and
 // walkDecodedTOML adapted by a cursor-ignoring closure (the deterministic
 // fallback walk). The parameters exist only so tests can substitute a
-// faulty walk or a failing fallback (plan U2 scenarios 1-3); they are not
+// faulty walk or a failing fallback (plan 9FC28DB9 scenarios 1-3); they are not
 // an extension point.
 func scanTomlPrimaryWith(path string, walk, fallback func(string, []string, map[string]interface{}, *tomlCursor, *[]string) error) []string {
 	posixPath := filepath.ToSlash(path)
@@ -410,7 +410,7 @@ func scanTomlPrimaryWith(path string, walk, fallback func(string, []string, map[
 		return fallbackFindings
 	}
 
-	// Completeness oracle (plan U2, R2): the cursor walk succeeded, but a
+	// Completeness oracle (plan 9FC28DB9, R2): the cursor walk succeeded, but a
 	// latent cursor bug could still have dropped or invented a finding
 	// without desyncing. Re-derive the findings with the independent
 	// fallback walk and require the same multiset. Cursor order is kept
