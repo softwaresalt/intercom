@@ -288,8 +288,9 @@ func TestRun_WritePath_DispatchesToEngine(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("repo-mode code = %d, want 0 (stderr: %q)", code, stderr.String())
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("repo-mode stdout = %q, want empty", stdout.String())
+	want := "::notice::write-path gate mode=repo\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("repo-mode stdout = %q, want %q", got, want)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("repo-mode stderr = %q, want empty", stderr.String())
