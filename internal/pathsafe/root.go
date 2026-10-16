@@ -93,7 +93,7 @@
 //     leaf) and C3 (junction ancestor with an existing directory beyond
 //     it) are named here as CLOSED per this entry's scope, but with an
 //     important accuracy caveat established empirically during
-//     014.001-T (Go 1.26.5, GODEBUG=winsymlink=1 default on this
+//     014.001-T (Go 1.26.5 at the time -- historical, the pin has since moved; GODEBUG=winsymlink=1 default on this
 //     toolchain) and corrected during review of 014.008-T's first draft
 //     of this entry: C2 and C3 were ALREADY rejected by the PRE-existing
 //     implementation before 013-S touched this file, but NOT because
@@ -171,7 +171,7 @@
 //     the suite under both settings is deliberately not built. STATUS:
 //     accepted, YAGNI (scope-audit P3, plan §8) -- guards a non-default
 //     toolchain configuration reachable only by deliberate override (this
-//     toolchain, Go 1.26.5, pins winsymlink=1 by default). TRIGGER: a
+//     toolchain, Go 1.26.5 when written (historical; the pin has since moved), pins winsymlink=1 by default). TRIGGER: a
 //     future shipment that changes canonicalizeReparse to depend, even
 //     partially, on os.Stat/os.Lstat/filepath.EvalSymlinks reparse
 //     semantics rather than a direct Win32 call, at which point the
