@@ -636,32 +636,34 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 		name       string
 		env        map[string]string
 		minorFloor int
-		live       bool
+		// noLiveness, when non-empty, exempts the row from the liveness
+		// control and states why; every other row must prove its vector
+		// makes plain git fail, so a new row cannot omit the control silently.
+		noLiveness string
 	}{
 		{
-			name: "a_GIT_INDEX_FILE_nonexistent",
-			env:  map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")},
+			name:       "a_GIT_INDEX_FILE_nonexistent",
+			env:        map[string]string{"GIT_INDEX_FILE": filepath.Join(t.TempDir(), "missing-index")},
+			noLiveness: "a missing index file is read as empty, so plain git ls-files still exits 0",
 		},
 		{
-			name: "b_GIT_LITERAL_PATHSPECS",
-			env:  map[string]string{"GIT_LITERAL_PATHSPECS": "1"},
+			name:       "b_GIT_LITERAL_PATHSPECS",
+			env:        map[string]string{"GIT_LITERAL_PATHSPECS": "1"},
+			noLiveness: "literal pathspecs change the match set but git ls-files still exits 0",
 		},
 		{
 			name:       "c_GIT_CONFIG_COUNT_missing_key",
 			env:        map[string]string{"GIT_CONFIG_COUNT": "1"},
 			minorFloor: 31,
-			live:       true,
 		},
 		{
 			name: "d_GIT_CONFIG_PARAMETERS_malformed",
 			env:  map[string]string{"GIT_CONFIG_PARAMETERS": "not-a-valid-config"},
-			live: true,
 		},
 		{
 			name:       "e_GIT_CONFIG_GLOBAL_malformed",
 			env:        map[string]string{"GIT_CONFIG_GLOBAL": globalCfg},
 			minorFloor: 32,
-			live:       true,
 		},
 	}
 	versionOut, err := exec.Command("git", "--version").Output()
@@ -714,7 +716,7 @@ func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 			for k, val := range v.env {
 				t.Setenv(k, val)
 			}
-			if v.live {
+			if v.noLiveness == "" {
 				if err := livenessControl(t, v.env); err == nil {
 					t.Fatalf("liveness control for %v exited successfully, want non-zero", v.env)
 				} else {
