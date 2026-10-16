@@ -100,6 +100,13 @@ func fixtureGitEnv(t *testing.T, dir string, extraEnv []string, args ...string) 
 	}
 }
 
+// isAmbientGitVar reports whether name is a GIT_* variable (case-folded). It is
+// the single scrub predicate shared by fixtureGitEnvironment, which filters a
+// child environment, and hermeticGitEnv, which clears the test process.
+func isAmbientGitVar(name string) bool {
+	return name != "" && strings.HasPrefix(strings.ToUpper(name), "GIT_")
+}
+
 // fixtureGitEnvironment is the scrubbed environment for test git children: every
 // ambient GIT_* entry is removed (case-folded), global and system config are
 // pinned off, and extraEnv is appended last.
@@ -107,13 +114,32 @@ func fixtureGitEnvironment(extraEnv []string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
-		if name == "" || strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+		if name == "" || isAmbientGitVar(name) {
 			continue
 		}
 		env = append(env, kv)
 	}
 	env = append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
 	return append(env, extraEnv...)
+}
+
+// commitFixtureRepo writes files (slash-separated path to body) under root,
+// initialises a repository there and commits everything, for the real-git tests
+// that need a tracked tree.
+func commitFixtureRepo(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, body := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	fixtureGit(t, root, "init", "-q")
+	fixtureGit(t, root, "add", "-A")
+	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
 }
 
 // fixtureGitStdin is fixtureGit that feeds stdin and returns trimmed stdout. It
@@ -235,7 +261,7 @@ func hermeticGitEnv(t *testing.T) {
 	t.Helper()
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
-		if name == "" || !strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+		if !isAmbientGitVar(name) {
 			continue
 		}
 		t.Setenv(name, "")
@@ -275,7 +301,7 @@ func u4CreateSymlink(t *testing.T, target, link string) {
 	}
 }
 
-func u4Junction(t *testing.T, link, target string) {
+func u4Junction(t *testing.T, target, link string) {
 	t.Helper()
 	out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
 	if err != nil {
@@ -284,11 +310,12 @@ func u4Junction(t *testing.T, link, target string) {
 }
 
 // linkDir makes link a directory link to target: a junction on Windows (which
-// needs no privilege), a directory symlink elsewhere.
-func linkDir(t *testing.T, link, target string) {
+// needs no privilege), a directory symlink elsewhere. Like u4CreateSymlink and
+// u4Junction, the arguments are (target, link).
+func linkDir(t *testing.T, target, link string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		u4Junction(t, link, target)
+		u4Junction(t, target, link)
 		return
 	}
 	u4CreateSymlink(t, target, link)
@@ -354,11 +381,7 @@ func TestRunRepoScan_IntermediateJunctionOrSymlink_FailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	link := filepath.Join(root, "internal", "d")
-	if runtime.GOOS == "windows" {
-		u4Junction(t, link, outside)
-	} else {
-		u4CreateSymlink(t, outside, link)
-	}
+	linkDir(t, outside, link)
 
 	u4MustFailClosed(t, runRepoScan(root, u4StubGit("internal/d/y.go")), "internal/d/y.go")
 }
@@ -572,11 +595,7 @@ func TestRunRepoScan_FinalDirectoryLink_FailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	link := filepath.Join(root, "internal", "x.go")
-	if runtime.GOOS == "windows" {
-		u4Junction(t, link, outside)
-	} else {
-		u4CreateSymlink(t, outside, link)
-	}
+	linkDir(t, outside, link)
 
 	u4MustFailClosed(t, runRepoScan(root, u4StubGit("internal/x.go")), "internal/x.go")
 }
@@ -645,7 +664,7 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 			setup: func(t *testing.T, root, outside string) {
 				sub := filepath.Join(root, "internal", "sub")
 				u4Mkdir(t, sub)
-				linkDir(t, filepath.Join(root, "internal", "dirlink"), sub)
+				linkDir(t, sub, filepath.Join(root, "internal", "dirlink"))
 			},
 			refuse: true,
 		},
@@ -655,7 +674,7 @@ func TestRunRepoScan_NonSelectedRecordContainment(t *testing.T) {
 			setup: func(t *testing.T, root, outside string) {
 				target := filepath.Join(outside, "realdir")
 				u4WriteText(t, filepath.Join(target, "data.txt"), "data\n")
-				linkDir(t, filepath.Join(root, "internal", "linkdir"), target)
+				linkDir(t, target, filepath.Join(root, "internal", "linkdir"))
 			},
 			refuse: true,
 		},
@@ -1192,21 +1211,10 @@ const legacyNewlineListing = "internal/a.go\n"
 func TestRunRepoScan_NonASCIIPath_IsScanned_RealGit(t *testing.T) {
 	hermeticGitEnv(t)
 	root := t.TempDir()
-	for rel, body := range map[string]string{
+	commitFixtureRepo(t, root, map[string]string{
 		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
 		"internal/\u00e9.go": "package internal\n\nimport \"os\"\n\nfunc Wipe(p string) error { return os.Remove(p) }\n",
-	} {
-		path := filepath.Join(root, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatalf("write: %v", err)
-		}
-	}
-	fixtureGit(t, root, "init", "-q")
-	fixtureGit(t, root, "add", "-A")
-	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
+	})
 
 	res := runRepoScan(root, DefaultGitRunner)
 	if res.Code != 1 {
@@ -1310,25 +1318,12 @@ func TestRunRepoScan_RealGitTopLevelAndGitlinkRecords(t *testing.T) {
 func TestDefaultGitRunnerIgnoresGitEnv(t *testing.T) {
 	t.Logf("git version: %s", gitVersion(t))
 	root := t.TempDir()
-	files := map[string]string{
+	commitFixtureRepo(t, root, map[string]string{
 		"cmd/x/main.go":      "package main\n\nfunc main() {}\n",
 		"internal/ok.go":     "package internal\n\nfunc Ok() bool { return true }\n",
 		"internal/bad.go":    "package internal\n\nimport \"os\"\n\nfunc Wipe(p string) error { return os.Remove(p) }\n",
 		"internal/\u00e9.go": "package internal\n\nfunc Name() string { return \"\" }\n",
-	}
-	for rel, body := range files {
-		path := filepath.Join(root, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatalf("write: %v", err)
-		}
-	}
-	fixtureGit(t, root, "init", "-q")
-	fixtureGit(t, root, "add", "-A")
-	fixtureGit(t, root, "commit", "-q", "--no-verify", "-m", "fixture")
-
+	})
 	baseline := gitLsFilesCapture(t, root)
 	for _, want := range []string{"cmd/x/main.go", "internal/ok.go", "internal/bad.go", "internal/\u00e9.go"} {
 		if !slices.Contains(decodeLsFilesListing(t, baseline), want) {
@@ -1722,7 +1717,7 @@ func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
 				u4Mkdir(t, filepath.Join(root, fixtureRel))
 				target := filepath.Join(outside, "dir")
 				u4Mkdir(t, target)
-				linkDir(t, filepath.Join(root, fixtureRel, "reject-dirlink.go"), target)
+				linkDir(t, target, filepath.Join(root, fixtureRel, "reject-dirlink.go"))
 			},
 			entry: fixtureRel + "/reject-dirlink.go",
 		},
@@ -1731,7 +1726,7 @@ func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
 			setup: func(t *testing.T, root, outside string) {
 				target := filepath.Join(outside, "scripts")
 				u4WriteRejectFixture(t, filepath.Join(target, "testdata", "writepath", "reject-x.go"))
-				linkDir(t, filepath.Join(root, "scripts"), target)
+				linkDir(t, target, filepath.Join(root, "scripts"))
 			},
 			entry:    fixtureRel + "/reject-x.go",
 			ancestor: "scripts",
@@ -1742,7 +1737,7 @@ func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
 				u4Mkdir(t, filepath.Join(root, "scripts"))
 				target := filepath.Join(outside, "testdata")
 				u4WriteRejectFixture(t, filepath.Join(target, "writepath", "reject-x.go"))
-				linkDir(t, filepath.Join(root, "scripts", "testdata"), target)
+				linkDir(t, target, filepath.Join(root, "scripts", "testdata"))
 			},
 			entry:    fixtureRel + "/reject-x.go",
 			ancestor: "scripts/testdata",
@@ -1753,7 +1748,7 @@ func TestRunFixtureSelfTest_LinkedFixture_FailsClosed(t *testing.T) {
 				u4Mkdir(t, filepath.Join(root, "scripts", "testdata"))
 				target := filepath.Join(outside, "writepath")
 				u4WriteRejectFixture(t, filepath.Join(target, "reject-x.go"))
-				linkDir(t, filepath.Join(root, fixtureRel), target)
+				linkDir(t, target, filepath.Join(root, fixtureRel))
 			},
 			entry:    fixtureRel + "/reject-x.go",
 			ancestor: fixtureRel,
