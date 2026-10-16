@@ -937,7 +937,7 @@ func escapeLogText(s string) string {
 // containedRegularFile reports whether rel, a repo-relative '/'-separated path
 // exactly as `git ls-files` prints it, names a regular file reached without
 // following a link (D44D8BDF, writepath arm). It is a semantic copy of
-// retiredarch's containedRegularFile (retiredarch U3, 990AFA71). It is copied,
+// retiredarch's containedRegularFile (stash 990AFA71). It is copied,
 // not shared, because each gate package keeps its own surface (D-BA-3,
 // 5A8EC1BC). The walk uses os.Lstat one component at a time. Every
 // intermediate component must be a real directory (no ModeSymlink and no
