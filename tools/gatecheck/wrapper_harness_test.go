@@ -214,7 +214,7 @@ func wrongTreeRows() []wrongTreeRow {
 		{name: "no repository", layout: layoutNoRepo, wantExit: 128, wantDiag: "not a git repository"},
 		{name: "no repository, caller inside a decoy repository", layout: layoutNoRepo, cwdDecoy: true, wantExit: 128, wantDiag: "not a git repository"},
 		{name: "caller outside any work tree", layout: layoutOwnRepo, cwdOutside: true, wantExit: 128, wantDiag: "not a git repository"},
-		{name: "readonly GIT_DIR refuses before git runs", layout: layoutOwnRepo, readonlyGitDir: true, wantExit: 2, wantDiag: "cannot unset GIT_DIR"},
+		{name: "readonly GIT_DIR refuses in caller-precondition ordering", layout: layoutOwnRepo, readonlyGitDir: true, wantExit: 2, wantDiag: "cannot unset GIT_DIR"},
 		{name: "unexported readonly GIT_CONFIG_GLOBAL refuses the config pin", layout: layoutOwnRepo, readonlyConfigGlobal: true, wantExit: 2, wantDiag: "cannot set GIT_CONFIG_GLOBAL"},
 		{name: "failed compgen listing refuses before git runs", layout: layoutOwnRepo, failCompgen: true, wantExit: 2, wantDiag: "cannot list the environment"},
 		{name: "nested checkout", layout: layoutNested, wantExit: 2, wantDiag: "is not the top level of its repository"},

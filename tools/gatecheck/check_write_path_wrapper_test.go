@@ -161,6 +161,9 @@ func runWritePathWrapperInDir(t *testing.T, bash, script, dir string, args ...st
 	traceArgs := append([]string{"-x", script}, args...)
 	cmd := exec.Command(bash, traceArgs...)
 	cmd.Dir = dir
+	// Pin PS4 and LC_ALL so diagnosticOnOutputLine's "+"-prefix trace filter and
+	// the English diagnostics do not depend on the caller's environment.
+	cmd.Env = append(os.Environ(), "PS4=+ ", "LC_ALL=C")
 	var trace bytes.Buffer
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &trace

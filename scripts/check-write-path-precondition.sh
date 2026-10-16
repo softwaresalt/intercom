@@ -109,10 +109,11 @@ set -euo pipefail
 # tools/gatecheck/internal/writepath. This wrapper is reduced to argument
 # parsing plus the shared build/invoke/cleanup runner
 # (scripts/lib/gatecheck-run.sh, C-3): it builds the gatecheck binary once
-# per invocation and forwards this script's own first argument straight
-# through as `gatecheck write-path`'s mode flag, exactly mirroring the
-# retired dispatch below (repo mode, --self-test, --self-test-integrity,
-# or an unrecognized flag -> usage + exit 2). Exit codes and ordered
+# per invocation and forwards every argument it receives straight through to
+# `gatecheck write-path`, which owns mode selection (repo mode, --self-test,
+# --self-test-integrity) and rejects anything else. The wrapper has no usage
+# branch of its own; its only argument check is the --root injection guard
+# below. Exit codes and ordered
 # stdout/stderr bytes are preserved (ED-3/ED-5 are the only permitted
 # deltas; see m1.md for the parent-vs-head parity evidence).
 #
