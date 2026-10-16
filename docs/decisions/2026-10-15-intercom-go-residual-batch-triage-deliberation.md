@@ -1,6 +1,6 @@
 ---
 title: "Residual batch triage: Go gatecheck hardening, scripts/CI/Windows fixes, closure doc accuracy, upstream routing"
-description: "Stage deliberation (P-021 C6) over 27 stash entries in three release units, plus routing of nine upstream-rendered entries and one held entry"
+description: "Stage deliberation (P-021 C6) over 28 stash entries in three release units, plus routing of eight upstream-rendered entries and one archived refuted entry"
 topic: "Residual stash cleanup: clusters A+B (Go gatecheck), D (scripts/CI/Windows), C-local (closure docs and tests), C-upstream (rendered harness text)"
 depth: "standard"
 decision_status: "decided"
@@ -75,55 +75,48 @@ keyword checks for the three deliberated entries.
 
 ## Step 1.5: Grouping
 
-* **Unit 1 (A+B, 18 entries -> 20 tasks):** all Go code or Go tests in `tools/gatecheck` and its wrapper
+* **Unit 1 (A+B, 18 entries -> 24 tasks):** all Go code or Go tests in `tools/gatecheck` and its wrapper
   script. Coherent: shared package family and test harness; low blast radius. Includes an
   explicit sub-epic split (unignore, retiredarch, wrapper, writepath).
-* **Unit 2 (D, 6 entries -> 8 tasks):** small test, script, CI-doc and Windows fixes; separate
+* **Unit 2 (D, 6 entries -> 9 tasks):** small test, script, CI-doc and Windows fixes; separate
   artifact class from unit 1 as the Orchestrator directed.
-* **Unit 3 (C-local, 3 entries):** design-doc and integration-test accuracy for the 043-S
+* **Unit 3 (C-local, 4 entries -> 5 tasks):** design-doc, local rendered-deviation revert (A744E584), and integration-test accuracy for the 043-S
   closure contract. Kept separate from unit 2 (different domain: closure contract surface).
 
 ## Decisions
 
-* **D-RB-1 (three release units, chained).** Shipments in order: 046-S (existing) -> unit 1 ->
-  unit 2 -> unit 3, by `blocks` edges. Each successor stays queued. Rationale: Ship's one-shipment-
+* **D-RB-1 (three release units, chained).** Shipments in order: 046-S (existing) -> unit 1 (047-S) ->
+  unit 2 (048-S) -> unit 3 (049-S), by `blocks` edges. Each successor stays queued. Rationale: Ship's one-shipment-
   at-a-time model; unit 3 touches `tests/integration` that 046-S (056-F) also edits.
-* **D-RB-2 (per-entry disposition).** All 27 staged entries are consumed into tasks; see the plan
-  units U1..U18, V1..V5, W1..W3. Authorized scope for these units is the plan's acceptance
+* **D-RB-2 (per-entry disposition).** All 28 staged entries are consumed into tasks; see the plan
+  units U1..U18b, V1..V5b, W0..W3. Authorized scope for these units is the plan's acceptance
   criteria; the P-021 C1 deferral reason no longer applies once the plan is reviewed.
 * **D-RB-3 (ordering from the stash).** F9D52027 after 4A3851F0 and C8827920 (U4 after U5, U3).
-  The wrapper units are sequenced U8 -> U10 -> U11 because they edit one test file and U11 also
-  edits the script U9 edits.
-* **D-RB-4 (4995F8C3 split).** The retiredarch half is U7; the writepath half is folded into U13
-  so one task edits `writepath_test.go` naming once. Comment-only AC prevents code drift.
+  The wrapper units are sequenced U8 -> U9 -> U10 -> U10b -> U11 because they edit the wrapper test files and U11 also
+  edits the script alongside U9's shared library helper.
+* **D-RB-4 (4995F8C3 split).** The retiredarch half is split across U7 (`retiredarch.go`, `retiredarch_test.go`), U7b (`select_test.go`, `tomlprimary.go`), and U7c (`tomlprimary_test.go`, `pin_test.go`) to keep each task at <=2 files; the writepath half is folded into U13b (`057.013-T`)
+  so one task edits `writepath_test.go` and `writepath.go` naming once. Comment-only AC prevents code drift.
 * **D-RB-5 (96B308D1 + 5CC5532E item 1).** One root cause (Windows temp path loses backslashes
-  into `/bin/bash`), one task V1. 5CC5532E item 2 (start-script timing) is already covered by
+  into `/bin/bash`), split into V1 (`runner_test.go`, covering all five `TestGatecheckCleanup_*` tests at lines 612-719) and V1b (root-package wrapper tests). 5CC5532E item 2 (start-script timing) is already covered by
   046-S/056-F and is excluded. The "commit untracked docs/memory/2026-09-30/..." clause of
   96B308D1 is dropped: that file does not exist in this workspace.
 * **D-RB-6 (the two requires_deliberation entries).** 8E18CCF5: add the `::notice::` emission for
-  parity (V3). Plan review corrected the premise: the write-path wrapper has no mode dispatch and
-  the retired-architecture notice already moved into the Go engine, so V3 is a Go change in
-  `internal/writepath` (golden churn named in the task), not a script edit. 56B16321: **document `--self-test` as manual-only, no new CI step** (V4), because
+  parity, split into V3 (`writepath.go`, `writepath_test.go`) and V3b (`writepath_golden.json`, `tools/gatecheck/main_test.go`). Plan review corrected the premise: the write-path wrapper has no mode dispatch and
+  the retired-architecture notice already moved into the Go engine, so V3/V3b is a Go change in
+  `internal/writepath` and root CLI dispatch test, not a script edit. 56B16321: **document `--self-test` as manual-only, no new CI step** (V4), because
   a new CI job is a config change with ongoing runtime cost for a mode whose sub-parts
-  (`--self-test-integrity`, repo scan) CI already exercises. V4's AC makes the implementer verify
+  (`--self-test-integrity`, repo scan) CI already exercises (confirmed via `ci.yml` lint steps and `go test` `TestRun_SelfTest_MatchesGolden`). V4's AC makes the implementer verify
   that claim and halt if a sub-mode is uncovered. Operator may override toward a smoke step.
-* **D-RB-7 (upstream-rendered entries: route, do not hand edit).** AGENTS.md, the Ship agent,
-  and the skills are "Generated by autoharness". Entries A744E584, 9B7E94E9, D5D103A1, 0606E72F,
-  92708A06 and 8134B7B7 (and the deliberated F2759510, 8E1E2D80, related 724FA2FB) describe
-  defects in those rendered files. Route: one consolidated upstream-issue stash entry (created
-  this session) listing each entry, the file, and the requested template change; the originals stay
-  active (they remain true of this workspace until re-render), and nothing is hand edited.
+* **D-RB-7 (upstream-rendered entries vs local deviation A744E584).** AGENTS.md, the Ship agent,
+  and the skills are "Generated by autoharness". However, git history (commits `2749d5d` and `b5abe5f`) proves that **A744E584 is NOT an upstream defect**: the upstream template used the space-separated form (`--message <value>` / `--author <value>`), and Ship hand-edited the `=` form (`--message=<value>` and `--author=<value>`) locally into `.github/agents/_ship.agent.md` (~line 828) and `.github/skills/shipment-reconcile/SKILL.md` (~line 636). Because `autoharness shipment cascade-close` rejects the `=` form with exit 2 (proven in `docs/closure/044-S-054-F-post-merge-closure.md`), leaving it breaks every future mutating closure. Therefore A744E584 is staged locally in 049-S as W0 (`059.004-T`, reverting those two files to the upstream space-separated form; a future `autoharness install`/`tune` re-render would also restore it) and W0b (`059.005-T`, adding a contract-test guard in `ship_feature_completion_contract_test.go`). The remaining rendered-file entries — 9B7E94E9, D5D103A1, 0606E72F,
+  92708A06 and 8134B7B7 (and the deliberated F2759510, 8E1E2D80, related 724FA2FB) — describe genuine upstream template defects. Route: one consolidated upstream-issue stash entry (40BCCD69, amended to remove A744E584) listing each entry, the file, and the requested template change; the originals stay
+  active (they remain true of this workspace until re-render), and nothing is hand edited for them.
   Note 92708A06 (AGENTS.md dead links) and 8134B7B7 items 1-6 need the autoharness template or
   `autoharness install`/`tune`, not local edits.
-* **D-RB-8 (9C6C2078 held).** It asks to change the design-doc example to the `--message=value`
-  form. Plan review found that the matrix doc line 283 already shows the **space form**
-  (`--message <text>`) and no `=value` form appears in that section, and A744E584 reports the
-  engine **rejects** the `=value` form (exit 2). So the premise of 9C6C2078 looks stale for that
-  line, and applying it would make the doc wrong. Hold it active, annotated, and have the operator
-  confirm the accepted form from `autoharness shipment cascade-close --help`; then archive it as an
-  invalid premise (or stage a narrow task if a different example does use the wrong form). Entries
-  86381564 and A744E584 were noted as "after 9C6C2078": 86381564 edits different rows of the same
-  doc and does not depend on 9C6C2078's outcome, so it proceeds (W1).
+* **D-RB-8 (9C6C2078 archived as refuted premise).** It asked to change the design-doc example to the `--message=value`
+  form. Verification confirmed that `docs/design-docs/2026-10-11-closure-contract-surface-matrix.md` line 283 already shows the **space form**
+  (`--message <text> --author <name>`), which is the exact form `autoharness shipment cascade-close` accepts (while the `=value` form was a local Ship deviation that the CLI rejects with exit 2). Applying 9C6C2078 would make the design doc wrong. Archived via `backlogit stash archive 9C6C2078` as a refuted premise. Entries
+  86381564 and A744E584 were noted as "after 9C6C2078": both now proceed in 049-S (W0/W0b and W1).
 * **D-RB-9 (housekeeping).** Archived as resolved/completed via `stash archive` (non-destructive):
   0B6CCE5A (go1.26.9 toolchain bump, resolved by PR #117 / 041-S closure PR #116), C13CF9BA (the
   Stage archival follow-up for it), 3D161831 and 51117F2D (045-S compaction follow-ups completed
@@ -135,5 +128,4 @@ keyword checks for the three deliberated entries.
 ## Open questions for the operator
 
 1. Confirm D-RB-6 (manual-only for `--self-test`) or ask for a CI smoke step.
-2. File the upstream autoharness issue (D-RB-7); Stage cannot open issues.
-3. Resolve the 9C6C2078 / A744E584 contradiction once the engine's accepted form is confirmed.
+2. File the upstream autoharness issue (D-RB-7, stash 40BCCD69); Stage cannot open issues.
