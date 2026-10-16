@@ -946,11 +946,15 @@ func escapeLogText(s string) string {
 // must be regular. An empty, "." or ".." component, or on Windows a component
 // containing '\' or ':', is a containment violation. Only fs.ErrNotExist
 // returns ok=true, so a deleted tracked file keeps the existing read-error
-// text. Any other Lstat error fails closed. The *fs.PathError wrapper is
+// text. That includes a missing intermediate component: the walk returns true
+// at the first absent component and does not check the components after it.
+// Any other Lstat error fails closed. The *fs.PathError wrapper is
 // stripped so CI logs show only repo-relative prefixes (SEC-4). Stdlib only:
 // no filepath.Abs and no filepath.EvalSymlinks. The walk is a time-of-check
 // only: scanFile reads the file later, so a file swapped for a link between that
-// check and the read is still followed (TOCTOU). A retiredarch copy
+// check and the read is still followed (TOCTOU). So is a directory component
+// swapped for a link after its own Lstat, because the later reads resolve the
+// whole path again. A retiredarch copy
 // exists (retiredarch.containedRegularFile): keep the two in sync by hand,
 // because a fix to one must be checked against the other.
 func containedRegularFile(root, rel string) (bool, string) {
@@ -1019,7 +1023,8 @@ func containedRegularFile(root, rel string) (bool, string) {
 // disk passes (G-9). A Windows junction as the final component is refused as
 // non-regular, because Go reports a mount point as ModeIrregular (LR-4). Selected
 // files are read after the containment walk, so a file swapped for a link between
-// the Lstat in containedRegularFile and the read in scanFile is still followed
+// the Lstat in containedRegularFile and the read in scanFile is still followed,
+// and so is a directory component swapped for a link after its own Lstat
 // (TOCTOU).
 func runRepoScan(root string, git GitRunner) Result {
 	out, err := git(root)

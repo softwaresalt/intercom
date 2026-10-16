@@ -93,7 +93,7 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 	})
 }
 
-// TestRunRepoScan_NewlineNonSelectedNameEscapes is the Linux-only outcome-4 row
+// TestRunRepoScan_NewlineNonSelectedNameEscapes is the outcome-4 row
 // for a real newline in a non-selected directory name. Windows cannot create
 // such a name, so the row lives in this linux || darwin file.
 func TestRunRepoScan_NewlineNonSelectedNameEscapes(t *testing.T) {
