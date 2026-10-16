@@ -5,7 +5,7 @@ shipment: 045-S
 feature: 055-F
 agent: Ship
 mode: post-merge closure
-compaction_status: pending
+compaction_status: done
 threshold_days: 14
 ---
 
@@ -91,3 +91,44 @@ Not run in this session. No file was moved, and nothing was written to `docs/arc
 
 Capture a follow-up stash entry for the reference audit and the compaction of the eligible memory
 groups (see the 045-S closure artifact, stash follow-ups).
+
+## Completion pass (2026-10-15, stash follow-ups 51117F2D and 3D161831)
+
+The first run above left Phase 3 undone. This pass audited live references and ran Phase 3 for the groups
+that cleared. The status is now `done`. Items marked retained below were audited and not compacted, and no
+file was deleted.
+
+### Reference audit
+
+| Group or file | Result | Basis |
+|---|---|---|
+| 2026-09-18 `021-001-T-harness-...-blocked.md` | Retained | Cited by the live plan `docs/plans/2026-09-18-intercom-go-checker-test-docs-hygiene-plan.md` and recorded as the live record for blocked 025-F (025-F, 023-F, 024-F, 020-F, 019-F all `blocked`) |
+| 2026-09-18 `026-F-...-blocked.md` | Retained | 026-F is `blocked` (live) |
+| 2026-09-18 `stage-ship-contract-and-gate-reliability-staging-cycle.md` | Retained | Names blocked 026-F, 037-F, 043-F and live stash DB12DA37 |
+| 2026-10-01 `post-m4-stash-triage-and-go-replan-memory.md` | Retained | Exactly 14 days old, not older than the threshold. Names blocked 038-F and about fifteen live stash entries |
+| 2026-10-07 `stage-retiredarch-gate-integrity-memory.md` | Retained | 8 days old. Names live stash 0ECC1895, 3750C37C, 990AFA71, D7BF9F74, DC921AF6 |
+| 2026-10-11 `stage-gatecheck-write-path-batch-2-memory.md` | Retained | 4 days old. Names live stash entries (1B85D0F4, 36BE1F61, 49982A4E and others) |
+| 2026-10-12 `stage-start-script-test-hermetic-memory.md` | Retained | 3 days old. Names queued 046-S, queued 056-F, live stash C5E50EFD |
+| 2026-10-12 043-S group (2 files) | Compacted | 043-S and 053-F archived, no live reference except the stash and closure pointers, which were repointed |
+| 2026-10-13 044-S closure PR 134 note | Compacted | 044-S and 054-F archived |
+
+### Phase 3 result
+
+* `docs/memory/compacted/2026-10-12-043-s-053-f-ship-checkpoint-4-and-closure-compacted.md` replaces
+  checkpoint 4 and the closure session memory. The existing checkpoints 1 to 3 record was checked first
+  and does not hold this content. Its two pointers to the moved files were repointed.
+* `docs/memory/compacted/2026-10-13-044-s-054-f-pr-134-review-loop-compacted.md` replaces the PR 134 final
+  note. The existing 044-S session summary was checked first. It carries the corrected takeover wording
+  but not the review loop table, the operator-extended review-fix limit, or the leftover decisions.
+* Originals moved with `git mv` to `docs/archive/memory/2026-10-12/` and `docs/archive/memory/2026-10-13/`.
+
+### Phase 4 report
+
+* Files compacted: 3 originals into 2 summaries (25,287 bytes moved, about 13 KB of summaries added)
+* Active task checkpoints preserved: 0 remain active. Checkpoint `checkpoint-20261013-150837.json` was
+  resolved by explicit operator selection after its staleness was verified (054-F and 044-S archived,
+  closure checkpoint 165942 already resolved). `cleanup_checkpoints` was not run.
+* Plans consolidated into decided-plans: 0
+* Closure records compacted: 0
+* Retained pending later eligibility: the seven files above. The 2026-10-01 file crosses the age threshold
+  on the next run. It will still be held by blocked 038-F and live stash entries until those clear.

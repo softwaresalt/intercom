@@ -1,7 +1,7 @@
 ---
 title: "045-S / 055-F post-merge operational closure"
 description: "Post-merge closure for gatecheck root anchoring and MSYS environment stripping (045-S, covering feature 055-F): feature PR 135 and closure PR 136 merged, the operator-approved cascade close (postcondition pass), the archive relocation, and the P-020 compaction that remains pending."
-status: ready_with_conditions
+status: ready
 tags:
   - closure
   - post-merge
@@ -19,7 +19,7 @@ closure_pr: 136
 merge_commit: 526fccf46669891c4b9a191dc97449cd30e797a2
 merge_commit_sha: 526fccf46669891c4b9a191dc97449cd30e797a2
 feature_merge_commit_sha: 526fccf46669891c4b9a191dc97449cd30e797a2
-releasability: READY_WITH_CONDITIONS
+releasability: READY
 conditions:
   - id: cascade-close-operator-approval
     description: "Explicit per-closure operator approval for the mutating autoharness shipment cascade-close run. The operator ran the command and approved it. Ship did not re-run it."
@@ -31,7 +31,7 @@ conditions:
     evidence: .backlogit/reconcile/045-S-post-20261015T173631Z.md
   - id: p020-compaction-completion
     description: "P-020 compaction of the remaining candidates recorded in the compaction report completes, and compaction_status is then set to done. Until then the closure is not complete, and routing for the next shipment stays blocked."
-    satisfied: false
+    satisfied: true
     evidence: docs/memory/compacted/2026-10-15-045-s-compact-context-report.md
 head_sha_reviewed: df7d8fd6baf46af3b698e5d50da49311b6c66a09
 code_sha_reviewed: df7d8fd
@@ -41,8 +41,8 @@ closure_branch: post-merge/055-f-closure-045-s
 archive_branch: post-merge/045-s-archive-relocation
 close_path: cascade
 close_evidence: docs/closure/evidence/045-S-055-F-close-evidence.json
-closure_status: READY_WITH_CONDITIONS
-compaction_status: pending
+closure_status: READY
+compaction_status: done
 ---
 
 # 045-S / 055-F post-merge operational closure
@@ -61,9 +61,8 @@ archived IDs, and nine archived IDs (045-S, 055-F, and seven tasks). Shipment 04
 `archived` with status `shipped`. This branch carries the archive relocation and the post-mode
 reconciliation record.
 
-The closure is not declared complete. P-020 compaction is `pending`, so the closure-evidence gate
-reports `frontmatter_predicate` until that work completes. Routing for the next shipment stays
-blocked until then.
+P-020 compaction completed on `post-merge/045-s-compaction` (`compaction_status: done`), so every
+closure condition is satisfied and the closure-evidence gate can pass. See the Compaction section.
 
 ## Merge and gate record
 
@@ -132,7 +131,7 @@ Twelve commits from `9e42d16` to `df7d8fd` on the feature branch. Git history is
    blast radius was enumerated by hand, and each pair was gated before commit.
 5. The mutating cascade close was run by the operator, not by Ship. The operator's approval is
    recorded in the conditions above.
-6. P-020 compaction was run as a partial pass and remains `pending`. See the compaction section.
+6. P-020 compaction was first run as a partial pass and was completed afterwards. See the compaction section.
 7. Host note: on this Windows host `bash` on PATH is WSL. The serialized suite ran with Git Bash
    first on PATH. Shim-based wrapper tests can flake under package-parallel load on this host. CI on
    Linux is unaffected, and CI on head `df7d8fd` passed.
@@ -170,8 +169,10 @@ Captured during the review remediation as `DEFERRED SCOPE EXPANSION` entries (P-
 
 Closure follow-ups (P-020):
 
-* 51117F2D: reference audit and compaction of the eligible memory groups.
-* 3D161831: compaction of the completed-work memory candidates.
+* 51117F2D: reference audit and compaction of the eligible memory groups. Work done, see Compaction.
+* 3D161831: compaction of the completed-work memory candidates. Work done, see Compaction.
+
+Both entries stay in the stash for Stage to archive. Ship is capture-only for stash.
 
 Accepted residuals named in the 055-F definition of done: 1B85D0F4 (other wrappers), 49982A4E
 (engine `--root`), and 36BE1F61 (main.go sinks). Existing entries are cited, not duplicated:
@@ -198,25 +199,23 @@ Accepted residuals named in the 055-F definition of done: 1B85D0F4 (other wrappe
   through a reviewed PR. Never push directly to main.
 * **Validation window:** until the first green CI run on `main` after the closure merges.
 * **Owner:** the operator. The Ship agent reports and does not own the window.
-* **Releasability evidence:** `READY_WITH_CONDITIONS`. The operator approval and the archive relocation
-  are satisfied. P-020 compaction is the one unsatisfied condition.
+* **Releasability evidence:** `READY`. The operator approval, the archive relocation, and the P-020
+  compaction are all satisfied.
 
 ## Compaction (P-020)
 
-`compaction_status: pending`. compact-context ran Phase 1 and Phase 2 at the closure. Phase 3 compacted
-nothing in that run. The run's report is `docs/memory/compacted/2026-10-15-045-s-compact-context-report.md`.
+`compaction_status: done`. The first run (Phase 1 and 2 only) is in
+`docs/memory/compacted/2026-10-15-045-s-compact-context-report.md`. The completion pass is recorded in
+that report's "Completion pass" section and covers stash follow-ups 51117F2D and 3D161831.
 
-Remaining candidates, pending their compaction:
+Compacted (Phase 3), originals moved with `git mv` to `docs/archive/memory/`, nothing deleted:
 
-* Age-eligible: `docs/memory/2026-09-18/021-001-T-harness-execution-model-decision-blocked.md` (its
-  item 021.001-T is archived and done) and `docs/memory/2026-09-18/stage-ship-contract-and-gate-reliability-staging-cycle.md`.
-* Completed-work: `docs/memory/2026-10-12/043-s-ship-closure-session-memory.md`,
-  `docs/memory/2026-10-12/043-s-ship-session-checkpoint-4.md`, and the 2026-10-13 044-S closure
-  memory.
-* Excluded for now: `docs/memory/2026-09-18/026-F-shipment-scoped-harness-contract-amendment-blocked.md`.
-  It is the record of blocked item 026-F, which is still live.
+* `2026-10-12/043-s-ship-session-checkpoint-4.md` and `2026-10-12/043-s-ship-closure-session-memory.md`
+  into `docs/memory/compacted/2026-10-12-043-s-053-f-ship-checkpoint-4-and-closure-compacted.md`.
+* `2026-10-13/044-s-054-f-closure-pr-134-final-session-memory.md` into
+  `docs/memory/compacted/2026-10-13-044-s-054-f-pr-134-review-loop-compacted.md`.
 
-The reference audit used the direction the skill defines: no backlog item in the queue or archive names
-any candidate file. The candidate stems were also checked against the live queue. Compacting is an
-archive-only move with a dense summary. It was not run in this closure. The remaining set is tracked as
-stash follow-ups 51117F2D and 3D161831, and the closure stays incomplete until it completes.
+Retained after the reference audit (no Phase 3): the 2026-09-18 group (three files, held by blocked 025-F,
+026-F, 037-F and 043-F, live stash DB12DA37, and a live plan reference), 2026-10-01 (14 days, not older than
+the threshold, live stash entries, blocked 038-F), 2026-10-07, 2026-10-11 and the 2026-10-12 stage memory
+(inside the threshold, live stash entries, queued 046-S and 056-F). The audit table is in the report.
