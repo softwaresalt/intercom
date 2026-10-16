@@ -1,6 +1,7 @@
 package unignore
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"sort"
@@ -294,5 +295,61 @@ func TestRunLsFilesCheck_CleanRepoIsEmpty(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("expected empty result, got %v", got)
+	}
+}
+
+// TestCalleeErrors_SurfaceWithSinglePrefix drives an error out of each
+// callee file (checks.go, git.go, checkignore.go), some already carrying
+// "::error::" and some plain, through printError and requires exactly one
+// leading prefix on the printed line.
+func TestCalleeErrors_SurfaceWithSinglePrefix(t *testing.T) {
+	real := newIsolatedGitRunner(t)
+	repo := denylistRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "untracked.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write untracked file: %v", err)
+	}
+	scratch := t.TempDir()
+
+	cases := []struct {
+		name string
+		call func() error
+		want string
+	}{
+		{"checks.go ls-files check", func() error { _, err := runLsFilesCheck(failingGit(real, "ls-files"), repo); return err }, "git ls-files -i -c"},
+		{"checks.go differential ls-files", func() error {
+			_, _, err := runDifferentialCheck(failingGit(real, "ls-files"), repo, scratch, "HEAD", "HEAD")
+			return err
+		}, "git ls-files --others failed"},
+		{"checks.go differential diff", func() error {
+			_, _, err := runDifferentialCheck(failingGit(real, "diff"), repo, scratch, "HEAD", "HEAD")
+			return err
+		}, "git diff --name-only failed"},
+		{"git.go option-like ref", func() error { _, err := rootGitignoreTextAt(repo, "--x", real); return err }, "not a valid ref"},
+		{"git.go scratch init (plain)", func() error {
+			_, err := makeScratchGitignore(scratch, "plain", "a\n", failingGit(real, "init"))
+			return err
+		}, "git init -q"},
+		{"checkignore.go isIgnored", func() error { _, err := isIgnored(failingGit(real, "check-ignore"), repo, "x"); return err }, "git check-ignore errored"},
+		{"checkignore.go isIgnoredBatch", func() error {
+			_, err := isIgnoredBatch(failingGit(real, "check-ignore"), repo, []string{"x"})
+			return err
+		}, "git check-ignore --stdin errored"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			var buf bytes.Buffer
+			printError(&buf, err)
+			line := strings.TrimSuffix(buf.String(), "\n")
+			if !strings.HasPrefix(line, "::error::") || strings.Contains(line[len("::error::"):], "::error::") {
+				t.Fatalf("printed line %q does not carry exactly one leading ::error:: prefix", line)
+			}
+			if !strings.Contains(line, tc.want) {
+				t.Fatalf("printed line %q does not contain %q", line, tc.want)
+			}
+		})
 	}
 }
