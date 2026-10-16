@@ -23,15 +23,6 @@ func f() {
 }
 `
 
-// unixWriteFixture writes src at path, creating parent directories.
-func unixWriteFixture(t *testing.T, path, src string) {
-	t.Helper()
-	mkdirAll(t, filepath.Dir(path))
-	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // TestRunFixtureSelfTest_SinkEscapesControlText pins the fixture self-test
 // sinks. The rows live in a linux || darwin file because the fixture names
 // embed a newline, which Windows cannot create. The PASS and FAIL lines and the
@@ -48,7 +39,7 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 
 	t.Run("PASS line escapes the fixture name", func(t *testing.T) {
 		root := t.TempDir()
-		unixWriteFixture(t, filepath.Join(root, fixtureRel, rejectName), rejectGoSource)
+		writeText(t, filepath.Join(root, fixtureRel, rejectName), rejectGoSource)
 
 		res := runFixtureSelfTest(root)
 		assertNoRawControl(t, res.Stdout)
@@ -64,7 +55,7 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 
 	t.Run("FAIL line and joined findings escape the fixture name", func(t *testing.T) {
 		root := t.TempDir()
-		unixWriteFixture(t, filepath.Join(root, fixtureRel, acceptName), unixTwoPrimitivesGo)
+		writeText(t, filepath.Join(root, fixtureRel, acceptName), unixTwoPrimitivesGo)
 
 		res := runFixtureSelfTest(root)
 		assertNoRawControl(t, res.Stderr)
@@ -84,7 +75,7 @@ func TestRunFixtureSelfTest_SinkEscapesControlText(t *testing.T) {
 		temp := t.TempDir()
 		root := filepath.Join(temp, "repo")
 		target := filepath.Join(temp, "outside", "y.go")
-		unixWriteFixture(t, target, rejectGoSource)
+		writeText(t, target, rejectGoSource)
 		mkdirAll(t, filepath.Join(root, fixtureRel))
 		createSymlink(t, target, filepath.Join(root, fixtureRel, linkName))
 
@@ -137,7 +128,7 @@ func TestRunFixtureSelfTest_FIFOFixtureRefused(t *testing.T) {
 	)
 	root := t.TempDir()
 	fixtureDir := filepath.Join(root, filepath.FromSlash(fixtureRel))
-	unixWriteFixture(t, filepath.Join(fixtureDir, "accept-ok.go"), cleanGoSource)
+	writeText(t, filepath.Join(fixtureDir, "accept-ok.go"), cleanGoSource)
 	fifo := filepath.Join(fixtureDir, "reject-fifo.go")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
 		t.Fatalf("mkfifo %s: %v", fifo, err)

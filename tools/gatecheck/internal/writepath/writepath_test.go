@@ -2034,19 +2034,20 @@ func TestCallExpr_ReparseWindowsCreateFile(t *testing.T) {
 
 func TestCallExpr_AcceptsGBareOperands(t *testing.T) {
 	cases := []struct {
-		name string
-		args string
+		name            string
+		args            string
+		checkSelectorOp bool
 	}{
-		{"identifier and integer", allowedCreateFileArgs},
-		{"selector", "syscall.Open, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
-		{"unary", "p, 0, -offset, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
-		{"star", "p, 0, 0, *value, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
-		{"binary", "p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, left+right"},
+		{name: "identifier and integer", args: allowedCreateFileArgs},
+		{name: "selector", args: "syscall.Open, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0", checkSelectorOp: true},
+		{name: "unary", args: "p, 0, -offset, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
+		{name: "star", args: "p, 0, 0, *value, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0"},
+		{name: "binary", args: "p, 0, 0, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, left+right"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			call, bindings := callExprForTest(t, `"syscall"`, "syscall.CreateFile("+tc.args+")")
-			if tc.name == "selector" && call != nil {
+			if tc.checkSelectorOp && call != nil {
 				selector, ok := call.Args[0].(*ast.SelectorExpr)
 				if !ok {
 					t.Fatal("selector operand case did not parse as a selector")
