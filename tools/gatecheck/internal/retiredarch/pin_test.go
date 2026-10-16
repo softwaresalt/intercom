@@ -504,7 +504,7 @@ func TestUniverseDeclNames_CoverCanonicalTexts(t *testing.T) {
 	}
 }
 
-// TestCheckPathspecPin_GitRunnerIsolation_Rejected (U5 scenario 2;
+// TestCheckPathspecPin_GitRunnerIsolation_Rejected (D7BF9F74 scenario 2;
 // D7BF9F74): weakening DefaultGitRunner's git-environment isolation is a
 // pin violation. Each row mutates one literal of the package copy's
 // select.go (writeMutatedCopy) and
@@ -527,7 +527,7 @@ func TestCheckPathspecPin_GitRunnerIsolation_Rejected(t *testing.T) {
 	}
 }
 
-// TestGitShowToplevelIgnoresGitEnv (U6 scenario 1, AC-1; D7BF9F74): a
+// TestGitShowToplevelIgnoresGitEnv (D7BF9F74 scenario 1, AC-1): a
 // decoy GIT_DIR/GIT_WORK_TREE in the gate's environment must not redirect
 // the pin's repository-root resolution. The expected value is derived by
 // gitShowToplevel itself before the decoy env is set, which sidesteps 8.3
@@ -560,7 +560,7 @@ func TestGitShowToplevelIgnoresGitEnv(t *testing.T) {
 	}
 }
 
-// TestGitShowToplevelRefusesRelativeGit (U6 scenario 2, AC-2): when PATH
+// TestGitShowToplevelRefusesRelativeGit (D7BF9F74 scenario 2, AC-2): when PATH
 // lookup resolves git to a relative path, gitShowToplevel refuses it before
 // launching anything. t.Chdir is required because gitShowToplevel sets no
 // cmd.Dir.
