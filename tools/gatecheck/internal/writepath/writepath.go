@@ -1126,11 +1126,11 @@ func runFixtureSelfTest(root string) Result {
 	for _, name := range names {
 		relPath := "scripts/testdata/writepath/" + name
 		if ok, reason := containedRegularFile(root, relPath); !ok {
-			return Result{Stderr: errorLine(relPath, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
+			return Result{Stdout: stdout.String(), Stderr: errorLine(relPath, fmt.Errorf("not a contained regular file: %s", reason)), Code: 1}
 		}
 		findings, err := scanFile(root, relPath)
 		if err != nil {
-			return Result{Stderr: errorLine(relPath, unwrapPathError(err)), Code: 1}
+			return Result{Stdout: stdout.String(), Stderr: errorLine(relPath, unwrapPathError(err)), Code: 1}
 		}
 		rejected := len(findings) > 0
 		switch {

@@ -1703,6 +1703,59 @@ func TestRunRepoScan_BadListing_FailsClosed(t *testing.T) {
 	}
 }
 
+// TestRunFixtureSelfTest_FailureKeepsEarlierPassLines pins that every failure
+// return of runFixtureSelfTest keeps the PASS lines accumulated before it on
+// stdout, beside the failure text on stderr. accept-a.go sorts first and passes.
+func TestRunFixtureSelfTest_FailureKeepsEarlierPassLines(t *testing.T) {
+	const fixtureRel = "scripts/testdata/writepath"
+	rows := []struct {
+		name       string
+		setup      func(t *testing.T, root, outside string)
+		wantStderr string
+	}{
+		{
+			name: "len(failures) > 0",
+			setup: func(t *testing.T, root, _ string) {
+				writeRejectFixture(t, filepath.Join(root, fixtureRel, "accept-b.go"))
+			},
+			wantStderr: "FAIL accept-b.go: expected clean, got findings: ",
+		},
+		{
+			name: "scanFile error",
+			setup: func(t *testing.T, root, _ string) {
+				writeText(t, filepath.Join(root, fixtureRel, "accept-b.go"), "package p\n// \xff\n")
+			},
+			wantStderr: "::error::" + fixtureRel + "/accept-b.go: ",
+		},
+		{
+			name: "containedRegularFile refusal",
+			setup: func(t *testing.T, root, outside string) {
+				target := filepath.Join(outside, "b.go")
+				writeText(t, target, cleanGoSource)
+				createSymlink(t, target, filepath.Join(root, fixtureRel, "accept-b.go"))
+			},
+			wantStderr: "::error::" + fixtureRel + "/accept-b.go: not a contained regular file: ",
+		},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			root, outside := t.TempDir(), t.TempDir()
+			writeText(t, filepath.Join(root, fixtureRel, "accept-a.go"), cleanGoSource)
+			tc.setup(t, root, outside)
+			res := runFixtureSelfTest(root)
+			if res.Code != 1 {
+				t.Fatalf("Code = %d, want 1 (stderr=%q)", res.Code, res.Stderr)
+			}
+			if want := "PASS accept-a.go: clean as expected\n"; res.Stdout != want {
+				t.Fatalf("Stdout = %q, want the earlier PASS line %q", res.Stdout, want)
+			}
+			if !strings.HasPrefix(res.Stderr, tc.wantStderr) {
+				t.Fatalf("Stderr = %q, want prefix %q", res.Stderr, tc.wantStderr)
+			}
+		})
+	}
+}
+
 func TestRunFixtureSelfTest_MissingFixtureDir(t *testing.T) {
 	root := t.TempDir()
 	res := runFixtureSelfTest(root)
