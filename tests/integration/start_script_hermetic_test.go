@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,24 @@ func hermeticStartScript(t *testing.T, root string) string {
 		t.Fatalf("writing scratch start.ps1: %v", err)
 	}
 	return dst
+}
+
+// writeCwdEchoStub writes a copilot stub (a pwsh script, like
+// writeStubExecutable, which stays untouched) that prints
+// "stub copilot ran" and "STUB_CWD=<Get-Location>" and exits with exitCode.
+// start.ps1 does Push-Location $PSScriptRoot before launching copilot, so
+// STUB_CWD reveals which script directory the launcher really ran from.
+func writeCwdEchoStub(t *testing.T, dir, name string, exitCode int) string {
+	t.Helper()
+	path := filepath.Join(dir, name+".ps1")
+	content := fmt.Sprintf(
+		"Write-Output 'stub copilot ran'\n"+
+			"Write-Output (\"STUB_CWD=\" + (Get-Location).Path)\n"+
+			"exit %d\n", exitCode)
+	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+		t.Fatalf("writing cwd-echo stub %q: %v", path, err)
+	}
+	return path
 }
 
 // dirHasSidecar reports whether dir contains an executable named after any

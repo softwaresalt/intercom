@@ -345,23 +345,28 @@ func TestInvokeStartScriptMainPropagatesNonZeroExitCode(t *testing.T) {
 	}
 	root := repoRoot(t)
 	scratchRoot := t.TempDir()
-	stubCopilot := writeStubExecutable(t, scratchRoot, "copilot-stub", 7, "stub copilot ran")
+	stubCopilot := writeCwdEchoStub(t, scratchRoot, "copilot-stub", 7)
 
 	// Run the FULL main entry point (not just a snippet) via
-	// COPILOT_EXE_PATH pointing at the stub, with the sidecars all
-	// resolving to nothing (no real backlogit/engram/graphtor-docs on
-	// PATH in this constrained environment is fine -- absence is
-	// non-fatal by design).
+	// COPILOT_EXE_PATH pointing at the stub. The test runs a scratch copy
+	// of start.ps1 (so $PSScriptRoot, .env.local, .copilot, .engram and
+	// .graphtor resolve in scratch space) under a PATH from which every
+	// directory holding a backlogit/engram/graphtor-docs executable has
+	// been removed, so the unconditional sidecar steps are no-ops rather
+	// than real syncs against the developer's workspace. The run is
+	// bounded by WaitDelay so an orphaned pipe holder cannot hang it.
+	scratchScript := hermeticStartScript(t, root)
+	env, pwshExe := hermeticStartEnv(t, os.Environ(), map[string]string{
+		"COPILOT_EXE_PATH": stubCopilot,
+		"COPILOT_HOME":     filepath.Join(scratchRoot, ".copilot"),
+		"ENGRAM_DATA_DIR":  filepath.Join(scratchRoot, ".engram"),
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), startScriptTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-NonInteractive", "-File", filepath.Join(root, "start.ps1"))
+	cmd := exec.CommandContext(ctx, pwshExe, "-NoProfile", "-NonInteractive", "-File", scratchScript)
 	cmd.Dir = scratchRoot
-	cmd.Env = append(os.Environ(),
-		"COPILOT_EXE_PATH="+stubCopilot,
-		"COPILOT_HOME="+filepath.Join(scratchRoot, ".copilot"),
-		"ENGRAM_DATA_DIR="+filepath.Join(scratchRoot, ".engram"),
-	)
-	out, err := cmd.CombinedOutput()
+	cmd.Env = env
+	out, err := startScriptCombinedOutputBounded(cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("start.ps1 exceeded %s timeout; output so far:\n%s", startScriptTimeout, out)
 	}
@@ -375,6 +380,36 @@ func TestInvokeStartScriptMainPropagatesNonZeroExitCode(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "stub copilot ran") {
 		t.Fatalf("expected stub Copilot CLI output not found: %s", out)
+	}
+
+	// Wiring assertion: start.ps1 does Push-Location $PSScriptRoot, so the
+	// stub's cwd must be the scratch script's directory, not the real repo.
+	var stubCwd string
+	for _, line := range strings.Split(string(out), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "STUB_CWD="); ok {
+			stubCwd = v
+		}
+	}
+	if stubCwd == "" {
+		t.Fatalf("stub did not report STUB_CWD; output:\n%s", out)
+	}
+	cwdInfo, err := os.Stat(stubCwd)
+	if err != nil {
+		t.Fatalf("stat STUB_CWD %q: %v", stubCwd, err)
+	}
+	scratchInfo, err := os.Stat(filepath.Dir(scratchScript))
+	if err != nil {
+		t.Fatalf("stat scratch script dir: %v", err)
+	}
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		t.Fatalf("stat repo root: %v", err)
+	}
+	if !os.SameFile(cwdInfo, scratchInfo) {
+		t.Fatalf("launcher ran from %q, want scratch script dir %q", stubCwd, filepath.Dir(scratchScript))
+	}
+	if os.SameFile(cwdInfo, rootInfo) {
+		t.Fatalf("launcher ran from the real repository root %q", stubCwd)
 	}
 }
 
@@ -390,18 +425,26 @@ func TestLocationRestoredEvenOnNonZeroCopilotExit(t *testing.T) {
 	callerDir := t.TempDir()
 	stubCopilot := writeStubExecutable(t, scratchRoot, "copilot-stub", 3, "")
 
+	// The outer pwsh runs under a sidecar-free PATH (inherited by the inner
+	// launcher) and the inner launcher is a scratch copy of start.ps1
+	// invoked via the absolute pwsh path, since a bare "pwsh" would be
+	// resolved against the scrubbed PATH.
+	scratchScript := hermeticStartScript(t, root)
+	env, pwshExe := hermeticStartEnv(t, os.Environ(), nil)
+
 	helperScript := filepath.Join(t.TempDir(), "invoke-and-check-location.ps1")
 	helperContent := fmt.Sprintf(
 		"Set-Location -LiteralPath '%s'\n"+
 			"$before = (Get-Location).Path\n"+
 			"$env:COPILOT_EXE_PATH = '%s'\n"+
-			"& pwsh -NoProfile -NonInteractive -File '%s' 2>$null | Out-Null\n"+
+			"& '%s' -NoProfile -NonInteractive -File '%s' 2>$null | Out-Null\n"+
 			"$after = (Get-Location).Path\n"+
 			"if ($before -ne $after) { Write-Output \"LOCATION_CHANGED:before=$before after=$after\"; exit 1 }\n"+
 			"Write-Output 'LOCATION_UNCHANGED'\n",
 		strings.ReplaceAll(callerDir, "'", "''"),
 		strings.ReplaceAll(stubCopilot, "'", "''"),
-		strings.ReplaceAll(filepath.Join(root, "start.ps1"), "'", "''"),
+		strings.ReplaceAll(pwshExe, "'", "''"),
+		strings.ReplaceAll(scratchScript, "'", "''"),
 	)
 	if err := os.WriteFile(helperScript, []byte(helperContent), 0o600); err != nil {
 		t.Fatalf("writing location-check helper: %v", err)
@@ -409,8 +452,9 @@ func TestLocationRestoredEvenOnNonZeroCopilotExit(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), startScriptTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-NonInteractive", "-File", helperScript)
-	out, err := cmd.CombinedOutput()
+	cmd := exec.CommandContext(ctx, pwshExe, "-NoProfile", "-NonInteractive", "-File", helperScript)
+	cmd.Env = env
+	out, err := startScriptCombinedOutputBounded(cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("location-check helper exceeded %s timeout; output so far:\n%s", startScriptTimeout, out)
 	}
