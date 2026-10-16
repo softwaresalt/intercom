@@ -608,8 +608,8 @@ func TestRunRepoScan_OnlyOutOfScopePaths_FailsClosed(t *testing.T) {
 }
 
 // u3StubGit returns a GitRunner that ignores the pathspecs and reports
-// exactly the given repo-relative paths, so a U3 containment scenario
-// needs no real git index (plan U3: containment is index-independent).
+// exactly the given repo-relative paths, so a 990AFA71 containment scenario
+// needs no real git index (plan 990AFA71: containment is index-independent).
 func u3StubGit(paths ...string) GitRunner {
 	return func(root string, pathspecs ...string) ([]byte, error) {
 		return lsFilesListing(paths...), nil
@@ -630,7 +630,7 @@ func u3Junction(t *testing.T, link, target string) {
 	}
 }
 
-// u3MustContain asserts a repo scan failed closed with the U3 synthetic
+// u3MustContain asserts a repo scan failed closed with the 990AFA71 synthetic
 // finding for rel.
 func u3MustContain(t *testing.T, res Result, root, rel string) {
 	t.Helper()
@@ -648,7 +648,7 @@ func u3MustContain(t *testing.T, res Result, root, rel string) {
 	}
 }
 
-// TestRunRepoScan_FinalComponentSymlink_FailsClosed (U3 AC-1): a selected
+// TestRunRepoScan_FinalComponentSymlink_FailsClosed (990AFA71 AC-1): a selected
 // internal/x.go that is a symlink to a clean file outside root must not be
 // read through.
 func TestRunRepoScan_FinalComponentSymlink_FailsClosed(t *testing.T) {
@@ -688,9 +688,9 @@ func TestSymlinkPrivilegeMissing_OnlyErrno1314OnWindows(t *testing.T) {
 	}
 }
 
-// TestRunRepoScan_FinalComponentJunction_FailsClosed (U3 AC-2, Windows):
+// TestRunRepoScan_FinalComponentJunction_FailsClosed (990AFA71 AC-2, Windows):
 // a selected internal/x.go that is a junction to an outside directory
-// yields the U3 text instead of the parent's directory read-error text.
+// yields the 990AFA71 text instead of the parent's directory read-error text.
 func TestRunRepoScan_FinalComponentJunction_FailsClosed(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("directory junctions are Windows-only")
@@ -703,7 +703,7 @@ func TestRunRepoScan_FinalComponentJunction_FailsClosed(t *testing.T) {
 	u3MustContain(t, runRepoScan(root, u3StubGit("internal/x.go")), root, "internal/x.go")
 }
 
-// TestRunRepoScan_IntermediateLink_FailsClosed (U3 AC-3): an intermediate
+// TestRunRepoScan_IntermediateLink_FailsClosed (990AFA71 AC-3): an intermediate
 // internal/d that is a symlink (Unix) or a junction (Windows) to an
 // outside directory holding clean y.go must not be traversed.
 func TestRunRepoScan_IntermediateLink_FailsClosed(t *testing.T) {
@@ -723,7 +723,7 @@ func TestRunRepoScan_IntermediateLink_FailsClosed(t *testing.T) {
 	u3MustContain(t, runRepoScan(root, u3StubGit("internal/d/y.go")), root, "internal/d/y.go")
 }
 
-// TestContainedRegularFile_RejectsMalformedComponents (U3 AC-4): these
+// TestContainedRegularFile_RejectsMalformedComponents (990AFA71 AC-4): these
 // rel shapes never pass shouldScanRepoPath, so they are direct unit rows.
 func TestContainedRegularFile_RejectsMalformedComponents(t *testing.T) {
 	root := t.TempDir()
@@ -756,7 +756,7 @@ func TestContainedRegularFile_AcceptsRegularAndMissing(t *testing.T) {
 	}
 }
 
-// TestRunRepoScan_DeletedFile_KeepsReadErrorText (U3 AC-4
+// TestRunRepoScan_DeletedFile_KeepsReadErrorText (990AFA71 AC-4
 // characterization): a selected-but-deleted file keeps the existing
 // scanPath read-error text byte-for-byte (SB-3, ED-11 unchanged).
 func TestRunRepoScan_DeletedFile_KeepsReadErrorText(t *testing.T) {
@@ -774,7 +774,7 @@ func TestRunRepoScan_DeletedFile_KeepsReadErrorText(t *testing.T) {
 	}
 }
 
-// TestContainedRegularFile_UnreadableIntermediate_FailsClosed (U3 AC-4b,
+// TestContainedRegularFile_UnreadableIntermediate_FailsClosed (990AFA71 AC-4b,
 // non-Windows): a 0o000 intermediate directory makes the child Lstat fail
 // with a permission error; that is not fs.ErrNotExist, so the component
 // type was never verified and the check fails closed with an lstat reason.
