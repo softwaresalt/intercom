@@ -93,6 +93,11 @@ Evaluated in this order; the first failure wins; every echoed string passes `esc
 | 6 | per selected path: containment refusal, read error, finding | unchanged ordering and text (read error now has the `*fs.PathError` unwrapped) |
 | 7 | clean | exit 0 |
 
+> **Annotation (2026-10-16, stash AF0C83BA):** rows 2 and 3 are not ordered by kind. Listing faults
+> are reported in encounter order (G-3): the first fault met while walking the listing wins, whether
+> it is an unterminated or empty-record fault (row 2) or an invalid-UTF-8 or forbidden-rune path
+> (row 3). The one exception is the NUL-termination check, which runs before any record is
+> classified. The wording above is kept as the historical record.
 A tracked non-selected record absent from the working tree keeps today's `fs.ErrNotExist` pass (a
 deleted non-Go file is not built; `ls-files -z` carries no mode, so a symlink or gitlink record
 whose path is absent from disk also passes, an accepted residual, G-9). Case-variant top-level

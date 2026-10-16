@@ -910,8 +910,9 @@ func unwrapPathError(err error) error {
 // deliberately not escaped: an attacker-written literal \x0a is
 // indistinguishable from an escaped newline. That is cosmetic only, because a
 // workflow command needs a real line break to take effect.
-// Keep in sync with any retiredarch copy; the planned home is pysem when
-// 36BE1F61 lands.
+// No retiredarch copy exists today (retiredarch has no escapeLogText); if one is
+// added, keep the two in sync. The planned shared home is pysem when 36BE1F61
+// lands.
 func escapeLogText(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
