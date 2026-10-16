@@ -68,6 +68,15 @@ reach the helper from the CLI; see stash `B29A565E`.
      `git <unknown-subcommand>`: a user alias or a `git-*` executable on `PATH`
      could intercept it (Copilot finding on PR #93).
 
+## Update 2026-10-16 (047-S / 057-F, PR #143, merge 179b2ed)
+
+`rootGitignoreTextAt` now reads the blob with `git cat-file blob <treeOID>:.gitignore` instead of
+`git show <treeOID>:.gitignore` (`tools/gatecheck/internal/unignore/git.go`). Read every `git show`
+step above as `git cat-file blob`; the resolve-first and `ls-tree` classification guidance is
+unchanged. `cat-file blob` refuses a tree object, so the directory-named-`.gitignore` residual
+(stash `48EA04C1`) is likely closed: the read now fails and the `ls-tree` classification reports it
+as present but unreadable. That was not verified against a test; confirm before relying on it.
+
 ## Related
 
 * `tools/gatecheck/internal/unignore/git.go` — `resolveBaselineTree`, `classifyShowFailure`,
