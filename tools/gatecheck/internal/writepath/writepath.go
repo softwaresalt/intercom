@@ -1037,7 +1037,7 @@ func runRepoScan(root string, git GitRunner) Result {
 
 	if len(relPaths) == 0 {
 		return Result{
-			Stderr: "::error::write-path repo scan matched no files under internal/** or cmd/** (ED-7)\n",
+			Stderr: logLine("::error::write-path repo scan matched no files under internal/** or cmd/** (ED-7)"),
 			Code:   1,
 		}
 	}
@@ -1196,7 +1196,7 @@ func Run(flag, root string, git GitRunner, stdout, stderr io.Writer) int {
 		if repoRes.Code != 0 {
 			return repoRes.Code
 		}
-		_, _ = io.WriteString(stdout, "self-test passed: fixtures matched expectations and the tracked tree is clean\n")
+		_, _ = io.WriteString(stdout, logLine("self-test passed: fixtures matched expectations and the tracked tree is clean"))
 		return 0
 
 	case "--self-test-integrity":
@@ -1206,7 +1206,7 @@ func Run(flag, root string, git GitRunner, stdout, stderr io.Writer) int {
 		if res.Code != 0 {
 			return res.Code
 		}
-		_, _ = io.WriteString(stdout, "self-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)\n")
+		_, _ = io.WriteString(stdout, logLine("self-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)"))
 		return 0
 
 	default:

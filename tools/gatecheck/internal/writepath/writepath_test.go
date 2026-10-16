@@ -1216,6 +1216,30 @@ func TestRun_EmptySelection_FailsClosed_ED7(t *testing.T) {
 	if !strings.Contains(stderr.String(), "ED-7") {
 		t.Fatalf("stderr = %q, want ED-7 mention", stderr.String())
 	}
+	const wantStderr = "::error::write-path repo scan matched no files under internal/** or cmd/** (ED-7)\n"
+	if stderr.String() != wantStderr || stdout.String() != "" {
+		t.Fatalf("stdout = %q, stderr = %q; want empty stdout and exactly %q", stdout.String(), stderr.String(), wantStderr)
+	}
+}
+
+// TestRun_SelfTestIntegrity_StaticLineBytes pins the exact bytes of the
+// self-test-integrity success path, including its static closing line, so
+// routing static lines through logLine cannot change them.
+func TestRun_SelfTestIntegrity_StaticLineBytes(t *testing.T) {
+	root := t.TempDir()
+	fixtureDir := filepath.Join(root, "scripts", "testdata", "writepath")
+	writeText(t, filepath.Join(fixtureDir, "accept-ok.go"), cleanGoSource)
+	writeRejectFixture(t, filepath.Join(fixtureDir, "reject-x.go"))
+	var stdout, stderr strings.Builder
+	if code := Run("--self-test-integrity", root, nil, &stdout, &stderr); code != 0 {
+		t.Fatalf("code = %d, want 0 (stderr=%q)", code, stderr.String())
+	}
+	const want = "PASS accept-ok.go: clean as expected\n" +
+		"PASS reject-x.go: rejected as expected\n" +
+		"self-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)\n"
+	if stdout.String() != want || stderr.String() != "" {
+		t.Fatalf("stdout = %q, stderr = %q; want stdout %q and empty stderr", stdout.String(), stderr.String(), want)
+	}
 }
 
 // legacyNewlineListing is the parent's newline-framed listing of one clean
