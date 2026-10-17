@@ -1137,8 +1137,9 @@ func TestRun_RepoMode_CurrentTreeIsClean(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Run(\"\", ...) code = %d, stderr = %q, want 0 (clean tree)", code, stderr.String())
 	}
-	if stdout.String() != "" || stderr.String() != "" {
-		t.Fatalf("Run(\"\", ...) on a clean tree should be silent; stdout=%q stderr=%q", stdout.String(), stderr.String())
+	const wantNotice = "::notice::write-path gate mode=repo\n"
+	if stdout.String() != wantNotice || stderr.String() != "" {
+		t.Fatalf("Run(\"\", ...) on a clean tree should emit only the mode notice; stdout=%q stderr=%q, want stdout %q", stdout.String(), stderr.String(), wantNotice)
 	}
 }
 
@@ -1218,8 +1219,9 @@ func TestRun_EmptySelection_FailsClosed_ED7(t *testing.T) {
 		t.Fatalf("stderr = %q, want ED-7 mention", stderr.String())
 	}
 	const wantStderr = "::error::write-path repo scan matched no files under internal/** or cmd/** (ED-7)\n"
-	if stderr.String() != wantStderr || stdout.String() != "" {
-		t.Fatalf("stdout = %q, stderr = %q; want empty stdout and exactly %q", stdout.String(), stderr.String(), wantStderr)
+	const wantStdout = "::notice::write-path gate mode=repo\n"
+	if stderr.String() != wantStderr || stdout.String() != wantStdout {
+		t.Fatalf("stdout = %q, stderr = %q; want only the mode notice %q on stdout and exactly %q", stdout.String(), stderr.String(), wantStdout, wantStderr)
 	}
 }
 
@@ -1235,11 +1237,41 @@ func TestRun_SelfTestIntegrity_StaticLineBytes(t *testing.T) {
 	if code := Run("--self-test-integrity", root, nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("code = %d, want 0 (stderr=%q)", code, stderr.String())
 	}
-	const want = "PASS accept-ok.go: clean as expected\n" +
+	const want = "::notice::write-path gate mode=self-test-integrity\n" +
+		"PASS accept-ok.go: clean as expected\n" +
 		"PASS reject-x.go: rejected as expected\n" +
 		"self-test-integrity passed: fixtures matched expectations (repo scan skipped, 030.001-T)\n"
 	if stdout.String() != want || stderr.String() != "" {
 		t.Fatalf("stdout = %q, stderr = %q; want stdout %q and empty stderr", stdout.String(), stderr.String(), want)
+	}
+}
+
+// TestRun_SelfTestMode_EmitsNoticeFirstOnStdout pins the mode notice as the
+// first stdout line for --self-test (058.005-T), mirroring retiredarch.Run.
+func TestRun_SelfTestMode_EmitsNoticeFirstOnStdout(t *testing.T) {
+	root := repoRoot(t)
+	var stdout, stderr strings.Builder
+	if code := Run("--self-test", root, DefaultGitRunner, &stdout, &stderr); code != 0 {
+		t.Fatalf("code = %d, want 0 (stderr=%q)", code, stderr.String())
+	}
+	const wantPrefix = "::notice::write-path gate mode=self-test\n"
+	if !strings.HasPrefix(stdout.String(), wantPrefix) {
+		t.Fatalf("stdout = %q, want prefix %q", stdout.String(), wantPrefix)
+	}
+	if strings.Contains(stderr.String(), "::notice::") {
+		t.Fatalf("notice leaked to stderr: %q", stderr.String())
+	}
+}
+
+// TestRun_UnknownMode_EmitsNoNotice pins that the usage path prints no mode
+// notice, matching retiredarch.Run.
+func TestRun_UnknownMode_EmitsNoNotice(t *testing.T) {
+	var stdout, stderr strings.Builder
+	if code := Run("--bogus", t.TempDir(), nil, &stdout, &stderr); code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 }
 

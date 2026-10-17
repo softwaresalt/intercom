@@ -29,7 +29,32 @@ func requireBash(t *testing.T) string {
 	if err != nil {
 		t.Skip("bash not found on PATH; skipping runner tests (M1-T9)")
 	}
+	// Single shared gate for every bash-invoking test in this package
+	// (058.002-T): skips with a reason under the WSL launcher on Windows.
+	requireWindowsCompatibleBash(t, path)
 	return path
+}
+
+// requireWindowsCompatibleBash skips the calling test, with an explicit
+// reason, when running on Windows against a bash whose filesystem view cannot
+// resolve the drive-letter paths these tests compose (058.001-T). The
+// C:\Windows\System32\bash.exe WSL launcher is the known offender: it
+// resolves ahead of Git-for-Windows bash on a machine with WSL installed and
+// sees Windows drives under /mnt/c, not C:/ or /c/. On non-Windows hosts, and
+// on Windows with an MSYS/Cygwin bash (Git-for-Windows), it is a no-op, so
+// Linux behavior is unchanged.
+func requireWindowsCompatibleBash(t *testing.T, bash string) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return
+	}
+	out, err := exec.Command(bash, "-c", "uname -o").Output()
+	if err != nil {
+		t.Skipf("bash %q could not report its OS (%v); skipping Windows bash tests", bash, err)
+	}
+	if kind := strings.TrimSpace(string(out)); kind != "Msys" && kind != "Cygwin" {
+		t.Skipf("bash %q reports OS %q (not Git-for-Windows/MSYS); it cannot resolve Windows drive paths, put Git-for-Windows bash first on PATH to run this test", bash, kind)
+	}
 }
 
 // driveLetterRE matches a Windows absolute drive-letter path prefix
@@ -341,7 +366,7 @@ func (f *runnerFixture) baseEnv(t *testing.T, extra map[string]string) []string 
 
 func (f *runnerFixture) run(t *testing.T, wrapperPath string, args []string, extraEnv map[string]string, cwd string) (stdout, stderr string, exitCode int, err error) {
 	t.Helper()
-	cmdArgs := append([]string{wrapperPath}, args...)
+	cmdArgs := append([]string{toBashPath(wrapperPath)}, args...)
 	cmd := exec.Command(f.bash, cmdArgs...)
 	cmd.Env = f.baseEnv(t, extraEnv)
 	if cwd != "" {

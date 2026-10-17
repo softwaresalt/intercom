@@ -14,8 +14,14 @@ resolves_stash: 90EE7758
 
 ```gomod
 go 1.24
-toolchain go1.26.5
+toolchain go1.26.9
 ```
+
+> **Annotation (2026-10-16, 058.007-T):** this example originally showed
+> `toolchain go1.26.5`, the pin at the time this note was written (2026-09-04).
+> The pin has since advanced; `go.mod` currently declares `toolchain go1.26.9`.
+> The pin value drifts with each toolchain bump, so treat `go.mod` as the source
+> of truth. The rationale below is unchanged.
 
 These exist for **different reasons**, and conflating them is the failure mode
 this note prevents.

@@ -8,7 +8,9 @@ package integration
 //
 // It PARSES the post-merge closure filename convention out of
 // .github/skills/operational-closure/SKILL.md's `## Output` section --
-// it never hardcodes the pattern -- and asserts every
+// it does not hardcode the documented filename pattern; the only literal
+// it relies on is the `*-post-merge-closure.md` glob that defines the
+// test universe -- and asserts every
 // docs/closure/*-post-merge-closure.md artifact conforms to the parsed
 // form. Artifacts not matching that glob are outside the test's universe
 // (AC-1.5).
@@ -25,6 +27,8 @@ package integration
 // parsed and matches all of them -- GREEN.
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,108 +36,146 @@ import (
 	"testing"
 )
 
-// backtickClosurePathPattern extracts a `docs/closure/...` path from inside
+// closureOutputBacktickClosurePathPattern extracts a `docs/closure/...` path from inside
 // a Markdown inline-code span.
-var backtickClosurePathPattern = regexp.MustCompile("`(docs/closure/[^`]+)`")
+var closureOutputBacktickClosurePathPattern = regexp.MustCompile("`(docs/closure/[^`]+)`")
 
-// placeholderTokenPattern matches a single {token} placeholder segment
+// closureOutputPlaceholderTokenPattern matches a single {token} placeholder segment
 // inside a documented docs/closure/ path template.
-var placeholderTokenPattern = regexp.MustCompile(`\{[^{}]+\}`)
+var closureOutputPlaceholderTokenPattern = regexp.MustCompile(`\{[^{}]+\}`)
 
-// extractOutputSection returns the slice of skillMD strictly between the
-// `## Output` heading and the next `## ` heading (or EOF if `## Output` is
-// the last section).
-func extractOutputSection(t *testing.T, skillMD string) string {
-	t.Helper()
-	const heading = "## Output"
-	startIdx := strings.Index(skillMD, heading)
-	if startIdx < 0 {
-		t.Fatalf("%q heading not found in operational-closure/SKILL.md", heading)
+// closureOutputOutputHeadingPattern matches the `## Output` heading only at the start of
+// a line (and only as the whole heading), so prose or a longer heading such
+// as `## Outputs` that merely contains the text is never mistaken for it.
+var closureOutputOutputHeadingPattern = regexp.MustCompile(`(?m)^## Output[ \t]*\r?$`)
+
+// closureOutputNextHeadingPattern matches the start of the next level-2 heading.
+var closureOutputNextHeadingPattern = regexp.MustCompile(`(?m)^## `)
+
+// closureOutputExtractOutputSection returns the slice of skillMD strictly between the
+// line-start `## Output` heading and the next `## ` heading (or EOF if
+// `## Output` is the last section).
+func closureOutputExtractOutputSection(skillMD string) (string, error) {
+	loc := closureOutputOutputHeadingPattern.FindStringIndex(skillMD)
+	if loc == nil {
+		return "", fmt.Errorf("line-start %q heading not found in operational-closure/SKILL.md", "## Output")
 	}
-	rest := skillMD[startIdx+len(heading):]
-	if endIdx := strings.Index(rest, "\n## "); endIdx >= 0 {
-		return rest[:endIdx]
+	rest := skillMD[loc[1]:]
+	if next := closureOutputNextHeadingPattern.FindStringIndex(rest); next != nil {
+		return rest[:next[0]], nil
 	}
-	return rest
+	return rest, nil
 }
 
-// findBacktickPathOnLineContaining scans section line by line (case
-// insensitive) for a line containing needle, returning the first
-// docs/closure/ backtick path found on such a line.
-func findBacktickPathOnLineContaining(section, needle string) (string, bool) {
+// closureOutputPostMergeCandidatePaths returns, in order and de-duplicated, every
+// docs/closure/ backtick path found on a line of section that mentions
+// needle (case insensitive).
+func closureOutputPostMergeCandidatePaths(section, needle string) []string {
 	lowerNeedle := strings.ToLower(needle)
+	var out []string
+	seen := map[string]bool{}
 	for _, line := range strings.Split(section, "\n") {
 		if !strings.Contains(strings.ToLower(line), lowerNeedle) {
 			continue
 		}
-		if m := backtickClosurePathPattern.FindStringSubmatch(line); m != nil {
-			return m[1], true
+		for _, m := range closureOutputBacktickClosurePathPattern.FindAllStringSubmatch(line, -1) {
+			if !seen[m[1]] {
+				seen[m[1]] = true
+				out = append(out, m[1])
+			}
 		}
 	}
-	return "", false
+	return out
 }
 
-// findFirstBacktickClosurePath returns the first docs/closure/ backtick path
+// closureOutputFindFirstBacktickClosurePath returns the first docs/closure/ backtick path
 // found anywhere in section, regardless of line content.
-func findFirstBacktickClosurePath(section string) (string, bool) {
-	if m := backtickClosurePathPattern.FindStringSubmatch(section); m != nil {
+func closureOutputFindFirstBacktickClosurePath(section string) (string, bool) {
+	if m := closureOutputBacktickClosurePathPattern.FindStringSubmatch(section); m != nil {
 		return m[1], true
 	}
 	return "", false
 }
 
-// parsePostMergeClosurePathTemplate implements the Parse rule above: prefer
+// closureOutputParsePostMergeClosurePathTemplate implements the Parse rule above: prefer
 // the post-merge-specific Output form; fall back to the generic form.
-func parsePostMergeClosurePathTemplate(t *testing.T, skillMD string) string {
-	t.Helper()
-	section := extractOutputSection(t, skillMD)
+//
+// Disambiguation: several lines may mention "post-merge" (for example a
+// sub-bullet naming the committed close-evidence JSON). Only candidate paths
+// that themselves contain "post-merge" describe the closure artifact; if
+// more than one distinct such path remains the document is ambiguous and the
+// parse is an error rather than a silent first-match.
+func closureOutputParsePostMergeClosurePathTemplate(skillMD string) (string, error) {
+	section, err := closureOutputExtractOutputSection(skillMD)
+	if err != nil {
+		return "", err
+	}
 
-	if form, ok := findBacktickPathOnLineContaining(section, "post-merge"); ok {
-		return form
+	var forms []string
+	for _, p := range closureOutputPostMergeCandidatePaths(section, "post-merge") {
+		if strings.Contains(strings.ToLower(p), "post-merge") {
+			forms = append(forms, p)
+		}
 	}
-	if form, ok := findFirstBacktickClosurePath(section); ok {
-		return form
+	switch len(forms) {
+	case 1:
+		return forms[0], nil
+	case 0:
+	default:
+		return "", fmt.Errorf("ambiguous post-merge Output forms in operational-closure/SKILL.md: %q", forms)
 	}
-	t.Fatalf("no docs/closure/ path template found in operational-closure/SKILL.md's ## Output section")
-	return ""
+	if form, ok := closureOutputFindFirstBacktickClosurePath(section); ok {
+		return form, nil
+	}
+	return "", errors.New("no docs/closure/ path template found in operational-closure/SKILL.md's ## Output section")
 }
 
-// placeholderClass maps a documented {token} name to a permissive regex
+// closureOutputPlaceholderClass maps a documented {token} name to a permissive regex
 // class approximating its real-world shape, without ever hardcoding the
-// caller's full filename pattern.
-func placeholderClass(token string) string {
+// caller's full filename pattern. An unrecognized token is an error: a
+// silent catch-all class would let a renamed or new placeholder pass the
+// conformance check unexamined.
+//
+// Id tokens: matched by a "_id"/"id" name suffix instead of the former
+// substring match, because any token merely containing "id" (e.g. "width")
+// would otherwise be classed as an id. The class mirrors the real id shape
+// (NNN or NNN.NNN, a dash, a letter suffix: 001-S, 058.001-T).
+func closureOutputPlaceholderClass(token string) (string, error) {
 	switch {
 	case token == "YYYY-MM-DD":
-		return `\d{4}-\d{2}-\d{2}`
+		return `\d{4}-\d{2}-\d{2}`, nil
 	case strings.Contains(token, "slug"):
-		return `[a-z0-9][a-z0-9-]*`
-	case strings.Contains(token, "id"):
-		return `[0-9]+(?:\.[0-9]+)*-[A-Za-z]+`
+		return `[a-z0-9][a-z0-9-]*`, nil
+	case token == "id" || strings.HasSuffix(token, "_id"):
+		return `[0-9]+(?:\.[0-9]+)*-[A-Za-z]+`, nil
 	default:
-		return `[^/]+`
+		return "", fmt.Errorf("unrecognized placeholder {%s}: add an explicit class for it", token)
 	}
 }
 
-// compileClosureFilenameRegex turns a documented docs/closure/ path
+// closureOutputCompileClosureFilenameRegex turns a documented docs/closure/ path
 // template (e.g. "docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md")
 // into an anchored regular expression matching the basename of a real
 // closure artifact, substituting each {placeholder} with a permissive class
 // and escaping every literal character in between.
-func compileClosureFilenameRegex(t *testing.T, docPathTemplate string) *regexp.Regexp {
-	t.Helper()
+func closureOutputCompileClosureFilenameRegex(docPathTemplate string) (*regexp.Regexp, error) {
 	const prefix = "docs/closure/"
 	if !strings.HasPrefix(docPathTemplate, prefix) {
-		t.Fatalf("documented Output path %q is not under docs/closure/", docPathTemplate)
+		return nil, fmt.Errorf("documented Output path %q is not under docs/closure/", docPathTemplate)
 	}
 	filenameTemplate := strings.TrimPrefix(docPathTemplate, prefix)
 
 	var b strings.Builder
 	b.WriteString("^")
 	last := 0
-	for _, loc := range placeholderTokenPattern.FindAllStringIndex(filenameTemplate, -1) {
+	for _, loc := range closureOutputPlaceholderTokenPattern.FindAllStringIndex(filenameTemplate, -1) {
 		b.WriteString(regexp.QuoteMeta(filenameTemplate[last:loc[0]]))
 		token := filenameTemplate[loc[0]+1 : loc[1]-1]
-		b.WriteString(placeholderClass(token))
+		class, err := closureOutputPlaceholderClass(token)
+		if err != nil {
+			return nil, err
+		}
+		b.WriteString(class)
 		last = loc[1]
 	}
 	b.WriteString(regexp.QuoteMeta(filenameTemplate[last:]))
@@ -141,11 +183,10 @@ func compileClosureFilenameRegex(t *testing.T, docPathTemplate string) *regexp.R
 
 	re, err := regexp.Compile(b.String())
 	if err != nil {
-		t.Fatalf("compiling filename regex from template %q: %v", filenameTemplate, err)
+		return nil, fmt.Errorf("compiling filename regex from template %q: %w", filenameTemplate, err)
 	}
-	return re
+	return re, nil
 }
-
 func TestOperationalClosurePostMergeFilenameConformance(t *testing.T) {
 	root := repoRoot(t)
 
@@ -155,14 +196,22 @@ func TestOperationalClosurePostMergeFilenameConformance(t *testing.T) {
 		t.Fatalf("reading %s: %v", skillPath, err)
 	}
 
-	docPathTemplate := parsePostMergeClosurePathTemplate(t, string(skillBytes))
-	re := compileClosureFilenameRegex(t, docPathTemplate)
+	docPathTemplate, err := closureOutputParsePostMergeClosurePathTemplate(string(skillBytes))
+	if err != nil {
+		t.Fatalf("parsing documented Output form: %v", err)
+	}
+	re, err := closureOutputCompileClosureFilenameRegex(docPathTemplate)
+	if err != nil {
+		t.Fatalf("compiling documented Output form %q: %v", docPathTemplate, err)
+	}
 
 	closureDir := filepath.Join(root, "docs", "closure")
 	matches, err := filepath.Glob(filepath.Join(closureDir, "*-post-merge-closure.md"))
 	if err != nil {
 		t.Fatalf("globbing %s: %v", closureDir, err)
 	}
+	// Decision (058.004-T): an empty universe stays hard-fatal -- a silent
+	// zero-artifact pass would hide a renamed glob or a moved docs/closure dir.
 	if len(matches) == 0 {
 		t.Fatalf("no *-post-merge-closure.md artifacts found under %s -- test universe is empty", closureDir)
 	}
@@ -173,4 +222,85 @@ func TestOperationalClosurePostMergeFilenameConformance(t *testing.T) {
 			t.Errorf("artifact %q does not conform to documented Output form %q (compiled regex: %s)", base, docPathTemplate, re.String())
 		}
 	}
+}
+
+// --- 058.003-T red-first tests: fatal fallback, anchored heading, ambiguity ---
+
+func TestPlaceholderClass_UnrecognizedTokenIsRejected(t *testing.T) {
+	if _, err := closureOutputPlaceholderClass("mystery"); err == nil {
+		t.Fatal("closureOutputPlaceholderClass(\"mystery\") succeeded; an unrecognized placeholder must be fatal, not silently permissive")
+	}
+	for _, token := range []string{"YYYY-MM-DD", "slug", "shipment_id", "feature_id"} {
+		if _, err := closureOutputPlaceholderClass(token); err != nil {
+			t.Errorf("closureOutputPlaceholderClass(%q) = %v, want a recognized class", token, err)
+		}
+	}
+	// "width" merely contains "id"; the tightened rule must not treat it as an id.
+	if _, err := closureOutputPlaceholderClass("width"); err == nil {
+		t.Fatal("closureOutputPlaceholderClass(\"width\") succeeded; only *_id tokens are ids")
+	}
+}
+
+func TestCompileClosureFilenameRegex_UnrecognizedPlaceholderIsFatal(t *testing.T) {
+	if _, err := closureOutputCompileClosureFilenameRegex("docs/closure/{shipment_id}-{mystery}-post-merge-closure.md"); err == nil {
+		t.Fatal("closureOutputCompileClosureFilenameRegex accepted an unrecognized placeholder")
+	}
+}
+
+func TestExtractOutputSection_HeadingAnchoredToLineStart(t *testing.T) {
+	// "## Output" mid-line (and as a longer heading) must not be matched.
+	md := "intro text mentioning ## Output inline\n## Outputs and more\n## Output\n* `docs/closure/a.md`\n## Next\nx\n"
+	got, err := closureOutputExtractOutputSection(md)
+	if err != nil {
+		t.Fatalf("closureOutputExtractOutputSection: %v", err)
+	}
+	if !strings.Contains(got, "docs/closure/a.md") || strings.Contains(got, "intro") || strings.Contains(got, "Next") {
+		t.Fatalf("section = %q, want only the body of the line-start '## Output' heading", got)
+	}
+	if _, err := closureOutputExtractOutputSection("prose with ## Output mid-line\n"); err == nil {
+		t.Fatal("mid-line '## Output' was accepted as a heading")
+	}
+}
+
+func TestParsePostMergeClosurePathTemplate_Disambiguation(t *testing.T) {
+	section := "* **post-merge** mode: `docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md`\n" +
+		"  * post-merge evidence at `docs/closure/evidence/{shipment_id}-{feature_id}-close-evidence.json`\n"
+	got, err := closureOutputParsePostMergeClosurePathTemplate("## Output\n\n" + section)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if want := "docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md"; got != want {
+		t.Fatalf("got %q, want %q (the evidence path must not win)", got, want)
+	}
+
+	ambiguous := "## Output\n* post-merge: `docs/closure/{a}-post-merge-closure.md`\n* post-merge alt: `docs/closure/{b}-post-merge-closure.md`\n"
+	if _, err := closureOutputParsePostMergeClosurePathTemplate(ambiguous); err == nil {
+		t.Fatal("two distinct post-merge forms must be reported as ambiguous")
+	}
+}
+
+// TestOperationalClosureGenericOutputFormStaysDocumented guards that the
+// generic pre-merge/post-deploy Output form remains documented in the skill
+// (058.004-T). The post-merge parse above falls back to the generic form when
+// no post-merge-specific one exists; if the generic form silently vanished,
+// that fallback (and the RED/GREEN reasoning in the header) would rot.
+func TestOperationalClosureGenericOutputFormStaysDocumented(t *testing.T) {
+	root := repoRoot(t)
+	skillPath := filepath.Join(root, ".github", "skills", "operational-closure", "SKILL.md")
+	skillBytes, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", skillPath, err)
+	}
+	section, err := closureOutputExtractOutputSection(string(skillBytes))
+	if err != nil {
+		t.Fatalf("extracting Output section: %v", err)
+	}
+	const want = "docs/closure/{YYYY-MM-DD}-{slug}-closure.md"
+	for _, line := range strings.Split(section, "\n") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "pre-merge") && strings.Contains(lower, "post-deploy") && strings.Contains(line, "`"+want+"`") {
+			return
+		}
+	}
+	t.Fatalf("## Output no longer documents the generic pre-merge/post-deploy form `%s` on a line naming both modes", want)
 }

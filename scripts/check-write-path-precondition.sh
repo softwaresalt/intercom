@@ -39,6 +39,17 @@ set -euo pipefail
 # the final 50 by 049.007-T. syscall.CreateFile is reported unless the D-2'
 # predicate proves the exact metadata-only reparse-probe call shape.)
 #
+# MODES AND CI COVERAGE (058.006-T, D-RB-6): `--self-test` is a LOCAL /
+# MANUAL-ONLY convenience (fixture self-test, then repo scan, then a
+# combined banner) and is never invoked by CI. CI covers each of its parts
+# through two other steps in .github/workflows/ci.yml job `lint`:
+#   (no flag)               -> step "Run write-path-precondition gate"
+#                              (repo scan; toggled by WRITE_PATH_GATE_ADVISORY)
+#   --self-test-integrity   -> step "Run write-path-precondition self-test"
+#                              (fixture self-test only; always blocking)
+# Together those two steps run everything `--self-test` runs; only the
+# combined banner line is exercised locally.
+#
 # ACCEPTED RESIDUAL (recorded in the shipment plan): (*os.File).Write* is
 # not textually decidable by a grep-shaped detector without full type
 # information (a method call site names no package qualifier), so this
@@ -114,8 +125,10 @@ set -euo pipefail
 # --self-test-integrity) and rejects anything else. The wrapper has no usage
 # branch of its own; its only argument check is the --root injection guard
 # below. Exit codes and ordered
-# stdout/stderr bytes are preserved (ED-3/ED-5 are the only permitted
-# deltas; see m1.md for the parent-vs-head parity evidence).
+# stdout/stderr bytes are preserved apart from ED-3/ED-5 (see m1.md for the
+# parent-vs-head parity evidence) and one later delta: the Go engine now emits
+# a leading `::notice::write-path gate mode=X` stdout line in repo,
+# --self-test and --self-test-integrity modes (058.005-T).
 #
 # ROOT anchoring (D-WB2-4, 055.002-T): ROOT is the top level of the repository
 # that contains this script, resolved by gatecheck_repo_root
