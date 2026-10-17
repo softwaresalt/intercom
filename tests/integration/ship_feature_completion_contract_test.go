@@ -27,9 +27,16 @@ import (
 //
 // Per Stage deliberation D-2 (001-DL), this static needle test is
 // SUPPLEMENTAL evidence only: it proves the instruction/skill prose states the
-// required contract and no longer states the retired one. It cannot by itself
-// satisfy the close-path invariants IV-1..IV-5; those rest on behavioral
-// evidence of the cascade-close command, not on prose.
+// required contract and no longer states the retired one. It does not satisfy
+// the close-path invariants IV-1..IV-5 by itself. The only executed evidence is
+// TestCascadeCloseClassifyOnlySmoke (cascade_close_classify_only_smoke_test.go):
+// it runs the read-only --classify-only mode against a disposable fixture and
+// covers the CASCADE (exit 0) and SAFE_CLOSE (exit 3) verdicts, the pre_close
+// evidence record, and its no-clobber rule (the IV-1 classify-before-mutation
+// and IV-5 valid-path behavior, for classify-only only). IV-2 (drift
+// rejection), IV-3 (guarded mutating path), IV-4 (fail-closed on invalid or
+// stale input) and IV-5 refusal-path zero-mutation have no executed coverage;
+// the mutating form is never invoked.
 // ---------------------------------------------------------------------------
 
 func loadInstructionSurfaces(t *testing.T) map[string]string {
