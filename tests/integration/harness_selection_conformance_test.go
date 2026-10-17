@@ -140,3 +140,45 @@ func TestStep3PreambleEmptyQueueBroadcast(t *testing.T) {
 		"halt and report — there is nothing to build.", "PW-3 item 4", true)
 	pin(t, broadcast, "with the count of ready-queue tasks", "PW-3 broadcast", true)
 }
+
+func TestStep41_PerTaskP002GateFailClosed(t *testing.T) {
+	const ship = ".github/agents/_ship.agent.md"
+	step41 := readSurface(t, ship, "#### Step 4.1", "#### Step 4.2")
+	step42 := readSurface(t, ship, "#### Step 4.2", "#### Step 4.3")
+
+	gate := "**P-002 per-task gate**: before claiming this task, re-read its status " +
+		"(if `done` or archived, report the skip with the task ID rather than claim; " +
+		"if no task in the batch ends up executed, treat it as an empty batch: halt and report), " +
+		"then run Step 2 items 2-4 for this single task " +
+		"(skip scaffolding only if `harness-architect` has reported Compilation PASS and Red Phase CONFIRMED " +
+		"for this task ID in this session; a label without that report is not sufficient: " +
+		"re-invoke the skill for that task ID, and if red cannot be confirmed, HALT) " +
+		"and verify the task carries the `harness-ready` label. "
+	noSelfLabel := "Ship MUST NOT apply or edit `harness-ready` itself: the label is valid only if " +
+		"`harness-architect` reported Compilation PASS and Red Phase CONFIRMED for this task ID in this session; " +
+		"if the skill is unavailable or errors, that is a FAIL-CLOSED HALT. "
+	failClosed := "A task lacking the label is a FAIL-CLOSED HALT, never a silent skip and never a proceed, " +
+		"citing P-002's Violation Action (\"Halt and suggest running the harness-architect\"); " +
+		"for a resumed `active` task whose red phase cannot be confirmed, Ship halts, " +
+		"records a DEFERRED/BLOCKED note on the task and leaves the disposition to the operator. "
+	notGate := "The Step 0.5 shipment claim has already set manifest tasks `active` as a backlog side effect; " +
+		"it is not the P-002 gate."
+
+	pin(t, step41, gate, "PW-4 gate paragraph", true)
+	pin(t, step41, noSelfLabel, "PW-4 no self-labelling and skill-error halt", true)
+	pin(t, step41, failClosed, "PW-4 fail-closed halt", true)
+	pin(t, step41, notGate, "PW-4 claim is not the gate", true)
+
+	whole := strings.Join(strings.Fields(gate+noSelfLabel+failClosed+notGate), " ")
+	gateAt := strings.Index(step41, whole)
+	claimAt := strings.Index(step41, "Update task status to `active`")
+	if claimAt < 0 {
+		t.Fatalf("claim sentence not found in Step 4.1 slice")
+	}
+	if gateAt < 0 || gateAt > claimAt {
+		pin(t, "", "x", "PW-4 gate paragraph ordered before the claim sentence", true)
+	}
+
+	pin(t, step42, "Do not begin implementation of a task for which the Step 4.1 P-002 check has not passed in this iteration.",
+		"PW-4 Step 4.2 guard", true)
+}
