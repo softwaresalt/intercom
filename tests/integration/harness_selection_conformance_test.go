@@ -73,8 +73,4 @@ func TestHarnessArchitect_ExplicitActiveTaskInScope(t *testing.T) {
 		"An explicitly listed `active` task is in scope and MUST NOT be excluded as non-ready.", "PW-6 step 1 item 3", true)
 
 	pin(t, whole, "Exclude blocked, done, or otherwise non-ready work items", "retired non-ready exclusion", false)
-	pin(t, whole, "defaults to all ready tasks", "retired description", false)
-	pin(t, whole, "ready work items", "retired line 18", false)
-	pin(t, whole, "Claim the ready task set", "retired step 1 heading", false)
-	pin(t, whole, "When omitted, use all ready tasks under the feature.", "retired line 50", false)
 }

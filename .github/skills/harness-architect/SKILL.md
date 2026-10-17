@@ -9,14 +9,14 @@ input:
       description: "Feature or chore ID to scaffold harnesses for"
     tasks:
       type: string
-      description: "Comma-separated task IDs to scaffold (optional, defaults to all ready tasks)"
+      description: "Comma-separated task IDs to scaffold (optional, defaults to all `queued` tasks)"
   required:
     - feature
 ---
 
 # Harness Architect Skill
 
-Scaffold strict test harnesses for a feature's or chore's ready work items.
+Scaffold strict test harnesses for a feature's or chore's in-scope work items.
 The output must compile cleanly, fail for the intended not-yet-implemented
 behavior, and leave clear harness commands for downstream build execution.
 
@@ -35,7 +35,7 @@ warn the operator that visibility is degraded and continue locally.
 | Event | Level | Message prefix |
 |---|---|---|
 | Session start | info | `[HARNESS] Starting: feature={input.feature}` |
-| Tasks loaded | info | `[HARNESS] Ready tasks: {task_count}` |
+| Tasks loaded | info | `[HARNESS] Tasks in scope: {task_count}` |
 | Codebase analyzed | info | `[HARNESS] Context gathered: {module_count} modules` |
 | Harness generated | info | `[HARNESS] Generated: {test_file} ({scenario_count} scenarios)` |
 | Compilation check | info | `[HARNESS] Compilation: {result}` |
@@ -47,17 +47,17 @@ warn the operator that visibility is degraded and continue locally.
 
 * `${input:feature}`: (Required) Feature or chore ID such as `001-F`
 * `${input:tasks}`: (Optional) Comma-separated task IDs to scaffold.
-  When omitted, use all ready tasks under the feature.
+  When omitted, use all `queued` tasks under the feature. An `active` task is in scope only when it is listed explicitly in `${input:tasks}`.
 
 ## Workflow
 
-### Step 1: Claim the ready task set
+### Step 1: Select the in-scope task set
 
-1. Load the feature or chore and its ready descendants through backlog
+1. Load the feature or chore and its in-scope descendants (`queued`, plus explicitly listed `active`) through backlog
    query or queue operations.
 2. If `${input:tasks}` is present, restrict the scope to that explicit
    task set.
-3. Exclude blocked, done, or otherwise non-ready work items.
+3. Exclude blocked, done, and archived work items. An explicitly listed `active` task is in scope and MUST NOT be excluded as non-ready.
 4. Preserve the work-item-to-task mapping so each harness can be traced
    back to the correct backlog item.
 
