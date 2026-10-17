@@ -375,6 +375,8 @@ For each task in the ready queue:
 
 #### Step 4.1: Claim Task
 
+**P-002 per-task gate**: before claiming this task, re-read its status (if `done` or archived, report the skip with the task ID rather than claim; if no task in the batch ends up executed, treat it as an empty batch: halt and report), then run Step 2 items 2-4 for this single task (skip scaffolding only if `harness-architect` has reported Compilation PASS and Red Phase CONFIRMED for this task ID in this session; a label without that report is not sufficient: re-invoke the skill for that task ID, and if red cannot be confirmed, HALT) and verify the task carries the `harness-ready` label. Ship MUST NOT apply or edit `harness-ready` itself: the label is valid only if `harness-architect` reported Compilation PASS and Red Phase CONFIRMED for this task ID in this session; if the skill is unavailable or errors, that is a FAIL-CLOSED HALT. A task lacking the label is a FAIL-CLOSED HALT, never a silent skip and never a proceed, citing P-002's Violation Action ("Halt and suggest running the harness-architect"); for a resumed `active` task whose red phase cannot be confirmed, Ship halts, records a DEFERRED/BLOCKED note on the task and leaves the disposition to the operator. The Step 0.5 shipment claim has already set manifest tasks `active` as a backlog side effect; it is not the P-002 gate.
+
 Update task status to `active` using the backlog tool's move operation.
 
 When the `agent-intercom` capability pack is installed, broadcast the task claim and current task ID.
@@ -421,6 +423,8 @@ autoharness telemetry event --context-ref {context_ref} --from-json {event_paylo
   were disabled.
 
 #### Step 4.2: Delegate to Build Feature
+
+Do not begin implementation of a task for which the Step 4.1 P-002 check has not passed in this iteration.
 
 When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking build-feature for {item_id}` before delegating.
 
