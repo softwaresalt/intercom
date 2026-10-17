@@ -7,9 +7,8 @@ plan: docs/plans/2026-10-17-intercom-go-020f-stage-contract-enforcement-plan.md
 # Plan review record - 020-F re-stage
 
 All review passes were run with `dispatch_mode: single-agent-declared-degradation`
-(reviewers could not dispatch independent sub-subagents). Per the plan's own
-review-gate rule a degraded review cannot return a clean PASS; the best
-attainable outcome is ADVISORY.
+(reviewers could not dispatch independent sub-subagents). Degraded dispatch
+does not relax the verdict rule: any unresolved P0/P1 is a FAIL.
 
 ## Attempt 1 - Adversarial Review (five inline personas): FAIL
 
@@ -40,17 +39,15 @@ SHA-256; explicit env allowlist; CODEOWNERS header amendment).
   `skip_policy` waiver and that "no deviation" wording contradicts a declared
   deviation. Remediation applied: wording made honest (disclosed pre-existing
   systemic defect, no waiver asserted, no literal compliance claimed), per-task
-  P-005 compliance-annotation ACs added, operator veto path recorded.
+  P-005 compliance-annotation ACs added. The waiver itself remains required.
   The reviewer's remaining requirement (an operator-recorded waiver) cannot be
-  obtained in dark mode and is NOT resolved by the plan: it is a policy
-  interpretation disagreement about a defect that pre-dates and is independent
-  of this plan, and the plan makes P-004's property (observed red before
-  implementation) hold rather than weakening it.
+  obtained in dark mode and is NOT resolved by the plan; it keeps the verdict
+  at FAIL (see Disposition).
 
 ## Disposition
 
-Effective verdict: **ADVISORY** (degraded dispatch; Stage Step 4 ADVISORY path
-proceeds with the findings recorded), with the constitution dissent above
-surfaced to the operator as the one item needing explicit operator
-acknowledgement before Ship claims the shipment. Review attempts used: 2 of 2
-allowed re-entry cycles; no third cycle was run.
+Effective verdict: **FAIL**. plan-review SKILL.md (lines 191-192) requires FAIL whenever any P0/P1 remains, and degraded dispatch does not relax that. The constitution persona's P1 (a scoped, operator-recorded `skip_policy` waiver for P-002/P-004 is required to proceed on the DB12DA37 claim route) is UNRESOLVED, and the plan cannot resolve it: the waiver is an operator action. The earlier "ADVISORY with operator veto" framing is withdrawn.
+
+* **Shipment 050-S is NOT claimable** until the operator records that scoped P-002/P-004 `skip_policy` waiver for 020-F, or 026-F (the DB12DA37 conformance repair) ships.
+* **Mechanical hold:** 020-F is `blocked` (and its tasks are held non-claimable) with the hold reason in the record, so Ship's pre-claim reconciliation halts on the blocked feature in the queued manifest. The plan, decision and tasks are otherwise ready; lifting the hold is an operator-recorded waiver (or 026-F shipping) followed by a Stage re-review of the waiver wording.
+* Review attempts used: 2 of 2 allowed re-entry cycles; no third cycle was run. Stage Step 4 option (c) applies: halt and record the FAIL (P-005).

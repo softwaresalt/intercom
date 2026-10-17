@@ -46,13 +46,13 @@ Verdicts: `violating` / `conforming`, with a reason string naming the property.
 
 Common to every unit (R6, execution posture TEST-FIRST, just-in-time): the task's first commit is its own red harness (compilable, failing, expected failure marker recorded, `go vet ./...` clean). Harness for task N is written only when task N starts. The task END commit has full `go test ./...` green; the red first commit is mid-task by design and is NEVER pushed before the task is green (no branch CI run on a red commit).
 
-**Honest characterization of the P-002/P-004 position (plan-review attempt 2, constitution P1-1/P1-2).** A shipment claim auto-activates the shipment's tasks before any harness exists (DB12DA37). That claim-ordering condition is the pre-existing, systemic, disclosed defect that affects every shipment in this workspace; this plan does NOT cure it, does NOT claim P-002 literal compliance on the claim route, and does NOT assert any operator `skip_policy` waiver. What this plan adds is a per-task sequencing so that the property P-004 protects (every generated test red before the implementation it covers, with the red observed) holds on the artifacts: Ship Step 2's "harness once, up front" is vacuous on this route and an up-front batch of red harnesses would break Step 4.3 after task 1, so harness authoring is per task. Authority for proceeding is the operator's instruction that Stage judge workability autonomously plus the Orchestrator's recorded dark-mode decision; the operator can veto by archiving the queued shipment before Ship claims it. Every task therefore carries two additional ACs: (a) a P-005 compliance annotation in the task comment and the PR readiness block stating "DB12DA37 claim-ordering condition disclosed; no waiver asserted; per-task red-then-green evidence below", and (b) the red-then-green evidence (command + failure marker, command + result). If either is absent the PR readiness block is incomplete and merge approval must not be treated as satisfied.
+**Honest characterization of the P-002/P-004 position (plan-review attempt 2, constitution P1-1/P1-2).** A shipment claim auto-activates the shipment's tasks before any harness exists (DB12DA37). That claim-ordering condition is the pre-existing, systemic, disclosed defect that affects every shipment in this workspace; this plan does NOT cure it, does NOT claim P-002 literal compliance on the claim route, and does NOT assert any operator `skip_policy` waiver. What this plan adds is a per-task sequencing so that the property P-004 protects (every generated test red before the implementation it covers, with the red observed) holds on the artifacts: Ship Step 2's "harness once, up front" is vacuous on this route and an up-front batch of red harnesses would break Step 4.3 after task 1, so harness authoring is per task. Proceeding is BLOCKED pending an operator-recorded scoped P-002/P-004 `skip_policy` waiver for 020-F (or 026-F shipping): plan-review attempt 2 returned FAIL on this point (unresolved constitution P1) and the plan cannot resolve it. Stage does not assert authority to waive. Every task therefore carries two additional ACs: (a) a P-005 compliance annotation in the task comment and the PR readiness block stating "DB12DA37 claim-ordering condition disclosed; waiver reference: <operator-recorded waiver>; per-task red-then-green evidence below", and (b) the red-then-green evidence (command + failure marker, command + result). If either is absent the PR readiness block is incomplete and merge approval must not be treated as satisfied.
 
 ### U1 - 020.001-T: fixture corpus and manifest (test data; Size S, complexity low)
 
 * Files: `tools/gatecheck/internal/stagecontract/testdata/*.md` (small contract-state fixtures, data only) and `testdata/manifest.json`; red/green harness `manifest_test.go` (manifest well-formedness only).
 * Conforming fixtures are structure-faithful excerpts of the REAL corrected P1-P6 text (same headings/table/list shapes), so the detector built against them behaves on the real files.
-* Corpus: at least one conforming and one violating fixture per P1-P6, plus at least one "quoted/historical/example text that mentions a construct but is not a violation" fixture (proves AC-4 of U3). Every fixture has `property`, `verdict`, `reason`.
+* Corpus: at least one conforming and one violating fixture per P1-P6 (for P6, a violating fixture that deletes ONLY the Step 1.9 checklist registration while leaving the Step 1.9 section intact, with a paired conforming fixture), plus at least one "quoted/historical/example text that mentions a construct but is not a violation" fixture (proves AC-4 of U3). Every fixture has `property`, `verdict`, `reason`.
 * Red: manifest absent/ill-formed fails `TestManifestWellFormed`. Green: manifest present and every fixture file referenced exists, every property P1-P6 has both verdicts, no unmapped fixture.
 * Posture: test-first. No detector logic, no CI wiring.
 
@@ -60,8 +60,8 @@ Common to every unit (R6, execution posture TEST-FIRST, just-in-time): the task'
 
 * Files: `driver.go` (Detector interface, `ErrNotImplemented`, stub detector, `RunSuite`), `driver_test.go`.
 * Behavior: read manifest, one case per fixture, assert verdict and reason via the interface; malformed/truncated/unreadable manifest FAILS (never empty/inconclusive); failure report names fixture id, expected verdict, observed verdict.
-* Driver correctness is proven with injected test-double detectors (green). The corpus-bound test `TestFixtureCorpus` runs the real corpus through the stub; while the detector returns `ErrNotImplemented` it is **visibly skipped** (`t.Skip` naming 020.003-T) so Step 4.3 stays green. This skip is removed red-first in U3.
-* Red: driver symbols stubbed to fail; driver tests fail with the expected marker. Green: driver tests pass, corpus test skipped with the 020.003-T reason.
+* Driver correctness is proven with injected test-double detectors (green). The corpus-bound test `TestFixtureCorpus` runs the real corpus through the stub; while the detector returns `ErrNotImplemented` it is **visibly skipped** (`t.Skip` naming 020.006-T) so Step 4.3 stays green. U3 (020.003-T, parser only) leaves the skip in place; this skip is removed red-first in U3b (020.006-T).
+* Red: driver symbols stubbed to fail; driver tests fail with the expected marker. Green: driver tests pass, corpus test skipped with the 020.006-T reason.
 
 ### U3 - 020.003-T: structure-aware markdown block parser (Size S, complexity medium)
 
@@ -75,7 +75,7 @@ Common to every unit (R6, execution posture TEST-FIRST, just-in-time): the task'
 ### U3b - 020.006-T: closed-set P1-P6 rules and live-contract test (Size M, complexity medium)
 
 * Files (three): `detector.go`, `detector_test.go` (includes `TestLiveContract`, so no extra file), and the `driver_test.go` edit that removes the skip (`driver.go` is unchanged: the skip lives in the test). Sizing is knowingly M: six small rule evaluators over a shared block walk; Ship STOPS AND REPORTS (no scope widening, no policy edit) if the task exceeds the 2-hour rule.
-* Behavior: evaluates ONLY the closed enumerated construct set P1-P6 over U3's blocks; quoted, blockquote, fenced or historical text never yields a violating verdict. Reason strings name the property. Unknown content yields no verdict.
+* Behavior: evaluates ONLY the closed enumerated construct set P1-P6 over U3's blocks; quoted, blockquote, fenced or historical text never yields a violating verdict, with ONE named exception: the **canonical-checklist exception** for P6. In `_stage.agent.md` the registered Step Sequence checklist line for Step 1.9 lives inside a fenced `text` block, so P6 MUST recognize that specific canonical checklist block (the fenced block under the Step Sequence Contract heading whose lines match the `[ ] Step N` checklist shape) and evaluate the Step 1.9 registration line inside it; the blanket fenced-text exclusion applies to every other fenced block. A required fixture deletes ONLY the Step 1.9 registration line from the checklist while leaving the Step 1.9 section intact, and expects a P6 violating verdict (proving the checklist is actually read, not skipped as fenced text); a paired conforming fixture keeps both. Reason strings name the property. Unknown content yields no verdict.
 * `TestLiveContract` (read-only) evaluates the two REAL generated files (`.github/policies/workflow-policies.md`, `.github/agents/_stage.agent.md`) and requires conforming verdicts for P1-P6. It uses `t.Fatal`, never `t.Skip`, if a real file is missing or unreadable. It lives here, not in U4, so a detector/real-file mismatch surfaces before CI wiring. If the live verdict is violating, Ship stops, records P-005 and reports; it never edits the contract files or weakens the detector.
 * Red (first commit): the `t.Skip` is removed from `TestFixtureCorpus` (stub still returns `ErrNotImplemented`, which now FAILS) and `TestLiveContract` is added failing. Green: the entire corpus passes, live files conform, no skip remains.
 * ACs include: construct set enumerated in code with each member mapped to P1-P6; quoted/historical fixture conforming; no generalized lint platform (no plugin/registry/config surface).
@@ -106,7 +106,7 @@ Common to every unit (R6, execution posture TEST-FIRST, just-in-time): the task'
 ## Decisions and Rationale
 
 * One shipment, six sequential tasks: reasonable size (about 4 S + 2 M), single PR, same domain.
-* Skip-until-U3 design for the corpus test: keeps Step 4.3 green after U2 without a deliberately red committed test.
+* Skip-until-U3b (020.006-T) design for the corpus test: keeps Step 4.3 green after U2 and U3 without a deliberately red committed test.
 * Same `go test -json` stream for CI and for the mutation proof, so U5 proves the actual gate.
 * Closed construct set and in-package block parser: avoids a platform and a new dependency.
 * No required-code-owner-review enablement: avoids unattended-merge deadlock (existing CODEOWNERS risk R1).
@@ -124,14 +124,14 @@ Common to every unit (R6, execution posture TEST-FIRST, just-in-time): the task'
 * Security/auth/compliance-sensitive: PRESENT, low (CODEOWNERS/CI-critical paths).
 * Migration/destructive/irreversible: ABSENT.
 * External integration or operator checkpoint: PRESENT (CI workflow edit; branch-protection enablement explicitly out of scope).
-* High runtime, rollout or rollback risk: PRESENT, moderate (a blocking CI step can break every PR; rollback = revert the single step).
+* High runtime, rollout or rollback risk: PRESENT, moderate (a blocking CI step can break every PR; rollback is COORDINATED, see Runtime Verification and Closure: the step is not reverted alone).
 
 Requires plan hardening: yes
 
 ## Runtime Verification and Closure
 
 * Runtime surfaces: the CI `lint` job (new blocking step). Verification: the step runs green on the shipment PR; U5 proves it fails when the contract is reverted.
-* Closure artifact: divergence-ledger entry and the PR readiness block with red/green evidence per task. Rollback trigger: unexplained red `lint` on unrelated PRs after merge; rollback = remove the one step (ledger records this). Owner: repository owner via CODEOWNERS.
+* Closure artifact: divergence-ledger entry and the PR readiness block with red/green evidence per task. Rollback trigger: unexplained red `lint` on unrelated PRs after merge; rollback is coordinated (below), never the single step alone (ledger records this). Owner: repository owner via CODEOWNERS.
 
 ## Plan Hardening
 
@@ -146,7 +146,7 @@ Requires plan hardening: yes
 | Add a blocking step to the `lint` job in `ci.yml` | high blast radius (a false positive blocks every code PR) | normal PR review; no operator checkpoint beyond merge approval already authorized for scope | U4 |
 | Add CODEOWNERS lines for the two generated contract files | low (advisory-only until branch protection requires code-owner review) | none; do NOT enable required code-owner review | U4 |
 | Execute a mutation proof that edits a COPY of contract files | medium (must never touch the real tree) | none; guarded by byte-identical `git status` snapshots | U5 |
-| Add a skip-then-unskip corpus test across U2/U3 | low | none; skip is removed red-first in U3 and AC forbids any remaining skip | U2/U3 |
+| Add a skip-then-unskip corpus test across U2/U3 | low | none; skip is removed red-first in U3b (020.006-T) and its AC forbids any remaining skip | U2/U3b |
 
 ### Invariants to preserve
 
@@ -168,7 +168,7 @@ Requires plan hardening: yes
 
 * Monitoring signal: `lint` job result on the next three code PRs after merge.
 * Rollback trigger: a red `lint` step on a PR that does not touch the contract files, or any false verdict on the real files not explained by a genuine revert.
-* Rollback procedure: revert the single `ci.yml` step (detector and tests remain; ledger entry updated to note the step is removed).
+* Rollback procedure (COORDINATED; the single `ci.yml` step is never reverted alone, because the U4 wiring assertions in `ciwiring_test.go` would then fail and `TestLiveContract` and the U5 mutation proof, which depend on the wired step, would be left asserting a gate that no longer exists): either (a) revert the step TOGETHER WITH its U4 ciwiring assertions and the affected detector tests (`TestLiveContract`, the mutation proof) in one change, updating the ledger entry to record the gate as removed; or (b) revert the whole 050-S implementation release as a unit. Both must leave `go test ./...` green.
 * Owner: repository owner (`@softwaresalt`) via CODEOWNERS. Validation window: three subsequent PRs.
 
 ### Human checkpoints and out-of-scope
@@ -185,4 +185,4 @@ Plan review must emit literal `dispatch_mode:` and `decision:` markers. If a per
 None that block staging. Branch-protection enablement and 026-F/O-1 remain operator-only and non-blocking for this feature.
 
 <!-- plan-review-attempt: 1 --> FAIL (3 P1, 5 P2), remediated.
-<!-- plan-review-attempt: 2 --> remediation applied; see review record.
+<!-- plan-review-attempt: 2 --> FAIL (constitution P1 unresolved: operator-recorded P-002/P-004 waiver required); 020-F held `blocked`; see review record.

@@ -67,15 +67,21 @@ analysis of the four Ship contract surfaces is rewritten; only its
    committed harness must therefore turn green within the same task, and no
    artifact may leave a deliberately red test behind. Tests that depend on a
    later task use an explicit, visible skip tied to the ErrNotImplemented stub
-   (002) which the next task (003) removes red-first.
+   (002) which task 020.006-T (the rules task; 020.003-T is parser-only and
+   leaves the skip in place) removes red-first.
 4. Acceptance criteria require OBSERVED red-then-green evidence per task,
    recorded in the task comment and the PR readiness block: the red run's
    command and failure marker, the green run's command and result.
-5. No policy text (P-002, P-004, Ship Step 2) is amended, and NO operator `skip_policy` waiver is asserted or claimed. The DB12DA37 claim-ordering condition (shipment claim auto-activates tasks before any harness) is a pre-existing, systemic, disclosed defect affecting every shipment; this decision does not cure it and does not claim literal P-002 compliance on the claim route. Each task's P-005 compliance annotation (DB12DA37 disclosed; no waiver asserted) in the task comment and PR readiness block makes that visible, and the operator can veto by archiving the queued shipment before Ship claims it. Plan-review attempt 2's constitution persona held this position insufficient without an operator-recorded waiver; that dissent is recorded and left for the operator.
+5. No policy text (P-002, P-004, Ship Step 2) is amended, and NO operator `skip_policy` waiver is asserted or claimed. The DB12DA37 claim-ordering condition (shipment claim auto-activates tasks before any harness) is a pre-existing, systemic, disclosed defect affecting every shipment; this decision does not cure it and does not claim literal P-002 compliance on the claim route. Each task's P-005 compliance annotation (DB12DA37 disclosed; no waiver asserted) in the task comment and PR readiness block makes that visible. Plan-review attempt 2's constitution persona held this position insufficient without an operator-recorded waiver, and under plan-review SKILL.md (lines 191-192) an unresolved P0/P1 is a FAIL regardless of degraded dispatch. The earlier "operator can veto" framing is withdrawn: the shipment is held (see section 6).
 6. Chain after plan-review split: 020.001-T -> 020.002-T -> 020.003-T (block parser) -> 020.006-T (P1-P6 rules + live-contract test, new) -> 020.004-T -> 020.005-T. Six tasks, one shipment.
 
 ## 6. Authority and escalation
 
-The Orchestrator's dark-mode decision (operator AFK) authorized proceeding on
-this basis. Stage halts and reports, rather than deciding, if plan-review
-returns an unresolved P0/P1 on the section 5 mitigation.
+The Orchestrator's dark-mode decision (operator AFK) authorized proceeding with
+staging on this basis, conditional on halting if plan-review returned an
+unresolved P0/P1 on the section 5 mitigation. It did (attempt 2, constitution
+persona, FAIL). Consequently: 050-S is NOT claimable until the operator records
+a scoped P-002/P-004 `skip_policy` waiver for 020-F, or 026-F ships; 020-F is
+held `blocked` so Ship's pre-claim reconciliation halts on the blocked feature
+in the queued manifest. The decision itself (one-task rule superseded; JIT
+per-task harness) stands.
