@@ -1,5 +1,5 @@
 ---
-title: "Implementation plan: Ship harness selection conformance repair (026-F, DB12DA37), re-plan rev 5 (PR-review fixes)"
+title: "Implementation plan: Ship harness selection conformance repair (026-F, DB12DA37), re-plan rev 6 (PR-review fixes)"
 date: 2026-10-17
 status: draft
 source: docs/decisions/2026-10-17-intercom-go-026f-o1-closure-and-surface-adjudication-decision.md
@@ -8,7 +8,7 @@ feature: 026-F
 tasks: [026.001-T, 026.002-T, 026.003-T, 026.004-T]
 ---
 
-# Implementation plan - 026-F re-plan (rev 5)
+# Implementation plan - 026-F re-plan (rev 6)
 
 **Operator ratifications (2026-10-17, recorded in the decision note section 0):** (1) the O-2 reading of P-002 is ratified, no `skip_policy` needed; (2) an explicitly listed `active` task is not "non-ready" (reading R); (3) P-003 "parent sub-epic" is satisfied by the feature->task hierarchy. Rev 4 resolves the attempt-3 Constitution P1 on that basis and applies the attempt-3 Scope P1 and the queued P2s; it is validated by a ratification-resolution pass on the changed text only.
 
@@ -93,7 +93,57 @@ Retired (ABSENT after the owning task): the skill heading `Claim the ready task 
 
 ## Authorized replacement pairs (the span-pair rule's table; self-checked against every mandated edit PW-1..PW-6)
 
-OLD = quoted current clause (or, for an addition, the anchor it follows); NEW = the pinned clause (whitespace-collapsed). Each pair is consumed exactly once by its owning task.
+OLD = quoted current clause (or, for an addition, the anchor it follows); NEW = the pinned clause (whitespace-collapsed). Each pair is owned by one task (column Task) and consumed exactly once when that task completes; per-task checks use the CUMULATIVE sets defined in closure AC (iii) (001: AP-S1..S7; 002: +AP-10..17; 003: +AP-1..7; 004: +AP-8, AP-9 = all 24).
+
+| Pair | Task | File | OLD | NEW |
+|---|---|---|---|---|
+| AP-S1 | 001 | skill | `defaults to all ready tasks` | `defaults to all \`queued\` tasks` |
+| AP-S2 | 001 | skill | `a feature's or chore's ready work items` | `a feature's or chore's in-scope work items` |
+| AP-S3 | 001 | skill | `Ready tasks: {task_count}` | `Tasks in scope: {task_count}` |
+| AP-S4 | 001 | skill | `When omitted, use all ready tasks under the feature.` | PW-6 line-50 sentence |
+| AP-S5 | 001 | skill | `### Step 1: Claim the ready task set` | `### Step 1: Select the in-scope task set` |
+| AP-S6 | 001 | skill | `its ready descendants through backlog` | `its in-scope descendants (\`queued\`, plus explicitly listed \`active\`) through backlog` (removes the last `ready descendants` match; no ADDED partner is expected) |
+| AP-S7 | 001 | skill | `Exclude blocked, done, or otherwise non-ready work items.` | PW-6 item-3 sentences |
+| AP-10 | 002 | ship | `Ensure every task in the target feature or chore has a passing test harness before any implementation begins. This step runs once, up front — not in a loop.` | PW-5(a) preamble (removes `any`, `runs once`, `up front`; authorized as a whole span) |
+| AP-11 | 002 | ship | Step 2 item 1 current single sentence (`List all tasks for the target feature or chore that are in \`queued\` status.`) | PW-5(b) item 1 |
+| AP-12 | 002 | ship | `Partition the task list:` | PW-5(c) `Partition the selected batch (on the shipment route: the current task)` |
+| AP-13 | 002 | ship | `If any tasks need harnesses, invoke the **harness-architect** skill for the batch.` | same sentence + PW-5(d) addition |
+| AP-14 | 002 | ship | `confirm every queued task now carries the \`harness-ready\` label.` | PW-5(e) |
+| AP-15 | 002 | ship | closing paragraph anchor `prefer the queue operation to assemble the task set.` | anchor + PW-5(f2) sentence |
+| AP-16 | 002 | ship | `broadcast \`[SHIP] Invoking harness-architect skill\` before invoking the skill.` | PW-5(f) qualified broadcast |
+| AP-17 | 002 | ship | end of Step 3 item 1: `task elsewhere happens to share its label or status.` | anchor + PW-5(g) note |
+| AP-1 | 003 | ship | `it is the actual task-membership boundary that Step 4 executes, so an \`active\` member of this derived set is never omitted from the ready queue,` | PW-1 |
+| AP-2 | 003 | ship | item 1 trigger `(when operating under a Stage-prepared shipment; C1–C6,` | `(when on the shipment route; C1–C6,` |
+| AP-3 | 003 | ship | item 2 trigger `When operating under a Stage-prepared shipment (item 1 above ran), replace` | PW-2 trigger |
+| AP-4 | 003 | ship | anchor `regardless of whether its status is \`queued\` or \`active\`,` | anchor + PW-2 insertion |
+| AP-5 | 003 | ship | `Now that all tasks are harnessed, construct the execution queue:` | PW-3 preamble |
+| AP-6 | 003 | ship | `If the queue is empty after harness generation, halt and report — there is nothing to build.` | PW-3 item 4 |
+| AP-7 | 003 | ship | `with the count of queued items` | `with the count of ready-queue tasks` |
+| AP-8 | 004 | ship | heading anchor `#### Step 4.1: Claim Task` | heading + PW-4 gate paragraph |
+| AP-9 | 004 | ship | heading anchor `#### Step 4.2: Delegate to Build Feature` | heading + the Step 4.2 guard sentence |
+
+Self-check result (Stage, rev 5): every mandated edit PW-1..PW-6 is covered by exactly one pair (PW-1 AP-1; PW-2 AP-3/AP-4; item-1 trigger AP-2; PW-3 AP-5/6/7; PW-4 AP-8/9; PW-5 a-g AP-10..AP-17; PW-6 AP-S1..S7). The two removals that leave no PAT residue (AP-S6, AP-10) are authorized spans, so they cannot trip the rule.
+
+## Implementation Units
+
+**Common protocol (every task).** Strictly sequential 001 -> 002 -> 003 -> 004; order resolves the bootstrap (the skill fix lands first) and avoids forward references (Step 3 and Step 4.1 cite Step 2 text that already exists). Posture TEST-FIRST, just-in-time: the harness for task N is authored only when task N starts, by `harness-architect` invoked with that task's ID passed explicitly as `tasks` BEFORE Step 4.1 (claim) and Step 4.2; Compilation PASS and Red Phase CONFIRMED per function (Red marker section) are recorded and `harness-ready` is applied by the skill; Step 4.1 does not start otherwise. The red test commit is never pushed red; the task END commit has the full `go test ./...` green. **Bootstrap for 026.001-T:** the shipment claim has already set it `active` under the unrepaired skill, whose Step 1 item 2 says an explicit `tasks` set restricts the scope and whose item 3 excludes "otherwise non-ready" work; reading R = an explicitly listed `active` task is not "non-ready" (it is ready and in progress). If the skill refuses 026.001-T, Ship halts fail-closed and reports; it never bypasses. Needles are whole clauses from PW-1..PW-6 sliced by their own step/list anchors via `readSurface`; every assertion resolves in its own subject.
+
+**Readiness-block evidence (every task).** (a) per-function red marker output then green output (exact commands); (b) the session-start commit SHA of the instruction surfaces; (c) baseline-vs-final inventory result; (d) the annotation: "DB12DA37 claim-ordering condition disclosed; per-task harness-architect gate and red-then-green evidence recorded; O-2 reading of P-002 ratified by the operator 2026-10-17 (decision section 0); no skip_policy used".
+
+**Closure ACs (every readiness block; evaluated at the END of each task against the CUMULATIVE state through that task).**
+
+**(i) Changed-path validation (two allowlists; nothing else may change).** Classify every path from `git diff origin/main...HEAD --name-only` (and the status of each: added/modified/deleted) with these regexes; any path matching neither list, and any DELETION or rename of a pre-existing file, STOPS the run; `.github/policies/workflow-policies.md` must be absent (I2).
+* **Allowlist A - implementation (source edits):** `^(\.github/agents/_ship\.agent\.md|\.github/skills/harness-architect/SKILL\.md|tests/integration/harness_selection_conformance_test\.go)$`. At the end of task N only the files owned by tasks <= N may differ from origin/main (001: skill + test file; 002/003/004: `_ship.agent.md` + test file additions).
+* **Allowlist B - bounded backlog/evidence artifacts that the Ship/harness-architect/build-feature flow legitimately writes for 051-S** (harness-architect Step 6 persists labels and harness notes in tracked task records; build-feature stages all changes; Ship Step 4.5 writes task completion, commit association and memory checkpoints): `^\.backlogit/queue/(026-F|026\.00[1-4]-T|051-S)\.md$`; `^\.backlogit/logs/(026-F|026\.00[1-4]-T|051-S)\.jsonl$` (append-only); `^\.backlogit/(checkpoints|reconcile)/[^/]+$`; `^\.backlogit/stash\.jsonl$` (append-only follow-up captures, P-021); **memory notes under `docs/memory/` - ADDED files only**, matching either the repo convention `^docs/memory/\d{4}-\d{2}-\d{2}/[^/]+\.md$` (preferred form `{YYYY-MM-DD}/{slug}-memory.md` per `.github/copilot-instructions.md`; this also admits the circuit-break and per-task checkpoint forms Ship Step 4.5 writes), the flat existing form `^docs/memory/\d{4}-\d{2}-\d{2}-[^/]+\.md$`, or compact-context output `^docs/memory/compacted/[^/]+\.md$`; pre-existing memory files may not be modified, deleted or moved in this PR. Archive moves are NOT part of the PR (post-merge closure only).
+* **Content constraint on B records.** A diff of any `.backlogit/queue/*` record may change ONLY: `status`; `labels` (e.g. `harness-ready`); `custom_fields.harness_*`; the tool-managed fields `updated_at` (changes on every mutation) and `commit` (task commit association recorded per Ship Step 4.5); and body comment/evidence sections. For the shipment record 051-S only `status`, `updated_at` and `commit` may change. Protected fields that must NOT change in any B record: `id`, `parent_id`, `dependencies`, `title`, `artifact_type`, `created_at`, shipment `items`. At the end of task N the records of tasks > N (not yet started) must be unchanged except for tool-managed `updated_at`; no other task/feature/shipment record (in particular none of 020*, 025*, 019*, 050-S) may differ. `.backlogit/stash.jsonl` may only gain lines.
+
+**(ii)** `git diff origin/main...HEAD -U0 -- .github/agents/_ship.agent.md` has hunk ranges disjoint from Step 0.5 item 4 and Step 4.3 (I1).
+
+**(iii) Mechanical inventory: bounded span pairs BEFORE any PAT filtering, cumulative per task** (a throwaway shell/script check, NOT a test). For each instruction surface in allowlist A (`_ship.agent.md`, `harness-architect/SKILL.md`): baseline = `git show origin/main:<file>`; final = the working file; whitespace-collapse both; split each into bounded spans (one heading, one paragraph, or one list item including its wrapped lines) and align by order. The **cumulative pair set** at the end of task N is the union of the Authorized pairs owned by tasks <= N (table below; sets: **after 026.001-T** = AP-S1..AP-S7 (7 pairs); **after 026.002-T** = those + AP-10..AP-17 (15); **after 026.003-T** = those + AP-1..AP-7 (22); **after 026.004-T, the FINAL check** = those + AP-8, AP-9 = all 24). (1) For every span whose text changed, the final span must equal the baseline span with exactly the pairs of the cumulative set that anchor in that span applied (several pairs may share one span, e.g. the Step 3 item 1 span carries AP-17 from 002 and AP-1/AP-2 from 003; OLD occurs exactly once in the baseline span; NEW replaces it; for additions OLD is the stated anchor and NEW is anchor + addition). (2) EVERY pair of the cumulative set must be consumed exactly once (an unconsumed cumulative pair is a missing mandated edit); every pair of a LATER task must be UNapplied (its span still equals baseline), otherwise the task has run ahead of the sequence; a changed span matching no pair STOPS the run. Requiring all 24 pairs is correct only at the final check after 026.004-T. (3) Only then run `PAT` = `harness-ready|ready tasks|ready descendants|ready work items|non-ready|every task in the target|all tasks are harnessed|every queued task|queued status|queued items|task-membership|up front|before any implementation|runs once|harness generation|ready queue|Step 2|Step 3|harness_cmd|just-in-time` as a REPORT: `git grep -n -E "$PAT" origin/main -- .github` versus the same on the working tree, restricted to files NOT in allowlist A, must be identical (no adjacent surface changed); inside the allowlist-A files PAT residue is reported but never decisive, because a changed span is already validated as a whole. Ship records the span-pair result (cumulative set, consumed pairs, unapplied later pairs) and the PAT report in the readiness block.
+
+## Authorized replacement pairs (the span-pair rule's table; self-checked against every mandated edit PW-1..PW-6)
+
+OLD = quoted current clause (or, for an addition, the anchor it follows); NEW = the pinned clause (whitespace-collapsed). Each pair is owned by one task (column Task) and consumed exactly once when that task completes; per-task checks use the CUMULATIVE sets defined in closure AC (iii) (001: AP-S1..S7; 002: +AP-10..17; 003: +AP-1..7; 004: +AP-8, AP-9 = all 24).
 
 | Pair | Task | File | OLD | NEW |
 |---|---|---|---|---|
@@ -240,3 +290,5 @@ decision: ADVISORY
 Selected-persona coverage: every selected persona was covered by its own separate reviewer subagent in the ratification-resolution pass (Constitution, Scope Boundary, Correctness, Security), validating the changed text of rev 4; the prior attempt-3 pass covered Constitution, Correctness, Architecture, Scope Boundary, Security and Maintainability. Each reviewer ran single-agent read-only because reviewer subagents cannot nest; that is the declared degradation. No P0 or P1 remains open: the attempt-3 Constitution P1 is resolved by operator ratification, the attempt-3 Scope P1 by the mechanical inventory (re-specified in rev 5 after PR review as bounded span pairs with an authorized-pair table), and the PR-review P1s on closure AC (i) (changed-path allowlists) and on the inventory rule are resolved in this revision.
 
 Explicit authorization to harvest under ADVISORY: the operator ratified (2026-10-17, decision note section 0) the O-2 reading of P-002, reading R and the P-003 feature->task hierarchy, and directed the Stage ratification-resolution pass; harvest of 026.001-T..026.004-T and shipment 051-S proceeded on that authority.
+
+Rev 6 (PR 151 round 2) amends only the closure ACs: memory-note paths follow the repo convention (dated subdirectory, added files only, compact-context output), the tool-managed `updated_at` and `commit` fields are permitted on authorized record updates, and the span-pair check is cumulative per task (all 24 pairs are required only at the final check). No new design issue arose; no new review cycle was run for these closure-mechanics edits.
