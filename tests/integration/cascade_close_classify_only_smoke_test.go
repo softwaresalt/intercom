@@ -112,9 +112,8 @@ func cascadeSmokeFullRootExit0(t *testing.T) {
 	if first.code != wantExit {
 		t.Fatalf("exit code = %d, want %d (selected_close_path %q)\nstdout:\n%s\nstderr:\n%s", first.code, wantExit, rep.SelectedClosePath, first.stdout, first.stderr)
 	}
-	if wantExit != 0 {
-		t.Skipf("engine selected %q for the full-root fixture (exit %d); the evidence-record and no-clobber checks apply only to a cascade run", rep.SelectedClosePath, wantExit)
-	}
+	// The pre_close record is written on both paths, so the evidence-record and
+	// no-clobber checks below run whichever path the engine selected.
 	if rep.ExitCode != first.code {
 		t.Fatalf("json exit_code = %d, process exit = %d", rep.ExitCode, first.code)
 	}
@@ -215,7 +214,10 @@ func cascadeSmokeVerdictFor(path string) string {
 // absent or not one of the two contract values.
 func cascadeSmokeExpectedExit(t *testing.T, o cascadeSmokeOutcome, rep cascadeSmokeReport) int {
 	t.Helper()
-	if rep.EngineVerdict != "" && rep.EngineVerdict != "VERIFIED" {
+	if rep.EngineVerdict == "" {
+		t.Fatalf("engine_verdict is empty or missing; failing closed\nstdout:\n%s", o.stdout)
+	}
+	if rep.EngineVerdict != "VERIFIED" {
 		t.Skipf("skipping: engine_verdict = %q, not VERIFIED; exit assertions need a verified engine\nstdout:\n%s", rep.EngineVerdict, o.stdout)
 	}
 	switch rep.SelectedClosePath {

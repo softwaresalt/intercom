@@ -32,8 +32,9 @@ import (
 // TestCascadeCloseClassifyOnlySmoke (cascade_close_classify_only_smoke_test.go):
 // it runs the read-only --classify-only mode against a disposable fixture and
 // covers the CASCADE (exit 0) and SAFE_CLOSE (exit 3) verdicts, the pre_close
-// evidence record, and its no-clobber rule (the IV-1 classify-before-mutation
-// and IV-5 valid-path behavior, for classify-only only). IV-2 (drift
+// evidence record, and its no-clobber rule (IV-1: classify-only mode is
+// read-only and records pre-close evidence; IV-5 valid-path behavior, for
+// classify-only only). IV-2 (drift
 // rejection), IV-3 (guarded mutating path), IV-4 (fail-closed on invalid or
 // stale input) and IV-5 refusal-path zero-mutation have no executed coverage;
 // the mutating form is never invoked.
@@ -460,6 +461,9 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 		for _, name := range []string{"ship", "skill"} {
 			for _, needle := range []string{"--message=", "--author="} {
 				assertAbsent(t, files[name], needle, "34-"+name)
+			}
+			for _, needle := range []string{"--message <", "--author <"} {
+				assertPresent(t, files[name], needle, "34-"+name)
 			}
 		}
 	})
