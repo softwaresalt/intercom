@@ -315,28 +315,28 @@ it halts and requests that Stage be run first.
 
 ### Step 2: Harness Generation (P-002 / P-004)
 
-Ensure every task in the target feature or chore has a passing test harness before any implementation begins. This step runs once, up front — not in a loop.
+Ensure every task in the selected batch (item 1) has a passing test harness before that task's implementation begins. On the shipment route this step runs just-in-time per task, invoked from Step 4.1 (item 3): at this position execute item 1 only (halt if the batch is empty) and items 2-4 are executed per task from Step 4.1; on any other route it runs once, up front, not in a loop.
 
-When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking harness-architect skill` before invoking the skill.
+When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking harness-architect skill` when invoking the skill (per task from Step 4.1 on the shipment route).
 
-1. List all tasks for the target feature or chore that are in `queued` status.
-2. Partition the task list:
+1. Select the batch. **Route discriminator**: the *shipment route* is any run in which a `shipment_id` is recorded as the session scope (Step 0.5 primary item 5 or fallback item 4) or in which a task reaches Step 4.1 already `active`, and any ambiguity is treated as the shipment route; on that route the Step 0.5 claim has already activated manifest tasks. On the shipment route the batch is the Step 3 item 1 derived executable set, admitting both `queued` and `active` members; Ship evaluates that single read-only derivation FIRST, once, and Step 3 reuses it. On any other route, list all tasks for the target feature or chore that are in `queued` status.
+2. Partition the selected batch (on the shipment route: the current task):
    * **Already harnessed**: tasks carrying the `harness-ready` label — skip these.
    * **Needs harness**: tasks without the `harness-ready` label — scaffold these.
-3. If any tasks need harnesses, invoke the **harness-architect** skill for the batch.
+3. If any tasks need harnesses, invoke the **harness-architect** skill for the batch. On the shipment route, this item is invoked from Step 4.1: scaffold ONE task at a time in dependency order, immediately before that task's Step 4.1, passing that task's ID explicitly as `tasks` (a whole-batch up-front scaffold would leave several red harnesses at once and break the Step 4.3 full-suite gate after the first task); do not proceed until Compilation PASS, Red Phase CONFIRMED and the `harness-ready` label are recorded. On any other route, invoke the skill for the batch as before.
    * Require compilable but failing harnesses, structural stubs, and successful `go vet ./...` verification after scaffolding.
    * Keep harness commands associated with the affected backlog items so the build loop has a strict boundary.
-4. After scaffolding completes, confirm every queued task now carries the `harness-ready` label. If any task still lacks it, halt and report the gap rather than proceeding with a partial set.
+4. After scaffolding completes: On the shipment route confirm the current task now carries the `harness-ready` label; on any other route confirm every task in the batch does. If any task still lacks it, halt and report the gap rather than proceeding with a partial set. An empty selected batch on the shipment route is a halt, never a vacuous pass.
 
 When the `backlogit` capability pack is installed and queue-aware operations are supported, prefer
-the queue operation to assemble the task set. When dependency operations are supported, verify the
+the queue operation to assemble the task set. On the shipment route the batch comes from the Step 3 item 1 derivation, never from a queued-only queue operation. When dependency operations are supported, verify the
 dependency graph before proceeding rather than assuming the backlog ordering is already valid.
 
 ### Step 3: Build Ready Queue
 
-Now that all tasks are harnessed, construct the execution queue:
+Now that the batch membership is identified (Step 2 item 1), construct the execution queue:
 
-1. **Shipment-manifest executable-set derivation (when operating under a Stage-prepared shipment; C1–C6,
+1. **Shipment-manifest executable-set derivation (when on the shipment route; C1–C6,
    139-F/139.001-T)**: The shipment manifest (`custom_fields.items` recorded at Step 0.5) is the **closure
    membership record** — it is never the executable task set and is never mutated to make execution proceed. Before
    assembling the queue in item 2 below, filter the manifest to task artifacts (IDs ending `T`; the covering
@@ -355,26 +355,27 @@ Now that all tasks are harnessed, construct the execution queue:
    derivation never suppresses, replaces, softens, or pre-empts item 1a's `SHIPMENT_STATE_INCONSISTENT` halt. If the
    derived executable set is EMPTY while the manifest is non-empty, HALT and report — do NOT advance to build or PR,
    and do NOT trigger any closure path; this is an operator-disposition case only. **This derived set — not a
-   queued-status-only list — is wired into item 2's ready queue below**: it is the actual task-membership boundary
-   that Step 4 executes, so an `active` member of this derived set is never omitted from the ready queue,
+   queued-status-only list — is wired into item 2's ready queue below**: it is the task-MEMBERSHIP boundary (which tasks are candidates), not the execution boundary: the single execution gate is the per-task P-002 check at Step 4.1, so an `active` member of this derived set is never omitted from the ready queue,
    and a `pre_archived_skipped` / `already_done` member is never included in it merely because some other queued
-   task elsewhere happens to share its label or status.
+   task elsewhere happens to share its label or status. (This is the single derivation Step 2 item 1 evaluates first on the shipment route; it is not recomputed.)
 2. List all tasks with `harness-ready` label and `queued` status for the target feature or chore. When
-   operating under a Stage-prepared shipment (item 1 above ran), replace this queued-only membership with item 1's
+   on the shipment route (the Step 2 item 1 route discriminator; item 1 above ran), replace this queued-only membership with item 1's
    derived executable set: include every task in that set regardless of whether its status is `queued` or
-   `active`, and exclude any manifest task that item 1 classified as `pre_archived_skipped` or
+   `active`, in dependency order; on the shipment route this list is a membership list only (`harness-ready` is enforced per task at Step 4.1), and exclude any manifest task that item 1 classified as `pre_archived_skipped` or
    `already_done` even if it would otherwise match `queued`/`active` elsewhere. Tasks outside
    the shipment's manifest are never added by this substitution.
 3. Sort the queue by dependency order (tasks with no unfinished dependencies first).
-4. If the queue is empty after harness generation, halt and report — there is nothing to build.
+4. If the queue is empty after harness generation (legacy route) or after membership derivation (shipment route), halt and report — there is nothing to build.
 
-When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Pre-flight passed, ready queue: {count} tasks` with the count of queued items.
+When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Pre-flight passed, ready queue: {count} tasks` with the count of ready-queue tasks.
 
 ### Step 4: Execute Task Loop
 
 For each task in the ready queue:
 
 #### Step 4.1: Claim Task
+
+**P-002 per-task gate**: before claiming this task, re-read its status (if `done` or archived, report the skip with the task ID rather than claim; if no task in the batch ends up executed, treat it as an empty batch: halt and report), then run Step 2 items 2-4 for this single task (skip scaffolding only if `harness-architect` has reported Compilation PASS and Red Phase CONFIRMED for this task ID in this session; a label without that report is not sufficient: re-invoke the skill for that task ID, and if red cannot be confirmed, HALT) and verify the task carries the `harness-ready` label. Ship MUST NOT apply or edit `harness-ready` itself: the label is valid only if `harness-architect` reported Compilation PASS and Red Phase CONFIRMED for this task ID in this session; if the skill is unavailable or errors, that is a FAIL-CLOSED HALT. A task lacking the label is a FAIL-CLOSED HALT, never a silent skip and never a proceed, citing P-002's Violation Action ("Halt and suggest running the harness-architect"); for a resumed `active` task whose red phase cannot be confirmed, Ship halts, records a DEFERRED/BLOCKED note on the task and leaves the disposition to the operator. The Step 0.5 shipment claim has already set manifest tasks `active` as a backlog side effect; it is not the P-002 gate.
 
 Update task status to `active` using the backlog tool's move operation.
 
@@ -422,6 +423,8 @@ autoharness telemetry event --context-ref {context_ref} --from-json {event_paylo
   were disabled.
 
 #### Step 4.2: Delegate to Build Feature
+
+Do not begin implementation of a task for which the Step 4.1 P-002 check has not passed in this iteration.
 
 When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Invoking build-feature for {item_id}` before delegating.
 
