@@ -27,9 +27,17 @@ import (
 //
 // Per Stage deliberation D-2 (001-DL), this static needle test is
 // SUPPLEMENTAL evidence only: it proves the instruction/skill prose states the
-// required contract and no longer states the retired one. It cannot by itself
-// satisfy the close-path invariants IV-1..IV-5; those rest on behavioral
-// evidence of the cascade-close command, not on prose.
+// required contract and no longer states the retired one. It does not satisfy
+// the close-path invariants IV-1..IV-5 by itself. The only executed evidence is
+// TestCascadeCloseClassifyOnlySmoke (cascade_close_classify_only_smoke_test.go):
+// it runs the read-only --classify-only mode against a disposable fixture and
+// covers the CASCADE (exit 0) and SAFE_CLOSE (exit 3) verdicts, the pre_close
+// evidence record, and its no-clobber rule (IV-1: classify-only mode is
+// read-only and records pre-close evidence; IV-5 valid-path behavior, for
+// classify-only only). IV-2 (drift
+// rejection), IV-3 (guarded mutating path), IV-4 (fail-closed on invalid or
+// stale input) and IV-5 refusal-path zero-mutation have no executed coverage;
+// the mutating form is never invoked.
 // ---------------------------------------------------------------------------
 
 func loadInstructionSurfaces(t *testing.T) map[string]string {
@@ -445,6 +453,19 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 	t.Run("guard_disposition_gates_post_mode", func(t *testing.T) {
 		assertPresent(t, skill, "only `DISPOSITION_COMPLETE` proceeds to post-mode", "guard")
 		assertPresent(t, ship, "DISPOSITION_COMPLETE", "guard")
+	})
+
+	// autoharness shipment cascade-close rejects the equals form (exit 2); the
+	// rendered docs must keep the space-separated form.
+	t.Run("row_34_no_equals_form_message_author", func(t *testing.T) {
+		for _, name := range []string{"ship", "skill"} {
+			for _, needle := range []string{"--message=", "--author="} {
+				assertAbsent(t, files[name], needle, "34-"+name)
+			}
+			for _, needle := range []string{"--message <", "--author <"} {
+				assertPresent(t, files[name], needle, "34-"+name)
+			}
+		}
 	})
 }
 

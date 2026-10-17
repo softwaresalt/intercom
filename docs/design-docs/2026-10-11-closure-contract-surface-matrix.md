@@ -46,8 +46,8 @@ These paths keep retired tokens by design. They are excluded from the matrix, we
 | `docs/compound/workflow-issues/cross-artifact-contract-closure-requires-every-surface-2026-09-13.md` | L123 (mention: the plan adds classify-close-path). | keep (mention in passing; the learning behind U1) | U14 | none | none |
 | `docs/compound/workflow-issues/ship-step6-post-merge-branch-ordering-2026-09-19.md` | L27 (mention in the step 6 ordering list). | keep (mention in passing; step 6.0 stays first) | U14 | none | none |
 | `tests/integration/ship_feature_completion_contract_test.go` | L138 (row 4), L229 (21a), L237 (21c), L241 (22a), L268 (24a), L283 (26), L287 (27), L303 (row 30 section constant), L319 (row 31). | adopt: expand (U2), then keep the shared helpers and contract the old needles (U11) | U2 (expand) and U11 (contract) | none | itself; `TestCascadeRoutesThroughSafeClose` (replaced by TestCascadeRoutesThroughCommand in 053.011-T) (same file, L359) |
-| `tests/integration/shipment_close_path_behavior_test.go` | L12, L16, L33, L117, L212, L224, L508, L517, L532 (behavioral replica of the retired contract). | retire, after the U12 smoke test exists | U13 | none | none (compile gate in U13) |
-| `tests/integration/shipment_close_path_harness_test.go` | L24, L31, L34, L87, L88, L122, L364, L480, L485, L658 (replica classify-close-path and `computeBinding`). Not in scope-query output: L706-715 read the skill to compute a digest (no fixed value is asserted). | retire, with the behavior test | U13 | none | none (self) |
+| `tests/integration/shipment_close_path_behavior_test.go` | L12, L16, L33, L117, L212, L224, L508, L517, L532 (behavioral replica of the retired contract). | deleted under 053.013-T (file no longer present) | U13 | none | none (compile gate in U13) |
+| `tests/integration/shipment_close_path_harness_test.go` | L24, L31, L34, L87, L88, L122, L364, L480, L485, L658 (replica classify-close-path and `computeBinding`). Not in scope-query output: L706-715 read the skill to compute a digest (no fixed value is asserted). | deleted under 053.013-T (file no longer present), with the behavior test | U13 | none | none (self) |
 
 ### 1b. Plan-named surfaces outside the scope query
 
@@ -256,7 +256,7 @@ Help text checked: `autoharness --help`. Listed commands: home, version, verify-
 * `.github/**`: only `.github/policies/workflow-policies.md`, and only in the version-history rows 1.19.0 and 1.21.0 (append-only history, kept verbatim by decision D-3).
 * `docs/compound/**`: `2026-05-07-backlogit-shipment-status-constraints.md`, `2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md`, `2026-10-02-backlogit-stale-binary-on-path-breaks-index.md`, `2026-10-08-bound-cascade-close-procedure.md` (superseded note), `workflow-issues/cross-artifact-contract-closure-requires-every-surface-2026-09-13.md`, `workflow-issues/ship-step6-post-merge-branch-ordering-2026-09-19.md`. Passing mentions are permitted by the plan; only the two superseded entries are in scope for U14.
 * `tests/integration/ship_feature_completion_contract_test.go`: negative-test needles (permitted).
-* `tests/integration/shipment_close_path_behavior_test.go` and `tests/integration/shipment_close_path_harness_test.go`: replica tests for the retired contract. DEFERRED: unit 053.013-T (per-operation approval required under Principle VII; dark mode does not waive it).
+* `tests/integration/shipment_close_path_behavior_test.go` and `tests/integration/shipment_close_path_harness_test.go`: replica tests for the retired contract. DELETED under 053.013-T (both files; no longer present).
 * This matrix document: permitted.
 
 ### Underscore-form sweep (review cycle 1)
@@ -266,8 +266,8 @@ Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECON
 * `.github`: 0 hits in any file. There is no live `.github` hit to classify.
 * `scripts`, `AGENTS.md`, `README.md`: 0 hits each.
 * `tests/integration/ship_feature_completion_contract_test.go`: 9 lines (L23 comment; L314, L331, L337, L347, L352, L358, L411, L422). All are `assertAbsent` negative-test needles or a comment naming them. Permitted.
-* `tests/integration/shipment_close_path_behavior_test.go`: 3 lines (L71, L499, L502). Failure messages in a replica test of the retired contract. Test code, not an instruction; removal deferred to 053.013-T.
-* `tests/integration/shipment_close_path_harness_test.go`: 9 lines (L47, L58, L70, L71, L72, L73, L86, L487, L489). Constants and comments in a replica test of the retired contract. Test code, not an instruction; removal deferred to 053.013-T.
+* `tests/integration/shipment_close_path_behavior_test.go`: 3 lines (L71, L499, L502). Failure messages in a replica test of the retired contract. Test code, not an instruction; the file was deleted under 053.013-T.
+* `tests/integration/shipment_close_path_harness_test.go`: 9 lines (L47, L58, L70, L71, L72, L73, L86, L487, L489). Constants and comments in a replica test of the retired contract. Test code, not an instruction; the file was deleted under 053.013-T.
 
 ### Go verification
 
@@ -288,7 +288,7 @@ Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECON
 
 1. Operator decision R1-R3 (stash 0A215E0B): routing values in `.autoharness/config.yaml`; not implemented in 043-S by plan design.
 2. reload_propagation_directive (see above): operator decision on wording source.
-3. U13 deferred: delete the two replica test files only after per-operation approval (Principle VII). Until then the shipment cannot close under the a1 gate, because 053.013-T is not done.
+3. U13 done: the two replica test files were deleted under 053.013-T.
 4. Version-history collision risk: policy row 1.26.0 (043-S) may collide with an upstream 1.26.0 row on a future sync.
 5. Dangling anchors adopted from upstream (for example 'SUPERSESSION NOTE', 'D6', 'pre-mode step 7', and P-015 item 7 referring to 'precondition 1', which no longer exists in the local P-015 list). Recorded for the review gate.
 6. P-007 restore sentence in the Ship agent safe-close pointer ('restore .backlogit/queue/ + .backlogit/archive/' on HALT - cascade detected) is retained from HEAD; upstream adds a G1 approval requirement. Pre-existing; out of 043-S scope; recorded for the review gate.
@@ -312,7 +312,7 @@ Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECON
 ### Accepted residuals (not findings)
 - verify-workspace escalation_route_resolution fails (operator decision R1, stash 0A215E0B; config.yaml unchanged by plan).
 - verify-workspace reload_propagation_directive fails (operator decision: the literal phrase has no upstream source; task 053.008-T stays active until decided).
-- The two replica test files are retained with an explicit t.Skip (no deletion, Principle VII). Deletion is task 053.013-T, pending per-operation approval.
+- The two replica test files were deleted under 053.013-T (previously quarantined with an explicit t.Skip).
 - Policy version-history rows 1.19.0 and 1.21.0 keep the historical token (decision D-3).
 - Pre-existing environment failures: tools/gatecheck root tests (Windows bash wrapper); start-script timing flake (see C5E50EFD).
 
@@ -321,7 +321,7 @@ Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECON
 - DEFERRED SCOPE EXPANSION (argv and approval mirroring; catalog annotation): 6E8381D9 (medium, requires deliberation).
 - DEFERRED SCOPE EXPANSION (dark-mode P-018 and orchestrator approval wording): 8E1E2D80 (high, requires deliberation).
 - Follow-up (render and template drift, pre-existing): 8134B7B7.
-- Follow-up (replica and CI residuals tied to 053.013-T): FC6FE1D5.
+- Follow-up (replica and CI residuals formerly tied to 053.013-T, which deleted the replica files): FC6FE1D5.
 - Follow-up (environment failures): 5CC5532E.
 
 ### Verification at HEAD ee56ce0

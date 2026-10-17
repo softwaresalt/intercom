@@ -633,7 +633,7 @@ sub-procedure.** The pre-invocation revalidation below (the classifier
 re-run, the linked-deliberation re-collection, and the engine-semantics
 re-probe), the baseline-fingerprint capture, step 1's invocation, and
 steps 2–6 are performed by the mutating
-`autoharness shipment cascade-close --shipment <shipment_id> --feature <feature_id> --sha <merge_commit_sha> --message=<merge_commit_message> --author=<merge_commit_author> --json`. Pass both as argv in the equals form; values must not begin with `-` and must not contain newlines or control characters.
+`autoharness shipment cascade-close --shipment <shipment_id> --feature <feature_id> --sha <merge_commit_sha> --message <merge_commit_message> --author <merge_commit_author> --json`. Pass both as separate argv elements (space-separated form; the `=` form is rejected with exit 2, and a future autoharness install/tune re-render also restores this form); values must not begin with `-` and must not contain newlines or control characters.
 Ship runs it only after the Step 0(c) `--classify-only` run exited 0
 (`CASCADE` selected) and only with the destructive-command approval Step
 0(c) names. Before it invokes anything, the command re-checks the

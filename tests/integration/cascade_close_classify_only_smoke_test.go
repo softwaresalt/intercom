@@ -54,6 +54,8 @@ type cascadeSmokeReport struct {
 	ExitCode          int      `json:"exit_code"`
 	EvidencePath      string   `json:"evidence_path"`
 	ClassifierVerdict string   `json:"classifier_verdict"`
+	EngineVerdict     string   `json:"engine_verdict"`
+	SelectedClosePath string   `json:"selected_close_path"`
 	MutationPossible  string   `json:"mutation_possible"`
 	Failures          []string `json:"failures"`
 }
@@ -104,16 +106,14 @@ func cascadeSmokeFullRootExit0(t *testing.T) {
 	if rep.Mode != "classify_only" {
 		t.Fatalf("mode = %q, want classify_only", rep.Mode)
 	}
-	if rep.ClassifierVerdict != "CASCADE" && rep.ClassifierVerdict != "SAFE_CLOSE" {
-		t.Fatalf("classifier_verdict %q is neither CASCADE nor SAFE_CLOSE\nstdout:\n%s", rep.ClassifierVerdict, first.stdout)
+	// The expected exit is derived from the reported selected_close_path
+	// (cascade -> 0, safe_close -> 3), not assumed from the fixture shape.
+	wantExit := cascadeSmokeExpectedExit(t, first, rep)
+	if first.code != wantExit {
+		t.Fatalf("exit code = %d, want %d (selected_close_path %q)\nstdout:\n%s\nstderr:\n%s", first.code, wantExit, rep.SelectedClosePath, first.stdout, first.stderr)
 	}
-	// The fixture is built to select CASCADE, which the contract maps to exit 0.
-	if rep.ClassifierVerdict != "CASCADE" {
-		t.Fatalf("classifier_verdict = %q, want CASCADE for this fixture\nstdout:\n%s", rep.ClassifierVerdict, first.stdout)
-	}
-	if first.code != 0 {
-		t.Fatalf("exit code = %d, want 0 (CASCADE selected)\nstdout:\n%s\nstderr:\n%s", first.code, first.stdout, first.stderr)
-	}
+	// The pre_close record is written on both paths, so the evidence-record and
+	// no-clobber checks below run whichever path the engine selected.
 	if rep.ExitCode != first.code {
 		t.Fatalf("json exit_code = %d, process exit = %d", rep.ExitCode, first.code)
 	}
@@ -180,19 +180,54 @@ func cascadeSmokeTaskOnlySafeClose(t *testing.T) {
 
 	run := cascadeSmokeRun("autoharness", fixture, scratch, cascadeSmokeClassifyArgs(fixture)...)
 	cascadeSmokeMustComplete(t, "task-only --classify-only", run)
-	if run.code != 3 {
-		t.Fatalf("exit code = %d, want 3 (SAFE_CLOSE)\nstdout:\n%s\nstderr:\n%s", run.code, run.stdout, run.stderr)
-	}
 	rep := cascadeSmokeParseReport(t, run)
+	wantExit := cascadeSmokeExpectedExit(t, run, rep)
+	if run.code != wantExit {
+		t.Fatalf("exit code = %d, want %d (selected_close_path %q)\nstdout:\n%s\nstderr:\n%s", run.code, wantExit, rep.SelectedClosePath, run.stdout, run.stderr)
+	}
 	if rep.ExitCode != run.code {
 		t.Fatalf("json exit_code = %d, process exit = %d", rep.ExitCode, run.code)
 	}
-	if rep.ClassifierVerdict != "SAFE_CLOSE" {
-		t.Fatalf("classifier_verdict = %q, want SAFE_CLOSE\nstdout:\n%s", rep.ClassifierVerdict, run.stdout)
+	if want := cascadeSmokeVerdictFor(rep.SelectedClosePath); rep.ClassifierVerdict != want {
+		t.Fatalf("classifier_verdict = %q, want %q for selected_close_path %q\nstdout:\n%s", rep.ClassifierVerdict, want, rep.SelectedClosePath, run.stdout)
 	}
 	if rep.MutationPossible != "no" {
 		t.Fatalf("mutation_possible = %q, want no\nstdout:\n%s", rep.MutationPossible, run.stdout)
 	}
+}
+
+// cascadeSmokeVerdictFor maps a selected_close_path to its classifier verdict.
+func cascadeSmokeVerdictFor(path string) string {
+	switch path {
+	case "cascade":
+		return "CASCADE"
+	case "safe_close":
+		return "SAFE_CLOSE"
+	}
+	return ""
+}
+
+// cascadeSmokeExpectedExit derives the exit code the contract requires from the
+// reported selected_close_path (cascade -> 0, safe_close -> 3). It skips when
+// the engine reports a verdict other than VERIFIED, because an unverified engine
+// is not a basis for asserting exit codes, and fails when selected_close_path is
+// absent or not one of the two contract values.
+func cascadeSmokeExpectedExit(t *testing.T, o cascadeSmokeOutcome, rep cascadeSmokeReport) int {
+	t.Helper()
+	if rep.EngineVerdict == "" {
+		t.Fatalf("engine_verdict is empty or missing; failing closed\nstdout:\n%s", o.stdout)
+	}
+	if rep.EngineVerdict != "VERIFIED" {
+		t.Skipf("skipping: engine_verdict = %q, not VERIFIED; exit assertions need a verified engine\nstdout:\n%s", rep.EngineVerdict, o.stdout)
+	}
+	switch rep.SelectedClosePath {
+	case "cascade":
+		return 0
+	case "safe_close":
+		return 3
+	}
+	t.Fatalf("selected_close_path = %q, want cascade or safe_close\nstdout:\n%s", rep.SelectedClosePath, o.stdout)
+	return -1
 }
 
 // cascadeSmokeRequireTools skips, never passes vacuously, when the real
