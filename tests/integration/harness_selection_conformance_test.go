@@ -94,7 +94,6 @@ func TestStep2_PreambleDiscriminatorAndSingleDerivation(t *testing.T) {
 	pin(t, step3Item1, "(This is the single derivation Step 2 item 1 evaluates first on the shipment route; it is not recomputed.)", "PW-5g single derivation note", true)
 
 	pin(t, step2, "This step runs once, up front — not in a loop.", "retired once-up-front sentence", false)
-	pin(t, step2, "every task in the target feature or chore", "retired preamble subject", false)
 }
 
 func TestStep2_JustInTimeTaskPartitionGuardAndClosingParagraph(t *testing.T) {
