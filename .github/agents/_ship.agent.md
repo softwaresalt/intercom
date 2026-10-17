@@ -334,9 +334,9 @@ dependency graph before proceeding rather than assuming the backlog ordering is 
 
 ### Step 3: Build Ready Queue
 
-Now that all tasks are harnessed, construct the execution queue:
+Now that the batch membership is identified (Step 2 item 1), construct the execution queue:
 
-1. **Shipment-manifest executable-set derivation (when operating under a Stage-prepared shipment; C1–C6,
+1. **Shipment-manifest executable-set derivation (when on the shipment route; C1–C6,
    139-F/139.001-T)**: The shipment manifest (`custom_fields.items` recorded at Step 0.5) is the **closure
    membership record** — it is never the executable task set and is never mutated to make execution proceed. Before
    assembling the queue in item 2 below, filter the manifest to task artifacts (IDs ending `T`; the covering
@@ -355,20 +355,19 @@ Now that all tasks are harnessed, construct the execution queue:
    derivation never suppresses, replaces, softens, or pre-empts item 1a's `SHIPMENT_STATE_INCONSISTENT` halt. If the
    derived executable set is EMPTY while the manifest is non-empty, HALT and report — do NOT advance to build or PR,
    and do NOT trigger any closure path; this is an operator-disposition case only. **This derived set — not a
-   queued-status-only list — is wired into item 2's ready queue below**: it is the actual task-membership boundary
-   that Step 4 executes, so an `active` member of this derived set is never omitted from the ready queue,
+   queued-status-only list — is wired into item 2's ready queue below**: it is the task-MEMBERSHIP boundary (which tasks are candidates), not the execution boundary: the single execution gate is the per-task P-002 check at Step 4.1, so an `active` member of this derived set is never omitted from the ready queue,
    and a `pre_archived_skipped` / `already_done` member is never included in it merely because some other queued
    task elsewhere happens to share its label or status. (This is the single derivation Step 2 item 1 evaluates first on the shipment route; it is not recomputed.)
 2. List all tasks with `harness-ready` label and `queued` status for the target feature or chore. When
-   operating under a Stage-prepared shipment (item 1 above ran), replace this queued-only membership with item 1's
+   on the shipment route (the Step 2 item 1 route discriminator; item 1 above ran), replace this queued-only membership with item 1's
    derived executable set: include every task in that set regardless of whether its status is `queued` or
-   `active`, and exclude any manifest task that item 1 classified as `pre_archived_skipped` or
+   `active`, in dependency order; on the shipment route this list is a membership list only (`harness-ready` is enforced per task at Step 4.1), and exclude any manifest task that item 1 classified as `pre_archived_skipped` or
    `already_done` even if it would otherwise match `queued`/`active` elsewhere. Tasks outside
    the shipment's manifest are never added by this substitution.
 3. Sort the queue by dependency order (tasks with no unfinished dependencies first).
-4. If the queue is empty after harness generation, halt and report — there is nothing to build.
+4. If the queue is empty after harness generation (legacy route) or after membership derivation (shipment route), halt and report — there is nothing to build.
 
-When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Pre-flight passed, ready queue: {count} tasks` with the count of queued items.
+When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Pre-flight passed, ready queue: {count} tasks` with the count of ready-queue tasks.
 
 ### Step 4: Execute Task Loop
 
