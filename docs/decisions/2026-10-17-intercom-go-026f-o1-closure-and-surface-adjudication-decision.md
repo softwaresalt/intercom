@@ -4,7 +4,7 @@ date: 2026-10-17
 status: accepted
 type: deliberation-outcome
 scope: 026-F (Ship harness selection conformance repair, DB12DA37)
-operator_authority: "O-1 closed by the operator, Option B (recorded via the Orchestrator, 2026-10-17); one-task rule superseded by operator direction"
+operator_authority: "O-1 closed by the operator, Option B; one-task rule superseded; O-2 reading of P-002, reading R and the P-003 feature->task hierarchy ratified (all 2026-10-17, recorded via the Orchestrator; section 0)"
 supersedes_in_part: docs/plans/2026-09-18-intercom-go-harness-selection-conformance-plan.md (single-unit shape, plan-review attempt 1 FAIL)
 ---
 

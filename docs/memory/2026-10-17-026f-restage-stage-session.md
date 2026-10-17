@@ -15,3 +15,8 @@ status: halted
 
 ## Update
 * Rev 3 + attempt 3: FAIL (cap). Operator input needed: ratify O-2 reading / scoped skip_policy P-002 for the 026-F bootstrap, ratify reading R. Then apply the queued text fixes (plan section 'attempt 3') and harvest. 026-F stays blocked; no tasks, no shipment.
+
+## Final update (ratification-resolution)
+* Operator ratified O-2 reading, reading R and P-003 hierarchy (decision section 0). Rev 4 + four independent validators: ADVISORY, no new P0/P1; advisory fixes applied.
+* Harvested 026.001-T..026.004-T (size structured, complexity prose), 026-F queued, shipment **051-S** (queued, 5 items). 050-S (020-F) stays held: its tasks/feature are blocked and 050-S now depends on 051-S.
+* Next: Ship claims 051-S per the plan's common protocol.
