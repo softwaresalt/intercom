@@ -113,3 +113,30 @@ func TestStep2_JustInTimeTaskPartitionGuardAndClosingParagraph(t *testing.T) {
 
 	pin(t, step2, "confirm every queued task now carries", "retired vacuous confirmation", false)
 }
+
+func TestStep3Items1And2_MembershipBoundaryRouteTriggerDependencyOrder(t *testing.T) {
+	item1 := readSurface(t, shipAgent, "1. **Shipment-manifest executable-set derivation", "2. List all tasks with")
+	item2 := readSurface(t, shipAgent, "2. List all tasks with", "3. Sort the queue")
+
+	pin(t, item1, "it is the task-MEMBERSHIP boundary (which tasks are candidates), not the execution boundary: "+
+		"the single execution gate is the per-task P-002 check at Step 4.1, "+
+		"so an `active` member of this derived set is never omitted from the ready queue,", "PW-1 membership boundary", true)
+	pin(t, item1, "(when on the shipment route; C1–C6,", "PW-2 item 1 trigger", true)
+	pin(t, item2, "When on the shipment route (the Step 2 item 1 route discriminator; item 1 above ran), replace", "PW-2 item 2 trigger", true)
+	pin(t, item2, "regardless of whether its status is `queued` or `active`, "+
+		"in dependency order; on the shipment route this list is a membership list only "+
+		"(`harness-ready` is enforced per task at Step 4.1),", "PW-2 membership list insertion", true)
+
+	pin(t, item1, "it is the actual task-membership boundary that Step 4 executes", "retired execution-boundary clause", false)
+}
+
+func TestStep3PreambleEmptyQueueBroadcast(t *testing.T) {
+	preamble := readSurface(t, shipAgent, "### Step 3: Build Ready Queue", "1. **Shipment-manifest executable-set derivation")
+	item4 := readSurface(t, shipAgent, "4. If the queue is empty", "When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Pre-flight passed")
+	broadcast := readSurface(t, shipAgent, "When the `agent-intercom` capability pack is installed, broadcast `[SHIP] Pre-flight passed", "### Step 4: Execute Task Loop")
+
+	pin(t, preamble, "Now that the batch membership is identified (Step 2 item 1), construct the execution queue:", "PW-3 preamble", true)
+	pin(t, item4, "If the queue is empty after harness generation (legacy route) or after membership derivation (shipment route), "+
+		"halt and report — there is nothing to build.", "PW-3 item 4", true)
+	pin(t, broadcast, "with the count of ready-queue tasks", "PW-3 broadcast", true)
+}
