@@ -142,9 +142,8 @@ func TestStep3PreambleEmptyQueueBroadcast(t *testing.T) {
 }
 
 func TestStep41_PerTaskP002GateFailClosed(t *testing.T) {
-	const ship = ".github/agents/_ship.agent.md"
-	step41 := readSurface(t, ship, "#### Step 4.1", "#### Step 4.2")
-	step42 := readSurface(t, ship, "#### Step 4.2", "#### Step 4.3")
+	step41 := readSurface(t, shipAgent, "#### Step 4.1", "#### Step 4.1a")
+	step42 := readSurface(t, shipAgent, "#### Step 4.2", "#### Step 4.3")
 
 	gate := "**P-002 per-task gate**: before claiming this task, re-read its status " +
 		"(if `done` or archived, report the skip with the task ID rather than claim; " +
