@@ -3264,6 +3264,18 @@ func writepathHarnessFingerprint[T any](t *testing.T, value T) string {
 	return fmt.Sprintf("%x", sum)
 }
 
+// stripWritepathModeNotice removes the leading mode notice that was added after
+// the frozen stream fingerprint was taken. Only the three exact mode prefixes
+// are removed so any other output change still alters the fingerprint.
+func stripWritepathModeNotice(stdout string) string {
+	for _, mode := range []string{"self-test", "self-test-integrity", "repo"} {
+		if rest, ok := strings.CutPrefix(stdout, "::notice::write-path gate mode="+mode+"\n"); ok {
+			return rest
+		}
+	}
+	return stdout
+}
+
 func stripWritepathPassLines(stdout string, fixtureNames []string) (string, map[string]int) {
 	counts := make(map[string]int, len(fixtureNames))
 	for _, name := range fixtureNames {
@@ -3444,6 +3456,7 @@ func TestHarness_049007_GoldenIsAdditiveAndKeepsTheD1aOracleFrozen(t *testing.T)
 	streams := make(map[string]streamRow, len(golden.StreamCaptures))
 	for name, capture := range golden.StreamCaptures {
 		capture.Stdout, _ = stripWritepathPassLines(capture.Stdout, addedFixtureNames)
+		capture.Stdout = stripWritepathModeNotice(capture.Stdout)
 		streams[name] = capture
 	}
 	for _, captureName := range []string{"self_test", "self_test_integrity"} {
