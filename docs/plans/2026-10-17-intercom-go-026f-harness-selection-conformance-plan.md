@@ -1,5 +1,5 @@
 ---
-title: "Implementation plan: Ship harness selection conformance repair (026-F, DB12DA37), re-plan rev 4 (operator ratifications applied)"
+title: "Implementation plan: Ship harness selection conformance repair (026-F, DB12DA37), re-plan rev 5 (PR-review fixes)"
 date: 2026-10-17
 status: draft
 source: docs/decisions/2026-10-17-intercom-go-026f-o1-closure-and-surface-adjudication-decision.md
@@ -8,7 +8,7 @@ feature: 026-F
 tasks: [026.001-T, 026.002-T, 026.003-T, 026.004-T]
 ---
 
-# Implementation plan - 026-F re-plan (rev 4)
+# Implementation plan - 026-F re-plan (rev 5)
 
 **Operator ratifications (2026-10-17, recorded in the decision note section 0):** (1) the O-2 reading of P-002 is ratified, no `skip_policy` needed; (2) an explicitly listed `active` task is not "non-ready" (reading R); (3) P-003 "parent sub-epic" is satisfied by the feature->task hierarchy. Rev 4 resolves the attempt-3 Constitution P1 on that basis and applies the attempt-3 Scope P1 and the queued P2s; it is validated by a ratification-resolution pass on the changed text only.
 
@@ -91,13 +91,55 @@ Operator authority (2026-10-17): O-1 closed, Option B (substring/structural test
 
 Retired (ABSENT after the owning task): the skill heading `Claim the ready task set`; `When omitted, use all ready tasks under the feature.`; item 1's old trigger `(when operating under a Stage-prepared shipment; C1–C6,`; `every task in the target feature or chore`; `This step runs once, up front — not in a loop.`; `confirm every queued task now carries`; `Now that all tasks are harnessed`; `it is the actual task-membership boundary that Step 4 executes`; `When operating under a Stage-prepared shipment (item 1 above ran)`; `with the count of queued items`; (skill) `defaults to all ready tasks`; `ready work items`; `Exclude blocked, done, or otherwise non-ready work items`. **Permanent vs red-proof only:** only the four defect-bearing phrases `confirm every queued task now carries`, `This step runs once, up front — not in a loop.`, `it is the actual task-membership boundary that Step 4 executes` and `Exclude blocked, done, or otherwise non-ready work items` remain permanent `pin(..., wantPresent=false)` assertions; every other retired phrase is checked in the red run only and then dropped from the test. Needles are whole clauses by design (drift must be loud; operator Option B).
 
+## Authorized replacement pairs (the span-pair rule's table; self-checked against every mandated edit PW-1..PW-6)
+
+OLD = quoted current clause (or, for an addition, the anchor it follows); NEW = the pinned clause (whitespace-collapsed). Each pair is consumed exactly once by its owning task.
+
+| Pair | Task | File | OLD | NEW |
+|---|---|---|---|---|
+| AP-S1 | 001 | skill | `defaults to all ready tasks` | `defaults to all \`queued\` tasks` |
+| AP-S2 | 001 | skill | `a feature's or chore's ready work items` | `a feature's or chore's in-scope work items` |
+| AP-S3 | 001 | skill | `Ready tasks: {task_count}` | `Tasks in scope: {task_count}` |
+| AP-S4 | 001 | skill | `When omitted, use all ready tasks under the feature.` | PW-6 line-50 sentence |
+| AP-S5 | 001 | skill | `### Step 1: Claim the ready task set` | `### Step 1: Select the in-scope task set` |
+| AP-S6 | 001 | skill | `its ready descendants through backlog` | `its in-scope descendants (\`queued\`, plus explicitly listed \`active\`) through backlog` (removes the last `ready descendants` match; no ADDED partner is expected) |
+| AP-S7 | 001 | skill | `Exclude blocked, done, or otherwise non-ready work items.` | PW-6 item-3 sentences |
+| AP-10 | 002 | ship | `Ensure every task in the target feature or chore has a passing test harness before any implementation begins. This step runs once, up front — not in a loop.` | PW-5(a) preamble (removes `any`, `runs once`, `up front`; authorized as a whole span) |
+| AP-11 | 002 | ship | Step 2 item 1 current single sentence (`List all tasks for the target feature or chore that are in \`queued\` status.`) | PW-5(b) item 1 |
+| AP-12 | 002 | ship | `Partition the task list:` | PW-5(c) `Partition the selected batch (on the shipment route: the current task)` |
+| AP-13 | 002 | ship | `If any tasks need harnesses, invoke the **harness-architect** skill for the batch.` | same sentence + PW-5(d) addition |
+| AP-14 | 002 | ship | `confirm every queued task now carries the \`harness-ready\` label.` | PW-5(e) |
+| AP-15 | 002 | ship | closing paragraph anchor `prefer the queue operation to assemble the task set.` | anchor + PW-5(f2) sentence |
+| AP-16 | 002 | ship | `broadcast \`[SHIP] Invoking harness-architect skill\` before invoking the skill.` | PW-5(f) qualified broadcast |
+| AP-17 | 002 | ship | end of Step 3 item 1: `task elsewhere happens to share its label or status.` | anchor + PW-5(g) note |
+| AP-1 | 003 | ship | `it is the actual task-membership boundary that Step 4 executes, so an \`active\` member of this derived set is never omitted from the ready queue,` | PW-1 |
+| AP-2 | 003 | ship | item 1 trigger `(when operating under a Stage-prepared shipment; C1–C6,` | `(when on the shipment route; C1–C6,` |
+| AP-3 | 003 | ship | item 2 trigger `When operating under a Stage-prepared shipment (item 1 above ran), replace` | PW-2 trigger |
+| AP-4 | 003 | ship | anchor `regardless of whether its status is \`queued\` or \`active\`,` | anchor + PW-2 insertion |
+| AP-5 | 003 | ship | `Now that all tasks are harnessed, construct the execution queue:` | PW-3 preamble |
+| AP-6 | 003 | ship | `If the queue is empty after harness generation, halt and report — there is nothing to build.` | PW-3 item 4 |
+| AP-7 | 003 | ship | `with the count of queued items` | `with the count of ready-queue tasks` |
+| AP-8 | 004 | ship | heading anchor `#### Step 4.1: Claim Task` | heading + PW-4 gate paragraph |
+| AP-9 | 004 | ship | heading anchor `#### Step 4.2: Delegate to Build Feature` | heading + the Step 4.2 guard sentence |
+
+Self-check result (Stage, rev 5): every mandated edit PW-1..PW-6 is covered by exactly one pair (PW-1 AP-1; PW-2 AP-3/AP-4; item-1 trigger AP-2; PW-3 AP-5/6/7; PW-4 AP-8/9; PW-5 a-g AP-10..AP-17; PW-6 AP-S1..S7). The two removals that leave no PAT residue (AP-S6, AP-10) are authorized spans, so they cannot trip the rule.
+
 ## Implementation Units
 
 **Common protocol (every task).** Strictly sequential 001 -> 002 -> 003 -> 004; order resolves the bootstrap (the skill fix lands first) and avoids forward references (Step 3 and Step 4.1 cite Step 2 text that already exists). Posture TEST-FIRST, just-in-time: the harness for task N is authored only when task N starts, by `harness-architect` invoked with that task's ID passed explicitly as `tasks` BEFORE Step 4.1 (claim) and Step 4.2; Compilation PASS and Red Phase CONFIRMED per function (Red marker section) are recorded and `harness-ready` is applied by the skill; Step 4.1 does not start otherwise. The red test commit is never pushed red; the task END commit has the full `go test ./...` green. **Bootstrap for 026.001-T:** the shipment claim has already set it `active` under the unrepaired skill, whose Step 1 item 2 says an explicit `tasks` set restricts the scope and whose item 3 excludes "otherwise non-ready" work; reading R = an explicitly listed `active` task is not "non-ready" (it is ready and in progress). If the skill refuses 026.001-T, Ship halts fail-closed and reports; it never bypasses. Needles are whole clauses from PW-1..PW-6 sliced by their own step/list anchors via `readSurface`; every assertion resolves in its own subject.
 
 **Readiness-block evidence (every task).** (a) per-function red marker output then green output (exact commands); (b) the session-start commit SHA of the instruction surfaces; (c) baseline-vs-final inventory result; (d) the annotation: "DB12DA37 claim-ordering condition disclosed; per-task harness-architect gate and red-then-green evidence recorded; O-2 reading of P-002 ratified by the operator 2026-10-17 (decision section 0); no skip_policy used".
 
-**Closure ACs (every readiness block).** (i) `git diff origin/main...HEAD --name-only` is a SUBSET of {`.github/agents/_ship.agent.md`, `.github/skills/harness-architect/SKILL.md`, `tests/integration/harness_selection_conformance_test.go`} and `.github/policies/workflow-policies.md` is absent (I2); (ii) `git diff origin/main...HEAD -U0 -- .github/agents/_ship.agent.md` has hunk ranges disjoint from Step 0.5 item 4 and Step 4.3 (I1); (iii) **mechanical inventory** (a throwaway shell command, NOT a test): let `PAT` = `harness-ready|ready tasks|ready descendants|ready work items|non-ready|every task in the target|all tasks are harnessed|every queued task|queued status|queued items|task-membership|up front|before any implementation|runs once|harness generation|ready queue|Step 2|Step 3|harness_cmd|just-in-time`. Baseline = `git grep -n -E "$PAT" origin/main -- .github`; final = `git grep -n -E "$PAT" -- .github`. In both outputs strip the `origin/main:` prefix and the line numbers, keeping `file<TAB>line text`; whitespace-collapse each text. Strip with the regex `^[^:]+:[0-9]+:` (colons inside the text are preserved). Compare as MULTISETS (an added duplicate line counts). Pass rule: every ADDED line text is accepted if it is a substring of a PW-1..PW-6 clause (whitespace-collapsed) OR (for a mid-line edit) it is paired with a REMOVED line text such that `diff --word-diff` of the pair shows only words from a PW clause (added) and a Retired clause (removed); every REMOVED line text must be a substring of a Retired clause or be part of such a pair; any other difference STOPS the run (stop rule). Ship records the stripped outputs' diff and the pairing in the readiness block.
+**Closure ACs (every readiness block).**
+
+**(i) Changed-path validation (two allowlists; nothing else may change).** Classify every path from `git diff origin/main...HEAD --name-only` with these regexes; any path matching neither list STOPS the run, and `.github/policies/workflow-policies.md` must be absent (I2).
+* **Allowlist A - implementation (source edits):** `^(\.github/agents/_ship\.agent\.md|\.github/skills/harness-architect/SKILL\.md|tests/integration/harness_selection_conformance_test\.go)$`.
+* **Allowlist B - bounded backlog/evidence artifacts that the Ship/harness-architect/build-feature flow legitimately writes for 051-S** (harness-architect Step 6 persists labels and harness notes in tracked task records; build-feature stages all changes; Ship Step 4.5 writes task completion and memory checkpoints): `^\.backlogit/queue/(026-F|026\.00[1-4]-T|051-S)\.md$`; `^\.backlogit/logs/(026-F|026\.00[1-4]-T|051-S)\.jsonl$`; `^\.backlogit/(checkpoints|reconcile)/[^/]+$`; `^\.backlogit/stash\.jsonl$` (append-only follow-up captures, P-021); `^docs/memory/[^/]+\.md$` (new files only; session/task memory checkpoints and harness/red-then-green evidence notes). Archive moves are NOT part of the PR (post-merge closure only).
+* **Content constraint on B:** a diff of any `.backlogit/queue/*` record may change only status, labels (e.g. `harness-ready`), `custom_fields.harness_*`, and body comment/evidence sections; it must NOT change `id`, `parent_id`, `dependencies`, `title`, or touch any other task/feature/shipment record (in particular none of 020*, 025*, 019*, 050-S). `.backlogit/stash.jsonl` may only gain lines.
+
+**(ii)** `git diff origin/main...HEAD -U0 -- .github/agents/_ship.agent.md` has hunk ranges disjoint from Step 0.5 item 4 and Step 4.3 (I1).
+
+**(iii) Mechanical inventory: bounded span pairs BEFORE any PAT filtering** (a throwaway shell/script check, NOT a test). For each file in allowlist A that is an instruction surface (`_ship.agent.md`, `harness-architect/SKILL.md`): take baseline = `git show origin/main:<file>` and final = the working file; whitespace-collapse; split each into bounded spans (one heading, one paragraph, or one list item including its wrapped lines) and align them by order. (1) For every span whose text changed, the final span must equal the baseline span with exactly the authorized pair(s) of the **Authorized replacement pairs** table below applied (OLD occurs exactly once in the baseline span; NEW replaces it; for additions OLD is the stated anchor and NEW is anchor + addition). (2) Every pair must be consumed exactly once (an unconsumed pair is a missing mandated edit); a changed span that matches no pair STOPS the run. (3) Only then run `PAT` = `harness-ready|ready tasks|ready descendants|ready work items|non-ready|every task in the target|all tasks are harnessed|every queued task|queued status|queued items|task-membership|up front|before any implementation|runs once|harness generation|ready queue|Step 2|Step 3|harness_cmd|just-in-time` as a REPORT: `git grep -n -E "$PAT" origin/main -- .github` versus the same on the working tree, restricted to files NOT in allowlist A, must be identical (no adjacent surface changed); inside the allowlist-A files PAT residue is reported but never decisive, because a changed span is already validated as a whole (so removing the last `ready descendants` match, or `any` from `before any implementation begins`, cannot cause a false stop). Ship records the span-pair result and the PAT report in the readiness block.
 
 ### U1 - 026.001-T: harness-architect scope (Size S, complexity medium)
 
@@ -188,3 +230,13 @@ Six genuinely separate reviewer subagents were dispatched (Constitution, Correct
 The operator ratified O-2, reading R and the P-003 hierarchy reading (decision section 0), which resolves the attempt-3 Constitution P1; rev 4 applied the Scope P1 (mechanical inventory) and the queued P2s. Four independent reviewer subagents (Constitution, Scope Boundary, Correctness, Security) validated the changed text only: all ADVISORY, NO new P0/P1 (reviewer dispatch mode: single-agent read-only each, as nesting is unavailable). Advisory items applied after the pass: PW-4 no longer permits skipping scaffolding on a label alone (must be backed by a harness-architect PASS/CONFIRMED report for the task ID in this session); done/archived skip is reported and an all-skipped batch is an empty-batch halt; inventory compares mid-line edits by word-diff pairs and as multisets; the Step 2 broadcast `[SHIP] Invoking harness-architect skill` fires only when the skill is actually invoked (per task from Step 4.1 on the shipment route). Verdict: ADVISORY (PASS-with-advisory); proceed to harvest.
 
 <!-- plan-review: ratification-resolution ADVISORY, rev 4; no new P0/P1 -->
+
+## Plan Review - final (ratification-resolution, rev 5)
+
+dispatch_mode: single-agent-declared-degradation
+
+decision: ADVISORY
+
+Selected-persona coverage: every selected persona was covered by its own separate reviewer subagent in the ratification-resolution pass (Constitution, Scope Boundary, Correctness, Security), validating the changed text of rev 4; the prior attempt-3 pass covered Constitution, Correctness, Architecture, Scope Boundary, Security and Maintainability. Each reviewer ran single-agent read-only because reviewer subagents cannot nest; that is the declared degradation. No P0 or P1 remains open: the attempt-3 Constitution P1 is resolved by operator ratification, the attempt-3 Scope P1 by the mechanical inventory (re-specified in rev 5 after PR review as bounded span pairs with an authorized-pair table), and the PR-review P1s on closure AC (i) (changed-path allowlists) and on the inventory rule are resolved in this revision.
+
+Explicit authorization to harvest under ADVISORY: the operator ratified (2026-10-17, decision note section 0) the O-2 reading of P-002, reading R and the P-003 feature->task hierarchy, and directed the Stage ratification-resolution pass; harvest of 026.001-T..026.004-T and shipment 051-S proceeded on that authority.
