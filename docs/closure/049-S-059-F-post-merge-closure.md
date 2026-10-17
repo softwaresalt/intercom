@@ -1,7 +1,7 @@
 ---
 title: "049-S / 059-F post-merge operational closure"
 description: "Post-merge closure for Closure contract design-doc and test accuracy (049-S, covering feature 059-F): feature PR 147 merged, the operator-approved cascade close (postcondition pass), the archive relocation, and the completed P-020 compaction."
-status: blocked
+status: ready_with_conditions
 tags:
   - closure
   - post-merge
@@ -19,11 +19,11 @@ feature_pr: 147
 merge_commit: 009f100e93cb9b11aebdb5622cf98f2a7a961c08
 merge_commit_sha: 009f100e93cb9b11aebdb5622cf98f2a7a961c08
 feature_merge_commit_sha: 009f100e93cb9b11aebdb5622cf98f2a7a961c08
-releasability: BLOCKED
+releasability: READY
 conditions:
   - id: reconcile-pre-mode-procedural-deviation
-    description: "The pre-archive shipment-reconcile pre-mode run (skill PROCEED, orphan scan, file lock) was replaced by a direct check (all manifest items done, no live descendants of 059-F). The same deviation applies to the merged 047-S and 048-S closures. Not yet dispositioned by the operator; the cascade-close command's own pre_close classification and pair lock, and its postcondition pass, are the compensating evidence. Reconciliation of the skill's lock path (no lock scripts are installed) is a Stage matter."
-    satisfied: false
+    description: "The pre-archive shipment-reconcile pre-mode run (skill PROCEED, orphan scan, file lock) was replaced by a direct check (all manifest items done, no live descendants of 059-F). The same deviation applies to the merged 047-S and 048-S closures. Dispositioned by the operator on 2026-10-17 as ACCEPTED-WITH-CONDITIONS (recorded operator authority, dark mode AFK); the cascade-close command's own pre_close classification and pair lock, and its postcondition pass, are the compensating evidence. Reconciliation of the skill's lock path (no lock scripts are installed) is a Stage matter. Operator-disposition note (2026-10-17): accepted with conditions, also covering the identical 047-S and 048-S deviations; compensating evidence is the cascade-close pre_close classification, pair lock and postcondition pass."
+    satisfied: true
     evidence: "This document, 'Deviations and reconciliation record' item 1; docs/closure/evidence/049-S-059-F-close-evidence.json"
   - id: cascade-close-operator-approval
     description: "Explicit per-closure operator approval for the mutating autoharness shipment cascade-close run. The operator approved it for 049-S / 059-F at SHA 009f100e; Ship ran it (space-separated --message/--author form) and it exited 0."
@@ -44,7 +44,7 @@ closure_base_sha: 009f100e93cb9b11aebdb5622cf98f2a7a961c08
 closure_branch: post-merge/059-closure-contract-design-doc-and-test-accuracy
 close_path: cascade
 close_evidence: docs/closure/evidence/049-S-059-F-close-evidence.json
-closure_status: BLOCKED
+closure_status: READY_WITH_CONDITIONS
 compaction_status: done
 ---
 
@@ -75,7 +75,7 @@ Feature PR 147 merged at `009f100` with a merge commit. The mutating cascade clo
 
 ## Deviations and reconciliation record
 
-1. The post-merge `pre` reconciliation was a direct check (all manifest items done, no live descendants of 059-F), not the skill's lock-taking run; single-agent workflow.
+1. The post-merge `pre` reconciliation was a direct check (all manifest items done, no live descendants of 059-F), not the skill's lock-taking run; single-agent workflow. Operator disposition 2026-10-17: ACCEPTED-WITH-CONDITIONS, also covering the identical 047-S and 048-S closure deviations (those documents are not rewritten).
 2. The closure branch was recreated from updated main after PR 148 merged, carrying the uncommitted 059-F archive move and evidence file across; no conflicts.
 
 ## Risky action record
@@ -107,7 +107,7 @@ Created before merge (P-021 C2 deferred-scope entries): 6C749AF4 (per-fixture ex
 * **Rollback procedure:** `git revert -m 1 009f100` on a new branch through a reviewed PR; never push directly to main.
 * **Validation window:** until the first green CI run on `main` after the closure merges.
 * **Owner:** the operator. Ship reports and does not own the window.
-* **Releasability evidence:** `BLOCKED` pending operator disposition. Operator approval, archive relocation and P-020 compaction are satisfied; the reconcile pre-mode procedural deviation (condition `reconcile-pre-mode-procedural-deviation`) awaits operator disposition (raised by Copilot review on PR 149).
+* **Releasability evidence:** `READY` with conditions, all satisfied. Operator approval, archive relocation and P-020 compaction are satisfied; the reconcile pre-mode procedural deviation (condition `reconcile-pre-mode-procedural-deviation`) was dispositioned ACCEPTED-WITH-CONDITIONS by the operator on 2026-10-17 (raised by Copilot review on PR 149); it also covers the identical 047-S and 048-S deviations.
 
 ## Compaction (P-020)
 
