@@ -125,8 +125,10 @@ set -euo pipefail
 # --self-test-integrity) and rejects anything else. The wrapper has no usage
 # branch of its own; its only argument check is the --root injection guard
 # below. Exit codes and ordered
-# stdout/stderr bytes are preserved (ED-3/ED-5 are the only permitted
-# deltas; see m1.md for the parent-vs-head parity evidence).
+# stdout/stderr bytes are preserved apart from ED-3/ED-5 (see m1.md for the
+# parent-vs-head parity evidence) and one later delta: the Go engine now emits
+# a leading `::notice::write-path gate mode=X` stdout line in repo,
+# --self-test and --self-test-integrity modes (058.005-T).
 #
 # ROOT anchoring (D-WB2-4, 055.002-T): ROOT is the top level of the repository
 # that contains this script, resolved by gatecheck_repo_root

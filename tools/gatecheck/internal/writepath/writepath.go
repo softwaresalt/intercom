@@ -1181,7 +1181,8 @@ func runFixtureSelfTest(root string) Result {
 //	anything else                   -> usage to stderr, exit 2, NO notice
 //
 // The `::notice::write-path gate mode=X` line goes to stdout first, mirroring
-// retiredarch.Run (058.005-T).//
+// retiredarch.Run (058.005-T).
+//
 // It writes ordered stdout/stderr bytes to the given writers and returns
 // the process-style exit code (M1-T8; M1-T10 wires this into
 // `gatecheck write-path`).
