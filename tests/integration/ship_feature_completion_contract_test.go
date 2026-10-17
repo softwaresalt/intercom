@@ -446,6 +446,16 @@ func TestShipFeatureCompletionContract33Rows(t *testing.T) {
 		assertPresent(t, skill, "only `DISPOSITION_COMPLETE` proceeds to post-mode", "guard")
 		assertPresent(t, ship, "DISPOSITION_COMPLETE", "guard")
 	})
+
+	// autoharness shipment cascade-close rejects the equals form (exit 2); the
+	// rendered docs must keep the space-separated form.
+	t.Run("row_34_no_equals_form_message_author", func(t *testing.T) {
+		for _, name := range []string{"ship", "skill"} {
+			for _, needle := range []string{"--message=", "--author="} {
+				assertAbsent(t, files[name], needle, "34-"+name)
+			}
+		}
+	})
 }
 
 // TestCascadeRoutesThroughCommand pins the post-migration close-path routing
