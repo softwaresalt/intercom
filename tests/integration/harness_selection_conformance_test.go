@@ -74,3 +74,43 @@ func TestHarnessArchitect_ExplicitActiveTaskInScope(t *testing.T) {
 
 	pin(t, whole, "Exclude blocked, done, or otherwise non-ready work items", "retired non-ready exclusion", false)
 }
+
+const shipAgent = ".github/agents/_ship.agent.md"
+
+func TestStep2_PreambleDiscriminatorAndSingleDerivation(t *testing.T) {
+	step2 := readSurface(t, shipAgent, "### Step 2: Harness Generation", "### Step 3: Build Ready Queue")
+	step3Item1 := readSurface(t, shipAgent, "1. **Shipment-manifest executable-set derivation", "2. List all tasks with")
+
+	pin(t, step2, "Ensure every task in the selected batch (item 1) has a passing test harness before that task's implementation begins. "+
+		"On the shipment route this step runs just-in-time per task, invoked from Step 4.1 (item 3): "+
+		"at this position execute item 1 only (halt if the batch is empty) and items 2-4 are executed per task from Step 4.1; "+
+		"on any other route it runs once, up front, not in a loop.", "PW-5a preamble", true)
+	pin(t, step2, "Select the batch. **Route discriminator**: the *shipment route* is any run in which a `shipment_id` is recorded "+
+		"as the session scope (Step 0.5 primary item 5 or fallback item 4) or in which a task reaches Step 4.1 already `active`, "+
+		"and any ambiguity is treated as the shipment route; on that route the Step 0.5 claim has already activated manifest tasks. "+
+		"On the shipment route the batch is the Step 3 item 1 derived executable set, admitting both `queued` and `active` members; "+
+		"Ship evaluates that single read-only derivation FIRST, once, and Step 3 reuses it.", "PW-5b route discriminator", true)
+	pin(t, step2, "On any other route, list all tasks for the target feature or chore that are in `queued` status.", "PW-5b legacy sentence", true)
+	pin(t, step3Item1, "(This is the single derivation Step 2 item 1 evaluates first on the shipment route; it is not recomputed.)", "PW-5g single derivation note", true)
+
+	pin(t, step2, "This step runs once, up front — not in a loop.", "retired once-up-front sentence", false)
+	pin(t, step2, "every task in the target feature or chore", "retired preamble subject", false)
+}
+
+func TestStep2_JustInTimeTaskPartitionGuardAndClosingParagraph(t *testing.T) {
+	step2 := readSurface(t, shipAgent, "### Step 2: Harness Generation", "### Step 3: Build Ready Queue")
+
+	pin(t, step2, "Partition the selected batch (on the shipment route: the current task):", "PW-5c partition", true)
+	pin(t, step2, "On the shipment route, this item is invoked from Step 4.1: scaffold ONE task at a time in dependency order, "+
+		"immediately before that task's Step 4.1, passing that task's ID explicitly as `tasks` "+
+		"(a whole-batch up-front scaffold would leave several red harnesses at once and break the Step 4.3 full-suite gate after the first task); "+
+		"do not proceed until Compilation PASS, Red Phase CONFIRMED and the `harness-ready` label are recorded. "+
+		"On any other route, invoke the skill for the batch as before.", "PW-5d per-task invocation", true)
+	pin(t, step2, "On the shipment route confirm the current task now carries the `harness-ready` label; "+
+		"on any other route confirm every task in the batch does.", "PW-5e confirmation", true)
+	pin(t, step2, "An empty selected batch on the shipment route is a halt, never a vacuous pass.", "PW-5e empty batch halt", true)
+	pin(t, step2, "broadcast `[SHIP] Invoking harness-architect skill` when invoking the skill (per task from Step 4.1 on the shipment route).", "PW-5f broadcast", true)
+	pin(t, step2, "On the shipment route the batch comes from the Step 3 item 1 derivation, never from a queued-only queue operation.", "PW-5f2 closing paragraph", true)
+
+	pin(t, step2, "confirm every queued task now carries", "retired vacuous confirmation", false)
+}
