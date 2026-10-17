@@ -15,3 +15,7 @@ status: halted
 * **Resolved escalation route:** `gpt-5.6-sol` / `openai` / `high` per the Stage template, resolved against the config; this run did not re-read `.autoharness/config.yaml` to prove it is not degraded, and the Stage agent runs at the same tier, so treat as `ESCALATION_DEGRADED` (same-route no-op) and fall back to the operator-halt path.
 * **Resumption checkpoint:** `docs/memory/2026-10-17-026f-restage-stage-session.md`.
 * **Action:** Stage halted; it did NOT re-run plan-review. A fresh Stage session (or the operator) applies the plan's remediation queue and runs plan-review once with independent dispatch if available. No harvest, no unblock, no shipment was created.
+
+## Update: attempt 3 (cap reached)
+
+Rev 3 applied the full remediation queue; attempt 3 with six separate reviewer subagents returned FAIL (Constitution, Scope Boundary) / ADVISORY (Correctness, Architecture, Security, Maintainability). The constitution P1 requires OPERATOR input (ratify the O-2 reading, covering the moved Enforcement point and the pre-harness shipment claim, or a scoped skip_policy P-002 for the 026-F bootstrap; ratify reading R; acknowledge P-003 sub-epic precedent). The scope P1 (closure inventory) is plan-text and queued. Details: plan section 'Plan Review - attempt 3'. No harvest, no unblock, no shipment.
