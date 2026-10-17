@@ -76,6 +76,13 @@ Fix: build a supplementary derived-property table (`case_table.go`,
 are equivalent — check whether CPython additionally consults a *derived* property, and add a golden
 covering at least one derived-property-only code point.
 
+> **Update (2026-10-16, 048-S / 058-F, PR #145):** the local WSL-bash workaround in section 2 is now
+> partly automated. `tools/gatecheck/runner_test.go` has `requireWindowsCompatibleBash`, called from the
+> shared bash lookup. On Windows it runs `uname -o` and skips with an explicit reason unless bash reports
+> `Msys` or `Cygwin`, so the WSL launcher skips the tests instead of failing with exit 127. Putting
+> Git-for-Windows bash first on `PATH` is still needed to actually run them. `toBashPath` now lowercases
+> the drive letter and returns `/c/...`, matching the "right" form in section 1.
+
 ## Prevention checklist
 
 * When bridging Go tests to a bash script, assert on a shim/mock-specific side effect, not merely a
