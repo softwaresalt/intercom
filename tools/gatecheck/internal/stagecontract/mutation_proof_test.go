@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -171,8 +172,53 @@ func gitStatusSnapshot(root string, contractFiles []string) ([]byte, string) {
 // contract files into dst, preserving relative depth.
 func copyProofTree(t *testing.T, root, dst string) {
 	t.Helper()
-	_, _ = root, dst
-	panic("not implemented: copyProofTree minimal-copy helper (020.005-T)")
+	copyOne := func(src string) {
+		rel, err := filepath.Rel(root, src)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			t.Fatalf("source %s escapes the repository root", src)
+		}
+		target := filepath.Join(dst, rel)
+		if r, err := filepath.Rel(dst, target); err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+			t.Fatalf("destination %s escapes the temp root", target)
+		}
+		info, err := os.Lstat(src)
+		if err != nil {
+			t.Fatalf("lstat %s: %v", src, err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			t.Fatalf("%s is not a regular file (symlinks and special files are refused)", src)
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatalf("read %s: %v", src, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			t.Fatalf("mkdir for %s: %v", target, err)
+		}
+		if err := os.WriteFile(target, data, 0o600); err != nil {
+			t.Fatalf("write %s: %v", target, err)
+		}
+	}
+	for _, rel := range []string{"go.mod", "go.sum", policiesRel, stageAgentRel} {
+		copyOne(filepath.Join(root, filepath.FromSlash(rel)))
+	}
+	gatecheck := filepath.Join(root, "tools", "gatecheck")
+	err := filepath.WalkDir(gatecheck, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		copyOne(path)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("copy tools/gatecheck: %v", err)
+	}
 }
 
 // mutateP3Grant removes the chore/stage-{scope-slug} token from the Stage
