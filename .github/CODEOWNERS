@@ -31,9 +31,12 @@
 # silently disables the rule it's attached to, producing the appearance of
 # a control with none of the effect.
 #
-# Covers ALL CI-critical scripts and workflow surfaces, or none (partial
+# Covers ALL CI-critical scripts and workflow surfaces, the generated stage
+# contract files and the stage-contract detector package, or none (partial
 # ownership coverage here would be a misleading control). "CI-critical"
-# here means executable gate/workflow logic and the ownership file itself.
+# here means executable gate/workflow logic, the ownership file itself, and
+# the stage contract (the two generated contract files plus the detector,
+# fixtures and tests under tools/gatecheck/internal/stagecontract/, 020.004-T).
 # /.github/constraints/ is included: it is the hash-pin trust boundary this
 # shipment builds (007.001-T) and is exactly as CI-critical as the
 # workflows that consume it. scripts/testdata/gitignore/** (fixture DATA,
@@ -46,3 +49,6 @@
 /scripts/ci-topology-check.sh                @softwaresalt
 /scripts/check-retired-architecture.sh       @softwaresalt
 /scripts/check-gitignore-append-only.sh      @softwaresalt
+/.github/policies/workflow-policies.md       @softwaresalt
+/.github/agents/_stage.agent.md              @softwaresalt
+/tools/gatecheck/internal/stagecontract/     @softwaresalt

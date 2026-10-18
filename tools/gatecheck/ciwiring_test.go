@@ -827,8 +827,8 @@ func TestCIWiring_EquivalentCOEFormsAreGreen(t *testing.T) {
 			"      - name: Run retired-architecture gate\n",
 			"      - continue-on-error: ${{ vars.RETIRED_ARCH_GATE_ADVISORY == 'true' }}\n        name: Run retired-architecture gate\n"),
 		"step-level continue-on-error on lint Checkout": mustMutate(t, live,
-			"      - name: Checkout\n        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3\n        with:\n          persist-credentials: false\n      - name: Set up Go\n        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0\n        with:\n          go-version: '1.26.x'\n          cache: true\n      - name: Run retired-architecture gate\n",
-			"      - continue-on-error: false\n        name: Checkout\n        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3\n        with:\n          persist-credentials: false\n      - name: Set up Go\n        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0\n        with:\n          go-version: '1.26.x'\n          cache: true\n      - name: Run retired-architecture gate\n"),
+			"      - name: Checkout\n        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3\n        with:\n          persist-credentials: false\n      - name: Set up Go\n        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0\n        with:\n          go-version: '1.26.x'\n          cache: true\n      - name: Run stage contract live gate\n",
+			"      - continue-on-error: false\n        name: Checkout\n        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3\n        with:\n          persist-credentials: false\n      - name: Set up Go\n        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0\n        with:\n          go-version: '1.26.x'\n          cache: true\n      - name: Run stage contract live gate\n"),
 	}
 	for name, mutated := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -861,7 +861,21 @@ type stageWiring struct {
 // wiringConfig loads the live stageWiring inputs.
 func wiringConfig(t *testing.T) stageWiring {
 	t.Helper()
-	panic("not implemented: wiringConfig must load ci.yml and the stagecontract test sources")
+	dir := filepath.Join(gatecheckRepoRoot(t), filepath.FromSlash(ciStageContractPkg))
+	files, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no test sources under %s (err=%v)", ciStageContractPkg, err)
+	}
+	var src strings.Builder
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		src.Write(b)
+		src.WriteByte('\n')
+	}
+	return stageWiring{text: readCIWorkflow(t), testSrc: src.String()}
 }
 
 var (
