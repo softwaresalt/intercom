@@ -1,10 +1,11 @@
 ---
 title: "Implementation plan: mechanical enforcement of the Stage default-branch contract (020-F, re-stage)"
 date: 2026-10-17
-status: draft
+status: accepted (post-026-F re-validation; hold lifted)
 source: docs/decisions/2026-10-17-intercom-go-020f-restage-and-one-task-rule-supersession-decision.md
 supersedes: docs/plans/2026-09-12-intercom-go-stage-contract-enforcement-platform-plan.md (governing shape only; its scope discipline and provenance remain valid)
 feature: 020-F
+revised: "2026-10-17 (post-026-F: DB12DA37 hold lifted)"
 tasks: [020.001-T, 020.002-T, 020.003-T, 020.006-T, 020.004-T, 020.005-T]
 ---
 
@@ -29,7 +30,7 @@ Code home: `tools/gatecheck/internal/stagecontract/` (the existing gate-engine l
 | R3 structure-aware closed-set detector | 020.003-T (parser), 020.006-T (rules + live-contract test) | U3, U3b |
 | R4 blocking CI step, divergence ledger, CODEOWNERS | 020.004-T | U4 |
 | R5 executed mutation proof over a workspace copy | 020.005-T | U5 |
-| R6 per-task red-first harness with observed red-then-green evidence, disclosed (not authorized) DB12DA37 condition, no policy amendment | decision section 5 | U1-U5 |
+| R6 per-task red-first harness with observed red-then-green evidence under the installed Ship contract (026-F), no policy amendment | section "Harness and gate (installed Ship contract)" | U1-U5 |
 
 ## Named corrected-contract properties (the closed set, P1-P6)
 
@@ -44,9 +45,12 @@ Verdicts: `violating` / `conforming`, with a reason string naming the property.
 
 ## Implementation Units
 
-Common to every unit (R6, execution posture TEST-FIRST, just-in-time): the task's first commit is its own red harness (compilable, failing, expected failure marker recorded, `go vet ./...` clean). Harness for task N is written only when task N starts. The task END commit has full `go test ./...` green; the red first commit is mid-task by design and is NEVER pushed before the task is green (no branch CI run on a red commit).
-
-**Honest characterization of the P-002/P-004 position (plan-review attempt 2, constitution P1-1/P1-2).** A shipment claim auto-activates the shipment's tasks before any harness exists (DB12DA37). That claim-ordering condition is the pre-existing, systemic, disclosed defect that affects every shipment in this workspace; this plan does NOT cure it, does NOT claim P-002 literal compliance on the claim route, and does NOT assert any operator `skip_policy` waiver. What this plan adds is a per-task sequencing so that the property P-004 protects (every generated test red before the implementation it covers, with the red observed) holds on the artifacts: Ship Step 2's "harness once, up front" is vacuous on this route and an up-front batch of red harnesses would break Step 4.3 after task 1, so harness authoring is per task. Proceeding is BLOCKED pending an operator-recorded scoped P-002/P-004 `skip_policy` waiver for 020-F (or 026-F shipping): plan-review attempt 2 returned FAIL on this point (unresolved constitution P1) and the plan cannot resolve it. Stage does not assert authority to waive. Every task therefore carries two additional ACs: (a) a P-005 compliance annotation in the task comment and the PR readiness block stating "DB12DA37 claim-ordering condition disclosed; waiver reference: <operator-recorded waiver>; per-task red-then-green evidence below", and (b) the red-then-green evidence (command + failure marker, command + result). If either is absent the PR readiness block is incomplete and merge approval must not be treated as satisfied.
+**Harness and gate (installed Ship contract) - the ONE normative statement of this topic in this plan; tasks and other sections refer here by pointer.** Since 026-F shipped (shipment 051-S merged 2026-10-17), the installed Ship (`_ship.agent.md` Step 2 items 1-4, Step 3, Step 4.1 per-task P-002 gate, Step 4.2 guard) and `harness-architect/SKILL.md` already enforce just-in-time per-task harnessing on the shipment route: the batch is the manifest-derived set, `harness-architect` is invoked for ONE task at a time (task ID explicit) before that task's Step 4.1, confirms Compilation PASS and Red Phase CONFIRMED and applies `harness-ready`, and Ship halts fail-closed otherwise. This plan therefore does NOT restate that mechanism, does not carry a DB12DA37 disclosure or waiver reference (the defect is fixed; the earlier hold and the operator-waiver requirement are obsolete; see the supersession record in `docs/decisions/2026-10-17-intercom-go-020f-plan-review.md`), and adds only plan-specific parameters:
+* **Execution posture:** TEST-FIRST per task; the red test commit is never pushed while red; the task END commit has the full `go test ./...` green (Step 4.3); evidence (per-function red command + failure marker, green command + result) goes in the task comment and PR readiness block.
+* **Red marker (harness-architect Step 5.2 requires `panic("not implemented: <reason>")` for every test in the red set):** red state is produced by a panicking STUB, never by a bare file error. For 001 (manifest), 004 (CI wiring assertion) and 005 (mutation proof) the stub is a helper in the `_test.go` file (e.g. `loadManifest`, `wiringConfig`, the mutation helper) that panics with `not implemented: <reason>` until implemented; real-file absence uses `t.Fatalf` only after the helper exists. For 002 the driver symbols (`RunSuite`) are panicking stubs; the `ErrNotImplemented` stub DETECTOR is a 002 deliverable (not a red stub) that the corpus test's skip keys off. For 003 the parser stubs panic. For 006 harness-architect adds a panicking `detector.go` stub, `TestFixtureCorpus` is rewired to it with the skip removed, and `TestLiveContract` is added failing, so red shows the panic marker. Skipped tests (`TestFixtureCorpus` while 002/003 are in flight) are excluded from the red set and judged only at green. Only NEW assertions are red targets (edits to existing ciwiring tests in 004 carry no marker). Per-function red runs (`go test <pkg> -run '^TestName$'`) are required because a panic aborts the test binary.
+* **Readiness evidence (the one rule for task ACs):** each task's PR readiness block records, for its task ID, the Ship per-task gate evidence (harness-architect Compilation PASS and Red Phase CONFIRMED in this session) plus the red-then-green evidence; no DB12DA37 annotation or waiver reference is required.
+* **Status flip:** harvest/unblock sets feature 020-F and the six tasks `queued` BEFORE the shipment claim, because Ship halts fail-closed on any other status.
+* **Sequence:** strictly sequential along the chain in the Dependency Graph.
 
 ### U1 - 020.001-T: fixture corpus and manifest (test data; Size S, complexity low)
 
@@ -105,7 +109,7 @@ Common to every unit (R6, execution posture TEST-FIRST, just-in-time): the task'
 
 ## Decisions and Rationale
 
-* One shipment, six sequential tasks: reasonable size (about 4 S + 2 M), single PR, same domain.
+* One shipment, six sequential tasks: reasonable size (five S + one M: 020.006-T), single PR, same domain.
 * Skip-until-U3b (020.006-T) design for the corpus test: keeps Step 4.3 green after U2 and U3 without a deliberately red committed test.
 * Same `go test -json` stream for CI and for the mutation proof, so U5 proves the actual gate.
 * Closed construct set and in-package block parser: avoids a platform and a new dependency.
@@ -113,7 +117,7 @@ Common to every unit (R6, execution posture TEST-FIRST, just-in-time): the task'
 
 ## Risks and Caveats
 
-* **DB12DA37**: shipment claim auto-activates all five tasks, so Ship Step 2 is vacuous. Mitigation: per-task first-commit red harness plus observed red-then-green evidence as acceptance criteria (R6); reviewers of the PR check the evidence. Not fixed here (026-F). Residual: if Ship ignores the ACs the bypass is possible; the PR readiness block must make the omission visible.
+* **DB12DA37**: FIXED by 026-F (051-S merged); the installed Ship per-task gate is normative (see "Harness and gate"). No residual specific to this feature.
 * Detector false verdicts on the real files if the generated files are legitimately restructured; mitigated by structure-aware walk and the ledger.
 * U3 sizing: M with a block parser; if it exceeds the 2-hour rule Ship must stop and report rather than widen scope.
 * Windows path/CRLF: fixtures and manifest read with newline normalization; tests run on the Windows advisory job.
@@ -135,7 +139,7 @@ Requires plan hardening: yes
 
 ## Plan Hardening
 
-**Hardening required:** yes (contract gate, CI blocking step, CODEOWNERS, DB12DA37 residual).
+**Hardening required:** yes (contract gate, CI blocking step, CODEOWNERS).
 
 **Consulted:** `docs/compound/2026-09-06-ci-self-matching-grep-and-actionlint-verification-gap.md` (a CI gate whose pattern matches its own text becomes self-defeating - applied to the detector: the live contract files and the detector's own fixtures must not be matched by a prose sweep; U3 AC-4 and the structure-aware walk), `docs/compound/2026-09-30-shipment-reconcile-skill-bypass-manual-substitution-risk.md` (do not substitute manual steps for a skill; Ship uses harness-architect and shipment-reconcile as written), `.github/CODEOWNERS` header (advisory-only disclaimer, risk R1), `.github/workflows/ci.yml` (`changes` job is a DENYLIST: only `docs/**`, `.backlogit/**`, `.backlog/**`, `.autoharness/**` are excluded, so edits to `.github/policies/**` and `.github/agents/**` DO trigger `lint`; verified by reading the filter).
 
@@ -174,15 +178,25 @@ Requires plan hardening: yes
 ### Human checkpoints and out-of-scope
 
 * Enabling required code-owner review in branch protection is an explicit OPERATOR action and is out of scope (deadlock risk for unattended PRs).
-* DB12DA37 is not fixed here (026-F, blocked on operator-only O-1). Residual: Ship Step 2 vacuity. Mitigated only by per-task acceptance criteria and PR-readiness evidence.
+* DB12DA37 was fixed by 026-F (shipped); the hold on 020-F is lifted (supersession record in the plan-review record). Branch-protection enablement remains operator-only.
 
 ### Review-gate capability risk
 
-Plan review must emit literal `dispatch_mode:` and `decision:` markers. If a persona cannot be dispatched as an independent subagent, the fallback must be declared and the review treated as degraded; a degraded review cannot return PASS for a plan carrying the DB12DA37 mitigation.
+Plan review must emit literal `dispatch_mode:` and `decision:` markers. If a persona cannot be dispatched as an independent subagent, the fallback must be declared and the review treated as degraded; a degraded review cannot return PASS.
 
 ### Unresolved operator decisions that block safe execution
 
-None that block staging. Branch-protection enablement and 026-F/O-1 remain operator-only and non-blocking for this feature.
+None. 026-F/O-1 and the P-002 reading are closed (ratified and shipped); branch-protection enablement remains operator-only and non-blocking for this feature.
 
 <!-- plan-review-attempt: 1 --> FAIL (3 P1, 5 P2), remediated.
-<!-- plan-review-attempt: 2 --> FAIL (constitution P1 unresolved: operator-recorded P-002/P-004 waiver required); 020-F held `blocked`; see review record.
+<!-- plan-review-attempt: 2 --> FAIL (constitution P1 unresolved: operator-recorded P-002/P-004 waiver required); 020-F held `blocked`; see review record. (SUPERSEDED by the final Plan Review section below.)
+
+<!-- plan-review-attempt: 3 --> post-026-F re-validation pass (see the final Plan Review section below)
+
+## Plan Review - final (post-026-F re-validation, 2026-10-17)
+
+dispatch_mode: single-agent-declared-degradation
+
+decision: ADVISORY
+
+Selected-persona coverage: every selected persona was covered by its own separate reviewer subagent, each validating the CHANGED text only against the merged Ship Step 2/3/4.1 and harness-architect text (reviewer subagents cannot nest, hence the declared single-agent degradation per reviewer). This is a changed-circumstance re-validation (026-F shipped, P-002 reading ratified), not a further review-fix cycle of the old attempt counter. Advisories carried: red-marker mechanics (clarified in `Harness and gate`), and the status flip of 020-F and the six tasks from `blocked` to `queued` (performed by Stage after this record). This record SUPERSEDES the earlier FAIL verdicts (attempt 2, 2026-10-17, constitution P1 on DB12DA37 claim ordering): that P1 is obsolete because 026-F shipped (shipment 051-S, PRs 153/154/155) and the installed Ship now enforces the per-task P-002 gate. No P0 or P1 is open. Explicit authorization to harvest/unblock under ADVISORY: the operator's recorded scope instruction (conveyed by the Orchestrator, 2026-10-17) to lift the hold on 020-F once 026-F shipped; any later harvest invocation must cite this authorization again.
