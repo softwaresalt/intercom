@@ -1,0 +1,9 @@
+# Ship halt checkpoint: 051-S awaiting per-closure cascade-close approval (2026-10-17)
+
+* PR #153 merged (merge commit 50d5cfa8aebd6d982f7c23711cc50c34c9eeb00b; verified ancestor of origin/main). Copilot review: COMMENTED with zero threads; `autoharness gate copilot-review 153` SATISFIED; all CI green.
+* Post-merge branch: `post-merge/026-ship-harness-selection-conformance` (from main at 50d5cfa), uncommitted working tree.
+* Closure so far: queue/archive duplicates for 026.002..004-T removed (archive copies are the truth); a1 covering-feature completion gate S4 done (026-F active -> done; descendants exactly the 4 manifest tasks, all done); pipeline-topology lifecycle gate OK (`BRANCH_POST_MERGE_CLOSURE_ELIGIBLE`); `cascade-close --classify-only` recorded `docs/closure/evidence/051-S-026-F-close-evidence.json`: classifier CASCADE, engine VERIFIED, selected_close_path `cascade`, exit 0.
+* HALT: the mutating `autoharness shipment cascade-close` is destructive and needs explicit per-closure operator approval (Constitution Principle VII; not waivable by dark mode). Not run.
+* Command to run once approved (argv, space-separated; default timeout 1800 suffices: N=6, B=515):
+  `autoharness shipment cascade-close --shipment 051-S --feature 026-F --sha 50d5cfa8aebd6d982f7c23711cc50c34c9eeb00b --message "Merge pull request #153 from softwaresalt/chore/ship-harness-selection-conformance-repair" --author "Derek Williams <42183845+softwaresalt@users.noreply.github.com>" --json`
+* Remaining after approval: Linked-Deliberation Disposition (INV-12), archive integrity check, shipment-reconcile post, commit backlog state, operational-closure artifact `docs/closure/051-S-026-F-post-merge-closure.md` + `autoharness gate closure-evidence`, source stash/deliberation cleanup, compact-context (P-020), closure PR with Copilot loop and merge, index resync, return to main.
