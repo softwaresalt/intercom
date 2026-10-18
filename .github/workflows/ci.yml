@@ -71,6 +71,18 @@
 # regeneration must re-apply these two steps as well, not only the six
 # above.
 #
+# LOCAL DIVERGENCE (020.004-T, shipment 050-S): job `lint` also carries the
+# blocking "Run stage contract live gate" step (after `Set up Go`), which runs
+# `TestLiveContract` over the generated .github/policies/workflow-policies.md
+# and .github/agents/_stage.agent.md and fails on a vacuous run (no JSON pass
+# event). A future `autoharness install`/`tune` regeneration must re-apply
+# this step, or retire it together with its ciwiring assertions per
+# docs/design-docs/stage-contract-divergence-ledger.md. This gate is
+# TAMPER-EVIDENT, NOT TAMPER-PROOF: a `pull_request` workflow runs from the PR
+# head, so a PR can alter the contract, detector and workflow together; it
+# catches accidental regeneration reverts only. If `lint` is skipped by the
+# `changes` job (docs/backlog-only PRs) the gate is skipped too.
+#
 # Regular PR/push CI was Linux-only (ubuntu-latest) prior to 010-S; an
 # advisory `windows-latest` job (`windows`, see the LOCAL DIVERGENCE note
 # above) now also runs on every push/PR with a code change, gated
@@ -304,6 +316,17 @@ jobs:
         with:
           go-version: '1.26.x'
           cache: true
+      - name: Run stage contract live gate
+        # 020.004-T: blocking, hermetic (no network, no installs, no new
+        # actions). A vacuous run (zero tests, skip) emits no pass event and
+        # fails the jq assertion; jq is preinstalled on ubuntu-latest.
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          out="$(mktemp)"
+          go test -json -count=1 -mod=readonly -run '^TestLiveContract$' ./tools/gatecheck/internal/stagecontract/ | tee "$out"
+          command -v jq >/dev/null || { echo "::error::jq is required"; exit 1; }
+          jq -e -s 'any(.[]; .Action=="pass" and .Test=="TestLiveContract")' "$out" >/dev/null
       - name: Run retired-architecture gate
         # Verdict step. The bounded advisory window opened by 015.001-T
         # (RETIRED_ARCH_GATE_REQUIRED, continue-on-error when NOT 'true')

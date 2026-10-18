@@ -1,0 +1,17 @@
+{
+  "fixtures": [
+    {"id": "p1-conforming", "file": "p1-conforming.md", "property": "P1", "verdict": "conforming", "reason": "P1: Stage commit grant is limited to the dedicated Stage artifact branch and states never on the default branch"},
+    {"id": "p1-violating", "file": "p1-violating.md", "property": "P1", "verdict": "violating", "reason": "P1: Stage commit grant targets the default branch instead of the dedicated Stage artifact branch"},
+    {"id": "p2-conforming", "file": "p2-conforming.md", "property": "P2", "verdict": "conforming", "reason": "P2: Stage MUST NOT list keeps the commit or push directly to main bullet"},
+    {"id": "p2-violating", "file": "p2-violating.md", "property": "P2", "verdict": "violating", "reason": "P2: Stage MUST NOT list lacks the commit or push directly to main bullet"},
+    {"id": "p3-conforming", "file": "p3-conforming.md", "property": "P3", "verdict": "conforming", "reason": "P3: chore/stage-{scope-slug} create and checkout grant is present"},
+    {"id": "p3-violating", "file": "p3-violating.md", "property": "P3", "verdict": "violating", "reason": "P3: chore/stage-{scope-slug} create and checkout grant is missing"},
+    {"id": "p4-conforming", "file": "p4-conforming.md", "property": "P4", "verdict": "conforming", "reason": "P4: P-016 Stage spike/research worktree exception is intact"},
+    {"id": "p4-violating", "file": "p4-violating.md", "property": "P4", "verdict": "violating", "reason": "P4: P-016 Stage spike/research worktree exception paragraph is removed"},
+    {"id": "p5-conforming", "file": "p5-conforming.md", "property": "P5", "verdict": "conforming", "reason": "P5: PR row says the operator, never Stage, pushes and opens the PR"},
+    {"id": "p5-violating", "file": "p5-violating.md", "property": "P5", "verdict": "violating", "reason": "P5: PR row lets Stage push the branch and open the PR"},
+    {"id": "p6-conforming", "file": "p6-conforming.md", "property": "P6", "verdict": "conforming", "reason": "P6: Step 1.9 is registered in the Step Sequence checklist and its section is present"},
+    {"id": "p6-violating", "file": "p6-violating.md", "property": "P6", "verdict": "violating", "reason": "P6: Step 1.9 checklist registration line is deleted while the Step 1.9 section remains"},
+    {"id": "quoted-historical-conforming", "file": "quoted-historical-conforming.md", "property": "P2", "verdict": "conforming", "reason": "P2: superseded default-branch wording appears only in quoted, historical and example text and is not a violation"}
+  ]
+}
