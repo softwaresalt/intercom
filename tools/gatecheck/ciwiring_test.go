@@ -982,6 +982,12 @@ func TestCIWiring_StageContractStep_MutatedInputsAreRed(t *testing.T) {
 		"jq -e weakened": func() (string, string) {
 			return ciReplaceInJob(t, w.text, ciStageContractJob, "jq -e", "jq"), w.testSrc
 		},
+		"jq predicate and weakened to or": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, `.Action=="pass" and .Test`, `.Action=="pass" or .Test`), w.testSrc
+		},
+		"jq event filter dropped": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, `any(.[]; .Action=="pass" and .Test=="TestLiveContract")`, `any(.[]; .Test=="TestLiveContract")`), w.testSrc
+		},
 		"jq presence check removed": func() (string, string) {
 			return ciReplaceInJob(t, w.text, ciStageContractJob, "command -v jq", "true"), w.testSrc
 		},

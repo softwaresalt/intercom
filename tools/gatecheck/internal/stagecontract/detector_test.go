@@ -209,3 +209,35 @@ func TestDetectP5SplitAuthorityViolates(t *testing.T) {
 		t.Fatalf("split push/open authority must violate: %q %q %v", v, reason, err)
 	}
 }
+
+const p6Body = "This gate is fail-closed and runs strictly after Step 1.8 and strictly before Step 2. It\n" +
+	"establishes (or resumes) the dedicated Stage artifact branch `chore/stage-{scope-slug}`\n" +
+	"before any tracked Stage artifact mutation this session.\n\n" +
+	"7. **Named fail-closed halt.** On any failure of steps 1–6\n" +
+	"   the gate halts with the named token `STAGE_BRANCH_GATE_FAIL`, records a\n" +
+	"   P-005 policy-violation event, and performs no tracked mutation.\n"
+
+func TestDetectP6SectionBodyClauses(t *testing.T) {
+	head := canonicalFence + "### Step 1.9: Stage Artifact Branch Gate\n\n"
+	cases := map[string]struct {
+		doc  string
+		want Verdict
+	}{
+		"intact":                 {head + p6Body, Conforming},
+		"body deleted":           {head, Violating},
+		"branch clause deleted":  {head + strings.Replace(p6Body, "establishes (or resumes) the dedicated Stage artifact branch", "does something", 1), Violating},
+		"ordering clause gone":   {head + strings.Replace(p6Body, "before any tracked Stage artifact mutation this session", "later", 1), Violating},
+		"halt token deleted":     {head + strings.Replace(p6Body, "the gate halts with the named token `STAGE_BRANCH_GATE_FAIL`", "the gate continues", 1), Violating},
+		"no-mutation weakened":   {head + strings.Replace(p6Body, "performs no tracked mutation", "may mutate", 1), Violating},
+		"body only in quote":     {head + "> " + strings.ReplaceAll(p6Body, "\n", "\n> "), Violating},
+		"body in historical sec": {canonicalFence + "### Step 1.9: Gate\n\nBody.\n\n## Historical Notes\n\n" + p6Body, Violating},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			v, reason, err := detectDoc(t, "P6", c.doc)
+			if err != nil || v != c.want {
+				t.Fatalf("want %q, got %q (%s) err %v", c.want, v, reason, err)
+			}
+		})
+	}
+}
