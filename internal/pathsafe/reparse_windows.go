@@ -80,6 +80,11 @@ const longPathThreshold = syscall.MAX_PATH
 // fix (plan D-5): framing it as a vulnerability fix is an explicit
 // anti-goal.
 func addLongPathPrefix(path string) string {
+	// len(path) (UTF-8 bytes) >= utf16Len(path), so this cheap early return
+	// is verdict-neutral: it only skips the rune walk for clearly short paths.
+	if len(path) < longPathThreshold {
+		return path
+	}
 	if utf16Len(path) < longPathThreshold {
 		return path
 	}

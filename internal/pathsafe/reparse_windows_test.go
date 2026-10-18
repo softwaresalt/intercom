@@ -205,6 +205,48 @@ func TestAddLongPathPrefixIsUTF16CodeUnitAware(t *testing.T) {
 	}
 }
 
+// TestAddLongPathPrefixByteLengthGuardEquivalence is a characterization test
+// (060.001-T) locking addLongPathPrefix's prefixing verdict to an
+// independent oracle, len(utf16.Encode([]rune(in))) >= longPathThreshold,
+// for absolute drive paths. It guards a byte-length early return
+// (len(path) < longPathThreshold): that guard is sound only because the
+// UTF-8 byte length is always >= the UTF-16 unit count. The cases include the
+// band where bytes >= threshold but units < threshold, where an unsound
+// guard (e.g. len(path) < 130) or a rune-count shortcut would diverge.
+func TestAddLongPathPrefixByteLengthGuardEquivalence(t *testing.T) {
+	const base = `C:\`
+	pad := func(units int) string { return base + strings.Repeat("a", units-len(base)) }
+
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"ascii 259 units", pad(259)},
+		{"ascii 260 units", pad(260)},
+		{"ascii 261 units", pad(261)},
+		{"e-acute x200: 403 bytes, 203 units", base + strings.Repeat("\u00e9", 200)},
+		{"e-acute x257: 260 units exactly", base + strings.Repeat("\u00e9", 257)},
+		{"emoji x100: 403 bytes, 203 units", base + strings.Repeat("\U0001F600", 100)},
+		{"emoji x128: 259 units", base + strings.Repeat("\U0001F600", 128)},
+		{"emoji x129: 261 units", base + strings.Repeat("\U0001F600", 129)},
+		{"emoji x130: 263 units", base + strings.Repeat("\U0001F600", 130)},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			wantPrefixed := len(utf16.Encode([]rune(tc.in))) >= longPathThreshold
+			got := addLongPathPrefix(tc.in)
+			if gotPrefixed := got != tc.in; gotPrefixed != wantPrefixed {
+				t.Fatalf("addLongPathPrefix prefixed=%v, oracle wants %v (bytes=%d, units=%d, threshold=%d)",
+					gotPrefixed, wantPrefixed, len(tc.in), len(utf16.Encode([]rune(tc.in))), longPathThreshold)
+			}
+			if wantPrefixed && got != uncPrefix+tc.in {
+				t.Fatalf("addLongPathPrefix = %q, want %q", got, uncPrefix+tc.in)
+			}
+		})
+	}
+}
+
 // TestUTF16LenMatchesStdlibEncoding verifies utf16Len's counting method
 // (rune-by-rune surrogate-pair accumulation, avoiding an intermediate
 // []rune / []uint16 allocation) agrees with the stdlib
