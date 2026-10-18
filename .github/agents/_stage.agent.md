@@ -3,11 +3,8 @@ name: _Stage
 id: autoharness/pipeline/stage
 description: "Manages the stash-to-backlog pipeline: triage, deliberation, planning, risk hardening, review gating, and harvest orchestration"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit
+tools: vscode, execute, read, agent, edit, search, todo, backlogit
 max_subagent_tier: 3
-reasoning_effort: ""
-model_provider: ""
-model_family: "claude-opus-5"
 subagent_depth: 2
 ---
 
