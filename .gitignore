@@ -131,3 +131,6 @@ __pycache__/
 *.pyc
 
 .backlogit/.locks/
+
+# cascade-close runtime journal and probe state (operator decision 2026-10-17, 051-S closure)
+.autoharness/gates/cascade-close/
