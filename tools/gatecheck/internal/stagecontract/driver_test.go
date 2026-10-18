@@ -145,14 +145,9 @@ func TestStubDetectorReturnsErrNotImplemented(t *testing.T) {
 }
 
 func TestFixtureCorpus(t *testing.T) {
-	res, err := RunSuite(filepath.Join("testdata", "manifest.json"), StubDetector{})
+	res, err := RunSuite(filepath.Join("testdata", "manifest.json"), NewContractDetector())
 	if err != nil {
 		t.Fatalf("RunSuite: %v", err)
-	}
-	for _, r := range res {
-		if errors.Is(r.Err, ErrNotImplemented) {
-			t.Skip("detector is still the ErrNotImplemented stub; corpus enforcement is enabled by 020.006-T")
-		}
 	}
 	for _, r := range res {
 		if f := r.Failure(); f != "" {
