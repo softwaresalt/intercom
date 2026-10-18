@@ -3,11 +3,8 @@ name: _Ship
 id: autoharness/pipeline/ship
 description: "Manages the backlog-to-shipped pipeline: harness generation, build execution, review, CI remediation, and PR lifecycle"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, memory, backlogit
+tools: vscode, execute, read, agent, edit, search, todo, backlogit
 max_subagent_tier: 2
-reasoning_effort: ""
-model_provider: ""
-model_family: "claude-sonnet-5"
 subagent_depth: 2
 ---
 
