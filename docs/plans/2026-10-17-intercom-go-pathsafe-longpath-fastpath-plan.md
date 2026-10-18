@@ -50,7 +50,9 @@ evidence accepted as an explicit operator-confirmation gate, three P3 applied).
 * Acceptance: windows build-tag consistent with the file; every case matches the
   independent oracle; includes the byte-above/unit-below band; mutation check
   recorded in the task notes: temporarily using an unsound guard
-  (`len(path) < 130`) makes the test fail, then revert.
+  (`len(path) < 2*longPathThreshold` or `len([]rune(path)) < longPathThreshold`)
+  makes the test fail, then revert. (Corrected 2026-10-18: the original
+  example `len(path) < 130` is verdict-neutral and does not fail the test.)
 * Posture: characterization-first. Size XS, complexity low.
 
 ### Unit 2: Add the guard (code domain)
