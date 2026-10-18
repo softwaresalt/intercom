@@ -44,10 +44,14 @@ SHA-256; explicit env allowlist; CODEOWNERS header amendment).
   obtained in dark mode and is NOT resolved by the plan; it keeps the verdict
   at FAIL (see Disposition).
 
-## Disposition
+## Disposition (HISTORICAL; SUPERSEDED - see the supersession record at the end)
 
-Effective verdict: **FAIL**. plan-review SKILL.md (lines 191-192) requires FAIL whenever any P0/P1 remains, and degraded dispatch does not relax that. The constitution persona's P1 (a scoped, operator-recorded `skip_policy` waiver for P-002/P-004 is required to proceed on the DB12DA37 claim route) is UNRESOLVED, and the plan cannot resolve it: the waiver is an operator action. The earlier "ADVISORY with operator veto" framing is withdrawn.
+Verdict at the time (superseded): **FAIL**. plan-review SKILL.md (lines 191-192) requires FAIL whenever any P0/P1 remains, and degraded dispatch does not relax that. The constitution persona's P1 (a scoped, operator-recorded `skip_policy` waiver for P-002/P-004 is required to proceed on the DB12DA37 claim route) is UNRESOLVED, and the plan cannot resolve it: the waiver is an operator action. The earlier "ADVISORY with operator veto" framing is withdrawn.
 
 * **Shipment 050-S is NOT claimable** until the operator records that scoped P-002/P-004 `skip_policy` waiver for 020-F, or 026-F (the DB12DA37 conformance repair) ships.
 * **Mechanical hold:** 020-F is `blocked` (and its tasks are held non-claimable) with the hold reason in the record, so Ship's pre-claim reconciliation halts on the blocked feature in the queued manifest. The plan, decision and tasks are otherwise ready; lifting the hold is an operator-recorded waiver (or 026-F shipping) followed by a Stage re-review of the waiver wording.
 * Review attempts used: 2 of 2 allowed re-entry cycles; no third cycle was run. Stage Step 4 option (c) applies: halt and record the FAIL (P-005).
+
+## Supersession record (2026-10-17, post-026-F)
+
+The effective verdict **FAIL** above (and the hold on 020-F/050-S it required) is SUPERSEDED by the final `## Plan Review` section of the plan (`docs/plans/2026-10-17-intercom-go-020f-stage-contract-enforcement-plan.md`, decision ADVISORY), because the unresolved constitution P1 (P-002/P-004 claim ordering, DB12DA37) was resolved by 026-F shipping (shipment 051-S, PRs 153/154/155). This record is history; the plan's final section is authoritative.

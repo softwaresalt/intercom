@@ -32,7 +32,7 @@ is **not applied** to 020-F. Nothing in the harness-execution-model decision's
 analysis of the four Ship contract surfaces is rewritten; only its
 "therefore one task per shipment" conclusion is withdrawn for this unit.
 
-## 3. Re-assessment of the earlier halt reasons for 020-F
+## 3. Re-assessment of the earlier halt reasons for 020-F (SUPERSEDED in part, see section 7)
 
 | Earlier reason | Status now |
 |---|---|
@@ -45,9 +45,7 @@ analysis of the four Ship contract surfaces is rewritten; only its
 ## 4. Options considered
 
 * **Option A - one 5-task shipment, strictly sequential, just-in-time per-task
-  red harness (CHOSEN).** Cost: Ship's Step 2 up-front batch is vacuous
-  (DB12DA37) so correctness rests on per-task acceptance criteria and review
-  evidence rather than on Step 2 bookkeeping. Benefit: one coherent release
+  red harness (CHOSEN).** Cost (historical, superseded by section 7): correctness then rested on per-task acceptance criteria. Benefit: one coherent release
   unit, one PR, no policy amendment.
 * **Option B - split into two shipments (001-003 detector; 004-005 wiring).**
   Rejected: adds a cross-shipment dependency and a second claim for no
@@ -57,25 +55,12 @@ analysis of the four Ship contract surfaces is rewritten; only its
 * **Option C - wait for 026-F.** Rejected as unnecessary: the mitigation makes
   020-F independently safe; 026-F remains excluded and untouched.
 
-## 5. Mitigation baked into the plan and tasks (binding on Ship)
+## 5. Mitigation baked into the plan and tasks (SUPERSEDED, see section 7)
 
-1. Each task's FIRST commit is its own red harness (authored through
-   `harness-architect` semantics: compilable, failing, with a recorded expected
-   failure marker, `go vet` clean). Harness N is not written before task N starts.
-2. Tasks run strictly sequentially along the dependency chain (see item 6); no task is started while its predecessor is not done.
-3. Every task finishes with the full `go test ./...` green (Step 4.3). A
-   committed harness must therefore turn green within the same task, and no
-   artifact may leave a deliberately red test behind. Tests that depend on a
-   later task use an explicit, visible skip tied to the ErrNotImplemented stub
-   (002) which task 020.006-T (the rules task; 020.003-T is parser-only and
-   leaves the skip in place) removes red-first.
-4. Acceptance criteria require OBSERVED red-then-green evidence per task,
-   recorded in the task comment and the PR readiness block: the red run's
-   command and failure marker, the green run's command and result.
-5. No policy text (P-002, P-004, Ship Step 2) is amended, and NO operator `skip_policy` waiver is asserted or claimed. The DB12DA37 claim-ordering condition (shipment claim auto-activates tasks before any harness) is a pre-existing, systemic, disclosed defect affecting every shipment; this decision does not cure it and does not claim literal P-002 compliance on the claim route. Each task's P-005 compliance annotation (DB12DA37 disclosed; no waiver asserted) in the task comment and PR readiness block makes that visible. Plan-review attempt 2's constitution persona held this position insufficient without an operator-recorded waiver, and under plan-review SKILL.md (lines 191-192) an unresolved P0/P1 is a FAIL regardless of degraded dispatch. The earlier "operator can veto" framing is withdrawn: the shipment is held (see section 6).
-6. Chain after plan-review split: 020.001-T -> 020.002-T -> 020.003-T (block parser) -> 020.006-T (P1-P6 rules + live-contract test, new) -> 020.004-T -> 020.005-T. Six tasks, one shipment.
+1.-5. (Historical items on the per-task harness mitigation, the red-then-green evidence and the DB12DA37 disclosure were replaced by the installed Ship contract; the plan's section `Harness and gate (installed Ship contract)` is the only current statement. See section 7.)
+6. (Still current) Chain after plan-review split: 020.001-T -> 020.002-T -> 020.003-T (block parser) -> 020.006-T (P1-P6 rules + live-contract test, new) -> 020.004-T -> 020.005-T. Six tasks, one shipment.
 
-## 6. Authority and escalation
+## 6. Authority and escalation (SUPERSEDED, see section 7)
 
 The Orchestrator's dark-mode decision (operator AFK) authorized proceeding with
 staging on this basis, conditional on halting if plan-review returned an
@@ -85,3 +70,7 @@ a scoped P-002/P-004 `skip_policy` waiver for 020-F, or 026-F ships; 020-F is
 held `blocked` so Ship's pre-claim reconciliation halts on the blocked feature
 in the queued manifest. The decision itself (one-task rule superseded; JIT
 per-task harness) stands.
+
+## 7. Supersession of the hold (2026-10-17, after 026-F shipped)
+
+Sections 3, 4 (Option A cost), 5 (items 1-5) and 6 above describe the per-task harness mitigation and the hold pending an operator waiver or 026-F shipping. 026-F shipped (051-S, PRs 153/154/155): the installed Ship Step 2/3/4.1 and `harness-architect` now implement just-in-time per-task harnessing and the per-task P-002 gate, and the operator ratified the P-002 reading in the 026-F decision (section 0 there). Therefore the mitigation text, the P-005 DB12DA37 annotation, the waiver reference and the hold are obsolete; the 020-F plan's section "Harness and gate (installed Ship contract)" is the only current statement. The one-task-rule supersession (section 2) is unaffected.
