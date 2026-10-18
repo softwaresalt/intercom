@@ -1,7 +1,7 @@
 ---
 title: "051-S / 026-F post-merge operational closure"
 description: "Post-merge closure for Ship harness selection conformance repair (051-S, covering feature 026-F): feature PR 153 merged, the operator-approved cascade close (postcondition pass), archive relocation, and the completed P-020 compaction."
-status: blocked
+status: ready_with_conditions
 tags:
   - closure
   - post-merge
@@ -18,7 +18,7 @@ feature_pr: 153
 merge_commit: 50d5cfa8aebd6d982f7c23711cc50c34c9eeb00b
 merge_commit_sha: 50d5cfa8aebd6d982f7c23711cc50c34c9eeb00b
 feature_merge_commit_sha: 50d5cfa8aebd6d982f7c23711cc50c34c9eeb00b
-releasability: BLOCKED
+releasability: READY
 conditions:
   - id: cascade-close-operator-approval
     description: "Explicit per-closure operator approval for the mutating autoharness shipment cascade-close run, obtained via the Orchestrator on 2026-10-17 for 051-S / 026-F at SHA 50d5cfa8; Ship ran exactly the approved command (space-separated --message/--author) and it exited 0 with postcondition pass. Dark mode did not satisfy this approval."
@@ -33,8 +33,8 @@ conditions:
     satisfied: true
     evidence: docs/memory/compacted/2026-10-17-051-s-compact-context-report.md
   - id: reconcile-pre-mode-procedural-deviation
-    description: "As with 047-S, 048-S and 049-S, the pre-archive pre-mode reconcile for 051-S was a direct check (all manifest items done, no live descendants of 026-F beyond the manifest tasks, shipment record active) rather than the skill's lock-taking run: no lock scripts are installed and the workflow is single-agent. The operator's 2026-10-17 ACCEPTED-WITH-CONDITIONS disposition names 047-S, 048-S and 049-S only; it does not cover 051-S. OPEN: operator disposition of this deviation for 051-S is requested (compensating evidence: the cascade-close pre_close classification, pair lock and postcondition pass, plus the post-hoc post-mode report)."
-    satisfied: false
+    description: "As with 047-S, 048-S and 049-S, the pre-archive pre-mode reconcile for 051-S was a direct check (all manifest items done, no live descendants of 026-F beyond the manifest tasks, shipment record active) rather than the skill's lock-taking run: no lock scripts are installed and the workflow is single-agent. Operator disposition (2026-10-17, relayed by the Orchestrator): ACCEPTED-WITH-CONDITIONS for 051-S, and a STANDING acceptance for this single root cause (no lock scripts installed, so a direct pre-mode check) for subsequent shipments until Stage closes the lock-script gap. Compensating evidence: the cascade-close pre_close classification, pair lock and postcondition pass, plus the post-mode report."
+    satisfied: true
     evidence: "This document, 'Deviations' item 1; docs/closure/evidence/051-S-026-F-close-evidence.json"
 head_sha_reviewed: e778d5d1ee4ae764e79aae0a34da3b0ff3202bac
 code_sha_reviewed: 67e6edd
@@ -43,7 +43,7 @@ closure_base_sha: 50d5cfa8aebd6d982f7c23711cc50c34c9eeb00b
 closure_branch: post-merge/026-ship-harness-selection-conformance
 close_path: cascade
 close_evidence: docs/closure/evidence/051-S-026-F-close-evidence.json
-closure_status: BLOCKED
+closure_status: READY_WITH_CONDITIONS
 compaction_status: done
 ---
 
@@ -72,7 +72,7 @@ Shipment 051-S delivered covering feature 026-F (DB12DA37): four sequential task
 
 ## Deviations
 
-**Closure is NOT declared complete: operator disposition of item 1 for 051-S is outstanding (the 2026-10-17 disposition names 047-S, 048-S and 049-S only). Once the operator accepts it, a follow-up closure-record update flips `closure_status` to `READY_WITH_CONDITIONS` with that condition satisfied.**
+**Operator disposition received 2026-10-17: item 1 is ACCEPTED-WITH-CONDITIONS for 051-S and as a standing acceptance for this single root cause (no lock scripts installed) until Stage closes the lock-script gap. Closure status updated from BLOCKED to READY_WITH_CONDITIONS accordingly.**
 
 1. Pre-mode reconciliation was a direct check, not the skill's lock-taking run (see condition `reconcile-pre-mode-procedural-deviation`).
 2. Telemetry begin/record (Ship Steps 4.1a/4.5) was not exercised because tasks were built via delegated subagents; non-blocking observability gap.
@@ -106,7 +106,7 @@ None created. No P-021 deferrals arose.
 * **Rollback procedure:** `git revert -m 1 50d5cfa` on a new branch through a reviewed PR; never push directly to main.
 * **Validation window:** the next two shipment runs.
 * **Owner:** the operator. Ship reports and does not own the window.
-* **Releasability evidence:** `BLOCKED` pending one operator disposition (condition `reconcile-pre-mode-procedural-deviation`); all other conditions are satisfied; runtime verification of the repaired behaviour is a monitoring item on the next shipment run, not a closure condition.
+* **Releasability evidence:** `READY` with conditions, all satisfied (the reconcile pre-mode deviation was dispositioned by the operator, see condition `reconcile-pre-mode-procedural-deviation`); runtime verification of the repaired behaviour is a monitoring item on the next shipment run, not a closure condition.
 
 ## Compaction (P-020)
 
