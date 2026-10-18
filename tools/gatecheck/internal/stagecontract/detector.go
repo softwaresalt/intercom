@@ -228,6 +228,33 @@ func detectP5(blocks []Block) (Verdict, string, error) {
 	return Conforming, "P5: PR row says the operator, never Stage, pushes and opens the PR", nil
 }
 
+// p6Clauses are the branch-before-mutation requirement and the fail-closed
+// halt rule of the active Step 1.9 section, matched on whitespace-collapsed text.
+var p6Clauses = []string{
+	"establishes (or resumes) the dedicated Stage artifact branch",
+	"before any tracked Stage artifact mutation this session",
+	"the gate halts with the named token `STAGE_BRANCH_GATE_FAIL`",
+	"performs no tracked mutation",
+}
+
+// p6BodyMissing returns the first required clause absent from the active
+// Step 1.9 section body, or "" when the body carries every clause.
+func p6BodyMissing(blocks []Block) string {
+	var parts []string
+	for _, b := range blocks {
+		if active(b) && b.Kind != KindHeading && inPath(b, "Step 1.9") {
+			parts = append(parts, b.Text)
+		}
+	}
+	body := strings.Join(strings.Fields(strings.Join(parts, " ")), " ")
+	for _, c := range p6Clauses {
+		if !strings.Contains(body, c) {
+			return c
+		}
+	}
+	return ""
+}
+
 func detectP6(blocks []Block) (Verdict, string, error) {
 	checklist, registered, section := false, false, false
 	for _, b := range blocks {
@@ -255,6 +282,9 @@ func detectP6(blocks []Block) (Verdict, string, error) {
 	}
 	switch {
 	case registered && section:
+		if missing := p6BodyMissing(blocks); missing != "" {
+			return Violating, "P6: Step 1.9 section body lacks required clause: " + missing, nil
+		}
 		return Conforming, "P6: Step 1.9 is registered in the Step Sequence checklist and its section is present", nil
 	case section:
 		return Violating, "P6: Step 1.9 checklist registration line is deleted while the Step 1.9 section remains", nil

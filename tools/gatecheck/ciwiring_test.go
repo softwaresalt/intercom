@@ -850,6 +850,10 @@ const (
 	ciStageContractPkg  = "tools/gatecheck/internal/stagecontract"
 )
 
+// ciStageJQPredicate is the complete conjunctive jq assertion, matched as one
+// whitespace-normalized string so both fields must hold on the same event.
+const ciStageJQPredicate = `jq -e -s 'any(.[]; .Action=="pass" and .Test=="TestLiveContract")'`
+
 // stageWiring is the live input of the stage-contract wiring assertions: the
 // workflow text and the concatenated test sources of the stagecontract
 // package (to prove the func TestLiveContract symbol exists).
@@ -931,11 +935,9 @@ func ciStageContractProblems(text, testSrc string) []string {
 		"go test -json -count=1 -mod=readonly -run '^TestLiveContract$' ./" + ciStageContractPkg + "/",
 		"| tee ",
 		"command -v jq",
-		"jq -e",
-		`.Action=="pass"`,
-		`.Test=="TestLiveContract"`,
+		ciStageJQPredicate,
 	} {
-		if !strings.Contains(run, want) {
+		if !strings.Contains(strings.Join(strings.Fields(run), " "), want) {
 			problems = append(problems, fmt.Sprintf("step %q: run lacks %q", ciStageContractStep, want))
 		}
 	}

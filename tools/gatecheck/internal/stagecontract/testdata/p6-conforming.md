@@ -17,3 +17,7 @@ before any tracked Stage artifact mutation this session.
 
 1. **Worktree topology precheck (P-016) — runs first, before any branch create, select, or
    resume.** Run `git worktree list --porcelain` and classify every attached worktree.
+
+7. **Named fail-closed halt and categorical deferral rule.** On any failure of steps 1–6
+   the gate halts with the named token `STAGE_BRANCH_GATE_FAIL`, records a P-005
+   policy-violation event, and performs no tracked mutation.
