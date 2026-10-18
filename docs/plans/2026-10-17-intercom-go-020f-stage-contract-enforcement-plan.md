@@ -5,7 +5,7 @@ status: accepted (post-026-F re-validation; hold lifted)
 source: docs/decisions/2026-10-17-intercom-go-020f-restage-and-one-task-rule-supersession-decision.md
 supersedes: docs/plans/2026-09-12-intercom-go-stage-contract-enforcement-platform-plan.md (governing shape only; its scope discipline and provenance remain valid)
 feature: 020-F
-revised: 2026-10-17 (post-026-F: DB12DA37 hold lifted)
+revised: "2026-10-17 (post-026-F: DB12DA37 hold lifted)"
 tasks: [020.001-T, 020.002-T, 020.003-T, 020.006-T, 020.004-T, 020.005-T]
 ---
 
