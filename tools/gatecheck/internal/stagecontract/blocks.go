@@ -126,7 +126,7 @@ func Parse(src []byte) ([]Block, error) {
 			p.add(p.block(KindListItem, no, strings.TrimSpace(m[1])))
 			p.last = &p.blocks[len(p.blocks)-1]
 		default:
-			if p.last != nil && (p.last.Kind == KindParagraph || p.last.Kind == KindListItem && startsIndented(line)) {
+			if p.last != nil && (p.last.Kind == KindParagraph || p.last.Kind == KindListItem) {
 				p.last.Text += " " + trimmed
 				continue
 			}
@@ -201,18 +201,25 @@ func (p *parser) fenced(lines []string, start int, m []string) (int, error) {
 	return 0, fmt.Errorf("unterminated fenced block starting at line %d", start+1)
 }
 
-func startsIndented(line string) bool {
-	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
-}
-
 func splitCells(row string) []string {
 	row = strings.TrimPrefix(row, "|")
 	row = strings.TrimSuffix(row, "|")
-	cells := strings.Split(row, "|")
-	for i, c := range cells {
-		cells[i] = strings.TrimSpace(c)
+	var cells []string
+	var cur strings.Builder
+	inSpan := false
+	for _, r := range row {
+		switch {
+		case r == '`':
+			inSpan = !inSpan
+			cur.WriteRune(r)
+		case r == '|' && !inSpan:
+			cells = append(cells, strings.TrimSpace(cur.String()))
+			cur.Reset()
+		default:
+			cur.WriteRune(r)
+		}
 	}
-	return cells
+	return append(cells, strings.TrimSpace(cur.String()))
 }
 
 func isSeparator(cells []string) bool {

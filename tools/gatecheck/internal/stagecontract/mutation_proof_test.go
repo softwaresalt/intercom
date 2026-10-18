@@ -86,8 +86,8 @@ func TestMutationProof(t *testing.T) {
 	if !eventNamed(bad.events, "fail", "TestLiveContract") {
 		t.Fatalf("mutated copy: no fail event for TestLiveContract in the event stream")
 	}
-	if !outputMentions(bad.events, "TestLiveContract", "P3") {
-		t.Fatalf("mutated copy: failure output does not name P3")
+	if !outputMentions(bad.events, "TestLiveContract", "P3: chore/stage-{scope-slug} create and checkout grant is missing") {
+		t.Fatalf("mutated copy: failure output does not carry the P3 missing-grant reason")
 	}
 
 	if err := os.WriteFile(policiesCopy, original, 0o600); err != nil {

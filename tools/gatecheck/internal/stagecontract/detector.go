@@ -165,7 +165,7 @@ func detectP3(blocks []Block) (Verdict, string, error) {
 func detectP4(blocks []Block) (Verdict, string, error) {
 	scoped := false
 	for _, b := range blocks {
-		if b.Kind == KindHeading && strings.Contains(b.Text, "P-016") {
+		if b.Kind == KindHeading && active(b) && strings.Contains(b.Text, "P-016") {
 			scoped = true
 		}
 		if !active(b) || b.Kind != KindParagraph || !inPath(b, "P-016") {
@@ -183,26 +183,30 @@ func detectP4(blocks []Block) (Verdict, string, error) {
 }
 
 func detectP5(blocks []Block) (Verdict, string, error) {
-	var git, pr *Block
-	for i, b := range blocks {
+	var gitRows, prRows []Block
+	for _, b := range blocks {
 		if b.Kind != KindTableRow || !active(b) || !inPath(b, "Role Boundary") || len(b.Cells) < 2 {
 			continue
 		}
 		switch b.Cells[0] {
 		case "Git":
-			git = &blocks[i]
+			gitRows = append(gitRows, b)
 		case "PR":
-			pr = &blocks[i]
+			prRows = append(prRows, b)
 		}
 	}
-	if git == nil && pr == nil {
-		return "", "", fmt.Errorf("P5: no Role Boundary Git or PR rows: %w", ErrNoVerdict)
+	if len(gitRows) == 0 || len(prRows) == 0 {
+		return "", "", fmt.Errorf("P5: Role Boundary Git and PR rows are not both present: %w", ErrNoVerdict)
 	}
-	if pr == nil || !strings.Contains(pr.Cells[1], "operator") || !strings.Contains(pr.Cells[1], "never Stage") {
-		return Violating, "P5: PR row lets Stage push the branch and open the PR", nil
+	for _, pr := range prRows {
+		if !strings.Contains(pr.Cells[1], "operator") || !strings.Contains(pr.Cells[1], "never Stage") {
+			return Violating, "P5: PR row lets Stage push the branch and open the PR", nil
+		}
 	}
-	if git != nil && (!strings.Contains(git.Cells[1], "dedicated Stage artifact branch") || !strings.Contains(git.Cells[1], "on that branch only")) {
-		return Violating, "P5: Git row grants Stage commits beyond the dedicated Stage artifact branch", nil
+	for _, git := range gitRows {
+		if !strings.Contains(git.Cells[1], "dedicated Stage artifact branch") || !strings.Contains(git.Cells[1], "on that branch only") {
+			return Violating, "P5: Git row grants Stage commits beyond the dedicated Stage artifact branch", nil
+		}
 	}
 	return Conforming, "P5: PR row says the operator, never Stage, pushes and opens the PR", nil
 }
@@ -210,12 +214,13 @@ func detectP5(blocks []Block) (Verdict, string, error) {
 func detectP6(blocks []Block) (Verdict, string, error) {
 	checklist, registered, section := false, false, false
 	for _, b := range blocks {
-		if b.Kind == KindHeading && stepSectionRe.MatchString(strings.TrimSpace(b.Text)) {
+		if b.Kind == KindHeading && active(b) && stepSectionRe.MatchString(strings.TrimSpace(b.Text)) {
 			section = true
 		}
-		// Canonical-checklist exception: the fenced text block under the Step
-		// Sequence Contract heading is read; every other fenced block stays excluded.
-		if b.Kind != KindFenced || b.Lang != "text" || !inPath(b, "Step Sequence Contract") {
+		// Canonical-checklist exception: the first non-historical text fence under
+		// the Step Sequence Contract heading that holds checklist lines is read;
+		// every other fenced block, including later ones, stays excluded.
+		if checklist || b.Kind != KindFenced || b.Historical || b.Lang != "text" || !inPath(b, "Step Sequence Contract") {
 			continue
 		}
 		for _, l := range b.Lines {
