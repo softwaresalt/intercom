@@ -1,37 +1,10 @@
 package stagecontract
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 )
-
-type manifestEntry struct {
-	ID       string `json:"id"`
-	File     string `json:"file"`
-	Property string `json:"property"`
-	Verdict  string `json:"verdict"`
-	Reason   string `json:"reason"`
-}
-
-type manifest struct {
-	Fixtures []manifestEntry `json:"fixtures"`
-}
-
-// loadManifest reads testdata/manifest.json.
-func loadManifest(path string) (manifest, error) {
-	var m manifest
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return m, fmt.Errorf("read manifest: %w", err)
-	}
-	if err := json.Unmarshal(data, &m); err != nil {
-		return m, fmt.Errorf("parse manifest: %w", err)
-	}
-	return m, nil
-}
 
 func TestManifestWellFormed(t *testing.T) {
 	m, err := loadManifest(filepath.Join("testdata", "manifest.json"))
