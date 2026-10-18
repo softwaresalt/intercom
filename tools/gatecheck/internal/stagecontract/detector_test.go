@@ -241,3 +241,19 @@ func TestDetectP6SectionBodyClauses(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectP2FullBranchToken(t *testing.T) {
+	mk := func(b string) string {
+		return "# P-010: Agent Role Boundary\n\n**Stage MUST NOT**:\n- Commit or push directly to " + b + "\n"
+	}
+	for _, b := range []string{"`main`", "main", "`main`.", "main, or master"} {
+		if v, reason, err := detectDoc(t, "P2", mk(b)); err != nil || v != Conforming {
+			t.Errorf("%q should conform: %q %q %v", b, v, reason, err)
+		}
+	}
+	for _, b := range []string{"maintenance branches", "`main-backup`", "main_x", "mainline", "main/feature", "premain"} {
+		if v, reason, err := detectDoc(t, "P2", mk(b)); err != nil || v != Violating {
+			t.Errorf("%q should violate: %q %q %v", b, v, reason, err)
+		}
+	}
+}
