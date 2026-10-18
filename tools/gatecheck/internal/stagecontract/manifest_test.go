@@ -1,6 +1,8 @@
 package stagecontract
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,7 +22,15 @@ type manifest struct {
 
 // loadManifest reads testdata/manifest.json.
 func loadManifest(path string) (manifest, error) {
-	panic("not implemented: manifest loader pending fixture corpus")
+	var m manifest
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return m, fmt.Errorf("read manifest: %w", err)
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return m, fmt.Errorf("parse manifest: %w", err)
+	}
+	return m, nil
 }
 
 func TestManifestWellFormed(t *testing.T) {
