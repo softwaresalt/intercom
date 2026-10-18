@@ -162,6 +162,17 @@ func detectP3(blocks []Block) (Verdict, string, error) {
 	return Conforming, "P3: chore/stage-{scope-slug} create and checkout grant is present", nil
 }
 
+// p4Clauses are the grant, implementation restrictions and cleanup requirement of the
+// P-016 spike/research worktree exception, matched on whitespace-collapsed text.
+var p4Clauses = []string{
+	"Stage MAY create or use a separate worktree only for an explicit, time-boxed spike or research investigation",
+	"MUST NOT be used for implementation, template/source/config mutation, shipment claim, PR preparation, or Ship execution",
+	"clean up the worktree or hand off findings before Ship execution begins",
+}
+
+// p5Grant is the operator-owned push and open/approve clause of the PR row.
+var p5Grant = regexp.MustCompile(`^The operator — never Stage — pushes the Stage artifact branch and opens(/approves)? the\b`)
+
 func detectP4(blocks []Block) (Verdict, string, error) {
 	scoped := false
 	for _, b := range blocks {
@@ -171,10 +182,16 @@ func detectP4(blocks []Block) (Verdict, string, error) {
 		if !active(b) || b.Kind != KindParagraph || !inPath(b, "P-016") {
 			continue
 		}
-		if strings.Contains(b.Text, "Allowed exception (Stage spike/research only)") &&
-			strings.Contains(b.Text, "worktree") && strings.Contains(b.Text, "time-boxed") {
-			return Conforming, "P4: P-016 Stage spike/research worktree exception is intact", nil
+		if !strings.Contains(b.Text, "Allowed exception (Stage spike/research only)") {
+			continue
 		}
+		text := strings.Join(strings.Fields(b.Text), " ")
+		for _, clause := range p4Clauses {
+			if !strings.Contains(text, clause) {
+				return Violating, "P4: P-016 Stage spike/research worktree exception lacks required clause: " + clause, nil
+			}
+		}
+		return Conforming, "P4: P-016 Stage spike/research worktree exception is intact", nil
 	}
 	if !scoped {
 		return "", "", fmt.Errorf("P4: no P-016 section: %w", ErrNoVerdict)
@@ -199,7 +216,7 @@ func detectP5(blocks []Block) (Verdict, string, error) {
 		return "", "", fmt.Errorf("P5: Role Boundary Git and PR rows are not both present: %w", ErrNoVerdict)
 	}
 	for _, pr := range prRows {
-		if !strings.Contains(pr.Cells[1], "operator") || !strings.Contains(pr.Cells[1], "never Stage") {
+		if !p5Grant.MatchString(strings.Join(strings.Fields(pr.Cells[1]), " ")) || strings.Contains(pr.Cells[1], "to Stage") {
 			return Violating, "P5: PR row lets Stage push the branch and open the PR", nil
 		}
 	}
