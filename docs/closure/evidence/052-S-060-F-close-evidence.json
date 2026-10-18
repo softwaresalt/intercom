@@ -1,9 +1,86 @@
 {
   "feature_id": "060-F",
+  "invocation": {
+    "argv_redacted": [
+      "C:\\Tools\\backlogit.EXE",
+      "--no-update-check",
+      "--jsonrpc",
+      "--cwd",
+      "C:\\Source\\GitHub\\intercom-go",
+      "shipment",
+      "ship",
+      "052-S",
+      "--sha",
+      "640625cf5a411ca42a405bac954e108bf5ca17ef",
+      "--message",
+      "Merge pull request #162 from softwaresalt/feat/pathsafe-addlongpathprefix-byte-length-fast-path-guard",
+      "--author",
+      "Derek Williams"
+    ],
+    "exit_code": 0,
+    "finished_at": "2026-10-18T18:45:19.518080Z",
+    "mutation_state": "completed",
+    "started_at": "2026-10-18T18:41:46.048242Z",
+    "stderr": {
+      "capture_truncated": false,
+      "excerpt": "time=2026-10-18T11:41:46.125-07:00 level=INFO msg=\"shipment command invoked\" operation=shipment-ship shipment_id=052-S\ntime=2026-10-18T11:41:46.140-07:00 level=INFO msg=\"INFO config loaded package=config workspace=C:\\\\Source\\\\GitHub\\\\intercom-go\\\\.backlogit\"\ntime=2026-10-18T11:41:46.308-07:00 level=INFO msg=\"workspace initialized\" storage_root=C:\\Source\\GitHub\\intercom-go\\.backlogit auto_recover=true duration_ms=182\ntime=2026-10-18T11:42:36.245-07:00 level=INFO msg=\"shipment status changed\" shipment_id=052-S new_status=shipped\ntime=2026-10-18T11:42:36.267-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=052-S artifact_type=shipment\ntime=2026-10-18T11:43:44.275-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=060.001-T artifact_type=task\ntime=2026-10-18T11:43:54.760-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=060.002-T artifact_type=task\ntime=2026-10-18T11:44:28.739-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=052-S artifact_type=shipment\ntime=2026-10-18T11:45:19.400-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=060-F artifact_type=feature\ntime=2026-10-18T11:45:19.451-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=052-S artifact_type=shipment\n",
+      "redaction_applied": false,
+      "sha256": "7950fc1959c7887602a7665260281b946e91499223ecac1e77e2e569d167831f",
+      "total_bytes": 1270,
+      "total_lines": 10
+    },
+    "stdout": {
+      "capture_truncated": false,
+      "excerpt": "{\"jsonrpc\":\"2.0\",\"id\":\"backlogit shipment ship\",\"result\":{\"archived_ids\":[\"060.001-T\",\"060.002-T\",\"052-S\",\"060-F\"],\"commit_sha\":\"640625cf5a411ca42a405bac954e108bf5ca17ef\",\"returned_ids\":[],\"shipment_id\":\"052-S\",\"shipment_status\":\"shipped\"}}\n",
+      "redaction_applied": false,
+      "sha256": "24473d09ec51c7e900734ad756d33e40047dfa10a6375ee0a365946902c92b95",
+      "total_bytes": 241,
+      "total_lines": 1
+    },
+    "timed_out": false
+  },
   "merge_commit_sha": "640625cf5a411ca42a405bac954e108bf5ca17ef",
-  "phase": "pre_close",
+  "phase": "post_close",
+  "post_close": {
+    "allowed_ids": [
+      "052-S",
+      "060-F",
+      "060.001-T",
+      "060.002-T"
+    ],
+    "baseline_invariant": true,
+    "disposition_byte_identical": true,
+    "failures": [],
+    "linked_deliberation_drift": [],
+    "missing_required": [],
+    "parent_id_preserved": true,
+    "parse_error": null,
+    "parsed_result": {
+      "archived_ids": [
+        "052-S",
+        "060-F",
+        "060.001-T",
+        "060.002-T"
+      ],
+      "commit_sha": "640625cf5a411ca42a405bac954e108bf5ca17ef",
+      "returned_ids": [],
+      "shipment_id": "052-S",
+      "shipment_status": "shipped"
+    },
+    "postcondition_verdict": "pass",
+    "required_ids": [
+      "052-S",
+      "060-F",
+      "060.001-T",
+      "060.002-T"
+    ],
+    "shipment_archived_shipped": true,
+    "shipment_record_archived_status": "shipped",
+    "shipment_record_status": "archived",
+    "unexpected_archived": []
+  },
   "pre_close": {
-    "captured_at": "2026-10-18T18:09:36Z",
+    "captured_at": "2026-10-18T18:41:41Z",
     "classifier_reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted",
     "classifier_verdict": "CASCADE",
     "close_path_selection": {
@@ -64,7 +141,7 @@
       "sha256": "7d6ceea3720c530433e0238954e8f4ae0647a20ef791c96f0fed2a9a741c0af8"
     }
   },
-  "run_id": "47a37f4feb2b4f9fa02cbe93a74f2352",
+  "run_id": "96e237cd204e4d2fad2461b7f4d7782f",
   "schema_version": 1,
   "shipment_id": "052-S",
   "tool": {
