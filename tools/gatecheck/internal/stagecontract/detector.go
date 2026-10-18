@@ -46,6 +46,7 @@ var (
 	checklistRe   = regexp.MustCompile(`^\[ \] Step \d`)
 	stepSectionRe = regexp.MustCompile(`^Step 1\.9\b`)
 	defaultRefRe  = regexp.MustCompile("(?i)default branch|`main`|\\bmain\\b")
+	mainTokenRe   = regexp.MustCompile(`(^|[^A-Za-z0-9_/-])main($|[^A-Za-z0-9_/-])`)
 )
 
 // Detect evaluates f.Property over the document structure of f.Content.
@@ -139,7 +140,7 @@ func detectP2(blocks []Block) (Verdict, string, error) {
 		return "", "", fmt.Errorf("P2: no Stage MUST NOT list: %w", ErrNoVerdict)
 	}
 	bullet, ok := hasItem(items, "Commit or push directly to")
-	if !ok || !strings.Contains(bullet, "main") {
+	if !ok || !mainTokenRe.MatchString(bullet) {
 		return Violating, "P2: Stage MUST NOT list lacks the commit or push directly to main bullet", nil
 	}
 	for _, b := range blocks {
