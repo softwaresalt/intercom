@@ -841,3 +841,155 @@ func TestCIWiring_EquivalentCOEFormsAreGreen(t *testing.T) {
 		})
 	}
 }
+
+// 020.004-T: the stage-contract live gate step in job lint.
+
+const (
+	ciStageContractJob  = "lint"
+	ciStageContractStep = "Run stage contract live gate"
+	ciStageContractPkg  = "tools/gatecheck/internal/stagecontract"
+)
+
+// stageWiring is the live input of the stage-contract wiring assertions: the
+// workflow text and the concatenated test sources of the stagecontract
+// package (to prove the func TestLiveContract symbol exists).
+type stageWiring struct {
+	text    string
+	testSrc string
+}
+
+// wiringConfig loads the live stageWiring inputs.
+func wiringConfig(t *testing.T) stageWiring {
+	t.Helper()
+	panic("not implemented: wiringConfig must load ci.yml and the stagecontract test sources")
+}
+
+var (
+	ciUsesLine    = regexp.MustCompile(`(?m)^[ \t]*(?:-[ \t]+)?uses:[ \t]*(\S+)`)
+	ciPinnedUses  = regexp.MustCompile(`^[^@\s]+@[0-9a-f]{40}$`)
+	ciTimeoutLine = regexp.MustCompile(`(?m)^        timeout-minutes:[ \t]*[1-9][0-9]*[ \t]*$`)
+)
+
+// ciStageContractProblems checks the blocking stage-contract step: placement
+// in job lint after Set up Go, no if or continue-on-error, a timeout, a
+// hermetic body, the anchored -run, the fail-closed jq -e JSON assertion, the
+// TestLiveContract symbol, and that every uses: pin in the workflow is a full
+// commit SHA (the step itself adds none).
+func ciStageContractProblems(text, testSrc string) []string {
+	var problems []string
+	if !strings.Contains(testSrc, "func TestLiveContract(") {
+		problems = append(problems, "stagecontract package lacks func TestLiveContract")
+	}
+	for _, m := range ciUsesLine.FindAllStringSubmatch(text, -1) {
+		if !ciPinnedUses.MatchString(m[1]) {
+			problems = append(problems, fmt.Sprintf("uses %q is not pinned to a full commit SHA", m[1]))
+		}
+	}
+	block, ok := ciJobBlock(text, ciStageContractJob)
+	if !ok {
+		return append(problems, fmt.Sprintf("job %q not found", ciStageContractJob))
+	}
+	steps := ciSteps(block)
+	idx := ciStepIndex(steps, ciStageContractStep)
+	if idx < 0 {
+		return append(problems, fmt.Sprintf("job %q: missing step %q", ciStageContractJob, ciStageContractStep))
+	}
+	if goIdx := ciStepIndex(steps, "Set up Go"); goIdx < 0 || goIdx > idx {
+		problems = append(problems, fmt.Sprintf("step %q must follow Set up Go", ciStageContractStep))
+	}
+	st := steps[idx]
+	problems = append(problems, ciStepIfProblems(ciStageContractJob, st)...)
+	if coes := ciStepCOEValues(st); len(coes) > 0 {
+		problems = append(problems, fmt.Sprintf("step %q: must not carry continue-on-error (has %q)", ciStageContractStep, coes))
+	}
+	if !ciTimeoutLine.MatchString(st.body) {
+		problems = append(problems, fmt.Sprintf("step %q: missing step-level timeout-minutes", ciStageContractStep))
+	}
+	if ciUsesLine.MatchString("      - " + st.body) {
+		problems = append(problems, fmt.Sprintf("step %q: must not use an action", ciStageContractStep))
+	}
+	run, ok := ciStepRun(st)
+	if !ok {
+		return append(problems, fmt.Sprintf("step %q: no run", ciStageContractStep))
+	}
+	for _, want := range []string{
+		"set -o pipefail",
+		"go test -json -count=1 -mod=readonly -run '^TestLiveContract$' ./" + ciStageContractPkg + "/",
+		"| tee ",
+		"command -v jq",
+		"jq -e",
+		`.Action=="pass"`,
+		`.Test=="TestLiveContract"`,
+	} {
+		if !strings.Contains(run, want) {
+			problems = append(problems, fmt.Sprintf("step %q: run lacks %q", ciStageContractStep, want))
+		}
+	}
+	for _, banned := range []string{"grep", "curl", "wget", "apt", "pip ", "go install", "go get", "go mod "} {
+		if strings.Contains(run, banned) {
+			problems = append(problems, fmt.Sprintf("step %q: run must not contain %q (hermetic, no text grep)", ciStageContractStep, banned))
+		}
+	}
+	return problems
+}
+
+func TestCIWiring_StageContractStep_Live(t *testing.T) {
+	w := wiringConfig(t)
+	if p := ciStageContractProblems(w.text, w.testSrc); len(p) != 0 {
+		t.Fatalf("live %s:\n  %s", ciWorkflowRel, strings.Join(p, "\n  "))
+	}
+}
+
+func TestCIWiring_StageContractStep_MutatedInputsAreRed(t *testing.T) {
+	w := wiringConfig(t)
+	head := "      - name: " + ciStageContractStep + "\n"
+	cases := map[string]func() (string, string){
+		"step removed": func() (string, string) {
+			return ciRemoveStep(t, w.text, ciStageContractJob, ciStageContractStep), w.testSrc
+		},
+		"Set up Go removed": func() (string, string) {
+			return ciRemoveStep(t, w.text, ciStageContractJob, "Set up Go"), w.testSrc
+		},
+		"step if added": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, head, head+"        if: always()\n"), w.testSrc
+		},
+		"continue-on-error added": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, head, head+"        continue-on-error: true\n"), w.testSrc
+		},
+		"unpinned action added to step": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, head, head+"        uses: actions/checkout@v4\n"), w.testSrc
+		},
+		"timeout removed": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, "timeout-minutes:", "tm:"), w.testSrc
+		},
+		"run unanchored": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, "'^TestLiveContract$'", "TestLiveContract"), w.testSrc
+		},
+		"jq -e weakened": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, "jq -e", "jq"), w.testSrc
+		},
+		"jq presence check removed": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, "command -v jq", "true"), w.testSrc
+		},
+		"pipefail removed": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, "set -o pipefail", "true"), w.testSrc
+		},
+		"text grep added": func() (string, string) {
+			return ciReplaceInJob(t, w.text, ciStageContractJob, "jq -e", "grep -q"), w.testSrc
+		},
+		"TestLiveContract symbol missing": func() (string, string) {
+			return w.text, "package stagecontract\n"
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			text, src := mutate()
+			if text == w.text && src == w.testSrc {
+				t.Fatal("mutation was a no-op")
+			}
+			if len(ciStageContractProblems(text, src)) == 0 {
+				t.Fatal("mutated input produced no problems")
+			}
+		})
+	}
+}
