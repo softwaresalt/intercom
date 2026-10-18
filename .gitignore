@@ -42,6 +42,7 @@ config.toml
 # unrelated content under the same parent directories remains trackable.
 .claude/instructions.md
 .github/copilot/settings.local.json
+.autoharness/gates/pipeline-topology-force-audit.log
 .backlogit/hooks_queue.jsonl
 
 # Copilot tracking, Test output and PR comments
@@ -131,6 +132,5 @@ __pycache__/
 
 .backlogit/.locks/
 
-# cascade-close runtime journal, probe and audit state (operator decision 2026-10-17, 051-S closure)
+# cascade-close runtime journal and probe state (operator decision 2026-10-17, 051-S closure)
 .autoharness/gates/cascade-close/
-.autoharness/gates/pipeline-topology-force-audit.log
