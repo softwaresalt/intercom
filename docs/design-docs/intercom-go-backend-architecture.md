@@ -312,6 +312,14 @@ workspace — `session_id`, workspace path, protocol version, and nothing else.
 This is a pointer to someone else's durable store, not a durable store; D7
 (full persistence) remains deferred.
 
+> **MVP cut (decided 2026-10-19, ADR MVP-1 / MVP-D8).** The D4a session
+> pointer is **cut from the MVP**. The MVP runs one session per process (MVP-D7)
+> and keeps no persistence: a restart starts a fresh session, and the changed
+> `gen` forces every client to a full re-hydrate. The pointer, `ResumeSession`,
+> and the resume-path de-duplication re-verification below remain post-MVP
+> items (H6, C11). See
+> [`docs/decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md`](../decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md).
+
 **Resume must not duplicate or gap at the SDK boundary.** Registering the live
 callback and calling `GetEvents` is the same race §5.3 solves for clients.
 Duplicates here are **not** benign: `seq` is assigned *after* normalisation, so
@@ -568,24 +576,51 @@ decided before phase C5. See §6.
   *intercom-go*; intercom-go authenticates to *Copilot* independently
   (`ClientOptions.GitHubToken`, or the logged-in CLI user).
 
-### 6.1 Controls that MUST be specified before C6/C10 (not yet decided)
+### 6.1 Controls that MUST be specified before C6/C10 (decided for the MVP)
+
+**Decided 2026-10-19 for the MVP** (shipment 056-S). The controls below are
+specified, not yet implemented, by three ADRs:
+
+* [ADR MVP-2: credentials, carriage, Origin, Host](../decisions/2026-10-19-intercom-go-mvp-adr-2-credentials-and-origin.md)
+  covers Origin/CSWSH, credential carriage per client type, token replay and
+  expiry, and the tunnel anonymous-access-off confirmation.
+* [ADR MVP-3: authorization role matrix](../decisions/2026-10-19-intercom-go-mvp-adr-3-authorization-roles.md)
+  covers the observer/approver model, destructive-approval policy, and
+  per-message re-validation. It unblocks C5.
+* [ADR MVP-1: scope and session](../decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md)
+  records the scope cut that these controls apply to.
+
+Controls the ADRs defer (identity-provider token validation, single-use upgrade
+tickets, automatic rotation, rate limiting beyond the connection cap) are listed
+in ADR MVP-2. The ADRs were ratified as recommended defaults while the operator
+was away; an operator override supersedes them by a new ADR.
 
 Authentication alone is insufficient here, because §5.4 lets **any connected
-surface approve an agent shell command**. The following are recorded as
-required decisions, not as implemented controls:
+surface approve an agent shell command**. The decided controls are:
 
 * **Origin / CSWSH.** A WebSocket upgrade is not subject to the same-origin
   policy and browsers attach cookies cross-origin. `Origin` must be validated
   on upgrade, and the SPA must authenticate with a bearer credential rather
-  than an ambient cookie.
+  than an ambient cookie. *Decided (ADR MVP-2):* exact-match allowlist
+  `[remote].allowed_origins`, default empty; a missing `Origin` is accepted
+  only with a valid credential; `Host` is validated against loopback plus
+  `[remote].allowed_hosts`.
 * **Authorization model.** Who may approve *what*. At minimum, distinguish an
   observer from an approver, and decide whether a remote surface may approve
   destructive shell commands at all, or only the local TUI may. **Blocks C5.**
+  *Decided (ADR MVP-3):* `observer` and `approver` roles; the local TUI is
+  always an approver; remote approval of `shell`, `write`, and unknown kinds is
+  refused unless `[remote].remote_approve_destructive` is true.
 * **Per-message authorization, not connection-time only.** A long-lived socket
   authorized once at upgrade grants approval rights for the socket's whole
-  lifetime. Re-validate on privileged actions.
+  lifetime. Re-validate on privileged actions. *Decided (ADR MVP-3):* each
+  privileged action re-checks credential, expiry, `gen`, role, and kind class.
 * **Token replay and expiry.** Bind the credential to the connection and bound
-  its lifetime.
+  its lifetime. *Decided (ADR MVP-2):* per-role 256-bit `crypto/rand` bearer
+  credentials with a fixed lifetime, bound to `gen` and the connection,
+  revoked on re-issue and at shutdown. Native clients use `Authorization`;
+  browsers use a handler-selected WebSocket subprotocol; never the URL.
+  Credentials come from the process, never from `config.toml`.
 
 ### 6.2 Copilot CLI resolution is a security-relevant path
 
@@ -802,6 +837,18 @@ canonicalizes; (7) `database.path` has no `..` segment. Rules 4 and 8 are
 removed and rule 6's presence check is **eliminated** (not relaxed), so it
 drops out of the enumeration entirely: 10 − 2 − 1 = 7.
 
+**New `[remote]` validation rule group (decided 2026-10-19, ADR MVP-2 and
+MVP-3; implemented by the MVP config task, not yet in `internal/config`).** The
+seven-rule contract above is the *shipped* contract and is unchanged until that
+task lands. The MVP adds a separate `[remote]` group with these fields and
+rules: `token_lifetime_seconds` (integer, 60 to 86400, default 14400);
+`allowed_origins` (list of exact `scheme://host[:port]` origins, default empty,
+wildcards rejected); `allowed_hosts` (list of host names, default empty,
+wildcards rejected); `max_connections` (integer of at least 1, default 8);
+`remote_approve_destructive` (boolean, default `false`). Config validation also
+rejects any credential-shaped key under `[remote]`, because credentials never
+come from `config.toml`.
+
 **Security note carried forward:** the shipped example contains
 `host_cli_args = ["--dangerously-skip-permissions"]`. Under this architecture
 permission handling is a core product responsibility (§5.4). That example is
@@ -810,6 +857,13 @@ removed as part of the remediation.
 ---
 
 ## 9. Non-Goals
+
+> **MVP pointer (2026-10-19).** The MVP primary scenario and its scope cut are
+> recorded in [`docs/product-specs/intercom-go-mvp-primary-scenario.md`](../product-specs/intercom-go-mvp-primary-scenario.md)
+> and [ADR MVP-1](../decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md).
+> Non-goals below apply to the MVP as written; the SPA remains a non-goal and the
+> MVP remote surface is the documented authenticated WebSocket protocol plus a Go
+> reference client.
 
 * SPA framework selection or SPA implementation.
 * Any ACP protocol implementation.
