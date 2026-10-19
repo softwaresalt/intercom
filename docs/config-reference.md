@@ -146,7 +146,7 @@ exception is listed below.
 | `[slack].markdown_upload_extensions` | Delete the table. There is no replacement. |
 | `[acp]` | Delete the section. There is no replacement in C1. |
 | `[acp].max_sessions` | Delete the key. Do not migrate it. |
-| `[acp].startup_timeout_seconds` | Delete the key in C1. Do not add a replacement yet; the follow-on `[copilot]` timeout work is deferred to C2. |
+| `[acp].startup_timeout_seconds` | Deleted in C1. Re-introduced in C3 as `[copilot].startup_timeout_seconds` with its first consumer, the agent adapter's `Client.Start` deadline. |
 | `[acp].max_msg_rate` | Delete the key. There is no replacement. |
 | `[acp].http_port` | Delete the key. There is no replacement. |
 | `host_cli_args` | Delete the key. Do not pass `--dangerously-skip-permissions`; that bypasses operator approval prompts and is intentionally removed. |

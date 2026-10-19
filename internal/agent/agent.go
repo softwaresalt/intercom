@@ -7,7 +7,10 @@
 // from the types declared here.
 package agent
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // EventKind is the intercom-owned classification of an agent event.
 type EventKind string
@@ -54,18 +57,43 @@ type SessionHandle struct {
 	ID string
 }
 
+// PermissionKind is the intercom-owned classification of a permission
+// request. Hub authorization policy keys on this value, never on SDK
+// discriminator strings (design §7.1). The zero value is Unknown and policy
+// must treat Unknown and Other as the most restrictive class.
+type PermissionKind uint8
+
+const (
+	// PermissionKindUnknown is the zero value: unclassified.
+	PermissionKindUnknown PermissionKind = iota
+	PermissionKindShell
+	PermissionKindWrite
+	PermissionKindRead
+	PermissionKindURL
+	// PermissionKindOther is any SDK kind the adapter does not model.
+	PermissionKindOther
+)
+
 // PermissionRequest is an intercom-owned description of a tool permission
-// request. It deliberately carries a bounded summary instead of the SDK
-// request value.
+// request. It deliberately carries a bounded, sanitized summary instead of the
+// SDK request value.
 type PermissionRequest struct {
 	SessionID  string
 	ToolCallID string
-	// Kind is the SDK's request discriminator (shell, write, read, ...).
-	Kind string
-	// Summary is a human-readable description for the operator (for a shell
-	// request, the command text). It is bounded: adapters truncate it with an
-	// ellipsis at a fixed rune limit before it crosses into the hub.
+	// Kind is the intercom classification; RawKind is the SDK discriminator,
+	// kept for diagnostics only.
+	Kind    PermissionKind
+	RawKind string
+	// Summary is a human-readable description for the operator (shell: the
+	// command text; write/read: the path; url: the target). It is sanitized
+	// (control and bidi-format runes replaced) and bounded: adapters truncate
+	// it with an ellipsis at a fixed rune limit before it crosses into the hub.
 	Summary string
+	// Truncated reports that Summary does not show the whole request; FullLen
+	// is the original length in runes. A truncated request cannot be reviewed
+	// in full, so the adapter denies such requests itself rather than asking.
+	Truncated bool
+	FullLen   int
 }
 
 // DecisionKind is the intercom-owned permission outcome. The zero value is
@@ -97,10 +125,28 @@ type PermissionDecision struct {
 // PermissionAsk is sent to the hub for each permission request. The hub
 // answers by sending exactly one decision on Reply (capacity 1, so the hub
 // never blocks on it).
+//
+// Resolved is closed when the adapter no longer needs an answer (the request
+// was answered, or shutdown or hub-done abandoned it). A hub that dequeues an
+// ask whose Resolved is already closed must discard it instead of prompting
+// the operator. The hub owns any approval timeout; the adapter applies none.
+//
+// Ordering: asks travel on a different channel from events, so the relative
+// order of an ask and the events around it is undefined; the hub must not
+// infer order across the two.
 type PermissionAsk struct {
-	Request PermissionRequest
-	Reply   chan<- PermissionDecision
+	Request  PermissionRequest
+	Reply    chan<- PermissionDecision
+	Resolved <-chan struct{}
 }
+
+// Lifecycle sentinel errors returned (wrapped) by Agent implementations so
+// callers can use errors.Is to tell an orderly shutdown from a real fault.
+var (
+	ErrStopped        = errors.New("agent stopped")
+	ErrNotRunning     = errors.New("agent session not running")
+	ErrAlreadyStarted = errors.New("agent already started")
+)
 
 // Agent is the interface the hub uses to drive an agent runtime. One Agent
 // owns one session (ADR MVP-D7). Events and permission asks flow out through
@@ -114,6 +160,10 @@ type Agent interface {
 	// Abort cancels the in-flight turn. ctx must carry a deadline or a
 	// default applies.
 	Abort(ctx context.Context) error
-	// Stop quiesces callbacks and shuts the runtime down within ctx.
+	// Stop quiesces callbacks and shuts the runtime down within ctx. Calling
+	// order (design §3.1): Abort, wait for the idle event on ingress, then
+	// Stop; events still in flight when Stop begins may be discarded (logged
+	// at warn), so Stop must follow an observed idle. Stop also interrupts a
+	// Start in progress and is idempotent.
 	Stop(ctx context.Context) error
 }

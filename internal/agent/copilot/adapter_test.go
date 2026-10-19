@@ -28,7 +28,6 @@ func absTestPath() string { return filepath.Join(os.TempDir(), "copilot") }
 type fakeSession struct {
 	mu                  sync.Mutex
 	handler             copilotsdk.SessionEventHandler
-	unsubscribe         atomic.Int32
 	sendCtxHasDeadline  bool
 	sentPrompt          string
 	sendErr             error
@@ -36,15 +35,10 @@ type fakeSession struct {
 	abortCtxHasDeadline bool
 	disconnects         atomic.Int32
 	disconnectBlock     chan struct{} // when non-nil, Disconnect blocks until closed
+	sendBlock           bool          // Send blocks until its ctx is done
 }
 
 func (s *fakeSession) ID() string { return "sess-1" }
-func (s *fakeSession) On(h copilotsdk.SessionEventHandler) func() {
-	s.mu.Lock()
-	s.handler = h
-	s.mu.Unlock()
-	return func() { s.unsubscribe.Add(1) }
-}
 func (s *fakeSession) emit(ev copilotsdk.SessionEvent) {
 	s.mu.Lock()
 	h := s.handler
@@ -54,6 +48,10 @@ func (s *fakeSession) emit(ev copilotsdk.SessionEvent) {
 func (s *fakeSession) Send(ctx context.Context, o copilotsdk.MessageOptions) (string, error) {
 	_, s.sendCtxHasDeadline = ctx.Deadline()
 	s.sentPrompt = o.Prompt
+	if s.sendBlock {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	return "m", s.sendErr
 }
 func (s *fakeSession) Abort(ctx context.Context) error {
@@ -70,6 +68,8 @@ func (s *fakeSession) Disconnect() error {
 
 type fakeClient struct {
 	startBlock    bool
+	startEntered  chan struct{}             // closed when a blocking Start is entered
+	preEvents     []copilotsdk.SessionEvent // delivered through OnEvent during CreateSession, before it returns
 	startErr      error
 	status        *copilotsdk.GetStatusResponse
 	statusErr     error
@@ -86,13 +86,15 @@ type fakeClient struct {
 
 func newFakeClient() *fakeClient {
 	return &fakeClient{
-		status:  &copilotsdk.GetStatusResponse{Version: ValidatedCLIVersion, ProtocolVersion: copilotsdk.SDKProtocolVersion},
-		session: &fakeSession{},
+		status:       &copilotsdk.GetStatusResponse{Version: ValidatedCLIVersion, ProtocolVersion: copilotsdk.SDKProtocolVersion},
+		session:      &fakeSession{},
+		startEntered: make(chan struct{}),
 	}
 }
 
 func (c *fakeClient) Start(ctx context.Context) error {
 	if c.startBlock {
+		close(c.startEntered)
 		<-ctx.Done()
 		return ctx.Err()
 	}
@@ -104,6 +106,12 @@ func (c *fakeClient) GetStatus(context.Context) (*copilotsdk.GetStatusResponse, 
 func (c *fakeClient) CreateSession(_ context.Context, cfg *copilotsdk.SessionConfig) (sdkSession, error) {
 	c.createCalls.Add(1)
 	c.createCfg = cfg
+	c.session.mu.Lock()
+	c.session.handler = cfg.OnEvent
+	c.session.mu.Unlock()
+	for _, ev := range c.preEvents {
+		cfg.OnEvent(ev)
+	}
 	if c.createGate != nil {
 		close(c.createEntered)
 		<-c.createGate
@@ -406,9 +414,8 @@ func TestStopReleasesBlockedCallbackAndNeverClosesIngress(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("blocked callback was not released by Stop")
 	}
-	if h.client.session.unsubscribe.Load() != 1 {
-		t.Errorf("unsubscribe called %d times, want 1", h.client.session.unsubscribe.Load())
-	}
+	// Events arriving after Stop must not panic or deliver (SDK keeps the
+	// OnEvent handler until Disconnect).
 	select {
 	case _, ok := <-ing:
 		if !ok {

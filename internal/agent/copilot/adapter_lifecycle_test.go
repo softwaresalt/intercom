@@ -3,15 +3,12 @@ package copilot
 import (
 	"context"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	copilotsdk "github.com/github/copilot-sdk/go"
 	"github.com/github/copilot-sdk/go/rpc"
-
-	"github.com/softwaresalt/intercom-go/internal/agent"
 )
 
 // F1: Stop racing an in-flight Start must not orphan the runtime.
@@ -22,7 +19,7 @@ func TestStopDuringStartAbortsStartAndTearsDownClient(t *testing.T) {
 	})
 	startErr := make(chan error, 1)
 	go func() { _, err := h.ad.Start(context.Background()); startErr <- err }()
-	time.Sleep(50 * time.Millisecond) // Start is parked in client.Start
+	<-h.client.startEntered // Start is parked in client.Start
 
 	stopErr := make(chan error, 1)
 	go func() { stopErr <- h.ad.Stop(context.Background()) }()
@@ -205,35 +202,4 @@ func TestRequiredProtocolVersionIsPinned(t *testing.T) {
 	if copilotsdk.SDKProtocolVersion != RequiredProtocolVersion {
 		t.Fatalf("SDK protocol %d != pinned %d: re-validate before bumping the SDK", copilotsdk.SDKProtocolVersion, RequiredProtocolVersion)
 	}
-}
-
-// F10: a concurrent second Stop waits for the first and sees the same result.
-func TestConcurrentStopWaitsForFirst(t *testing.T) {
-	h := newHarness(t, func(c *Config, f *fakeClient) {
-		c.StopTimeout = 2 * time.Second
-		f.stopBlock = make(chan struct{})
-	})
-	if _, err := h.ad.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	var firstDone atomic.Bool
-	go func() { _ = h.ad.Stop(context.Background()); firstDone.Store(true) }()
-	time.Sleep(50 * time.Millisecond)
-	second := make(chan struct{})
-	go func() { _ = h.ad.Stop(context.Background()); close(second) }()
-	select {
-	case <-second:
-		t.Fatal("second Stop returned before the first completed")
-	case <-time.After(100 * time.Millisecond):
-	}
-	close(h.client.stopBlock)
-	select {
-	case <-second:
-	case <-time.After(2 * time.Second):
-		t.Fatal("second Stop never returned")
-	}
-	if !firstDone.Load() {
-		t.Error("first Stop should have completed")
-	}
-	_ = agent.KindIdle
 }

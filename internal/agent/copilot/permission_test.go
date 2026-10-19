@@ -59,7 +59,7 @@ func TestPermissionHandlerReturnsOnlyHubDecision(t *testing.T) {
 
 	go func() {
 		ask := <-asks
-		if ask.Request.Kind != string(rpc.PermissionRequestKindShell) || ask.Request.Summary != "echo hi" ||
+		if ask.Request.Kind != agent.PermissionKindShell || ask.Request.RawKind != string(rpc.PermissionRequestKindShell) || ask.Request.Summary != "echo hi" ||
 			ask.Request.SessionID != "s1" || ask.Request.ToolCallID != "c1" {
 			t.Errorf("unexpected ask request %+v", ask.Request)
 		}

@@ -72,7 +72,6 @@ type Config struct {
 // unexported and only ever satisfied inside this package.
 type sdkSession interface {
 	ID() string
-	On(copilotsdk.SessionEventHandler) func()
 	Send(context.Context, copilotsdk.MessageOptions) (string, error)
 	Abort(context.Context) error
 	Disconnect() error
@@ -105,9 +104,6 @@ func (r realClient) ForceStop()  { r.c.ForceStop() }
 type realSession struct{ s *copilotsdk.Session }
 
 func (r realSession) ID() string { return r.s.SessionID }
-func (r realSession) On(h copilotsdk.SessionEventHandler) func() {
-	return r.s.On(h)
-}
 func (r realSession) Send(ctx context.Context, o copilotsdk.MessageOptions) (string, error) {
 	return r.s.Send(ctx, o)
 }
@@ -131,11 +127,12 @@ type Adapter struct {
 	stopping      bool // a Stop is running or has finished
 	clientStarted bool
 	session       sdkSession
-	unsubscribe   func()
 	startCancel   context.CancelFunc // cancels an in-flight Start
 	startDone     chan struct{}      // closed when Start returns
 	stopDone      chan struct{}      // closed when the first Stop finishes
 	stopResult    error
+	ops           context.Context // cancelled by Stop; parents Send/Abort calls
+	opsCancel     context.CancelFunc
 }
 
 // New validates cfg and builds an Adapter backed by the real SDK client.
@@ -175,6 +172,7 @@ func newAdapter(cfg Config, c sdkClient) *Adapter {
 		latch:  newLatch(),
 		stop:   make(chan struct{}),
 	}
+	a.ops, a.opsCancel = context.WithCancel(context.Background())
 	a.bridge.stop = a.stop
 	return a
 }
@@ -223,13 +221,16 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 	a.mu.Lock()
 	if a.stopped {
 		a.mu.Unlock()
-		return agent.SessionHandle{}, errors.New("agent: adapter is stopped")
+		return agent.SessionHandle{}, fmt.Errorf("agent: start: %w", agent.ErrStopped)
 	}
 	if a.started {
 		a.mu.Unlock()
-		return agent.SessionHandle{}, errors.New("agent: already started; one session per process")
+		return agent.SessionHandle{}, fmt.Errorf("agent: start: one session per process: %w", agent.ErrAlreadyStarted)
 	}
 	a.started = true
+	// The SDK launches the CLI with exec.Command (not CommandContext), so
+	// cancelling this startup context when Start returns does not kill the
+	// runtime; it only bounds the startup RPCs.
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.StartupTimeout)
 	done := make(chan struct{})
 	a.startCancel = cancel
@@ -239,12 +240,14 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 	defer cancel()
 
 	// fail tears the runtime down. Marking the adapter stopped makes a
-	// failed Start terminal.
+	// failed Start terminal, and closing the stop signal releases anything
+	// already wired to it (a parked permission handler, a blocked callback).
 	fail := func(err error) (agent.SessionHandle, error) {
 		a.mu.Lock()
 		a.stopped = true
 		a.clientStarted = false
 		a.mu.Unlock()
+		a.stopOnce.Do(func() { close(a.stop) })
 		a.client.ForceStop()
 		return agent.SessionHandle{}, err
 	}
@@ -254,6 +257,7 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 		defer a.mu.Unlock()
 		return a.stopped
 	}
+	errInterrupted := fmt.Errorf("agent: start interrupted: %w", agent.ErrStopped)
 
 	if err := a.client.Start(ctx); err != nil {
 		return fail(fmt.Errorf("agent: start copilot client: %w", err))
@@ -262,7 +266,7 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 	a.clientStarted = true
 	a.mu.Unlock()
 	if interrupted() {
-		return fail(errors.New("agent: start interrupted by Stop"))
+		return fail(errInterrupted)
 	}
 
 	status, err := a.client.GetStatus(ctx)
@@ -273,9 +277,14 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 		return fail(err)
 	}
 
+	// The event handler is registered at session creation (SessionConfig.OnEvent),
+	// not afterwards via Session.On, so events emitted during creation are not
+	// lost (design §4.2: no silent drop). The latch refuses entrants after
+	// Stop; the SDK stops invoking the handler once the session disconnects.
 	streaming := true
 	sess, err := a.client.CreateSession(ctx, &copilotsdk.SessionConfig{
 		OnPermissionRequest: a.bridge.handler(),
+		OnEvent:             a.onEvent,
 		Streaming:           &streaming,
 		WorkingDirectory:    a.cfg.WorkingDirectory,
 	})
@@ -289,10 +298,9 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 	if a.stopped {
 		a.mu.Unlock()
 		_ = boundedCall(a.cfg.StopTimeout, sess.Disconnect)
-		return fail(errors.New("agent: start interrupted by Stop"))
+		return fail(errInterrupted)
 	}
 	a.session = sess
-	a.unsubscribe = sess.On(a.onEvent)
 	a.mu.Unlock()
 	return agent.SessionHandle{ID: sess.ID()}, nil
 }
@@ -351,21 +359,35 @@ func parseVersion(v string) ([4]int, error) {
 		return out, fmt.Errorf("want MAJOR.MINOR.PATCH[-N], got %q", v)
 	}
 	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 {
+		n, err := parseDigits(p)
+		if err != nil {
 			return out, fmt.Errorf("non-numeric component %q in %q", p, v)
 		}
 		out[i] = n
 	}
 	out[3] = math.MaxInt // final release: above every prerelease number
 	if hasRev {
-		n, err := strconv.Atoi(rev)
-		if err != nil || n < 0 {
+		n, err := parseDigits(rev)
+		if err != nil {
 			return out, fmt.Errorf("non-numeric revision %q in %q", rev, v)
 		}
 		out[3] = n
 	}
 	return out, nil
+}
+
+// parseDigits parses a non-empty string of ASCII digits (strconv.Atoi would
+// also accept a leading sign).
+func parseDigits(s string) (int, error) {
+	if s == "" {
+		return 0, errors.New("empty")
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return 0, errors.New("not a digit string")
+		}
+	}
+	return strconv.Atoi(s)
 }
 
 // onEvent is the SDK callback. It follows the §4.2 contract: admitted by the
@@ -400,16 +422,25 @@ func (a *Adapter) activeSession() (sdkSession, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.session == nil || a.stopped {
-		return nil, errors.New("agent: session is not running")
+		return nil, fmt.Errorf("agent: session is not running: %w", agent.ErrNotRunning)
 	}
 	return a.session, nil
 }
 
-func (a *Adapter) withDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
-	if _, ok := ctx.Deadline(); ok {
-		return ctx, func() {}
+// opContext bounds an SDK call: it carries a deadline (the caller's, or the
+// default) and is also cancelled when Stop begins, so an in-flight Send or
+// Abort does not outlive shutdown.
+func (a *Adapter) opContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancelTimeout context.CancelFunc
+		ctx, cancelTimeout = context.WithTimeout(ctx, a.cfg.DefaultOpTimeout)
+		inner, cancel := context.WithCancel(ctx)
+		stopWatch := context.AfterFunc(a.ops, cancel)
+		return inner, func() { stopWatch(); cancel(); cancelTimeout() }
 	}
-	return context.WithTimeout(ctx, a.cfg.DefaultOpTimeout)
+	inner, cancel := context.WithCancel(ctx)
+	stopWatch := context.AfterFunc(a.ops, cancel)
+	return inner, func() { stopWatch(); cancel() }
 }
 
 // Send submits a prompt. SendAndWait is deliberately not used: its documented
@@ -426,7 +457,7 @@ func (a *Adapter) Send(ctx context.Context, prompt string) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("agent: send prompt: %w", err)
 	}
-	ctx, cancel := a.withDeadline(ctx)
+	ctx, cancel := a.opContext(ctx)
 	defer cancel()
 	if _, err := sess.Send(ctx, copilotsdk.MessageOptions{Prompt: prompt}); err != nil {
 		return fmt.Errorf("agent: send prompt: %w", err)
@@ -443,7 +474,7 @@ func (a *Adapter) Abort(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("agent: abort turn: %w", err)
 	}
-	ctx, cancel := a.withDeadline(ctx)
+	ctx, cancel := a.opContext(ctx)
 	defer cancel()
 	if err := sess.Abort(ctx); err != nil {
 		return fmt.Errorf("agent: abort turn: %w", err)
@@ -451,7 +482,8 @@ func (a *Adapter) Abort(ctx context.Context) error {
 	return nil
 }
 
-// Stop quiesces SDK callbacks (latch, then Unsubscribe, then a bounded wait)
+// Stop quiesces SDK callbacks (close the latch, then a bounded wait for
+// in-flight callbacks to drain)
 // and shuts the runtime down, escalating to ForceStop on failure. Every
 // blocking SDK step is bounded by min(StopTimeout, ctx remaining), so Stop's
 // worst case is a small multiple of StopTimeout even when the CLI hangs.
@@ -500,6 +532,7 @@ func (a *Adapter) budget(ctx context.Context) time.Duration {
 
 func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, startDone <-chan struct{}) error {
 	a.stopOnce.Do(func() { close(a.stop) })
+	a.opsCancel() // cancel in-flight Send/Abort
 
 	var errs []error
 	needForce := false
@@ -521,12 +554,9 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 	}
 
 	a.mu.Lock()
-	sess, unsub, clientStarted := a.session, a.unsubscribe, a.clientStarted
+	sess, clientStarted := a.session, a.clientStarted
 	a.mu.Unlock()
 
-	if unsub != nil {
-		unsub()
-	}
 	if !a.latch.quiesce(a.budget(ctx)) {
 		errs = append(errs, errors.New("agent: callbacks did not drain before the quiesce deadline"))
 	}
@@ -562,6 +592,11 @@ func boundedCall(d time.Duration, fn func() error) error {
 	case err := <-res:
 		return err
 	case <-t.C:
+		select { // a result that is already ready beats the timer
+		case err := <-res:
+			return err
+		default:
+		}
 		return errStepTimeout
 	}
 }

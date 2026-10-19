@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"errors"
 	"go/parser"
 	"go/token"
 	"os"
@@ -69,6 +70,27 @@ func TestEventKindStringsAreStable(t *testing.T) {
 		if string(k) != want {
 			t.Errorf("kind %q != %q", k, want)
 		}
+	}
+}
+
+func TestSentinelErrorsAreDistinct(t *testing.T) {
+	errs := []error{agent.ErrStopped, agent.ErrNotRunning, agent.ErrAlreadyStarted}
+	for i, a := range errs {
+		if a == nil || a.Error() == "" {
+			t.Fatalf("sentinel %d is empty", i)
+		}
+		for j, b := range errs {
+			if i != j && errors.Is(a, b) {
+				t.Errorf("sentinels %d and %d are not distinct", i, j)
+			}
+		}
+	}
+}
+
+func TestPermissionKindZeroValueIsUnknown(t *testing.T) {
+	var k agent.PermissionKind
+	if k == agent.PermissionKindShell || k == agent.PermissionKindWrite || k == agent.PermissionKindRead {
+		t.Fatal("zero PermissionKind must not alias a real kind (hub policy denies unknown kinds)")
 	}
 }
 
