@@ -28,4 +28,4 @@ Date: 2026-10-19. Branch: feat/057-s-mvp-s2-agent-adapter-anti-corruption-layer.
 
 ## Next
 
-Open PR, wait for CI and Copilot review, readiness gate, merge-commit merge, post-merge closure.
+Done: PR 175 merged as merge commit e43ad660aa2f0bd98c9eff58833cbfbe0e4963a2 (reviewed HEAD 35cdacc). Copilot review: 4 threads fixed, replied and resolved over multiple rounds; P-018 gate SATISFIED. Post-merge: 065-F done via the a1 gate; classify-only CASCADE (engine VERIFIED); operator pre-approved mutating cascade-close exited 0 (postcondition pass).
