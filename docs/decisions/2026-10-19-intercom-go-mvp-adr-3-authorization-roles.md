@@ -116,7 +116,8 @@ action (every row of the matrix other than observe), the hub step re-validates, 
 4. The connection's role permits the action (matrix above).
 5. For approvals, the permission kind class and `remote_approve_destructive`.
 
-Failures 1 to 3 send the refusal and then close the connection (policy-violation close
+Failures 1 to 3 do not apply to the local TUI, which has no credential record and is never
+closed by them. For remote connections they send the refusal and then close the connection (policy-violation close
 issued by the write pump, per design 5.5), because the credential is no longer valid.
 Failures 4 and 5 send the refusal and keep the connection open.
 
@@ -127,9 +128,10 @@ credential is revoked by re-issue. Shutdown revocation (ADR MVP-2) does not sign
 the write pumps close sockets after the design 3.1 broadcast and bounded drain. A revoked or expired credential therefore
 ends a connection within one timer firing or one hub step, not at the next action. There is
 no periodic sweep. The credential store is hub-owned (ADR MVP-2), and the upgrade handler
-registers a connection with a revocation re-check in the same hub step. Re-validation steps
-1 to 3 run for every decoded inbound action, including one that is then refused as
-`action_unknown`.
+registers a connection with a revocation re-check in the same hub step. Re-validation steps 1 to 3 run for every decoded inbound action, including one that is then refused as
+`action_unknown`. A frame that fails to decode is a protocol violation: the connection gets
+a policy-violation close. When the hub-owned permission timeout fires, the outcome is deny
+(`UserNotAvailable`, design 5.4).
 
 ## Accepted exposure
 

@@ -61,7 +61,7 @@ Option (a) of the deliberation: per-process random bearer credentials. Rejected 
    treated as absent.
 6. **Renewal.** For the MVP, renewal is operator re-issue through the local TUI. Re-issue
    mints a new credential for the chosen role, revokes the old one immediately, and the
-   per-message re-validation (ADR MVP-3) closes remote connections that used the revoked
+   connection mechanism in ADR MVP-3 (the hub's `done` signal) closes remote connections that used the revoked
    credential. The operator hands the new credential to the remote user out of band.
 7. **Binding.** A credential is bound to the process `gen` (design 5.2) and so cannot
    survive a restart. It is also bound to each connection: the server records which
@@ -88,7 +88,7 @@ proxies, tunnels, and browsers.
 | Client type | Carriage | Rule |
 |---|---|---|
 | Native clients (Go reference client, CLI tools) | `Authorization: Bearer <credential>` request header on the upgrade | Preferred. Browsers cannot set this header on a WebSocket. |
-| Browsers (future SPA) | WebSocket subprotocol: the client offers `Sec-WebSocket-Protocol: intercom.v1, bearer.<credential>` | The handler selects only `intercom.v1` and never echoes the `bearer.` entry. A request that offers no `intercom.v1` is rejected. |
+| Browsers (future SPA) | WebSocket subprotocol: the client offers `Sec-WebSocket-Protocol: intercom.v1, bearer.<credential>` | The handler selects only `intercom.v1` and never echoes the `bearer.` entry. A request that offers no `intercom.v1` is rejected with the same generic 401 as any credential failure. |
 
 Neither carriage may use cookies or any ambient credential. If both a header and a
 subprotocol credential are present, the request is rejected as ambiguous. A malformed or
@@ -116,6 +116,8 @@ non-URL option.
   is stripped, an internationalized host is compared in its ASCII (punycode) form, and the
   default port (`:443` for `https`, `:80` for `http`) is equivalent to an omitted port.
   Entries must already be written in this canonical form, and validation rejects others.
+  `allowed_hosts` entries are a host with an optional port, in the same canonical form; an entry
+  without a port matches the default port only.
 * Wildcards (`*`, scheme-only, or host-only patterns) are not allowed in
   `allowed_origins` or `allowed_hosts`. Config validation rejects them. The library's skip-verification and
   wildcard origin options must not be used.
