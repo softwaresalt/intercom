@@ -166,6 +166,7 @@ done
 
 unset CDPATH
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=lib/gatecheck-run.sh
 source "${SCRIPT_DIR}/lib/gatecheck-run.sh"
 
@@ -173,8 +174,12 @@ source "${SCRIPT_DIR}/lib/gatecheck-run.sh"
 # discarded: ROOT is anchored by gatecheck_repo_root, never by the caller's
 # working directory (D-WB2-4).
 git rev-parse --show-toplevel >/dev/null
+# ROOT is read by gatecheck_invoke in the sourced lib/gatecheck-run.sh.
+# shellcheck disable=SC2034
 ROOT="$(gatecheck_repo_root)"
 
+# cleanup is invoked indirectly through the EXIT trap below.
+# shellcheck disable=SC2329
 cleanup() {
   gatecheck_cleanup
 }
