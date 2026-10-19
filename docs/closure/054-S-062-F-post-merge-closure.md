@@ -22,7 +22,8 @@ compaction_status: done
 * Merge: PR 167 merged as a merge commit (P-009) at de3ed48, verified in origin/main history.
 * Gates before merge: CI green and local review READY_WITH_FOLLOWUPS. P-018 outcome is recorded in the feature PR.
 * a1 covering-feature completion: 062-F moved active to done; descendants 062.001-T and 062.002-T were done, with no other descendants.
-* Close: plain `--classify-only` (CASCADE, engine VERIFIED), then the per-closure operator-approved mutating `autoharness shipment cascade-close` exited 0 with postcondition `pass`. `archived_ids` = 062.001-T, 062.002-T, 054-S, 062-F; shipment archived as `shipped`.
+* Pre-mode check: the manifest items were all done with no orphans and the shipment record was active (recorded in the evidence `pre_close` snapshot).
+* Close: plain `--classify-only` (CASCADE, engine VERIFIED), then the per-closure operator-approved mutating `autoharness shipment cascade-close` exited 0 with postcondition `pass`. The evidence `invocation` records the engine child call (`backlogit shipment ship 054-S`) that the wrapper ran. `archived_ids` = 062.001-T, 062.002-T, 054-S, 062-F; shipment archived as `shipped`.
 * Post-mode reconcile: PROCEED (`.backlogit/reconcile/054-S-post-20261019T0510Z.md`); no archive deletions (P-007).
 * Linked-deliberation disposition: empty set, DISPOSITION_COMPLETE.
 
