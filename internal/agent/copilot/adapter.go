@@ -130,6 +130,8 @@ type Adapter struct {
 	startCancel   context.CancelFunc // cancels an in-flight Start
 	startDone     chan struct{}      // closed when Start returns
 	stopDone      chan struct{}      // closed when the first Stop finishes
+	forceOnce     sync.Once          // single-flight ForceStop
+	forceDone     chan struct{}      // closed when ForceStop returns
 	stopResult    error
 	ops           context.Context // cancelled by Stop; parents Send/Abort calls
 	opsCancel     context.CancelFunc
@@ -612,14 +614,24 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 // caller gives up). ForceStop can itself block on SDK lifecycle locking; if it
 // does, the incomplete cleanup is reported rather than waited out.
 func (a *Adapter) forceStop() error {
-	err := boundedCall(context.Background(), a.cfg.StopTimeout, func() error {
-		a.client.ForceStop()
-		return nil
+	// Single-flight: Start's failure path and Stop can both need a force stop;
+	// the SDK's ForceStop runs at most once and every caller waits on it for a
+	// bounded time.
+	a.forceOnce.Do(func() {
+		a.forceDone = make(chan struct{})
+		go func() {
+			a.client.ForceStop()
+			close(a.forceDone)
+		}()
 	})
-	if err != nil {
+	t := time.NewTimer(a.cfg.StopTimeout)
+	defer t.Stop()
+	select {
+	case <-a.forceDone:
+		return nil
+	case <-t.C:
 		return fmt.Errorf("agent: cleanup incomplete: ForceStop did not return within %v", a.cfg.StopTimeout)
 	}
-	return nil
 }
 
 var errStepTimeout = errors.New("timed out")

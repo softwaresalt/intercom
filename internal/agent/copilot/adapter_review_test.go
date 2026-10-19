@@ -101,6 +101,22 @@ func TestStopObservesContextCancellation(t *testing.T) {
 	}
 }
 
+// ForceStop is single-flight: concurrent cleanup paths (failed Start and Stop)
+// share one SDK ForceStop call.
+func TestForceStopIsSingleFlight(t *testing.T) {
+	h := newHarness(t, nil)
+	done := make(chan struct{}, 8)
+	for i := 0; i < 8; i++ {
+		go func() { _ = h.ad.forceStop(); done <- struct{}{} }()
+	}
+	for i := 0; i < 8; i++ {
+		<-done
+	}
+	if n := h.client.forceStops.Load(); n != 1 {
+		t.Fatalf("SDK ForceStop called %d times, want exactly 1", n)
+	}
+}
+
 func TestStopObservesContextCancellationDuringStart(t *testing.T) {
 	h := newHarness(t, func(c *Config, f *fakeClient) {
 		c.StartupTimeout = 10 * time.Second
