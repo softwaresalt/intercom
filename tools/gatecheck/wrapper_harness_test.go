@@ -525,7 +525,7 @@ func TestSameBashFile_ComparesByIdentity(t *testing.T) {
 	if sameBashFile(t, bash, posix, path.Join(bashDir, "other")) {
 		t.Errorf("sameBashFile reported two different files as the same")
 	}
-	if strings.EqualFold(native, posix) {
+	if runtime.GOOS == "windows" && strings.EqualFold(native, posix) {
 		t.Errorf("spellings %q and %q are string-equal; the identity case is vacuous", native, posix)
 	}
 }

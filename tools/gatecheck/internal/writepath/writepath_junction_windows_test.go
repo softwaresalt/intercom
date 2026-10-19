@@ -42,17 +42,22 @@ func nativeJunction(target, link string) error {
 // for a junction target. \\?\ extended-length and UNC spellings are normalized
 // first, because the substitute name must be \??\C:\... or \??\UNC\server\share
 // and never carry a literal \??\\\?\ or \??\\\server prefix.
-func junctionNames(target string) (substitute, print string) {
+func junctionNames(target string) (substitute, printName string) {
 	switch {
-	case strings.HasPrefix(target, `\\?\UNC\`):
+	case hasPrefixFold(target, `\\?\UNC\`):
 		target = `\\` + target[len(`\\?\UNC\`):]
-	case strings.HasPrefix(target, `\\?\`):
+	case hasPrefixFold(target, `\\?\`):
 		target = target[len(`\\?\`):]
 	}
 	if strings.HasPrefix(target, `\\`) {
 		return `\??\UNC\` + target[2:], target
 	}
 	return `\??\` + target, target
+}
+
+// hasPrefixFold reports whether s starts with prefix, ignoring ASCII case.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }
 
 func setMountPoint(link, target string) error {
@@ -102,13 +107,14 @@ func TestJunctionNames(t *testing.T) {
 		{"plain", `C:\work\dir`, `\??\C:\work\dir`, `C:\work\dir`},
 		{"extended drive", `\\?\C:\work\dir`, `\??\C:\work\dir`, `C:\work\dir`},
 		{"extended UNC", `\\?\UNC\srv\share\dir`, `\??\UNC\srv\share\dir`, `\\srv\share\dir`},
+		{"extended UNC lowercase", `\\?\unc\srv\share\dir`, `\??\UNC\srv\share\dir`, `\\srv\share\dir`},
 		{"UNC", `\\srv\share\dir`, `\??\UNC\srv\share\dir`, `\\srv\share\dir`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			sub, print := junctionNames(tc.target)
-			if sub != tc.wantSub || print != tc.wantPrint {
-				t.Errorf("junctionNames(%q) = (%q, %q), want (%q, %q)", tc.target, sub, print, tc.wantSub, tc.wantPrint)
+			sub, printName := junctionNames(tc.target)
+			if sub != tc.wantSub || printName != tc.wantPrint {
+				t.Errorf("junctionNames(%q) = (%q, %q), want (%q, %q)", tc.target, sub, printName, tc.wantSub, tc.wantPrint)
 			}
 		})
 	}
