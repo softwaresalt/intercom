@@ -93,7 +93,11 @@ Accepted risk and mitigation: in standard mode the agent has its built-in tools,
 telemetry and user-environment settings are not disabled as `ModeEmpty` would do (design
 7.3). The permission path is the intended control over shell and write actions, but that is
 an assumption until it is tested: the live-SDK test (MVP-D1) must show that a shell call and
-a write call each reach the permission handler, and the MVP does not ship until it does.
+a write call each reach the permission handler, and it must also record which other built-in
+tool kinds (for example url, MCP, custom tools, and reads) do or do not reach the handler.
+Any kind that runs without a prompt is an accepted, documented exposure, because the
+deny-unknown-kinds default only applies to requests that reach the handler. The MVP does
+not ship until the shell and write check passes.
 The MVP also treats
 the authorization matrix (ADR MVP-3) as mandatory, denies unknown permission kinds by
 default, and never starts the SDK with a flag that skips permission prompts (for example

@@ -123,10 +123,13 @@ Failures 4 and 5 send the refusal and keep the connection open.
 Observe-only connections never send a privileged action, so expiry and revocation reach
 them by a connection-level mechanism: each connection's write pump owns an expiry timer set
 to the credential's expiry, and the hub signals the connection's `done` channel when a
-credential is revoked (re-issue or shutdown). A revoked or expired credential therefore
+credential is revoked by re-issue. Shutdown revocation (ADR MVP-2) does not signal `done`;
+the write pumps close sockets after the design 3.1 broadcast and bounded drain. A revoked or expired credential therefore
 ends a connection within one timer firing or one hub step, not at the next action. There is
 no periodic sweep. The credential store is hub-owned (ADR MVP-2), and the upgrade handler
-registers a connection with a revocation re-check in the same hub step.
+registers a connection with a revocation re-check in the same hub step. Re-validation steps
+1 to 3 run for every decoded inbound action, including one that is then refused as
+`action_unknown`.
 
 ## Accepted exposure
 

@@ -130,7 +130,9 @@ non-URL option.
 
 ## Decision: Host validation (MVP-D11)
 
-The listener binds loopback only. The request `Host` header must be in an allowed host set,
+The listener binds loopback only. The request `Host` header (including its port, which is
+compared after the same canonicalization as Origin: case-insensitive, trailing dot stripped,
+IDN in punycode form, default port equal to an omitted port) must be in an allowed host set,
 to defend against DNS rebinding and misrouted tunnel traffic. The set is the loopback names
 for the bound port (`127.0.0.1`, `[::1]`, and `localhost`) plus the hosts listed in
 `[remote].allowed_hosts` (default empty). A tunnel-facing deployment adds the tunnel
@@ -153,7 +155,10 @@ the transport tasks (plan 5.5 and 5.7), not decided here.
 **Accepted residual risk.** The cap counts unauthenticated sockets, so someone who can reach
 the tunnel can hold the slots for the handshake window and delay legitimate reconnects.
 This is a denial of service on the remote surface only. It cannot affect the local TUI or
-the agent, and it is accepted for the MVP because per-IP limiting is deferred.
+the agent. All tunnel traffic arrives through one relay, so per-IP limiting would not help
+anyway. It is accepted for the MVP; a reserved slot pool for authenticated reconnects is a
+candidate later improvement. A remote approver locked out this way cannot answer a pending
+request remotely, which then falls to the local TUI or the hub-owned timeout.
 
 ## Decision: tunnel anonymous access (MVP-D6)
 
