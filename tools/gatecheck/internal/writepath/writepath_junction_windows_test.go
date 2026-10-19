@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"testing"
 	"unicode/utf16"
 )
 
@@ -36,9 +38,27 @@ func nativeJunction(target, link string) error {
 	return nil
 }
 
+// junctionNames returns the NT substitute name and the user-visible print name
+// for a junction target. \\?\ extended-length and UNC spellings are normalized
+// first, because the substitute name must be \??\C:\... or \??\UNC\server\share
+// and never carry a literal \??\\\?\ or \??\\\server prefix.
+func junctionNames(target string) (substitute, print string) {
+	switch {
+	case strings.HasPrefix(target, `\\?\UNC\`):
+		target = `\\` + target[len(`\\?\UNC\`):]
+	case strings.HasPrefix(target, `\\?\`):
+		target = target[len(`\\?\`):]
+	}
+	if strings.HasPrefix(target, `\\`) {
+		return `\??\UNC\` + target[2:], target
+	}
+	return `\??\` + target, target
+}
+
 func setMountPoint(link, target string) error {
-	sub := utf16.Encode([]rune(`\??\` + target))
-	printName := utf16.Encode([]rune(target))
+	subName, printNameStr := junctionNames(target)
+	sub := utf16.Encode([]rune(subName))
+	printName := utf16.Encode([]rune(printNameStr))
 	pathBytes := (len(sub) + 1 + len(printName) + 1) * 2
 	buf := make([]byte, 8+8+pathBytes)
 	binary.LittleEndian.PutUint32(buf[0:], ioReparseTagMountPoint)
@@ -73,4 +93,66 @@ func setMountPoint(link, target string) error {
 		return fmt.Errorf("set reparse point on %s: %w", link, err)
 	}
 	return nil
+}
+
+func TestJunctionNames(t *testing.T) {
+	cases := []struct {
+		name, target, wantSub, wantPrint string
+	}{
+		{"plain", `C:\work\dir`, `\??\C:\work\dir`, `C:\work\dir`},
+		{"extended drive", `\\?\C:\work\dir`, `\??\C:\work\dir`, `C:\work\dir`},
+		{"extended UNC", `\\?\UNC\srv\share\dir`, `\??\UNC\srv\share\dir`, `\\srv\share\dir`},
+		{"UNC", `\\srv\share\dir`, `\??\UNC\srv\share\dir`, `\\srv\share\dir`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sub, print := junctionNames(tc.target)
+			if sub != tc.wantSub || print != tc.wantPrint {
+				t.Errorf("junctionNames(%q) = (%q, %q), want (%q, %q)", tc.target, sub, print, tc.wantSub, tc.wantPrint)
+			}
+		})
+	}
+}
+
+// TestNativeJunctionExtendedTarget builds a real junction from a \\?\ target and
+// checks it resolves like the plain form.
+func TestNativeJunctionExtendedTarget(t *testing.T) {
+	target := t.TempDir()
+	extended := `\\?\` + target
+	link := filepath.Join(t.TempDir(), "ext-link")
+	if err := nativeJunction(extended, link); err != nil {
+		t.Fatalf("nativeJunction(%q): %v", extended, err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "marker"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(link, "marker")); err != nil {
+		t.Errorf("junction made from an extended target does not resolve: %v", err)
+	}
+}
+
+// TestNativeJunctionUNCTarget is SKIPPED, not passed, when no UNC target can be
+// constructed: the administrative share of the local drive is the only one
+// available without external setup.
+func TestNativeJunctionUNCTarget(t *testing.T) {
+	dir := t.TempDir()
+	vol := filepath.VolumeName(dir)
+	if len(vol) != 2 || vol[1] != ':' {
+		t.Skipf("temp dir %q has no drive letter; cannot build a UNC path", dir)
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Skipf("hostname unavailable: %v", err)
+	}
+	unc := `\\` + hostname + `\` + vol[:1] + `$` + dir[len(vol):]
+	if _, err := os.Stat(unc); err != nil {
+		t.Skipf("administrative share %q not reachable from this host: %v", unc, err)
+	}
+	link := filepath.Join(t.TempDir(), "unc-link")
+	if err := nativeJunction(unc, link); err != nil {
+		t.Fatalf("nativeJunction(%q): %v", unc, err)
+	}
+	if _, err := os.Stat(link); err != nil {
+		t.Skipf("Windows does not resolve a junction with a UNC target (%v); the substitute-name form is asserted by TestJunctionNames", err)
+	}
 }
