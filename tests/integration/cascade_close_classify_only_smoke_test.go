@@ -230,6 +230,14 @@ func cascadeSmokeExpectedExit(t *testing.T, o cascadeSmokeOutcome, rep cascadeSm
 	return -1
 }
 
+// cascadeSmokeAutoharnessAbsentMessage explains why the smoke test skipped
+// when autoharness is missing and warns that the skip is not CI evidence.
+func cascadeSmokeAutoharnessAbsentMessage(err error) string {
+	return "skipping cascade-close smoke: autoharness is not on PATH: " + err.Error() +
+		". The CI test job does not install autoharness (it is installed only in the topology-check job), " +
+		"so a skip here is NOT CI evidence that cascade-close was exercised"
+}
+
 // cascadeSmokeRequireTools skips, never passes vacuously, when the real
 // autoharness or backlogit binaries are unavailable, or when an older
 // autoharness CLI rejects `shipment` as an unknown command. Any other probe
@@ -238,6 +246,9 @@ func cascadeSmokeRequireTools(t *testing.T) {
 	t.Helper()
 	for _, bin := range []string{"autoharness", "backlogit"} {
 		if _, err := exec.LookPath(bin); err != nil {
+			if bin == "autoharness" {
+				t.Skip(cascadeSmokeAutoharnessAbsentMessage(err))
+			}
 			t.Skipf("skipping cascade-close smoke: %s is not on PATH: %v", bin, err)
 		}
 	}
@@ -464,4 +475,13 @@ func cascadeSmokeEvidenceSnapshot(root string) (map[string]string, error) {
 		return nil, err
 	}
 	return snap, nil
+}
+
+func TestCascadeSmokeAutoharnessAbsentMessage(t *testing.T) {
+	msg := cascadeSmokeAutoharnessAbsentMessage(errors.New("not found"))
+	for _, want := range []string{"autoharness is not on PATH", "not found", "CI test job does not install autoharness", "topology-check", "NOT CI evidence"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("skip message missing %q: %s", want, msg)
+		}
+	}
 }
