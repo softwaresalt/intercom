@@ -1,7 +1,7 @@
 ---
 title: "ADR MVP-3: authorization role matrix"
 date: 2026-10-19
-status: decided (operator-blocking decision ratified as default; operator AFK, no override comment)
+status: decided
 decides: [MVP-D4]
 source: docs/decisions/2026-10-19-intercom-go-mvp-primary-scenario-deliberation.md
 plan: docs/plans/2026-10-19-intercom-go-mvp-primary-scenario-plan.md
@@ -43,6 +43,9 @@ A role cannot be changed by a message. A remote connection can never be `local`.
 ## Decision: permission kind classes
 
 Permission requests are classified by the adapter (design 7.1) into intercom-owned kinds.
+The kind and its class are stored in the hub's pending-request record when the request
+is registered. They are read only from that record and never from an inbound client
+message, so a client cannot relabel a `shell` request as `read`.
 
 * **Non-destructive:** `read`.
 * **Destructive:** `shell`, `write`, and every other kind, including any kind the adapter
@@ -66,6 +69,7 @@ The remote approval opt-in is `[remote].remote_approve_destructive` (default `fa
 | Approve a destructive permission (`shell`, `write`, unknown) | Y | only if `remote_approve_destructive` is true, otherwise N | N | `destructive_remote_refused` (approver); `role_not_permitted` (observer) |
 | Reveal credentials, re-issue credentials | Y | N | N | `local_only_action` |
 | Quit or shut down the process | Y | N | N | `local_only_action` |
+| Any other or malformed action type | refused | refused | refused | `action_unknown` (default deny) |
 
 Notes:
 
@@ -81,11 +85,20 @@ Notes:
 
 * Every refused action returns a hub-produced refusal message, `action.refused`, to the
   **refused surface only** (not broadcast), carrying `reason` (one of the stable codes
-  below), the action identifier, and for the loser case the winning actor.
+  below), the action identifier, and for the loser case the winning actor. It is a
+  non-sequenced per-client control message, not a sequenced envelope, so design 5.2's
+  broadcast rule does not apply. The transport task must name it in the protocol
+  definition, and a refusal that is followed by a connection close must be flushed by the
+  write pump before the close.
 * Stable reason codes: `role_not_permitted`, `destructive_remote_refused`,
   `local_only_action`, `already_resolved` (first-responder loser, design 5.4 item 3),
-  `credential_expired`, `credential_revoked`, `generation_mismatch`, `request_unknown`.
-* Authorization runs **before** the first-responder compare-and-swap. A refused action does
+  `credential_expired`, `credential_revoked`, `generation_mismatch`, `request_unknown`,
+  `action_unknown`.
+* Authorization runs **before** the first-responder compare-and-swap. The order inside the
+  hub step is: re-validation (below), then the pending-request lookup (`request_unknown`
+  for an ID that does not exist or is already finished, `already_resolved` for the loser),
+  then the role and kind check, then the CAS. Message size limits are owned by the
+  transport task (plan 5.5). A refused action does
   not resolve, consume, or time out the pending request; the request stays open for an
   authorized surface (for example the local TUI) until the hub-owned timeout. A refusal is
   never silent and never broadcast.
@@ -105,10 +118,15 @@ action (every row of the matrix other than observe), the hub step re-validates, 
 
 Failures 1 to 3 send the refusal and then close the connection (policy-violation close
 issued by the write pump, per design 5.5), because the credential is no longer valid.
-Failures 4 and 5 send the refusal and keep the connection open. Receive-side envelopes for
-observe are not re-validated per envelope; revocation and expiry are enforced by the close
-triggered at the next privileged action, by the hub's periodic credential sweep, which
-closes connections whose credential has expired or been revoked, and by shutdown.
+Failures 4 and 5 send the refusal and keep the connection open.
+
+Observe-only connections never send a privileged action, so expiry and revocation reach
+them by a connection-level mechanism: each connection's write pump owns an expiry timer set
+to the credential's expiry, and the hub signals the connection's `done` channel when a
+credential is revoked (re-issue or shutdown). A revoked or expired credential therefore
+ends a connection within one timer firing or one hub step, not at the next action. There is
+no periodic sweep. The credential store is hub-owned (ADR MVP-2), and the upgrade handler
+registers a connection with a revocation re-check in the same hub step.
 
 ## Accepted exposure
 
@@ -116,6 +134,13 @@ An observer sees full transcripts: prompts, agent output, tool arguments, comman
 any file content the agent prints. The MVP does no redaction, so the observer credential
 must be treated as sensitive, almost as sensitive as the approver credential. This is
 accepted because redaction needs a separate classification design, which is out of scope.
+
+**Read exfiltration.** A remote approver may approve `read` permissions and prompt the agent.
+`read` is not scoped to the workspace root in the MVP, so a leaked approver credential could
+make the agent read files outside the workspace and the observer stream would show them.
+This is accepted for the MVP and reduced by the credential lifetime and revocation in
+ADR MVP-2. Scoping `read` to the workspace root (using `internal/pathsafe`) is a candidate
+post-MVP control and is not decided here.
 
 ## Consequences
 

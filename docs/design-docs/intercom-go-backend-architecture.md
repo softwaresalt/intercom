@@ -98,7 +98,7 @@ isolates workspace lifecycles completely.
 | Language | **Go 1.24+** | Hard floor: `github.com/github/copilot-sdk/go` declares `go 1.24`. **Raised** (shipment 004-S / U-A1): the repository's `go.mod` language floor is now `go 1.24` (toolchain pinned at `go1.26.5` per go.mod's own CVE-remediation comment). |
 | Agent SDK | `github.com/github/copilot-sdk/go` **v1.0.11** (tag `go/v1.0.11`, commit `a550258d5c37bd662197536992a23d633bfe5804`) | Only stable Go release; GA with SemVer. See §7 for risk controls. |
 | TUI | `charmbracelet/bubbletea` + `lipgloss` + `bubbles/viewport` | Elm architecture decouples terminal rendering from asynchronous event streams. `viewport` is required so continuous token streaming does not destroy native scrollback. |
-| WebSocket | **Deferred to implementation** | Note the SDK already pulls in `coder/websocket`; reusing it avoids a second WS implementation in the binary. Whatever is chosen must expose ping/pong control so an idle tunnel is not dropped while the agent is "thinking". |
+| WebSocket | **Deferred to implementation** (MVP: decided, `coder/websocket`, [ADR MVP-1](../decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md)) | Note the SDK already pulls in `coder/websocket`; reusing it avoids a second WS implementation in the binary. Whatever is chosen must expose ping/pong control so an idle tunnel is not dropped while the agent is "thinking". |
 | Tunnel | Microsoft Dev Tunnels | Outbound TLS relay; no inbound firewall rules. See §6 for the trust-boundary caveat. |
 | Config | `BurntSushi/toml` (already shipped) | See §8. |
 
@@ -532,7 +532,8 @@ blocking" conservative posture if re-verification is not performed.
 **Authorization, not just authentication.** Any *connected* surface can approve
 an agent shell command. Connection-time authentication alone is therefore not
 sufficient; an explicit authorization model (who may approve what) MUST be
-decided before phase C5. See §6.
+decided before phase C5. See §6. *Decided for the MVP (2026-10-19):* see
+[ADR MVP-3](../decisions/2026-10-19-intercom-go-mvp-adr-3-authorization-roles.md).
 
 ### 5.5 WebSocket ownership and backpressure
 
@@ -567,6 +568,9 @@ decided before phase C5. See §6.
 * **Assumption (not operator-confirmed, tracked as Q3 in the governing
   decision):** the tunnel is created with anonymous access disabled
   (`--allow-anonymous false`) and gates on GitHub identity at the Azure edge.
+  *Recorded for the MVP (2026-10-19) as the default confirmation in
+  [ADR MVP-2](../decisions/2026-10-19-intercom-go-mvp-adr-2-credentials-and-origin.md);
+  it is a runbook requirement, not something the backend can verify.*
 * **Normative regardless of the above:** the backend treats the tunnel as an
   **untrusted** boundary and performs its own authentication on every
   WebSocket upgrade. Edge gating is defence in depth, never the only control.

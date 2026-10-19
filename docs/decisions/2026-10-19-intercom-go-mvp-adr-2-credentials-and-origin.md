@@ -1,8 +1,8 @@
 ---
 title: "ADR MVP-2: tunnel credential, carriage, Origin, and Host decisions"
 date: 2026-10-19
-status: decided (operator-blocking decisions ratified as defaults; operator AFK, no override comment)
-decides: [MVP-D3, MVP-D5, MVP-D6]
+status: decided
+decides: [MVP-D3, MVP-D5, MVP-D6, MVP-D11, MVP-D12]
 source: docs/decisions/2026-10-19-intercom-go-mvp-primary-scenario-deliberation.md
 plan: docs/plans/2026-10-19-intercom-go-mvp-primary-scenario-plan.md
 governing: docs/design-docs/intercom-go-backend-architecture.md
@@ -43,14 +43,18 @@ Option (a) of the deliberation: per-process random bearer credentials. Rejected 
    plus its metadata (role, issued-at, expiry, `gen`, revoked flag). Presented credentials
    are digested and compared with `crypto/subtle.ConstantTimeCompare`. The plaintext is held
    only long enough to show it to the operator.
-3. **Display.** Credentials are shown only on the local TUI (an explicit reveal action).
-   They are never written to a log, an envelope, a diagnostic dump, `config.toml`, the
+3. **Display.** Credentials are shown only on the local TUI, once per mint or re-issue
+   (the operator must copy it then; a later view requires re-issue, so no plaintext is
+   retained). A short fingerprint (the first 8 hex characters of the SHA-256 digest) may be
+   shown and logged to identify which credential is live. The plaintext is never written to a log, an envelope, a diagnostic dump, `config.toml`, the
    process command line, or disk. Logs and diagnostics redact the `Authorization` header
    and the `Sec-WebSocket-Protocol` header.
 4. **Secrets come from the environment, not config.** No credential may be read from
    `config.toml`. The MVP mints credentials and accepts no operator-supplied value. If a
    later change allows operator-supplied credentials, they must come from an environment
-   variable, and config validation must reject any credential-shaped key in `config.toml`.
+   variable, and config validation must reject any credential-shaped key under `[remote]`
+   (a key whose name contains `token`, `secret`, `credential`, `password`, or `bearer`,
+   other than the documented `token_lifetime_seconds`).
 5. **Lifetime.** Each credential has a fixed lifetime from issue, set by
    `[remote].token_lifetime_seconds` (default 14400, that is 4 hours; accepted range 60 to
    86400). There is no sliding expiry and no refresh endpoint. An expired credential is
@@ -63,7 +67,13 @@ Option (a) of the deliberation: per-process random bearer credentials. Rejected 
    survive a restart. It is also bound to each connection: the server records which
    credential record authenticated a connection, and every privileged action re-checks that
    record for revocation, expiry, and `gen`. All credentials are revoked at shutdown, in
-   the design 3.1 shutdown order, before sockets are aborted.
+   the design 3.1 shutdown order, at the step that stops accepting work (plan task 4.6).
+   Revocation blocks new admission and further privileged actions only. It does not close
+   sockets itself: remote clients still receive the `server.shutdown` broadcast (design 3.1
+   step 1) and the write pump closes each socket after the bounded drain. The credential
+   store is owned by the hub goroutine (or guarded by one lock), and a connection registers
+   with a revocation re-check in the same step, so an upgrade racing a re-issue cannot
+   register with a revoked credential.
 8. **Replay stance.** This is a bearer credential: anyone holding it within its lifetime can
    use it. The MVP accepts that and mitigates it with TLS at the tunnel, no URL carriage,
    header redaction, the 4-hour default lifetime, immediate revocation on re-issue and
@@ -102,32 +112,48 @@ non-URL option.
 * A missing `Origin` is accepted only together with a valid credential. Native clients
   normally send no `Origin`. A missing `Origin` with a missing or invalid credential is
   rejected.
+* Canonical form: scheme and host are compared case-insensitively, a trailing dot on a host
+  is stripped, an internationalized host is compared in its ASCII (punycode) form, and the
+  default port (`:443` for `https`, `:80` for `http`) is equivalent to an omitted port.
+  Entries must already be written in this canonical form, and validation rejects others.
 * Wildcards (`*`, scheme-only, or host-only patterns) are not allowed in
-  `allowed_origins`. Config validation rejects them. The library's skip-verification and
+  `allowed_origins` or `allowed_hosts`. Config validation rejects them. The library's skip-verification and
   wildcard origin options must not be used.
 * Authentication is by explicit bearer credential only. Ambient cookies are neither read nor
   set, which removes the CSWSH precondition. A matching `Origin` never replaces a credential.
 * Check order on upgrade (cheapest first, fail closed): connection cap, `Host`, `Origin`,
-  credential (presence, digest compare, expiry, `gen`, revocation), role. Every rejection
-  closes without echoing which check failed.
+  credential (presence, digest compare, expiry, `gen`, revocation), role. Rejections use
+  these statuses and no response body detail: 503 (cap), 403 (`Host` or `Origin`), 401
+  (any credential failure, one generic response for missing, malformed, wrong, expired, or
+  revoked). The distinct statuses reveal only which public check failed, not anything about
+  a credential, and are accepted.
 
-## Decision: Host validation
+## Decision: Host validation (MVP-D11)
 
 The listener binds loopback only. The request `Host` header must be in an allowed host set,
 to defend against DNS rebinding and misrouted tunnel traffic. The set is the loopback names
 for the bound port (`127.0.0.1`, `[::1]`, and `localhost`) plus the hosts listed in
 `[remote].allowed_hosts` (default empty). A tunnel-facing deployment adds the tunnel
-hostname. This introduces one config field, `allowed_hosts`, in the `[remote]` rule group
-recorded in the design section 8 amendment. Task 3.6 must include it alongside the fields
-named in the plan.
+hostname. MVP-D11 is new relative to the deliberation (which named `Host` validation only
+in passing) and introduces one config field, `allowed_hosts`, in the `[remote]` rule group
+recorded in the design section 8 amendment. Plan task 3.6 lists the other `[remote]` fields
+but not this one; the task that implements config must include it (reported as a follow-up
+for Stage, since changing the plan is outside this shipment).
 
-## Decision: pre-authentication limits
+## Decision: pre-authentication limits (MVP-D12)
 
 `[remote].max_connections` bounds concurrent upgrades and live remote connections
 (default 8). Requests over the cap get 503 before any credential work. The handshake has a
 fixed read deadline of 10 seconds, request headers are size-limited, and no application
 message is read before authentication succeeds. The exact numeric values for the deadline
 and header limit belong to the transport task, which must name them as constants.
+Post-authentication read-size limits, idle deadlines, and action rate limits are owned by
+the transport tasks (plan 5.5 and 5.7), not decided here.
+
+**Accepted residual risk.** The cap counts unauthenticated sockets, so someone who can reach
+the tunnel can hold the slots for the handshake window and delay legitimate reconnects.
+This is a denial of service on the remote surface only. It cannot affect the local TUI or
+the agent, and it is accepted for the MVP because per-IP limiting is deferred.
 
 ## Decision: tunnel anonymous access (MVP-D6)
 
@@ -150,7 +176,7 @@ does not expose an unauthenticated agent.
 | GitHub identity token validation (MVP-D3 option b) | Deferred: post-MVP upgrade, needs an identity provider integration the MVP does not otherwise need |
 | Single-use upgrade tickets or channel binding | Deferred: needs a ticket-minting endpoint and client flow; bearer replay accepted for now |
 | Automatic credential rotation or refresh | Deferred: renewal is operator re-issue through the TUI |
-| Per-IP or per-credential rate limiting | Deferred: only the global connection cap and handshake deadline apply |
+| Per-IP or per-credential upgrade rate limiting | Deferred: only the global connection cap and handshake deadline apply before authentication; post-authentication limits belong to plan 5.5 and 5.7 |
 | Credentials in the subprotocol hidden from edge logs | Deferred: accepted residual risk above |
 
 ## Consequences
@@ -161,6 +187,9 @@ does not expose an unauthenticated agent.
   `max_connections`, and `remote_approve_destructive` (ADR MVP-3).
 * The operator runbook must state `--allow-anonymous false` and warn that the credential is
   a bearer secret.
+* Dev Tunnels may use its own edge-authentication header. The runbook and the end-to-end
+  check must verify that the `Authorization` header reaches the backend unmodified through
+  the tunnel; if it does not, native clients need another carriage and this ADR is amended.
 
 ## References
 
