@@ -63,7 +63,8 @@ type PermissionRequest struct {
 	// Kind is the SDK's request discriminator (shell, write, read, ...).
 	Kind string
 	// Summary is a human-readable description for the operator (for a shell
-	// request, the command text).
+	// request, the command text). It is bounded: adapters truncate it with an
+	// ellipsis at a fixed rune limit before it crosses into the hub.
 	Summary string
 }
 

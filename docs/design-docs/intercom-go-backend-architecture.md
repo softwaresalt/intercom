@@ -719,6 +719,12 @@ All SDK types are confined to one adapter package.
   `cli_path` validation contract is unaffected and remains a valid
   configuration surface for deployments that need to point at a specific,
   separately-installed CLI.
+* **Version-floor semantics (057-S review).** The CLI's `-N` suffix (as in
+  `1.0.84-1`) is treated with semver prerelease precedence: the final
+  `1.0.84` satisfies a `1.0.84-1` floor, `1.0.84-0` does not, and a leading
+  `v` or `+build` metadata is tolerated. Any other suffix fails closed as
+  unparseable. The protocol pin (`3`) is a literal in the adapter, not the SDK
+  constant, so an SDK bump cannot silently move it.
 
 ### 7.3 Multi-tenant hygiene
 

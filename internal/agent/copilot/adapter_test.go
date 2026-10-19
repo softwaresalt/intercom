@@ -35,6 +35,7 @@ type fakeSession struct {
 	abortErr            error
 	abortCtxHasDeadline bool
 	disconnects         atomic.Int32
+	disconnectBlock     chan struct{} // when non-nil, Disconnect blocks until closed
 }
 
 func (s *fakeSession) ID() string { return "sess-1" }
@@ -59,19 +60,28 @@ func (s *fakeSession) Abort(ctx context.Context) error {
 	_, s.abortCtxHasDeadline = ctx.Deadline()
 	return s.abortErr
 }
-func (s *fakeSession) Disconnect() error { s.disconnects.Add(1); return nil }
+func (s *fakeSession) Disconnect() error {
+	s.disconnects.Add(1)
+	if s.disconnectBlock != nil {
+		<-s.disconnectBlock
+	}
+	return nil
+}
 
 type fakeClient struct {
-	startBlock  bool
-	startErr    error
-	status      *copilotsdk.GetStatusResponse
-	statusErr   error
-	session     *fakeSession
-	createCfg   *copilotsdk.SessionConfig
-	createCalls atomic.Int32
-	stopErr     error
-	stops       atomic.Int32
-	forceStops  atomic.Int32
+	startBlock    bool
+	startErr      error
+	status        *copilotsdk.GetStatusResponse
+	statusErr     error
+	session       *fakeSession
+	createCfg     *copilotsdk.SessionConfig
+	createCalls   atomic.Int32
+	stopErr       error
+	stops         atomic.Int32
+	forceStops    atomic.Int32
+	createGate    chan struct{} // when non-nil, CreateSession signals createEntered then blocks (ignoring ctx) until closed
+	createEntered chan struct{}
+	stopBlock     chan struct{} // when non-nil, Stop blocks until closed
 }
 
 func newFakeClient() *fakeClient {
@@ -94,10 +104,20 @@ func (c *fakeClient) GetStatus(context.Context) (*copilotsdk.GetStatusResponse, 
 func (c *fakeClient) CreateSession(_ context.Context, cfg *copilotsdk.SessionConfig) (sdkSession, error) {
 	c.createCalls.Add(1)
 	c.createCfg = cfg
+	if c.createGate != nil {
+		close(c.createEntered)
+		<-c.createGate
+	}
 	return c.session, nil
 }
-func (c *fakeClient) Stop() error { c.stops.Add(1); return c.stopErr }
-func (c *fakeClient) ForceStop()  { c.forceStops.Add(1) }
+func (c *fakeClient) Stop() error {
+	c.stops.Add(1)
+	if c.stopBlock != nil {
+		<-c.stopBlock
+	}
+	return c.stopErr
+}
+func (c *fakeClient) ForceStop() { c.forceStops.Add(1) }
 
 type harness struct {
 	ad      *Adapter
@@ -199,7 +219,7 @@ func TestStartRejectsVersionMismatch(t *testing.T) {
 		wantMsg string
 	}{
 		{"old version", copilotsdk.GetStatusResponse{Version: "1.0.83", ProtocolVersion: 3}, "1.0.84-1"},
-		{"old revision", copilotsdk.GetStatusResponse{Version: "1.0.84", ProtocolVersion: 3}, "1.0.84-1"},
+		{"old revision", copilotsdk.GetStatusResponse{Version: "1.0.84-0", ProtocolVersion: 3}, "1.0.84-1"},
 		{"unparseable", copilotsdk.GetStatusResponse{Version: "dev", ProtocolVersion: 3}, "unparseable"},
 		{"protocol mismatch", copilotsdk.GetStatusResponse{Version: "1.0.84-1", ProtocolVersion: 2}, "protocol"},
 	}
@@ -238,7 +258,12 @@ func TestVersionAtLeast(t *testing.T) {
 		wantErr    bool
 	}{
 		{"1.0.84-1", "1.0.84-1", true, false},
-		{"1.0.84", "1.0.84-1", false, false},
+		// "-N" is a prerelease marker: the final 1.0.84 outranks 1.0.84-1.
+		{"1.0.84", "1.0.84-1", true, false},
+		{"v1.0.84-1", "1.0.84-1", true, false},
+		{"1.0.84-1+build.7", "1.0.84-1", true, false},
+		{"1.0.84-0", "1.0.84-1", false, false},
+		{"1.0.83", "1.0.84-1", false, false},
 		{"1.0.83-9", "1.0.84-1", false, false},
 		{"1.0.84-10", "1.0.84-2", true, false},
 		{"x", "1.0.84-1", false, true},

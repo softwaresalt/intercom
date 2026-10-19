@@ -59,6 +59,13 @@ func (l *latch) quiesce(timeout time.Duration) bool {
 	l.signalIdleLocked()
 	l.mu.Unlock()
 
+	// Check for an already-drained latch first so a zero or expired timeout
+	// cannot randomly lose the race against a ready idle channel.
+	select {
+	case <-l.idle:
+		return true
+	default:
+	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {

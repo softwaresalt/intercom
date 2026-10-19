@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -126,10 +127,15 @@ type Adapter struct {
 
 	mu            sync.Mutex
 	started       bool
-	stopped       bool
+	stopped       bool // no new operations accepted
+	stopping      bool // a Stop is running or has finished
 	clientStarted bool
 	session       sdkSession
 	unsubscribe   func()
+	startCancel   context.CancelFunc // cancels an in-flight Start
+	startDone     chan struct{}      // closed when Start returns
+	stopDone      chan struct{}      // closed when the first Stop finishes
+	stopResult    error
 }
 
 // New validates cfg and builds an Adapter backed by the real SDK client.
@@ -161,7 +167,7 @@ func newAdapter(cfg Config, c sdkClient) *Adapter {
 	if cfg.DefaultOpTimeout <= 0 {
 		cfg.DefaultOpTimeout = defaultOpTimeout
 	}
-	return &Adapter{
+	a := &Adapter{
 		cfg:    cfg,
 		client: c,
 		log:    cfg.Logger,
@@ -169,6 +175,8 @@ func newAdapter(cfg Config, c sdkClient) *Adapter {
 		latch:  newLatch(),
 		stop:   make(chan struct{}),
 	}
+	a.bridge.stop = a.stop
+	return a
 }
 
 func validateConfig(cfg Config) error {
@@ -222,17 +230,29 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 		return agent.SessionHandle{}, errors.New("agent: already started; one session per process")
 	}
 	a.started = true
-	a.mu.Unlock()
-
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.StartupTimeout)
+	done := make(chan struct{})
+	a.startCancel = cancel
+	a.startDone = done
+	a.mu.Unlock()
+	defer close(done)
 	defer cancel()
 
+	// fail tears the runtime down. Marking the adapter stopped makes a
+	// failed Start terminal.
 	fail := func(err error) (agent.SessionHandle, error) {
 		a.mu.Lock()
 		a.stopped = true
+		a.clientStarted = false
 		a.mu.Unlock()
 		a.client.ForceStop()
 		return agent.SessionHandle{}, err
+	}
+	// interrupted reports a Stop that landed while Start was in flight.
+	interrupted := func() bool {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		return a.stopped
 	}
 
 	if err := a.client.Start(ctx); err != nil {
@@ -241,6 +261,9 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 	a.mu.Lock()
 	a.clientStarted = true
 	a.mu.Unlock()
+	if interrupted() {
+		return fail(errors.New("agent: start interrupted by Stop"))
+	}
 
 	status, err := a.client.GetStatus(ctx)
 	if err != nil {
@@ -260,20 +283,31 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 		return fail(fmt.Errorf("agent: create session: %w", err))
 	}
 
-	unsub := sess.On(a.onEvent)
+	// Publish the session atomically with the stopped check so a Stop cannot
+	// slip between them and leave a live session behind.
 	a.mu.Lock()
+	if a.stopped {
+		a.mu.Unlock()
+		_ = boundedCall(a.cfg.StopTimeout, sess.Disconnect)
+		return fail(errors.New("agent: start interrupted by Stop"))
+	}
 	a.session = sess
-	a.unsubscribe = unsub
+	a.unsubscribe = sess.On(a.onEvent)
 	a.mu.Unlock()
 	return agent.SessionHandle{ID: sess.ID()}, nil
 }
+
+// RequiredProtocolVersion is the SDK protocol version asserted at Start
+// (ADR MVP-D10). It is pinned here rather than following the SDK constant so
+// an SDK bump cannot silently move the pin.
+const RequiredProtocolVersion = 3
 
 func assertRuntime(st *copilotsdk.GetStatusResponse) error {
 	if st == nil {
 		return errors.New("agent: copilot runtime returned no status")
 	}
-	if st.ProtocolVersion != copilotsdk.SDKProtocolVersion {
-		return fmt.Errorf("agent: copilot runtime protocol version %d does not match required %d", st.ProtocolVersion, copilotsdk.SDKProtocolVersion)
+	if st.ProtocolVersion != RequiredProtocolVersion {
+		return fmt.Errorf("agent: copilot runtime protocol version %d does not match required %d", st.ProtocolVersion, RequiredProtocolVersion)
 	}
 	ok, err := versionAtLeast(st.Version, ValidatedCLIVersion)
 	if err != nil {
@@ -285,8 +319,11 @@ func assertRuntime(st *copilotsdk.GetStatusResponse) error {
 	return nil
 }
 
-// versionAtLeast compares "MAJOR.MINOR.PATCH[-REV]" versions numerically. A
-// missing -REV is revision 0; a non-numeric suffix is an error (fail closed).
+// versionAtLeast compares "MAJOR.MINOR.PATCH[-N]" versions numerically. The
+// "-N" suffix follows Copilot CLI's prerelease convention (semver
+// precedence): a final release such as 1.0.84 outranks 1.0.84-1, so a missing
+// suffix sorts above any numeric one. A leading "v" and "+build" metadata are
+// tolerated; any other suffix is an error (fail closed).
 func versionAtLeast(got, floor string) (bool, error) {
 	g, err := parseVersion(got)
 	if err != nil {
@@ -306,10 +343,12 @@ func versionAtLeast(got, floor string) (bool, error) {
 
 func parseVersion(v string) ([4]int, error) {
 	var out [4]int
+	v = strings.TrimPrefix(v, "v")
+	v, _, _ = strings.Cut(v, "+")
 	core, rev, hasRev := strings.Cut(v, "-")
 	parts := strings.Split(core, ".")
 	if len(parts) != 3 {
-		return out, fmt.Errorf("want MAJOR.MINOR.PATCH[-REV], got %q", v)
+		return out, fmt.Errorf("want MAJOR.MINOR.PATCH[-N], got %q", v)
 	}
 	for i, p := range parts {
 		n, err := strconv.Atoi(p)
@@ -318,6 +357,7 @@ func parseVersion(v string) ([4]int, error) {
 		}
 		out[i] = n
 	}
+	out[3] = math.MaxInt // final release: above every prerelease number
 	if hasRev {
 		n, err := strconv.Atoi(rev)
 		if err != nil || n < 0 {
@@ -333,12 +373,20 @@ func parseVersion(v string) ([4]int, error) {
 // adapter is stopping or the hub is gone, never because ingress is full.
 func (a *Adapter) onEvent(ev copilotsdk.SessionEvent) {
 	if !a.latch.enter() {
-		a.log.Debug("agent event arrived after quiesce; discarded", "event_type", string(ev.Type()))
+		a.log.Warn("agent event arrived after quiesce; discarded", "event_type", string(ev.Type()))
 		return
 	}
 	defer a.latch.exit()
 
 	e := normalize(ev, a.log)
+	// Deliver without blocking whenever ingress has room, even during
+	// shutdown, so an event is only abandoned when it genuinely cannot be
+	// delivered.
+	select {
+	case a.cfg.Ingress <- e:
+		return
+	default:
+	}
 	select {
 	case a.cfg.Ingress <- e:
 	case <-a.stop:
@@ -404,44 +452,116 @@ func (a *Adapter) Abort(ctx context.Context) error {
 }
 
 // Stop quiesces SDK callbacks (latch, then Unsubscribe, then a bounded wait)
-// and shuts the runtime down, escalating to ForceStop on failure. It is
-// idempotent and never closes the ingress channel.
+// and shuts the runtime down, escalating to ForceStop on failure. Every
+// blocking SDK step is bounded by min(StopTimeout, ctx remaining), so Stop's
+// worst case is a small multiple of StopTimeout even when the CLI hangs.
+//
+// Stop also interrupts an in-flight Start. It is idempotent: a concurrent or
+// later call waits for the first to finish and returns its result. It never
+// closes the ingress channel.
 func (a *Adapter) Stop(ctx context.Context) error {
 	a.mu.Lock()
-	if a.stopped {
+	if a.stopping {
+		done := a.stopDone
 		a.mu.Unlock()
-		return nil
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return fmt.Errorf("agent: waiting for stop in progress: %w", ctx.Err())
+		}
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		return a.stopResult
 	}
+	a.stopping = true
 	a.stopped = true
+	a.stopDone = make(chan struct{})
+	cancelStart, startDone := a.startCancel, a.startDone
+	a.mu.Unlock()
+
+	err := a.doStop(ctx, cancelStart, startDone)
+
+	a.mu.Lock()
+	a.stopResult = err
+	close(a.stopDone)
+	a.mu.Unlock()
+	return err
+}
+
+func (a *Adapter) budget(ctx context.Context) time.Duration {
+	d := a.cfg.StopTimeout
+	if dl, ok := ctx.Deadline(); ok {
+		if rem := time.Until(dl); rem < d {
+			d = max(rem, 0)
+		}
+	}
+	return d
+}
+
+func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, startDone <-chan struct{}) error {
+	a.stopOnce.Do(func() { close(a.stop) })
+
+	var errs []error
+	needForce := false
+
+	// Interrupt and await an in-flight Start so a late-arriving session or
+	// client cannot outlive Stop.
+	if cancelStart != nil {
+		cancelStart()
+	}
+	if startDone != nil {
+		t := time.NewTimer(a.budget(ctx))
+		select {
+		case <-startDone:
+		case <-t.C:
+			errs = append(errs, errors.New("agent: in-flight Start did not finish before the stop deadline"))
+			needForce = true
+		}
+		t.Stop()
+	}
+
+	a.mu.Lock()
 	sess, unsub, clientStarted := a.session, a.unsubscribe, a.clientStarted
 	a.mu.Unlock()
 
-	a.stopOnce.Do(func() { close(a.stop) })
 	if unsub != nil {
 		unsub()
 	}
-
-	timeout := a.cfg.StopTimeout
-	if dl, ok := ctx.Deadline(); ok {
-		if rem := time.Until(dl); rem < timeout {
-			timeout = max(rem, 0)
-		}
-	}
-
-	var errs []error
-	if !a.latch.quiesce(timeout) {
+	if !a.latch.quiesce(a.budget(ctx)) {
 		errs = append(errs, errors.New("agent: callbacks did not drain before the quiesce deadline"))
 	}
 	if sess != nil {
-		if err := sess.Disconnect(); err != nil {
+		if err := boundedCall(a.budget(ctx), sess.Disconnect); err != nil {
 			errs = append(errs, fmt.Errorf("agent: disconnect session: %w", err))
+			needForce = true
 		}
 	}
 	if clientStarted {
-		if err := a.client.Stop(); err != nil {
+		if err := boundedCall(a.budget(ctx), a.client.Stop); err != nil {
 			errs = append(errs, fmt.Errorf("agent: stop copilot client: %w", err))
-			a.client.ForceStop()
+			needForce = true
 		}
 	}
+	if needForce {
+		a.client.ForceStop()
+	}
 	return errors.Join(errs...)
+}
+
+var errStepTimeout = errors.New("timed out")
+
+// boundedCall runs fn and returns its result, or errStepTimeout if it has not
+// returned within d. The goroutine is left to finish on its own; ForceStop
+// releases it when the SDK call is wedged on a dead runtime.
+func boundedCall(d time.Duration, fn func() error) error {
+	res := make(chan error, 1)
+	go func() { res <- fn() }()
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case err := <-res:
+		return err
+	case <-t.C:
+		return errStepTimeout
+	}
 }

@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"log/slog"
+	"unicode/utf8"
 
 	copilot "github.com/github/copilot-sdk/go"
 	"github.com/github/copilot-sdk/go/rpc"
@@ -57,6 +58,17 @@ func fromSDKDecision(d rpc.PermissionDecision) (agent.PermissionDecision, bool) 
 	}
 }
 
+// maxSummaryRunes bounds PermissionRequest.Summary so an adversarial or
+// accidental megabyte command line cannot flow unbounded into the hub.
+const maxSummaryRunes = 2048
+
+func truncateRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n]) + "…"
+}
+
 // toDomainRequest converts an SDK permission request to the intercom type.
 func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvocation) agent.PermissionRequest {
 	out := agent.PermissionRequest{SessionID: inv.SessionID}
@@ -66,7 +78,7 @@ func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvoca
 	out.Kind = string(req.Kind())
 	switch r := req.(type) {
 	case *rpc.PermissionRequestShell:
-		out.Summary = r.FullCommandText
+		out.Summary = truncateRunes(r.FullCommandText, maxSummaryRunes)
 		if r.ToolCallID != nil {
 			out.ToolCallID = *r.ToolCallID
 		}
@@ -83,7 +95,11 @@ func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvoca
 type permissionBridge struct {
 	asks    chan<- agent.PermissionAsk
 	hubDone <-chan struct{}
-	log     *slog.Logger
+	// stop is closed when the adapter shuts down; pending requests then
+	// resolve to UserNotAvailable even if the hub is still alive. Nil means
+	// "never" (a nil channel blocks forever in select).
+	stop <-chan struct{}
+	log  *slog.Logger
 }
 
 func newPermissionBridge(asks chan<- agent.PermissionAsk, hubDone <-chan struct{}, log *slog.Logger) *permissionBridge {
@@ -106,6 +122,8 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 	select {
 	case <-b.hubDone:
 		return unavailable()
+	case <-b.stop:
+		return unavailable()
 	default:
 	}
 
@@ -115,11 +133,15 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 	case b.asks <- ask:
 	case <-b.hubDone:
 		return unavailable()
+	case <-b.stop:
+		return unavailable()
 	}
 	select {
 	case d := <-reply:
 		return toSDKDecision(d), nil
 	case <-b.hubDone:
+		return unavailable()
+	case <-b.stop:
 		return unavailable()
 	}
 }
