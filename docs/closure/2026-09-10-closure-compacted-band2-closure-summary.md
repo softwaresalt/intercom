@@ -44,20 +44,33 @@ The archive path is `docs/archive/closure/<name>`.
 | `2026-09-10-015-s-016-f-pathsafe-windows-canonicalization-symmetry-runtime-verification.md` | 015-S runtime verification (PR 48): READY. |
 | `2026-09-11-016-s-017-f-pathsafe-error-surface-parity-runtime-verification.md` | 016-S runtime verification (PR 51): READY; no containment-verdict change. |
 
+The band's dated range is by record dates and includes
+`2026-09-11-016-s-017-f-pathsafe-error-surface-parity-runtime-verification.md`
+(committed 2026-09-10).
+
 ## Archive locations
 
 Each original `docs/closure/<name>` now lives at `docs/archive/closure/<name>`
 with the same file name.
 
+## Consumers
+
+No non-test script, tool, or workflow in this repository globs or reads
+`docs/closure/{shipment}-*-post-merge-closure.md` for the archived shipments
+(001-S..027-S); verified with `git grep` for `closure/{`, `closure_complete`,
+and `post-merge-closure.md` outside `*_test.go`. Archived records are retired.
+
 ## Inbound references to moved paths
 
-Found with `git grep -F <name>` across the repository before the move. Not
+Snapshot taken after the move (git grep over the repository at the time of
+compaction); regenerate with git grep rather than treating this list as current.
+Not
 rewritten (history and plans are left as written); resolve via the archive
 path. Every moved file name is also named in the shipment plan's Appendix D2
 and in the harness test `tests/integration/closure_band2_compaction_test.go`,
 which are omitted from the per-file lists below. References between records in
-this band are listed as "band 2 records"; they moved together and resolve
-inside `docs/archive/closure/`.
+this band are listed as "band 2 records"; they moved together and resolve by file name in the
+archive (the text still cites literal `docs/closure/<name>` paths).
 
 * `012-S-013-F-post-merge-closure.md`: `docs/decisions/2026-09-08-intercom-go-retired-arch-gate-detection-quality-deliberation.md`
 * `013-S-014-F-post-merge-closure.md`: `docs/archive/memory/2026-09-08-013-s-session-end-summary.md`, band 2 records (`013-S-014-F-post-merge-closure.md`, `014-S-015-F-post-merge-closure.md`)

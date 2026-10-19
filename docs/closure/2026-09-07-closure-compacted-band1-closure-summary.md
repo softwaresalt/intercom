@@ -51,9 +51,17 @@ All records below were closed `READY` unless noted; the archive path is
 Each original `docs/closure/<name>` now lives at `docs/archive/closure/<name>`
 with the same file name.
 
+## Consumers
+
+No non-test script, tool, or workflow in this repository globs or reads
+`docs/closure/{shipment}-*-post-merge-closure.md` for the archived shipments
+(001-S..027-S); verified with `git grep` for `closure/{`, `closure_complete`,
+and `post-merge-closure.md` outside `*_test.go`. Archived records are retired.
+
 ## Inbound references to moved paths
 
-Found with `git grep -F <name>` across the repository at compaction time.
+Snapshot taken after the move (git grep over the repository at the time of
+compaction); regenerate with git grep rather than treating this list as current.
 Not rewritten (history and plans are left as written); resolve via the archive
 path. Every moved file name is also named in the shipment plan's Appendix D1
 and in the harness test `tests/integration/closure_band1_compaction_test.go`,

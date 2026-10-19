@@ -1,11 +1,9 @@
+// Frozen snapshot guard for the one-time 055-S/063-F closure compaction.
+// Delete or supersede it when a later compaction re-bands or archives these records.
+
 package integration
 
-import (
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-)
+import "testing"
 
 // closureBand3ArchivedPaths is the frozen D3 candidate list (063.003-T) from
 // docs/plans/2026-10-18-intercom-go-stage-batch-bcd-plan.md, Appendix D3.
@@ -27,49 +25,5 @@ const closureBand3Summary = "2026-09-20-closure-compacted-band3-closure-summary.
 // TestClosureBand3CompactionArchivesRecordsAndIndexesThem verifies the D3
 // closure band is archived (not deleted) and indexed by one summary record.
 func TestClosureBand3CompactionArchivesRecordsAndIndexesThem(t *testing.T) {
-	root := repoRoot(t)
-
-	summaryPath := filepath.Join(root, "docs", "closure", closureBand3Summary)
-	summaryBytes, summaryErr := os.ReadFile(summaryPath)
-	if summaryErr != nil {
-		t.Errorf("summary %s missing: %v", closureBand3Summary, summaryErr)
-	}
-	summary := string(summaryBytes)
-
-	for _, name := range closureBand3ArchivedPaths {
-		if _, err := os.Stat(filepath.Join(root, "docs", "archive", "closure", name)); err != nil {
-			t.Errorf("%s not archived under docs/archive/closure: %v", name, err)
-		}
-		if _, err := os.Stat(filepath.Join(root, "docs", "closure", name)); err == nil {
-			t.Errorf("%s still present in docs/closure", name)
-		}
-		if summaryErr == nil && !strings.Contains(summary, name) {
-			t.Errorf("summary does not list %s", name)
-		}
-	}
-}
-
-// TestClosureCompactionArchivesAll37Records verifies the D1-D3 bands together
-// account for 37 archived closure records.
-func TestClosureCompactionArchivesAll37Records(t *testing.T) {
-	root := repoRoot(t)
-
-	var all []string
-	all = append(all, closureBand1ArchivedPaths...)
-	all = append(all, closureBand2ArchivedPaths...)
-	all = append(all, closureBand3ArchivedPaths...)
-
-	if len(all) != 37 {
-		t.Fatalf("frozen D1-D3 lists total %d paths, want 37", len(all))
-	}
-
-	archived := 0
-	for _, name := range all {
-		if _, err := os.Stat(filepath.Join(root, "docs", "archive", "closure", name)); err == nil {
-			archived++
-		}
-	}
-	if archived != 37 {
-		t.Errorf("archived closure records = %d, want 37", archived)
-	}
+	assertClosureBandArchived(t, repoRoot(t), closureBand3Summary, closureBand3ArchivedPaths)
 }

@@ -1,11 +1,9 @@
+// Frozen snapshot guard for the one-time 055-S/063-F closure compaction.
+// Delete or supersede it when a later compaction re-bands or archives these records.
+
 package integration
 
-import (
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-)
+import "testing"
 
 // closureBand1ArchivedPaths is the frozen D1 candidate list (063.001-T) from
 // docs/plans/2026-10-18-intercom-go-stage-batch-bcd-plan.md, Appendix D1.
@@ -31,24 +29,5 @@ const closureBand1Summary = "2026-09-07-closure-compacted-band1-closure-summary.
 // TestClosureBand1CompactionArchivesRecordsAndIndexesThem verifies the D1
 // closure band is archived (not deleted) and indexed by one summary record.
 func TestClosureBand1CompactionArchivesRecordsAndIndexesThem(t *testing.T) {
-	root := repoRoot(t)
-
-	summaryPath := filepath.Join(root, "docs", "closure", closureBand1Summary)
-	summaryBytes, summaryErr := os.ReadFile(summaryPath)
-	if summaryErr != nil {
-		t.Errorf("summary %s missing: %v", closureBand1Summary, summaryErr)
-	}
-	summary := string(summaryBytes)
-
-	for _, name := range closureBand1ArchivedPaths {
-		if _, err := os.Stat(filepath.Join(root, "docs", "archive", "closure", name)); err != nil {
-			t.Errorf("%s not archived under docs/archive/closure: %v", name, err)
-		}
-		if _, err := os.Stat(filepath.Join(root, "docs", "closure", name)); err == nil {
-			t.Errorf("%s still present in docs/closure", name)
-		}
-		if summaryErr == nil && !strings.Contains(summary, name) {
-			t.Errorf("summary does not list %s", name)
-		}
-	}
+	assertClosureBandArchived(t, repoRoot(t), closureBand1Summary, closureBand1ArchivedPaths)
 }
