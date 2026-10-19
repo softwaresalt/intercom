@@ -49,12 +49,21 @@ func requireWindowsCompatibleBash(t *testing.T, bash string) {
 		return
 	}
 	out, err := exec.Command(bash, "-c", "uname -o").Output()
-	if err != nil {
-		t.Skipf("bash %q could not report its OS (%v); skipping Windows bash tests", bash, err)
+	kind := strings.TrimSpace(string(out))
+	if err != nil || (kind != "Msys" && kind != "Cygwin") {
+		t.Skip(windowsBashSkipReason(bash, kind, err))
 	}
-	if kind := strings.TrimSpace(string(out)); kind != "Msys" && kind != "Cygwin" {
-		t.Skipf("bash %q reports OS %q (not Git-for-Windows/MSYS); it cannot resolve Windows drive paths, put Git-for-Windows bash first on PATH to run this test", bash, kind)
+}
+
+// windowsBashSkipReason builds the skip message for a bash that cannot run the
+// Windows wrapper tests, naming the cause (the WSL launcher, or a failed OS
+// probe) and the fix (put Git-for-Windows bash first on PATH).
+func windowsBashSkipReason(bash, osKind string, probeErr error) string {
+	const fix = "put Git-for-Windows bash first on PATH to run this test"
+	if probeErr != nil {
+		return fmt.Sprintf("bash %q could not report its OS (%v); it is likely the WSL launcher; %s", bash, probeErr, fix)
 	}
+	return fmt.Sprintf("bash %q reports OS %q, not Git-for-Windows/MSYS (it is the WSL launcher or another non-MSYS bash) and cannot resolve Windows drive paths; %s", bash, osKind, fix)
 }
 
 // driveLetterRE matches a Windows absolute drive-letter path prefix
