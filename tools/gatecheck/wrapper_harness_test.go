@@ -131,6 +131,9 @@ unexpected "$*"
 // directory (/tmp/x and /c/...) are equal while a different file is not.
 func sameBashFile(t *testing.T, bash, a, b string) bool {
 	t.Helper()
+	if a == b {
+		return true
+	}
 	err := exec.Command(bash, "-c", `[ "$1" -ef "$2" ]`, "bash", a, b).Run()
 	if err == nil {
 		return true
