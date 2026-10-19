@@ -77,7 +77,7 @@ func runStartScriptSnippet(t *testing.T, root, snippet string, env map[string]st
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := startScriptCombinedOutputBounded(cmd)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("start.ps1 snippet exceeded %s timeout; output so far:\n%s", startScriptTimeout, out)
 	}

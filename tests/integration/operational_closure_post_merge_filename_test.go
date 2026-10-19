@@ -144,7 +144,7 @@ func closureOutputPlaceholderClass(token string) (string, error) {
 	switch {
 	case token == "YYYY-MM-DD":
 		return `\d{4}-\d{2}-\d{2}`, nil
-	case strings.Contains(token, "slug"):
+	case token == "slug" || strings.HasSuffix(token, "_slug"):
 		return `[a-z0-9][a-z0-9-]*`, nil
 	case token == "id" || strings.HasSuffix(token, "_id"):
 		return `[0-9]+(?:\.[0-9]+)*-[A-Za-z]+`, nil
@@ -238,6 +238,19 @@ func TestPlaceholderClass_UnrecognizedTokenIsRejected(t *testing.T) {
 	// "width" merely contains "id"; the tightened rule must not treat it as an id.
 	if _, err := closureOutputPlaceholderClass("width"); err == nil {
 		t.Fatal("closureOutputPlaceholderClass(\"width\") succeeded; only *_id tokens are ids")
+	}
+}
+
+func TestPlaceholderClass_SlugTokenMatchIsExactOrSuffix(t *testing.T) {
+	for _, token := range []string{"slug", "post_merge_slug"} {
+		if _, err := closureOutputPlaceholderClass(token); err != nil {
+			t.Errorf("closureOutputPlaceholderClass(%q) = %v, want a recognized class", token, err)
+		}
+	}
+	for _, token := range []string{"slugger", "slugify", "preslug", "my_slugger"} {
+		if _, err := closureOutputPlaceholderClass(token); err == nil {
+			t.Errorf("closureOutputPlaceholderClass(%q) succeeded; only slug or *_slug tokens are slugs", token)
+		}
 	}
 }
 

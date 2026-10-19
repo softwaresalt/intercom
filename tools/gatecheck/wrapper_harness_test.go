@@ -120,10 +120,30 @@ unexpected "$*"
 	if err != nil {
 		t.Fatalf("locate go shim: %v (output: %q)", err, output)
 	}
-	if got, want := strings.TrimSpace(string(output)), path.Join(bashDir, "go"); !strings.EqualFold(filepath.ToSlash(got), filepath.ToSlash(want)) {
+	if got, want := strings.TrimSpace(string(output)), path.Join(bashDir, "go"); !sameBashFile(t, bash, got, want) {
 		t.Fatalf("go resolves to %q, want test shim %q", got, want)
 	}
 	return dir
+}
+
+// sameBashFile reports whether a and b name the same file as Bash sees it. It
+// compares by identity (test -ef), not by string, so Git Bash spellings of one
+// directory (/tmp/x and /c/...) are equal while a different file is not.
+func sameBashFile(t *testing.T, bash, a, b string) bool {
+	t.Helper()
+	if a == b {
+		return true
+	}
+	err := exec.Command(bash, "-c", `[ "$1" -ef "$2" ]`, "bash", a, b).Run()
+	if err == nil {
+		return true
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false
+	}
+	t.Fatalf("compare %q and %q through bash: %v", a, b, err)
+	return false
 }
 
 func platformGoExe() string {
@@ -482,4 +502,30 @@ func nativeDirForBash(t *testing.T, bash, dir string) string {
 func isPrivilegeNotHeld(err error) bool {
 	var errno syscall.Errno
 	return runtime.GOOS == "windows" && errors.As(err, &errno) && uintptr(errno) == errorPrivilegeNotHeld
+}
+
+func TestSameBashFile_ComparesByIdentity(t *testing.T) {
+	bash := requireBash(t)
+	dir := workspaceTempDir(t)
+	bashDir := resolveBashPath(t, bash, dir)
+	for _, name := range []string{"shim", "other"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	posix := path.Join(bashDir, "shim")
+	native := filepath.ToSlash(filepath.Join(dir, "shim"))
+	if !sameBashFile(t, bash, native, posix) {
+		t.Errorf("sameBashFile(%q, %q) = false, want true for one file spelled two ways", native, posix)
+	}
+	if !sameBashFile(t, bash, posix, posix) {
+		t.Errorf("sameBashFile(%q, %q) = false, want true for identical spellings", posix, posix)
+	}
+	if sameBashFile(t, bash, posix, path.Join(bashDir, "other")) {
+		t.Errorf("sameBashFile reported two different files as the same")
+	}
+	if runtime.GOOS == "windows" && strings.EqualFold(native, posix) {
+		t.Errorf("spellings %q and %q are string-equal; the identity case is vacuous", native, posix)
+	}
 }

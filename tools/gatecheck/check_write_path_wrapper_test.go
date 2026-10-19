@@ -221,3 +221,18 @@ func TestCheckWritePathWrapper_WrongTreeRootAnchoring(t *testing.T) {
 		})
 	}
 }
+
+func TestWindowsBashSkipReason_NamesCauseAndFix(t *testing.T) {
+	wsl := windowsBashSkipReason(`C:\Windows\system32\bash.exe`, "GNU/Linux", nil)
+	for _, want := range []string{"WSL", `C:\\Windows\\system32\\bash.exe`, "Git-for-Windows bash first on PATH"} {
+		if !strings.Contains(wsl, want) {
+			t.Errorf("WSL skip reason %q does not mention %q", wsl, want)
+		}
+	}
+	failed := windowsBashSkipReason(`C:\x\bash.exe`, "", errors.New("boom"))
+	for _, want := range []string{"boom", "Git-for-Windows bash first on PATH"} {
+		if !strings.Contains(failed, want) {
+			t.Errorf("probe-failure skip reason %q does not mention %q", failed, want)
+		}
+	}
+}
