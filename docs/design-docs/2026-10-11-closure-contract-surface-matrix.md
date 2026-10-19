@@ -265,7 +265,7 @@ Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECON
 
 * `.github`: 0 hits in any file. There is no live `.github` hit to classify.
 * `scripts`, `AGENTS.md`, `README.md`: 0 hits each.
-* `tests/integration/ship_feature_completion_contract_test.go`: the header comment plus `assertAbsent` negative-test needles in the rows that retire tokens (rows 4, 21a, 21c, 22a, 24a, 30, and `U11-c` and `U11-d` in `TestCascadeRoutesThroughCommand`). Line numbers were replaced by row anchors on 2026-10-18. Permitted.
+* `tests/integration/ship_feature_completion_contract_test.go`: the header comment plus `assertAbsent` negative-test needles in the rows that retire tokens (rows 21b, 22c, 23a, 23c, 23d, 24a, 30, and 32 of `TestShipFeatureCompletionContract33Rows`). Line numbers were replaced by row anchors on 2026-10-18. Permitted.
 * `tests/integration/shipment_close_path_behavior_test.go`: 3 lines (L71, L499, L502). Failure messages in a replica test of the retired contract. Test code, not an instruction; the file was deleted under 053.013-T.
 * `tests/integration/shipment_close_path_harness_test.go`: 9 lines (L47, L58, L70, L71, L72, L73, L86, L487, L489). Constants and comments in a replica test of the retired contract. Test code, not an instruction; the file was deleted under 053.013-T.
 
