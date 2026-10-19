@@ -34,7 +34,14 @@ type Config struct {
 // CopilotConfig is the [copilot] section.
 type CopilotConfig struct {
 	CLIPath string `toml:"cli_path"`
+	// StartupTimeoutSeconds bounds the agent adapter's Client.Start deadline
+	// (design §8; re-introduced in C3 with its first consumer).
+	StartupTimeoutSeconds uint64 `toml:"startup_timeout_seconds"`
 }
+
+// MaxCopilotStartupTimeoutSeconds is the upper bound accepted for
+// [copilot].startup_timeout_seconds.
+const MaxCopilotStartupTimeoutSeconds = 3600
 
 // TimeoutConfig is the [timeouts] section.
 type TimeoutConfig struct {

@@ -138,7 +138,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Assert INTERCOM_LIVE_SDK_TESTS is not enabled in CI (011.002-T)
-        # The live-SDK opt-in gate (internal/copilotprobe) must never be set
+        # The live-SDK opt-in gate (internal/agent/copilot) must never be set
         # in any committed workflow file and must be unset in every job's
         # runtime environment -- ambient credentials must never silently
         # authorize a live Copilot SDK connection (and real shell execution)
@@ -205,7 +205,7 @@ jobs:
       - name: Assert INTERCOM_LIVE_SDK_TESTS is unset in this job's environment (011.002-T)
         # Defense-in-depth: this job (not `changes`) is the one that
         # actually runs `go test ./...` and therefore the
-        # internal/copilotprobe suite. The workflow-file-content half of
+        # internal/agent/copilot suite. The workflow-file-content half of
         # this assertion is already covered once in the `changes` job (no
         # need to repeat the grep here); this re-assertion covers the
         # runtime-environment half specifically for the job that matters.
@@ -257,7 +257,7 @@ jobs:
   # failure always fails the job for real regardless of the toggle.
   #
   # 011.002-T is a hard precondition: without the default-deny opt-in gate in
-  # internal/copilotprobe, `go test ./...` here would otherwise attempt real
+  # internal/agent/copilot, `go test ./...` here would otherwise attempt real
   # Copilot SDK connections on a runner with no such credentials configured.
   #
   # LOCAL DIVERGENCE (ci.yml is autoharness-generated; re-apply this job
@@ -279,7 +279,7 @@ jobs:
           persist-credentials: false
       - name: Assert INTERCOM_LIVE_SDK_TESTS is unset in this job's environment (011.002-T)
         # Defense-in-depth: this job also runs `go test ./...` and
-        # therefore the internal/copilotprobe suite. GitHub Actions
+        # therefore the internal/agent/copilot suite. GitHub Actions
         # defaults to pwsh on windows-latest runners, so this step is
         # PowerShell, not bash, unlike its sibling in the `expensive` job.
         shell: pwsh

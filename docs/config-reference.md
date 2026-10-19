@@ -28,6 +28,7 @@ covering every key in this reference.
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `copilot.cli_path` | string | `""` | Empty means resolve the Copilot CLI from `PATH` / `COPILOT_CLI_PATH`. A bare name is allowed with a non-fatal advisory if it is not currently resolvable on `PATH`. An absolute path must exist. A relative path is rejected. |
+| `copilot.startup_timeout_seconds` | integer | `30` | Deadline for the agent adapter's `Client.Start` (also covers the version/protocol assertion and session creation). Must be between `1` and `3600`. |
 
 ## `[commands]`
 
@@ -83,6 +84,7 @@ covering every key in this reference.
 | `RetentionDays` | `30` |
 | `MaxConcurrentSessions` | `3` |
 | `HTTPPort` | `3000` |
+| `Copilot.StartupTimeoutSeconds` | `30` |
 | `Database.Path` | `"data/agent-rc.db"` |
 | `OperatorDetailLevel` | `DetailStandard` |
 
@@ -101,7 +103,7 @@ yields the same error.
 | 2 | `default_workspace_root` must be set and must canonicalize | `default_workspace_root must be set` (absent or empty); `default_workspace_root invalid: {err}` (canonicalization failure) |
 | 3 | Per `[[workspace]]` entry, `workspace_id` must be non-empty | `workspace_id cannot be empty in [[workspace]] entry` |
 | 4 | `workspace_id` must be unique across entries | `duplicate workspace_id '{id}' in [[workspace]] entries` |
-| 5 | `copilot.cli_path` must be well-formed | `copilot.cli_path '{path}' does not exist`; `copilot.cli_path '{path}' must not be drive-relative; use an absolute path, a bare name, or empty`; `copilot.cli_path '{path}' must not be relative; use an absolute path, a bare name, or empty` |
+| 5 | `[copilot]` must be well-formed | `copilot.cli_path '{path}' does not exist`; `copilot.cli_path '{path}' must not be drive-relative; use an absolute path, a bare name, or empty`; `copilot.cli_path '{path}' must not be relative; use an absolute path, a bare name, or empty`; `copilot.startup_timeout_seconds must be greater than zero`; `copilot.startup_timeout_seconds must not exceed 3600` |
 | 6 | Per `[[workspace]]` entry, a non-empty `path` must canonicalize | `workspace path invalid for workspace_id '{id}': {err}` |
 | 7 | `database.path` must not contain a `..` segment | `database.path must not contain '..' segments` |
 
@@ -144,7 +146,7 @@ exception is listed below.
 | `[slack].markdown_upload_extensions` | Delete the table. There is no replacement. |
 | `[acp]` | Delete the section. There is no replacement in C1. |
 | `[acp].max_sessions` | Delete the key. Do not migrate it. |
-| `[acp].startup_timeout_seconds` | Delete the key in C1. Do not add a replacement yet; the follow-on `[copilot]` timeout work is deferred to C2. |
+| `[acp].startup_timeout_seconds` | Deleted in C1. Re-introduced in C3 as `[copilot].startup_timeout_seconds` with its first consumer, the agent adapter's `Client.Start` deadline. |
 | `[acp].max_msg_rate` | Delete the key. There is no replacement. |
 | `[acp].http_port` | Delete the key. There is no replacement. |
 | `host_cli_args` | Delete the key. Do not pass `--dangerously-skip-permissions`; that bypasses operator approval prompts and is intentionally removed. |

@@ -719,6 +719,12 @@ All SDK types are confined to one adapter package.
   `cli_path` validation contract is unaffected and remains a valid
   configuration surface for deployments that need to point at a specific,
   separately-installed CLI.
+* **Version-floor semantics (057-S review).** The CLI's `-N` suffix (as in
+  `1.0.84-1`) is treated with semver prerelease precedence: the final
+  `1.0.84` satisfies a `1.0.84-1` floor, `1.0.84-0` does not, and a leading
+  `v` or `+build` metadata is tolerated. Any other suffix fails closed as
+  unparseable. The protocol pin (`3`) is a literal in the adapter, not the SDK
+  constant, so an SDK bump cannot silently move it.
 
 ### 7.3 Multi-tenant hygiene
 
@@ -743,6 +749,14 @@ signatures over prose.
 
 **C3 phase entry criteria (explicit).** Before C3 (the real production SDK
 adapter) begins, both of the following must be true:
+
+> **Status (2026-10-19, shipment 057-S / 065.007-T): DONE.** The real adapter
+> now lives in `internal/agent/copilot` (domain types and the `Agent`
+> interface in `internal/agent`), `internal/copilotprobe` is deleted, and the
+> `copilot-sdk-boundary` depguard rule exempts exactly
+> `internal/agent/copilot/*.go`. The `INTERCOM_LIVE_SDK_TESTS` convention below
+> now has its consumer in `internal/agent/copilot/live_test.go` (default-deny,
+> `strconv.ParseBool`, deny on parse error).
 
 * **`internal/copilotprobe` is deleted.** It is a disposable phase-C2
   proving spike (see its own package doc); C3 supersedes it with the real

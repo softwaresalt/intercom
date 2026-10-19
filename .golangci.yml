@@ -21,22 +21,21 @@ linters:
         # 011.014-T (resolves 309FBF5A(ii)): the credential-consuming,
         # shell-executing Copilot SDK surface (NewClient, Client.Start,
         # CreateSession, SessionConfig.OnPermissionRequest) lives in the
-        # ROOT package github.com/github/copilot-sdk/go, imported by
-        # client.go, fixture.go, permission.go, and every probe test in
-        # internal/copilotprobe. Denying only the /rpc subpackage (as a
-        # prior revision did) matches zero files and ships as false
+        # ROOT package github.com/github/copilot-sdk/go, imported by the
+        # adapter in internal/agent/copilot. Denying only the /rpc
+        # subpackage (as a prior revision did) matches zero files and ships
+        # as false
         # assurance. The root-prefix deny below subsumes /rpc.
         #
-        # The allowlist exempts ONLY internal/copilotprobe via depguard's
-        # negated, absolute-path-anchored `files` form -- depguard
-        # evaluates `files` against absolute paths, so a bare
-        # "internal/copilotprobe/*.go" pattern (no leading "**/") would
-        # never match and would silently do nothing.
+        # The allowlist exempts ONLY internal/agent/copilot (the single Copilot
+        # SDK adapter, design §7.1) via depguard's negated,
+        # absolute-path-anchored `files` form -- depguard evaluates `files`
+        # against absolute paths, so a bare "internal/agent/copilot/*.go"
+        # pattern (no leading "**/") would never match and would silently do
+        # nothing. The allowlist is never widened to internal/** (design
+        # §7.6); internal/copilotprobe was deleted by 057-S / 065.007-T.
         #
-        # Removal trigger: C3 (copilotprobe deletion + this allowlist's
-        # tightening/removal, per docs/design-docs/intercom-go-backend-
-        # architecture.md §7.6's C3 exit-criteria entry). Ownership:
-        # depguard owns Go package-import boundaries; scripts/
+        # Ownership: depguard owns Go package-import boundaries; scripts/
         # check-retired-architecture.sh owns retired-architecture/path-
         # surface contamination -- the two are deliberately non-
         # overlapping gates.
@@ -45,13 +44,12 @@ linters:
             - pkg: github.com/github/copilot-sdk/go
               desc: >-
                 github.com/github/copilot-sdk/go (and its /rpc subpackage)
-                is confined to internal/copilotprobe, a disposable C2
-                proving spike. Production code must not import the
-                Copilot SDK directly outside that package. See
-                internal/copilotprobe's package doc and 011.014-T.
+                is confined to internal/agent/copilot, the single
+                anti-corruption-layer adapter (design 7.1). Production code
+                must not import the Copilot SDK directly outside that package.
           files:
             - "$all"
-            - "!**/internal/copilotprobe/*.go"
+            - "!**/internal/agent/copilot/*.go"
 
 output:
   formats:

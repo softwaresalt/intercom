@@ -49,9 +49,17 @@ func (c *Config) Validate() (Report, error) {
 		return report, err
 	}
 
-	// Rule 5: copilot.cli_path must be well-formed.
+	// Rule 5: the [copilot] section must be well-formed: cli_path (§6.2) and
+	// startup_timeout_seconds share this one rule slot so the validation
+	// contract stays at exactly 7 rules.
 	if err := validateCLIPath(c.Copilot.CLIPath, &report); err != nil {
 		return report, err
+	}
+	if c.Copilot.StartupTimeoutSeconds == 0 {
+		return report, apperr.New(apperr.KindConfig, "copilot.startup_timeout_seconds must be greater than zero")
+	}
+	if c.Copilot.StartupTimeoutSeconds > MaxCopilotStartupTimeoutSeconds {
+		return report, apperr.Newf(apperr.KindConfig, "copilot.startup_timeout_seconds must not exceed %d", MaxCopilotStartupTimeoutSeconds)
 	}
 
 	// Rule 6: each non-empty [[workspace]].path must canonicalize

@@ -134,3 +134,9 @@ __pycache__/
 
 # cascade-close runtime journal and probe state (operator decision 2026-10-17, 051-S closure)
 .autoharness/gates/cascade-close/
+
+# depguard fixture for the internal/agent/copilot allowlist (057-S / 065.007-T): the
+# sibling-directory negative fixture is copied here at runtime by
+# scripts/check-depguard-fixtures.sh. The legacy internal/copilotprobe2/ entry above is
+# retained because .gitignore is append-only (I6).
+internal/agent/copilot2/

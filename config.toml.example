@@ -23,6 +23,7 @@ operator_detail_level = "standard"
 
 [copilot]
 cli_path = ""   # empty = resolve the Copilot CLI from PATH / COPILOT_CLI_PATH
+startup_timeout_seconds = 30   # deadline for the agent adapter's Client.Start
 
 [commands]
 review = "review the changes and report findings"

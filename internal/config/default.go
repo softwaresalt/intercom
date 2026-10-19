@@ -8,6 +8,7 @@ func Default() *Config {
 	return &Config{
 		MaxConcurrentSessions: 3,
 		HTTPPort:              3000,
+		Copilot:               CopilotConfig{StartupTimeoutSeconds: 30},
 		Timeouts: TimeoutConfig{
 			ApprovalSeconds: 3600,
 			PromptSeconds:   1800,

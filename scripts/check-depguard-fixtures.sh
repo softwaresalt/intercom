@@ -9,19 +9,19 @@ set -euo pipefail
 # silently falling out of `linters.enable`, or the `files` pattern silently
 # widening) -- this script re-proves all three directions on every run:
 #
-#   (i)   a file OUTSIDE the internal/copilotprobe allowlist that imports
+#   (i)   a file OUTSIDE the internal/agent/copilot allowlist that imports
 #         the Copilot SDK root package must make golangci-lint FAIL WITH
 #         THE SPECIFIC depguard copilot-sdk-boundary DIAGNOSTIC (not merely
 #         a nonzero exit, which could come from an unrelated typecheck or
 #         config error and would be indistinguishable from proof that
 #         depguard itself is what rejected the fixture -- adversarial
 #         review finding, remediated).
-#   (ii)  a file under a SIBLING directory name (internal/copilotprobe2/)
+#   (ii)  a file under a SIBLING directory name (internal/agent/copilot2/)
 #         must ALSO be rejected with the same specific diagnostic, proving
 #         the allowlist pattern is anchored to the exact directory and has
-#         not silently widened to match any "copilotprobe*"-prefixed name.
-#   (iii) the real internal/copilotprobe package itself (the allowlisted
-#         directory, which genuinely imports the SDK in client.go) must
+#         not silently widened to match any "copilot*"-prefixed name.
+#   (iii) the real internal/agent/copilot package itself (the allowlisted
+#         directory, which genuinely imports the SDK in adapter.go) must
 #         PASS lint -- proving the allowlist is not so narrow it rejects
 #         its own legitimate exemption (positive-direction assertion,
 #         adversarial review finding, remediated).
@@ -36,7 +36,7 @@ set -euo pipefail
 #   scripts/check-depguard-fixtures.sh
 #     Runs all three checks. Exits 0 only if both negative fixtures are
 #     rejected specifically by depguard's copilot-sdk-boundary rule AND
-#     the real internal/copilotprobe package passes lint.
+#     the real internal/agent/copilot package passes lint.
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
@@ -47,7 +47,7 @@ if ! command -v golangci-lint >/dev/null 2>&1; then
 fi
 
 OUTSIDE_DIR="internal/depguardfixture"
-SIBLING_DIR="internal/copilotprobe2"
+SIBLING_DIR="internal/agent/copilot2"
 DEPGUARD_DIAGNOSTIC_MARKER="copilot-sdk-boundary"
 
 # Refuse to proceed if either fixture directory already exists (adversarial
@@ -108,7 +108,7 @@ assert_depguard_rejection() {
   return 0
 }
 
-if ! assert_depguard_rejection "$OUTSIDE_DIR" "$LOG_DIR/outside.log" "a Copilot-SDK import OUTSIDE the internal/copilotprobe allowlist"; then
+if ! assert_depguard_rejection "$OUTSIDE_DIR" "$LOG_DIR/outside.log" "a Copilot-SDK import OUTSIDE the internal/agent/copilot allowlist"; then
   overall_status=1
 fi
 
@@ -116,13 +116,13 @@ if ! assert_depguard_rejection "$SIBLING_DIR" "$LOG_DIR/sibling.log" "a Copilot-
   overall_status=1
 fi
 
-# Positive-direction assertion: the real, allowlisted internal/copilotprobe
-# package (client.go genuinely imports the SDK) must PASS lint -- proving
+# Positive-direction assertion: the real, allowlisted internal/agent/copilot
+# package (adapter.go genuinely imports the SDK) must PASS lint -- proving
 # the allowlist is not so narrow it rejects its own legitimate exemption.
-if golangci-lint run "./internal/copilotprobe/..." >"$LOG_DIR/positive.log" 2>&1; then
-  echo "PASS: golangci-lint accepts internal/copilotprobe's own genuine Copilot-SDK import, as expected"
+if golangci-lint run "./internal/agent/copilot/..." >"$LOG_DIR/positive.log" 2>&1; then
+  echo "PASS: golangci-lint accepts internal/agent/copilot's own genuine Copilot-SDK import, as expected"
 else
-  echo "FAIL: golangci-lint rejected the real, allowlisted internal/copilotprobe package -- the allowlist itself is broken:"
+  echo "FAIL: golangci-lint rejected the real, allowlisted internal/agent/copilot package -- the allowlist itself is broken:"
   cat "$LOG_DIR/positive.log"
   overall_status=1
 fi
