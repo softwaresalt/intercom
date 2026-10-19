@@ -117,7 +117,9 @@ action (every row of the matrix other than observe), the hub step re-validates, 
 5. For approvals, the permission kind class and `remote_approve_destructive`.
 
 Failures 1 to 3 do not apply to the local TUI, which has no credential record and is never
-closed by them. For remote connections they send the refusal and then close the connection (policy-violation close
+closed by them. During shutdown (after credentials are revoked) a privileged action is
+refused without closing the connection, so the `server.shutdown` broadcast and drain finish.
+For remote connections otherwise they send the refusal and then close the connection (policy-violation close
 issued by the write pump, per design 5.5), because the credential is no longer valid.
 Failures 4 and 5 send the refusal and keep the connection open.
 
