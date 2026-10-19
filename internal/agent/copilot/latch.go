@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -54,6 +55,11 @@ func (l *latch) signalIdleLocked() {
 // quiesce closes the latch and waits up to timeout for in-flight callbacks to
 // drain. It reports whether they drained. It is idempotent.
 func (l *latch) quiesce(timeout time.Duration) bool {
+	return l.quiesceCtx(context.Background(), timeout)
+}
+
+// quiesceCtx is quiesce that also gives up when ctx ends.
+func (l *latch) quiesceCtx(ctx context.Context, timeout time.Duration) bool {
 	l.mu.Lock()
 	l.closed = true
 	l.signalIdleLocked()
@@ -71,6 +77,8 @@ func (l *latch) quiesce(timeout time.Duration) bool {
 	select {
 	case <-l.idle:
 		return true
+	case <-ctx.Done():
+		return false
 	case <-timer.C:
 		return false
 	}

@@ -248,7 +248,11 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 		a.clientStarted = false
 		a.mu.Unlock()
 		a.stopOnce.Do(func() { close(a.stop) })
-		a.client.ForceStop()
+		// Cleanup gets its own finite budget so a wedged ForceStop cannot
+		// hold Start (or startDone) open; the original error is preserved.
+		if cerr := a.forceStop(); cerr != nil {
+			err = errors.Join(err, cerr)
+		}
 		return agent.SessionHandle{}, err
 	}
 	// interrupted reports a Stop that landed while Start was in flight.
@@ -297,7 +301,7 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 	a.mu.Lock()
 	if a.stopped {
 		a.mu.Unlock()
-		_ = boundedCall(a.cfg.StopTimeout, sess.Disconnect)
+		_ = boundedCall(context.Background(), a.cfg.StopTimeout, sess.Disconnect)
 		return fail(errInterrupted)
 	}
 	a.session = sess
@@ -536,6 +540,16 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 
 	var errs []error
 	needForce := false
+	ctxNoted := false
+	// noteCtx records caller cancellation once and arranges a force stop: the
+	// remaining waits return immediately, but the runtime must still die.
+	noteCtx := func() {
+		needForce = true
+		if !ctxNoted {
+			ctxNoted = true
+			errs = append(errs, fmt.Errorf("agent: stop interrupted: %w", ctx.Err()))
+		}
+	}
 
 	// Interrupt and await an in-flight Start so a late-arriving session or
 	// client cannot outlive Stop.
@@ -546,6 +560,8 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 		t := time.NewTimer(a.budget(ctx))
 		select {
 		case <-startDone:
+		case <-ctx.Done():
+			noteCtx()
 		case <-t.C:
 			errs = append(errs, errors.New("agent: in-flight Start did not finish before the stop deadline"))
 			needForce = true
@@ -557,33 +573,62 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 	sess, clientStarted := a.session, a.clientStarted
 	a.mu.Unlock()
 
-	if !a.latch.quiesce(a.budget(ctx)) {
-		errs = append(errs, errors.New("agent: callbacks did not drain before the quiesce deadline"))
+	// step runs one bounded SDK call and classifies how it ended.
+	step := func(label string, fn func() error) {
+		err := boundedCall(ctx, a.budget(ctx), fn)
+		switch {
+		case err == nil:
+		case ctx.Err() != nil && errors.Is(err, ctx.Err()):
+			noteCtx()
+		default:
+			errs = append(errs, fmt.Errorf("agent: %s: %w", label, err))
+			needForce = true
+		}
+	}
+
+	if !a.latch.quiesceCtx(ctx, a.budget(ctx)) {
+		if ctx.Err() != nil {
+			noteCtx()
+		} else {
+			errs = append(errs, errors.New("agent: callbacks did not drain before the quiesce deadline"))
+		}
 	}
 	if sess != nil {
-		if err := boundedCall(a.budget(ctx), sess.Disconnect); err != nil {
-			errs = append(errs, fmt.Errorf("agent: disconnect session: %w", err))
-			needForce = true
-		}
+		step("disconnect session", sess.Disconnect)
 	}
 	if clientStarted {
-		if err := boundedCall(a.budget(ctx), a.client.Stop); err != nil {
-			errs = append(errs, fmt.Errorf("agent: stop copilot client: %w", err))
-			needForce = true
-		}
+		step("stop copilot client", a.client.Stop)
 	}
 	if needForce {
-		a.client.ForceStop()
+		if err := a.forceStop(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
+}
+
+// forceStop runs the SDK's ForceStop under its own finite budget (StopTimeout,
+// independent of the caller's context, so cleanup still happens after the
+// caller gives up). ForceStop can itself block on SDK lifecycle locking; if it
+// does, the incomplete cleanup is reported rather than waited out.
+func (a *Adapter) forceStop() error {
+	err := boundedCall(context.Background(), a.cfg.StopTimeout, func() error {
+		a.client.ForceStop()
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("agent: cleanup incomplete: ForceStop did not return within %v", a.cfg.StopTimeout)
+	}
+	return nil
 }
 
 var errStepTimeout = errors.New("timed out")
 
 // boundedCall runs fn and returns its result, or errStepTimeout if it has not
-// returned within d. The goroutine is left to finish on its own; ForceStop
-// releases it when the SDK call is wedged on a dead runtime.
-func boundedCall(d time.Duration, fn func() error) error {
+// returned within d, or ctx.Err() if ctx ends first. The goroutine is left to
+// finish on its own; ForceStop releases it when the SDK call is wedged on a
+// dead runtime.
+func boundedCall(ctx context.Context, d time.Duration, fn func() error) error {
 	res := make(chan error, 1)
 	go func() { res <- fn() }()
 	t := time.NewTimer(d)
@@ -591,6 +636,8 @@ func boundedCall(d time.Duration, fn func() error) error {
 	select {
 	case err := <-res:
 		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	case <-t.C:
 		select { // a result that is already ready beats the timer
 		case err := <-res:

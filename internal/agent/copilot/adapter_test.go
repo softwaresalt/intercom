@@ -82,6 +82,7 @@ type fakeClient struct {
 	createGate    chan struct{} // when non-nil, CreateSession signals createEntered then blocks (ignoring ctx) until closed
 	createEntered chan struct{}
 	stopBlock     chan struct{} // when non-nil, Stop blocks until closed
+	forceBlock    chan struct{} // when non-nil, ForceStop blocks until closed
 }
 
 func newFakeClient() *fakeClient {
@@ -125,7 +126,12 @@ func (c *fakeClient) Stop() error {
 	}
 	return c.stopErr
 }
-func (c *fakeClient) ForceStop() { c.forceStops.Add(1) }
+func (c *fakeClient) ForceStop() {
+	c.forceStops.Add(1)
+	if c.forceBlock != nil {
+		<-c.forceBlock
+	}
+}
 
 type harness struct {
 	ad      *Adapter
