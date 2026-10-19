@@ -45,7 +45,7 @@ These paths keep retired tokens by design. They are excluded from the matrix, we
 | `docs/compound/2026-10-08-bound-cascade-close-procedure.md` | L17 (evidence path naming classify-close-path records); L31 (step 3, classify-close-path read-only). | retire in part: add a dated "Superseded in part" note naming D-CT-1; body kept | U14 | none | none |
 | `docs/compound/workflow-issues/cross-artifact-contract-closure-requires-every-surface-2026-09-13.md` | L123 (mention: the plan adds classify-close-path). | keep (mention in passing; the learning behind U1) | U14 | none | none |
 | `docs/compound/workflow-issues/ship-step6-post-merge-branch-ordering-2026-09-19.md` | L27 (mention in the step 6 ordering list). | keep (mention in passing; step 6.0 stays first) | U14 | none | none |
-| `tests/integration/ship_feature_completion_contract_test.go` | L138 (row 4), L229 (21a), L237 (21c), L241 (22a), L268 (24a), L283 (26), L287 (27), L303 (row 30 section constant), L319 (row 31). | adopt: expand (U2), then keep the shared helpers and contract the old needles (U11) | U2 (expand) and U11 (contract) | none | itself; `TestCascadeRoutesThroughSafeClose` (replaced by TestCascadeRoutesThroughCommand in 053.011-T) (same file, L359) |
+| `tests/integration/ship_feature_completion_contract_test.go` | Anchored by row label inside `TestShipFeatureCompletionContract33Rows` (line numbers drift; refreshed 2026-10-18): row 4, row 21a, row 21c (`row_21c_CS11_classify_close_path_count`), row 22a, row 24a, row 26, row 27, row 30 (section constant `sectionHeading`), row 31. | adopt: expand (U2), then keep the shared helpers and contract the old needles (U11) | U2 (expand) and U11 (contract) | none | itself; `TestCascadeRoutesThroughSafeClose` (replaced by TestCascadeRoutesThroughCommand in 053.011-T) (same file; the replacement is the function `TestCascadeRoutesThroughCommand`) |
 | `tests/integration/shipment_close_path_behavior_test.go` | L12, L16, L33, L117, L212, L224, L508, L517, L532 (behavioral replica of the retired contract). | deleted under 053.013-T (file no longer present) | U13 | none | none (compile gate in U13) |
 | `tests/integration/shipment_close_path_harness_test.go` | L24, L31, L34, L87, L88, L122, L364, L480, L485, L658 (replica classify-close-path and `computeBinding`). Not in scope-query output: L706-715 read the skill to compute a digest (no fixed value is asserted). | deleted under 053.013-T (file no longer present), with the behavior test | U13 | none | none (self) |
 
@@ -265,7 +265,7 @@ Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECON
 
 * `.github`: 0 hits in any file. There is no live `.github` hit to classify.
 * `scripts`, `AGENTS.md`, `README.md`: 0 hits each.
-* `tests/integration/ship_feature_completion_contract_test.go`: 9 lines (L23 comment; L314, L331, L337, L347, L352, L358, L411, L422). All are `assertAbsent` negative-test needles or a comment naming them. Permitted.
+* `tests/integration/ship_feature_completion_contract_test.go`: the header comment plus `assertAbsent` negative-test needles in the rows that retire tokens (rows 4, 21a, 21c, 22a, 24a, 30, and `U11-c` and `U11-d` in `TestCascadeRoutesThroughCommand`). Line numbers were replaced by row anchors on 2026-10-18. Permitted.
 * `tests/integration/shipment_close_path_behavior_test.go`: 3 lines (L71, L499, L502). Failure messages in a replica test of the retired contract. Test code, not an instruction; the file was deleted under 053.013-T.
 * `tests/integration/shipment_close_path_harness_test.go`: 9 lines (L47, L58, L70, L71, L72, L73, L86, L487, L489). Constants and comments in a replica test of the retired contract. Test code, not an instruction; the file was deleted under 053.013-T.
 
@@ -323,6 +323,10 @@ Command: `git --no-pager grep -c -E "CLOSE_PATH_VERDICT|FULLY_COVERED_ROOT|RECON
 - Follow-up (render and template drift, pre-existing): 8134B7B7.
 - Follow-up (replica and CI residuals formerly tied to 053.013-T, which deleted the replica files): FC6FE1D5.
 - Follow-up (environment failures): 5CC5532E.
+
+### Note 2026-10-18: replica tests verified deleted
+
+Rows 49 and 50 (`shipment_close_path_behavior_test.go` and `shipment_close_path_harness_test.go`) are verified deleted by commit 775e21f (`git show --stat 775e21f` lists both files with 1452 deletions). Stash FC6FE1D5 item 1 is closed by that evidence. Line references to `ship_feature_completion_contract_test.go` in this document were replaced with row and test-name anchors on the same date.
 
 ### Verification at HEAD ee56ce0
 - go vet and gofmt clean; integration package green except the start-script timing flake (passes in isolation).
