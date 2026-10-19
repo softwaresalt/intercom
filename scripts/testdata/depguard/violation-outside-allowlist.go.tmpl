@@ -1,7 +1,7 @@
 // Fixture template for scripts/check-depguard-fixtures.sh (011.014-T,
 // resolves 309FBF5A(ii)). This file is copied at runtime into
 // internal/depguardfixture/violation.go (a real, temporary, git-ignored
-// location OUTSIDE the internal/copilotprobe allowlist) to prove the
+// location OUTSIDE the internal/agent/copilot allowlist) to prove the
 // depguard-boundary rule's DENY direction: golangci-lint must exit non-zero
 // against this file. It is never committed at a compilable .go path itself
 // (this file's own extension is .go.tmpl, which the Go toolchain ignores).

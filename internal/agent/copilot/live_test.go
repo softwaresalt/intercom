@@ -14,7 +14,7 @@ import (
 
 // liveSDKTestsEnvVar is the workspace-wide default-deny opt-in for tests that
 // make real Copilot SDK connections (design §7.6; convention inherited from
-// the retired internal/copilotprobe package).
+// the retired disposable C2 spike package).
 const liveSDKTestsEnvVar = "INTERCOM_LIVE_SDK_TESTS"
 
 // liveSDKTestsAllowed reports whether raw opts in: strconv.ParseBool, and

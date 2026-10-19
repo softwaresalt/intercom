@@ -31,7 +31,7 @@ var Denylist = []string{
 	".autoharness/gates/pipeline-topology-force-audit.log",
 	".backlogit/hooks_queue.jsonl",
 	"internal/depguardfixture/marker",
-	"internal/copilotprobe2/marker",
+	"internal/agent/copilot2/marker",
 }
 
 // runDenylistCheck reproduces run_denylist_check (Part 1): it evaluates

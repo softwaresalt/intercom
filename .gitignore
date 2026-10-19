@@ -122,7 +122,7 @@ diff.txt
 # careless `git add -A` (security review + constitution review finding,
 # shipment 010-S).
 internal/depguardfixture/
-internal/copilotprobe2/
+internal/agent/copilot2/
 
 # Python bytecode caches written when the extracted gate engines under
 # scripts/lib/ are imported or executed (032-F, shipment 029-S).
