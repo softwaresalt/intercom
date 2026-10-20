@@ -8,6 +8,8 @@ import (
 	"time"
 
 	copilotsdk "github.com/github/copilot-sdk/go"
+
+	"github.com/softwaresalt/intercom-go/internal/agent"
 )
 
 // Copilot review: a failed Start must not hang when ForceStop blocks.
@@ -31,6 +33,54 @@ func TestFailedStartReturnsWhenForceStopBlocks(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("failed Start hung on a blocking ForceStop")
+	}
+}
+
+// Final review P2: an unconfirmed ForceStop in a failed Start's cleanup must
+// not be forgotten. Start's error carries it, and a later Stop must still
+// report agent.ErrCleanupIncomplete while the runtime is not confirmed dead,
+// so the hub can classify the shutdown as an orphan risk.
+func TestStopAfterFailedStartStillReportsUnconfirmedForceStop(t *testing.T) {
+	h := newHarness(t, func(c *Config, f *fakeClient) {
+		c.StopTimeout = 100 * time.Millisecond
+		f.forceBlock = make(chan struct{})
+		f.status = &copilotsdk.GetStatusResponse{Version: "1.0.0", ProtocolVersion: 3}
+	})
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			close(h.client.forceBlock)
+		}
+	}
+	defer release()
+
+	_, err := h.ad.Start(context.Background())
+	if !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Start error = %v, want it to carry ErrCleanupIncomplete", err)
+	}
+	if err := h.ad.Stop(context.Background()); !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Stop after a failed Start with a wedged ForceStop = %v, want ErrCleanupIncomplete", err)
+	}
+	if n := h.client.forceStops.Load(); n != 1 {
+		t.Errorf("SDK ForceStop ran %d times, want exactly 1 (single-flight)", n)
+	}
+}
+
+// Once the wedged ForceStop does return, a later Stop confirms the cleanup.
+func TestStopAfterFailedStartConfirmsOnceForceStopReturns(t *testing.T) {
+	h := newHarness(t, func(c *Config, f *fakeClient) {
+		c.StopTimeout = 100 * time.Millisecond
+		f.forceBlock = make(chan struct{})
+		f.status = &copilotsdk.GetStatusResponse{Version: "1.0.0", ProtocolVersion: 3}
+	})
+	if _, err := h.ad.Start(context.Background()); !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Start error = %v, want ErrCleanupIncomplete", err)
+	}
+	close(h.client.forceBlock)
+	<-h.ad.forceDone
+	if err := h.ad.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop after the runtime was confirmed dead = %v, want nil", err)
 	}
 }
 

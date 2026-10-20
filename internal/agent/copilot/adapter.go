@@ -135,9 +135,14 @@ type Adapter struct {
 	stopDone      chan struct{}      // closed when the first Stop finishes
 	forceOnce     sync.Once          // single-flight ForceStop
 	forceDone     chan struct{}      // closed when ForceStop returns
-	stopResult    error
-	ops           context.Context // cancelled by Stop; parents Send/Abort calls
-	opsCancel     context.CancelFunc
+	// forceUnconfirmed is sticky: set when a ForceStop wait ended without the
+	// SDK call returning (runtime death unconfirmed). It is never cleared;
+	// doStop re-checks forceDone so a Start-failure cleanup that timed out is
+	// not forgotten once fail() has marked the client not started.
+	forceUnconfirmed bool
+	stopResult       error
+	ops              context.Context // cancelled by Stop; parents Send/Abort calls
+	opsCancel        context.CancelFunc
 }
 
 // New validates cfg and builds an Adapter backed by the real SDK client.
@@ -618,6 +623,8 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 		if err := a.forceStop(); err != nil {
 			errs = append(errs, err)
 		}
+	} else if err := a.recheckForce(); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }
@@ -643,8 +650,29 @@ func (a *Adapter) forceStop() error {
 	case <-a.forceDone:
 		return nil
 	case <-t.C:
+		select { // a ForceStop that has just returned beats the timer
+		case <-a.forceDone:
+			return nil
+		default:
+		}
+		a.mu.Lock()
+		a.forceUnconfirmed = true
+		a.mu.Unlock()
 		return fmt.Errorf("agent: %w: ForceStop did not return within %v", agent.ErrCleanupIncomplete, a.cfg.StopTimeout)
 	}
+}
+
+// recheckForce re-waits (bounded) on a ForceStop that an earlier cleanup, such
+// as a failed Start, left unconfirmed. It returns nil when no earlier wait
+// timed out or the SDK call has since returned.
+func (a *Adapter) recheckForce() error {
+	a.mu.Lock()
+	unconfirmed := a.forceUnconfirmed
+	a.mu.Unlock()
+	if !unconfirmed {
+		return nil
+	}
+	return a.forceStop()
 }
 
 var errStepTimeout = errors.New("timed out")
