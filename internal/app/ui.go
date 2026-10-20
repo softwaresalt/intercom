@@ -64,7 +64,11 @@ func requireTerminal(o TUIOptions) error {
 // startUI builds the program, attaches it to the hub and runs it on its own
 // goroutine. The model never touches the hub directly: actions go out through
 // the feed's ingress and state comes back as hub envelopes.
-func startUI(ctx context.Context, h *hub.Hub, o TUIOptions, reissue tui.Reissuer) (*localUI, error) {
+//
+// creds is the initial credential set. It is part of the model's construction,
+// not a message sent after start, so it cannot be delivered after (and clobber)
+// a Ctrl+R re-issue.
+func startUI(ctx context.Context, h *hub.Hub, o TUIOptions, creds tui.CredentialsMsg, reissue tui.Reissuer) (*localUI, error) {
 	ui := &localUI{done: make(chan struct{})}
 
 	var prog *tea.Program // assigned before the feed starts, so the sink never sees nil
@@ -92,7 +96,7 @@ func startUI(ctx context.Context, h *hub.Hub, o TUIOptions, reissue tui.Reissuer
 	} else {
 		opts = append(opts, tea.WithAltScreen())
 	}
-	prog = tea.NewProgram(tui.New(tui.Options{Ingress: ui.feed, Reissue: reissue}), opts...)
+	prog = tea.NewProgram(tui.New(tui.Options{Ingress: ui.feed, Reissue: reissue, Credentials: creds}), opts...)
 	ui.prog = prog
 
 	go func() {

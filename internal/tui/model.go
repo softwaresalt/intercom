@@ -52,6 +52,10 @@ type Options struct {
 	// Reissue re-mints the session credentials (Ctrl+R). Nil disables the
 	// key.
 	Reissue Reissuer
+	// Credentials is the initial credential set, shown from the first frame.
+	// Passing it here (rather than sending it after start) means no startup
+	// message can race a Ctrl+R re-issue.
+	Credentials CredentialsMsg
 }
 
 type styles struct {
@@ -113,6 +117,9 @@ type Model struct {
 	// a re-issue Cmd is in flight (cleared when its result is processed).
 	credScroll int
 	reissuing  bool
+	// credsKnown is true once the initial credentials were set (Options or the
+	// first CredentialsMsg); Ctrl+R is a no-op before that.
+	credsKnown bool
 
 	vp            viewport.Model
 	width, height int
@@ -123,7 +130,11 @@ func New(o Options) Model {
 	if o.ActionTimeout <= 0 {
 		o.ActionTimeout = DefaultActionTimeout
 	}
-	return Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0), reissue: o.Reissue}
+	m := Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0), reissue: o.Reissue}
+	if len(o.Credentials.Credentials) > 0 {
+		m = m.showCredentials(o.Credentials)
+	}
+	return m
 }
 
 // Init implements tea.Model.
@@ -151,7 +162,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ActionResultMsg:
 		return m.onActionResult(msg), nil
 	case CredentialsMsg:
+		// An initial delivery only: once credentials are known a plain message
+		// is stale (a re-issue revoked them) and must not replace the live set
+		// nor clear an in-flight re-issue.
+		if m.credsKnown {
+			return m, nil
+		}
 		return m.showCredentials(msg), nil
+	case reissuedMsg:
+		m.reissuing = false
+		return m.showCredentials(msg.CredentialsMsg), nil
 	case ReissueFailedMsg:
 		m.reissuing = false
 		if len(msg.Live.Credentials) > 0 {

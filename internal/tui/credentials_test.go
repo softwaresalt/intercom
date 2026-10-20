@@ -115,6 +115,8 @@ func TestReissueWorksWhenThePanelWasDismissed(t *testing.T) {
 	reissue := func(context.Context) (CredentialsMsg, error) { return credsMsg(fakeApprover2, fakeObserver2), nil }
 	m := New(Options{Renderer: asciiRenderer(), Reissue: reissue})
 	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, _ = step(m, credsMsg(fakeApprover, fakeObserver))
+	m, _ = step(m, tea.KeyMsg{Type: tea.KeyEsc})
 	m, cmd := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
 	if cmd == nil {
 		t.Fatal("Ctrl+R returned no Cmd")
@@ -227,6 +229,7 @@ func TestRepeatedCtrlRKeepsOneReissueInFlight(t *testing.T) {
 	}
 	m := New(Options{Renderer: asciiRenderer(), Reissue: reissue})
 	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, _ = step(m, credsMsg(fakeApprover, fakeObserver))
 	m, first := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
 	if first == nil {
 		t.Fatal("first Ctrl+R returned no Cmd")
@@ -250,6 +253,7 @@ func TestCtrlRUnblocksAfterFailedReissue(t *testing.T) {
 	boom := errors.New("entropy unavailable")
 	m := New(Options{Renderer: asciiRenderer(), Reissue: func(context.Context) (CredentialsMsg, error) { return CredentialsMsg{}, boom }})
 	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, _ = step(m, credsMsg(fakeApprover, fakeObserver))
 	m, cmd := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
 	m, _ = step(m, cmd())
 	if _, again := step(m, tea.KeyMsg{Type: tea.KeyCtrlR}); again == nil {

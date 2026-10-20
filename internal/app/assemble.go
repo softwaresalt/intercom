@@ -258,12 +258,13 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 		// The UI outlives Start: Start's ctx bounds startup only, so the feed
 		// (whose lifetime is its Start ctx) gets a context that is not cancelled
 		// with it; ui.stop releases it.
-		ui, err := startUI(context.WithoutCancel(ctx), h, o.TUI, a.tuiReissue)
+		// The one display of the credentials: the local TUI only. They are given
+		// to the model at construction so no later message can race Ctrl+R.
+		ui, err := startUI(context.WithoutCancel(ctx), h, o.TUI, a.credentialsMsg(a.Credentials()), a.tuiReissue)
 		if err != nil {
 			return fmt.Errorf("start tui: %w", err)
 		}
 		a.ui = ui
-		ui.prog.Send(a.credentialsMsg(a.Credentials())) // the one display of the credentials: local TUI only
 		go func() {
 			<-ui.done
 			if err := ui.failure(); err != nil {

@@ -42,6 +42,10 @@ type ReissueFailedMsg struct {
 	Live CredentialsMsg
 }
 
+// reissuedMsg is a successful re-issue's result. It is distinct from the plain
+// CredentialsMsg (the initial delivery) so only it ends the in-flight guard.
+type reissuedMsg struct{ CredentialsMsg }
+
 // Reissuer mints a fresh credential set and revokes the previous one. It runs
 // inside a tea.Cmd, off the Update goroutine. On error it may still return the
 // live set (a partial re-issue); a zero message means nothing changed.
@@ -51,8 +55,8 @@ type Reissuer func(ctx context.Context) (CredentialsMsg, error)
 // (a re-issue revokes the old one, so it must not stay on screen).
 func (m Model) showCredentials(msg CredentialsMsg) Model {
 	m.creds = msg
+	m.credsKnown = true
 	m.credScroll = 0
-	m.reissuing = false
 	m.credOpen = len(msg.Credentials) > 0
 	if m.credOpen {
 		m.notice = "credentials are shown once: copy them now (Esc dismisses)"
@@ -76,6 +80,9 @@ func (m Model) reissueCmd() (tea.Model, tea.Cmd) {
 		m.notice = "re-issue unavailable"
 		return m, nil
 	}
+	if !m.credsKnown {
+		return m, nil // nothing to revoke yet; the initial credentials are still pending
+	}
 	if m.reissuing {
 		// Exactly one re-issue in flight: a second would revoke the first set
 		// and its result could be delivered out of order.
@@ -91,7 +98,7 @@ func (m Model) reissueCmd() (tea.Model, tea.Cmd) {
 		if err != nil {
 			return ReissueFailedMsg{Err: err, Live: msg}
 		}
-		return msg
+		return reissuedMsg{msg}
 	}
 }
 
