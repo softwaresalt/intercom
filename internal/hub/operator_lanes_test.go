@@ -82,6 +82,35 @@ func TestFailedPromptSendDoesNotRestoreIdleWhileATurnRuns(t *testing.T) {
 	}
 }
 
+// Final review P3: promptsPending is a count, not a flag. Turn A is running and
+// prompt B has been accepted; A's idle must not release the idle wait because
+// B's turn has not started yet. Only B's turn.start (consuming the pending
+// prompt) followed by B's idle makes the session idle.
+func TestIdleOfARunningTurnDoesNotReleaseWaitIdleBeforeAPendingPromptsTurnStart(t *testing.T) {
+	ag := newFakeAgent()
+	h := startHub(t, Config{Agent: ag})
+	tui := connectRole(t, h, ClientTUI, 0)
+	send(t, h, turnStart()) // turn A
+	if res := do(t, tui, prompt("B")); !res.Accepted {
+		t.Fatalf("prompt = %+v", res)
+	}
+	awaitPrompt(t, ag)
+	send(t, h, idleEvent()) // A ends; B's turn.start has not arrived
+	short, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	err := h.WaitIdle(short)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitIdle = %v: A's idle released the wait while B's turn was still pending", err)
+	}
+	send(t, h, turnStart()) // turn B
+	send(t, h, idleEvent())
+	ctx, cancel2 := context.WithTimeout(context.Background(), testWait)
+	defer cancel2()
+	if err := h.WaitIdle(ctx); err != nil {
+		t.Fatalf("WaitIdle = %v after B's turn finished, want idle", err)
+	}
+}
+
 // Prompts dropped at step 0 never ran: with no turn known running the session
 // is idle, so the executor's idle wait is satisfied by a positive state rather
 // than a stale "prompt dispatched" flag.
@@ -122,7 +151,8 @@ func TestStep0DroppedPromptsDoNotRestoreIdleWhileATurnRuns(t *testing.T) {
 	if err := h.BeginShutdown(ctx); err != nil {
 		t.Fatalf("BeginShutdown: %v", err)
 	}
-	time.Sleep(50 * time.Millisecond)
+	// stopLanes (and its retraction) ran on the hub goroutine before
+	// BeginShutdown returned, so no settling delay is needed.
 	short, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel2()
 	if err := h.WaitIdle(short); !errors.Is(err, context.DeadlineExceeded) {

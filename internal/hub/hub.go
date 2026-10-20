@@ -232,12 +232,14 @@ type Hub struct {
 	announced    bool
 	drainWaiters []*ctlReq
 	// agentIdle is the last observed session state: false from a turn.start,
-	// true from an idle event (and initially: no turn ever ran). It is only as
-	// fresh as the ingress queue is empty (see WaitIdle). idleWaiters are the
-	// WaitIdle callers. turnRunning is true from a turn.start to the next idle.
+	// true from an idle event with no prompt pending (and initially: no turn
+	// ever ran). It is only as fresh as the ingress queue is empty (see
+	// WaitIdle). idleWaiters are the WaitIdle callers. turnRunning is true from
+	// a turn.start to the next idle.
 	// promptsPending counts accepted prompts that have neither failed, been
-	// dropped, nor been followed by a turn.start: while it is positive the
-	// session is not idle even though no turn has been observed yet.
+	// dropped, nor yet had a turn.start folded for them: each turn.start
+	// consumes one (never below zero). While it is positive an idle event does
+	// not make the session idle, because a further turn is still to come.
 	agentIdle      bool
 	turnRunning    bool
 	promptsPending int
@@ -645,9 +647,13 @@ func (h *Hub) handleEvent(ev agent.Event) {
 	switch ev.Kind {
 	case agent.KindTurnStart:
 		h.agentIdle, h.turnRunning = false, true
-		h.promptsPending = 0 // a turn started: the dispatched prompts have taken effect
+		// A turn started: it consumes one accepted prompt (a turn.start with
+		// none pending, e.g. an agent-initiated turn, leaves the count at 0).
+		h.promptsPending = max(h.promptsPending-1, 0)
 	case agent.KindIdle:
-		h.agentIdle, h.turnRunning = true, false
+		// Idle only when no accepted prompt is still waiting for its turn.
+		h.turnRunning = false
+		h.agentIdle = h.promptsPending == 0
 	}
 	kind, payload := mapEvent(ev, h.fold.lim.MaxEntryTextBytes)
 	if ev.Kind == agent.KindDelta {
