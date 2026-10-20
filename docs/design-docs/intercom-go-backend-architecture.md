@@ -150,9 +150,11 @@ Normative sequence:
    The same hub step closes admission, drops queued operator prompts/aborts and
    cancels the in-flight one (no operator prompt may start a turn after the
    shutdown abort), and settles any permission decided but not yet acknowledged
-   (a decision still in the reply buffer is revoked to `UserNotAvailable` and
-   the request is `permission.aborted`; one the handler already took is
-   `permission.resolved`). Credentials are then revoked and the listener closed.
+   (one the handler had not delivered is revoked to `UserNotAvailable` and the
+   request is `permission.aborted`; one the handler already delivered is
+   `permission.resolved`, per the handler-reported outcome — §5.4 item 7).
+   Credentials are then revoked and the listener closed. The same step cancels
+   the operator lanes' context synchronously.
 1. **Broadcast `server.shutdown`** so operators learn why the session ended.
    This happens *before* any teardown, not after.
 2. **Quiesce SDK callbacks.** Close the callback latch (the adapter registers
@@ -177,7 +179,11 @@ Normative sequence:
    graceful steps and goes straight to `ForceStop`. The executor does not
    proceed to step 5/6 until `Agent.Stop` returns or a hard budget (stop +
    force) is spent; a cancelled shutdown context hurries the stop but never
-   abandons it, and an unconfirmed stop is reported as an orphan risk.
+   abandons it, and an unconfirmed stop is reported as an orphan risk. An
+   unconfirmed stop is either a stop that outlives the hard budget or one the
+   adapter itself could not confirm (its own bounded wait for `ForceStop`
+   expired, surfaced as `agent.ErrCleanupIncomplete`); the hub's `Force` budget
+   defaults above the adapter's `StopTimeout` so the adapter reports first.
 5. **Bounded drain of client write pumps (1-2 s), then abort sockets.** Each client's `done` MUST be closed (via its `sync.Once`) before the abort, per §5.5's drop protocol. An
    unbounded drain can block for minutes on a client with a closed TCP window
    — precisely what §5.5 forbids.
@@ -546,11 +552,18 @@ below load-bearing rather than stylistic.
    SDK received nothing, which is the original dual-owner defect in miniature.
    A third party can also abandon the request (SDK `Abort`, `Stop`/`ForceStop`,
    or a CLI-side RPC timeout); those paths resolve through the same
-   `permission.aborted` envelope. The reply buffer is the evidence: when the
-   acknowledgement is overdue (or shutdown step 0 begins) a decision still in
-   the buffer was never taken, so the hub replaces it with `UserNotAvailable`
-   and publishes `permission.aborted`; an empty buffer means the handler took
-   it, so the hub publishes `permission.resolved`. A request whose hub deadline
+   `permission.aborted` envelope. The handler-reported outcome is the evidence,
+   not the reply buffer: each ask carries a one-shot outcome the handler records
+   (the exact decision it returns to the SDK) *before* it returns, and the hub
+   revokes it when it stops waiting. Exactly one of "handler delivered" and "hub
+   revoked" wins, so there is no window in which a consumed decision looks
+   undelivered. When the acknowledgement is overdue (or shutdown step 0 begins)
+   a decision the handler had not delivered is revoked (the handler can then
+   only return `UserNotAvailable`) and the hub publishes `permission.aborted`;
+   one it did deliver is published `permission.resolved` when it is the decision
+   the hub issued, and `permission.aborted` when the handler downgraded it (an
+   allow after shutdown began). A hub-issued `UserNotAvailable` the handler
+   returned is `resolved` with the hub's reason. A request whose hub deadline
    has passed is expired before any later action is processed, so a late
    approval cannot win a race with the timer.
 

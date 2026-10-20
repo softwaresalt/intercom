@@ -137,17 +137,30 @@ a policy-violation close. When the hub-owned permission timeout fires, the outco
 
 ## Addendum: hub-added reason codes and transport-owned codes (shipment 059-S)
 
-* The hub adds two reason codes beyond the stable list above, for conditions the
+* The hub adds three reason codes beyond the stable list above, for conditions the
   list does not cover: `agent_unavailable` (the hub cannot hand a prompt or
-  abort to the agent: none configured, or its operator queue is full) and
+  abort to the agent: none configured, or its operator queue is full),
   `shutting_down` (the credential-less local TUI attempted a privileged action
-  after shutdown step 0; a remote surface gets `credential_revoked` instead).
+  after shutdown step 0; a remote surface gets `credential_revoked` instead) and
+  `client_closed` (see below).
 * `credential_expired`, `generation_mismatch` and `local_only_action`, and the
   wire shape of `action.refused`, are owned by the transport (plan S5): the
   hub's arbitration returns the codes it can decide itself and does not
   produce those.
-* A queued action whose remote connection closed before the hub processed it
-  is refused `credential_revoked` (re-validation runs at the hub step).
+* A queued action whose connection closed before the hub processed it is
+  refused (re-validation runs at the hub step), uniformly for every registered
+  client: `credential_revoked` for a remote connection, and `client_closed` for
+  the local TUI, which has no credential to revoke.
+* The hub denies a truncated permission request itself (the adapter already
+  does; the hub does not rely on that): an operator cannot approve text it
+  cannot see, so such a request is never registered or broadcast.
+* Ack-deadline and shutdown settlement: a decision is final only when the
+  handler reports what it returned to the SDK. When the acknowledgement is
+  overdue, or shutdown step 0 begins, a decision the handler had not yet
+  delivered is revoked (it can only ever become `UserNotAvailable`) and the
+  request is published `permission.aborted`; a decision the handler already
+  delivered is published `permission.resolved` per the handler-reported
+  outcome, or `permission.aborted` if the handler had downgraded it.
 * Unknown kinds remain destructive: default-deny for remote approvers, and
   covered by `remote_approve_destructive` exactly like `shell` and `write`.
 
