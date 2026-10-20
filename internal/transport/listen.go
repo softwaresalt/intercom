@@ -118,6 +118,9 @@ type ServerConfig struct {
 	Drain func(ctx context.Context) error
 	// HandshakeTimeout overrides [HandshakeTimeout] (tests).
 	HandshakeTimeout time.Duration
+	// OnBind, when set, is called with the bound loopback address before
+	// Serve (used to tell the handler its port).
+	OnBind func(net.Addr)
 
 	resolver resolveFunc // test seam
 }
@@ -151,6 +154,9 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		hs = HandshakeTimeout
 	}
 	base, cancel := context.WithCancel(context.Background())
+	if cfg.OnBind != nil {
+		cfg.OnBind(ln.Addr())
+	}
 	return &Server{
 		ln:     ln,
 		cancel: cancel,
