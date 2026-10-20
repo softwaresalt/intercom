@@ -105,7 +105,7 @@ func TestNativeClientWithoutOriginAcceptedOnlyWithValidCredential(t *testing.T) 
 	if err != nil {
 		t.Fatalf("valid native client refused: %v", err)
 	}
-	defer c.CloseNow()
+	defer func() { _ = c.CloseNow() }()
 	wantStatus(t, resp, http.StatusSwitchingProtocols, "valid native")
 	if got := resp.Header.Get("Sec-WebSocket-Protocol"); got != "" {
 		t.Fatalf("a header-authenticated client negotiated protocol %q", got)
@@ -204,7 +204,7 @@ func TestSubprotocolCarriageSelectsOnlyNonSecretProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subprotocol carriage refused: %v", err)
 	}
-	defer c.CloseNow()
+	defer func() { _ = c.CloseNow() }()
 	if got := resp.Header.Get("Sec-WebSocket-Protocol"); got != "intercom.v1" {
 		t.Fatalf("selected subprotocol = %q; want only intercom.v1", got)
 	}
@@ -245,7 +245,7 @@ func TestOnlyWSPathServed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	wantStatus(t, resp, http.StatusNotFound, "other path")
 }
 

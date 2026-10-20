@@ -82,7 +82,7 @@ func nextResult(t *testing.T, c *websocket.Conn) result {
 	return result{}
 }
 
-func expectClose(t *testing.T, c *websocket.Conn, want websocket.StatusCode, within time.Duration) websocket.CloseError {
+func expectClose(t *testing.T, c *websocket.Conn, want websocket.StatusCode, within time.Duration) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), within)
 	defer cancel()
@@ -98,7 +98,7 @@ func expectClose(t *testing.T, c *websocket.Conn, want websocket.StatusCode, wit
 		if ce.Code != want {
 			t.Fatalf("close code = %d (%q); want %d", ce.Code, ce.Reason, want)
 		}
-		return ce
+		return ce.Reason
 	}
 }
 
@@ -107,7 +107,9 @@ func TestOversizedMessageClosesConnection(t *testing.T) {
 	c := dialWS(t, e, e.app.Token.Reveal())
 	readEnvelope(t, c, 2*time.Second)
 	sendText(t, c, `{"op":"prompt","prompt":"`+strings.Repeat("a", 2048)+`"}`)
-	expectClose(t, c, websocket.StatusMessageTooBig, 3*time.Second)
+	if reason := expectClose(t, c, websocket.StatusMessageTooBig, 5*time.Second); reason == "" {
+		t.Log("library close carried no reason")
+	}
 	eventually(t, "session ended", 3*time.Second, func() bool { return e.handler.ActiveSessions() == 0 })
 }
 
@@ -116,7 +118,9 @@ func TestIdleConnectionClosedAtDeadline(t *testing.T) {
 	c := dialWS(t, e, e.app.Token.Reveal())
 	readEnvelope(t, c, 2*time.Second)
 	begin := time.Now()
-	expectClose(t, c, websocket.StatusPolicyViolation, 3*time.Second)
+	if reason := expectClose(t, c, websocket.StatusPolicyViolation, 3*time.Second); reason != closeReasonIdle {
+		t.Fatalf("idle close reason = %q; want %q", reason, closeReasonIdle)
+	}
 	if d := time.Since(begin); d < 150*time.Millisecond || d > 2*time.Second {
 		t.Fatalf("idle close after %v; want near the 250ms deadline", d)
 	}

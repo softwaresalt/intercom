@@ -4,9 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 
@@ -27,15 +25,14 @@ type env struct {
 }
 
 type envOpts struct {
-	origins   []string
-	hosts     []string
-	maxConns  int
-	lifetime  time.Duration
-	hubCfg    hub.Config
-	cfgTweak  func(*Config)
-	srvTweak  func(*ServerConfig)
-	noMintObs bool
-	clock     *fakeClock
+	origins  []string
+	hosts    []string
+	maxConns int
+	lifetime time.Duration
+	hubCfg   hub.Config
+	cfgTweak func(*Config)
+	srvTweak func(*ServerConfig)
+	clock    *fakeClock
 }
 
 func nowOf(c *fakeClock) func() time.Time {
@@ -111,11 +108,6 @@ func newEnv(t *testing.T, o envOpts) *env {
 
 func (e *env) hostPort() string { return e.srv.Addr().String() }
 func (e *env) wsURL() string    { return "ws://" + e.hostPort() + WSPath }
-func (e *env) port() int {
-	_, p, _ := net.SplitHostPort(e.hostPort())
-	n, _ := strconv.Atoi(p)
-	return n
-}
 
 // event pushes one agent message through the hub.
 func (e *env) event(text string) {
