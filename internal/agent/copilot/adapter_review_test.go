@@ -8,6 +8,8 @@ import (
 	"time"
 
 	copilotsdk "github.com/github/copilot-sdk/go"
+
+	"github.com/softwaresalt/intercom-go/internal/agent"
 )
 
 // Copilot review: a failed Start must not hang when ForceStop blocks.
@@ -31,6 +33,54 @@ func TestFailedStartReturnsWhenForceStopBlocks(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("failed Start hung on a blocking ForceStop")
+	}
+}
+
+// Final review P2: an unconfirmed ForceStop in a failed Start's cleanup must
+// not be forgotten. Start's error carries it, and a later Stop must still
+// report agent.ErrCleanupIncomplete while the runtime is not confirmed dead,
+// so the hub can classify the shutdown as an orphan risk.
+func TestStopAfterFailedStartStillReportsUnconfirmedForceStop(t *testing.T) {
+	h := newHarness(t, func(c *Config, f *fakeClient) {
+		c.StopTimeout = 100 * time.Millisecond
+		f.forceBlock = make(chan struct{})
+		f.status = &copilotsdk.GetStatusResponse{Version: "1.0.0", ProtocolVersion: 3}
+	})
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			close(h.client.forceBlock)
+		}
+	}
+	defer release()
+
+	_, err := h.ad.Start(context.Background())
+	if !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Start error = %v, want it to carry ErrCleanupIncomplete", err)
+	}
+	if err := h.ad.Stop(context.Background()); !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Stop after a failed Start with a wedged ForceStop = %v, want ErrCleanupIncomplete", err)
+	}
+	if n := h.client.forceStops.Load(); n != 1 {
+		t.Errorf("SDK ForceStop ran %d times, want exactly 1 (single-flight)", n)
+	}
+}
+
+// Once the wedged ForceStop does return, a later Stop confirms the cleanup.
+func TestStopAfterFailedStartConfirmsOnceForceStopReturns(t *testing.T) {
+	h := newHarness(t, func(c *Config, f *fakeClient) {
+		c.StopTimeout = 100 * time.Millisecond
+		f.forceBlock = make(chan struct{})
+		f.status = &copilotsdk.GetStatusResponse{Version: "1.0.0", ProtocolVersion: 3}
+	})
+	if _, err := h.ad.Start(context.Background()); !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Start error = %v, want ErrCleanupIncomplete", err)
+	}
+	close(h.client.forceBlock)
+	<-h.ad.forceDone
+	if err := h.ad.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop after the runtime was confirmed dead = %v, want nil", err)
 	}
 }
 
@@ -63,6 +113,55 @@ func TestStopBoundedWhenForceStopBlocks(t *testing.T) {
 	case <-second:
 	case <-time.After(2 * time.Second):
 		t.Fatal("stopDone was never closed; concurrent Stop callers would hang")
+	}
+}
+
+// Review finding A: once the caller's context is done, graceful teardown is
+// over. Stop must go straight to ForceStop and must not launch a graceful
+// Disconnect or Client.Stop that would race the force kill.
+func TestStopWithADoneContextSkipsGracefulStepsAndForceStops(t *testing.T) {
+	h := newHarness(t, nil)
+	if _, err := h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := h.ad.Stop(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Stop error = %v, want context.Canceled", err)
+	}
+	time.Sleep(50 * time.Millisecond) // a (wrongly) launched graceful call would have run by now
+	if n := h.client.session.disconnects.Load(); n != 0 {
+		t.Errorf("Disconnect ran %d times after the context was done", n)
+	}
+	if n := h.client.stops.Load(); n != 0 {
+		t.Errorf("graceful Client.Stop ran %d times after the context was done", n)
+	}
+	if n := h.client.forceStops.Load(); n != 1 {
+		t.Errorf("ForceStop ran %d times, want 1", n)
+	}
+	if h.client.childAlive.Load() {
+		t.Error("the CLI child survived Stop")
+	}
+}
+
+// A graceful step that failed or timed out means the runtime is going to be
+// force-killed: the remaining graceful steps are skipped, not attempted.
+func TestStopSkipsClientStopAfterDisconnectTimesOut(t *testing.T) {
+	h := newHarness(t, func(c *Config, _ *fakeClient) { c.StopTimeout = 100 * time.Millisecond })
+	h.client.session.disconnectBlock = make(chan struct{})
+	defer close(h.client.session.disconnectBlock)
+	if _, err := h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ad.Stop(context.Background()); err == nil {
+		t.Fatal("a Disconnect that timed out must be reported")
+	}
+	if n := h.client.stops.Load(); n != 0 {
+		t.Errorf("graceful Client.Stop ran %d times after Disconnect timed out, want straight to ForceStop", n)
+	}
+	if n := h.client.forceStops.Load(); n != 1 {
+		t.Errorf("ForceStop ran %d times, want 1", n)
 	}
 }
 

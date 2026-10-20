@@ -1,8 +1,12 @@
 package hub
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"time"
+
+	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
 // ClientKind distinguishes the permanent local TUI member of the broadcast
@@ -58,6 +62,40 @@ type Client struct {
 	stale bool
 	// lastHydrate (hub-owned) rate-limits forced re-hydrates.
 	lastHydrate time.Time
+	// notify is the hub's capacity-1 membership wake channel, set by the hub
+	// before the client is handed out. close signals it (non-blocking) so the
+	// hub re-evaluates the broadcast set promptly when a surface goes away
+	// (067.008-T) instead of at its next unrelated step.
+	notify chan<- struct{}
+	// role and hub are set by the hub, once, before the client is handed out
+	// (so reads from any goroutine happen after the write). role is the
+	// authorization role (ADR MVP-3); it can never be changed by a message.
+	role Role
+	hub  *Hub
+}
+
+// ErrClientClosed reports an action attempted through a client that has been
+// closed or dropped.
+var ErrClientClosed = errors.New("hub: client closed")
+
+// Role reports the client's authorization role.
+func (c *Client) Role() Role { return c.role }
+
+// Do submits one operator action to the hub and returns its verdict. The
+// identity the action is performed as comes from this Client's own kind and
+// role, fixed when the hub registered it; nothing in act can change it. A
+// refusal is an ActionResult with a Reason, delivered to this caller only; the
+// error is non-nil only when the hub could not be reached (context ended, hub
+// stopped, client closed).
+func (c *Client) Do(ctx context.Context, act OperatorAction) (ActionResult, error) {
+	if c.isClosed() {
+		return ActionResult{}, apperr.Wrap(apperr.KindPolicy, ErrClientClosed)
+	}
+	p := principal{surface: surfaceRemote, role: c.role}
+	if c.kind == ClientTUI {
+		p = principal{surface: surfaceTUI, role: RoleApprover}
+	}
+	return c.hub.submitFrom(ctx, c, p, act)
 }
 
 func newClient(id uint64, kind ClientKind, buffer int) *Client {
@@ -111,6 +149,9 @@ func (c *Client) close() bool {
 		close(c.done)
 		closed = true
 	})
+	if closed && c.notify != nil {
+		trySend(c.notify, struct{}{})
+	}
 	return closed
 }
 

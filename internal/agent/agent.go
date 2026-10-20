@@ -124,12 +124,21 @@ type PermissionDecision struct {
 
 // PermissionAsk is sent to the hub for each permission request. The hub
 // answers by sending exactly one decision on Reply (capacity 1, so the hub
-// never blocks on it).
+// never blocks on it). Reply is send-only for the hub: the hub never reads it.
+//
+// Outcome is the one-shot record of what the handler actually returned to the
+// SDK. The handler records its decision with Deliver before it returns; the hub
+// revokes the ask (Revoke) when it stops waiting for the handler (ack deadline,
+// shutdown), so a decision the handler had not yet taken is never delivered
+// afterwards, and reads Delivered to publish permission.resolved only for what
+// the SDK really received. The hub never infers delivery from Reply's buffer.
+// An ask with a nil Outcome is malformed and the hub fails it closed.
 //
 // Resolved is closed when the adapter no longer needs an answer (the request
-// was answered, or shutdown or hub-done abandoned it). A hub that dequeues an
-// ask whose Resolved is already closed must discard it instead of prompting
-// the operator. The hub owns any approval timeout; the adapter applies none.
+// was answered, or shutdown or hub-done abandoned it), after Outcome has
+// recorded the handler's decision. A hub that dequeues an ask whose Resolved
+// is already closed must discard it instead of prompting the operator. The hub
+// owns any approval timeout; the adapter applies none.
 //
 // Ordering: asks travel on a different channel from events, so the relative
 // order of an ask and the events around it is undefined; the hub must not
@@ -137,6 +146,7 @@ type PermissionDecision struct {
 type PermissionAsk struct {
 	Request  PermissionRequest
 	Reply    chan<- PermissionDecision
+	Outcome  *PermissionOutcome
 	Resolved <-chan struct{}
 }
 
@@ -146,6 +156,11 @@ var (
 	ErrStopped        = errors.New("agent stopped")
 	ErrNotRunning     = errors.New("agent session not running")
 	ErrAlreadyStarted = errors.New("agent already started")
+	// ErrCleanupIncomplete is wrapped into a Stop error when the adapter could
+	// not confirm the runtime's CLI child was reaped (its force stop did not
+	// return within the adapter's bound). The caller must treat the child as
+	// possibly still running.
+	ErrCleanupIncomplete = errors.New("agent cleanup incomplete")
 )
 
 // Agent is the interface the hub uses to drive an agent runtime. One Agent
@@ -164,6 +179,8 @@ type Agent interface {
 	// order (design §3.1): Abort, wait for the idle event on ingress, then
 	// Stop; events still in flight when Stop begins may be discarded (logged
 	// at warn), so Stop must follow an observed idle. Stop also interrupts a
-	// Start in progress and is idempotent.
+	// Start in progress and is idempotent. An error wrapping
+	// ErrCleanupIncomplete means the runtime's child process could not be
+	// confirmed reaped.
 	Stop(ctx context.Context) error
 }

@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -21,6 +22,9 @@ var (
 	ErrAlreadyRunning = errors.New("hub already running")
 	// ErrTooManyClients reports a remote Connect refused at the MaxRemote cap.
 	ErrTooManyClients = errors.New("hub: too many remote clients")
+	// ErrShuttingDown reports a Connect refused because shutdown has begun
+	// (design §3.1 step 0): no client is admitted after that step.
+	ErrShuttingDown = errors.New("hub: shutting down")
 )
 
 // Defaults for [Config].
@@ -34,6 +38,36 @@ const (
 	// connectBatch is the most connect requests taken from the connect queue
 	// in one hub iteration, so a connect flood cannot monopolise the loop.
 	connectBatch = 16
+	// DefaultMaxPendingPermissions bounds the permission registry (pending
+	// plus awaiting-ack entries), and with it the pending section of a
+	// hydrate frame and the number of ack watcher goroutines.
+	DefaultMaxPendingPermissions = 8
+	// DefaultPermissionTimeout is the hub-owned approval deadline (design
+	// §5.4 item 4); the outcome on expiry is UserNotAvailable.
+	DefaultPermissionTimeout = 2 * time.Minute
+	// DefaultPermissionAckTimeout bounds the wait for the handler's
+	// acknowledgement of a delivered decision.
+	DefaultPermissionAckTimeout = 5 * time.Second
+	// DefaultOperatorActionTimeout bounds one operator-initiated agent call.
+	DefaultOperatorActionTimeout = 30 * time.Second
+	// operatorPromptQueue is how many accepted prompts may wait for the
+	// prompt lane's worker; a prompt beyond it is refused, never blocked on.
+	operatorPromptQueue = 8
+	// MaxPermissionSummaryBytes bounds a permission request's summary. The
+	// adapter caps it at 2048 runes (at most 4 bytes each); a larger summary
+	// means the request cannot be reviewed in full and is denied outright.
+	MaxPermissionSummaryBytes = 8192
+	// PermissionEntryHydrateBytes is the declared upper bound on one pending
+	// permission's encoding in a hydrate frame (summary at worst-case JSON
+	// escaping plus identifiers and keys). A hydrate frame is at most the fold
+	// snapshot bound plus MaxPendingPermissions of these.
+	PermissionEntryHydrateBytes = maxJSONExpansion*MaxPermissionSummaryBytes + 1024
+	// askQueue is the capacity of the permission-ask channel.
+	askQueue = 16
+	// actionQueue is the capacity of the operator-action channel.
+	actionQueue = 64
+	// ctlQueue is the capacity of the hub-control channel.
+	ctlQueue = 8
 )
 
 // Config configures a [Hub]. Zero values select the documented defaults.
@@ -72,6 +106,38 @@ type Config struct {
 	// Now supplies the time used for rate limiting (not envelope timestamps;
 	// see Clock). Default time.Now.
 	Now func() time.Time
+	// MaxPendingPermissions caps the permission registry. An ask beyond it is
+	// answered UserNotAvailable at once (fail closed). Default
+	// [DefaultMaxPendingPermissions].
+	MaxPendingPermissions int
+	// PermissionTimeout is how long a permission request waits for an
+	// operator before the hub resolves it to UserNotAvailable. The hub owns
+	// this clock; the adapter's handler runs none. Default
+	// [DefaultPermissionTimeout].
+	PermissionTimeout time.Duration
+	// PermissionAckTimeout bounds how long a decided request waits for the
+	// handler to acknowledge receipt before the hub gives up and emits
+	// permission.aborted. Default [DefaultPermissionAckTimeout].
+	PermissionAckTimeout time.Duration
+	// RemoteApproveDestructive is [remote].remote_approve_destructive: when
+	// false (the default) a remote approver may not approve shell, write or
+	// unknown-kind permissions (ADR MVP-3). The local TUI is unaffected.
+	RemoteApproveDestructive bool
+	// Agent receives operator prompt-send and turn-abort actions after they
+	// pass the role matrix. It is called off the hub goroutine only (design
+	// §4.1). Nil means no agent is attached: such actions are refused with
+	// agent_unavailable.
+	Agent AgentControl
+	// OperatorActionTimeout bounds one Agent.Send or Agent.Abort call made on
+	// behalf of an operator. Default [DefaultOperatorActionTimeout].
+	OperatorActionTimeout time.Duration
+
+	// ---- TEST-ONLY SEAM (067.002-T): permAfter replaces the real timer that
+	// wakes the hub for the earliest permission deadline, so tests drive the
+	// hub-owned timeout without sleeping. It returns the fire channel and a
+	// stop function. Never set in production.
+	permAfter func(d time.Duration) (<-chan time.Time, func())
+	// ---- end test-only seam ----
 
 	// ---- TEST-ONLY MUTATION HOOK (066.005-T; accepted trade-off, see S4) ----
 	// mutHydrateThenRegister, when set, makes a hydrating connect snapshot in
@@ -117,7 +183,12 @@ type Stats struct {
 	Hydrations      uint64
 	DegradedSignals uint64
 	Replays         uint64
-	Rehydrations    uint64
+	// PendingPermissions counts registry entries (unresolved plus awaiting
+	// handler acknowledgement).
+	PendingPermissions int
+	// ShuttingDown reports that shutdown step 0 has run: admission is closed.
+	ShuttingDown bool
+	Rehydrations uint64
 }
 
 // Hub is the single-writer event hub. See the package documentation. Every
@@ -131,6 +202,50 @@ type Hub struct {
 	degraded chan string // capacity 1: adapter fault signal, out-of-band (§4.2)
 	connects chan *connectReq
 	statsReq chan chan Stats
+	asks     chan agent.PermissionAsk // permission asks from the adapter (§5.4)
+	actions  chan *actionReq          // operator actions (§4.1: never mutate off-hub)
+	// membershipWake is signalled (non-blocking) by Client.Close so the hub
+	// re-evaluates the broadcast set when a surface goes away.
+	membershipWake chan struct{}
+	// acks carries "handler returned" reports from the per-ask watcher
+	// goroutines (067.002-T). Watchers block on it only until the hub is done.
+	acks chan string
+	// operator lanes (067.005-T): accepted prompts and aborts waiting for the
+	// worker goroutines that call the agent off the hub.
+	promptQ chan string
+	abortQ  chan struct{}
+	// lanesCancel is called by shutdown step 0 (on the hub goroutine) and
+	// cancels the lanes' context synchronously: the lanes take no more work and
+	// any in-flight agent call's context is done before step 0 returns. It is
+	// set by Run.
+	lanesCancel context.CancelFunc
+	// promptFailed carries "an accepted prompt provably never reached
+	// Agent.Send" reports from the prompt lane (picked up after the lanes were
+	// cancelled). A Send that was invoked and failed is NOT reported: it may
+	// have started a turn, so it cannot be correlated and stays counted.
+	promptFailed chan struct{}
+	// ctl carries the shutdown executor's hub-control messages (067.006-T).
+	ctl chan *ctlReq
+	// closing is set by shutdown step 0: admission is closed. announced
+	// records that server.shutdown was already broadcast (step 1), so the
+	// hub's own stop does not repeat it. drainWaiters are the step-0 callers
+	// waiting for the permission registry to empty. All hub-owned.
+	closing      bool
+	announced    bool
+	drainWaiters []*ctlReq
+	// agentIdle is the last observed session state: false from a turn.start,
+	// true from an idle event with no prompt pending (and initially: no turn
+	// ever ran). It is only as fresh as the ingress queue is empty (see
+	// WaitIdle). idleWaiters are the WaitIdle callers. turnRunning is true from
+	// a turn.start to the next idle.
+	// promptsPending counts accepted prompts that have neither provably
+	// missed Agent.Send, been dropped, nor yet had a turn.start folded for them: each turn.start
+	// consumes one (never below zero). While it is positive an idle event does
+	// not make the session idle, because a further turn is still to come.
+	agentIdle      bool
+	turnRunning    bool
+	promptsPending int
+	idleWaiters    []*ctlReq
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -157,6 +272,12 @@ type Hub struct {
 	pending     []*connectReq  // connect requests waiting for hydration budget
 	staleQ      []*Client      // clients awaiting a forced re-hydrate
 	wake        chan time.Time // closed; selecting on it forces another iteration
+	perm        *permRegistry  // pending permission requests (arbitration state, not fold state)
+	// hub-owned permission timer state: one wake-up armed for the earliest
+	// registry deadline.
+	permC     <-chan time.Time
+	permStop  func()
+	permArmed time.Time
 	// test-only mutation state (see Config.mutHydrateThenRegister).
 	mutLate  []*Client
 	mutReady []*Client
@@ -206,6 +327,33 @@ func New(cfg Config) (*Hub, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.MaxPendingPermissions < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: MaxPendingPermissions must not be negative")
+	}
+	if cfg.MaxPendingPermissions == 0 {
+		cfg.MaxPendingPermissions = DefaultMaxPendingPermissions
+	}
+	if cfg.PermissionTimeout < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: PermissionTimeout must not be negative")
+	}
+	if cfg.PermissionTimeout == 0 {
+		cfg.PermissionTimeout = DefaultPermissionTimeout
+	}
+	if cfg.PermissionAckTimeout < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: PermissionAckTimeout must not be negative")
+	}
+	if cfg.PermissionAckTimeout == 0 {
+		cfg.PermissionAckTimeout = DefaultPermissionAckTimeout
+	}
+	if cfg.permAfter == nil {
+		cfg.permAfter = realAfter
+	}
+	if cfg.OperatorActionTimeout < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: OperatorActionTimeout must not be negative")
+	}
+	if cfg.OperatorActionTimeout == 0 {
+		cfg.OperatorActionTimeout = DefaultOperatorActionTimeout
+	}
 	fold, err := NewFold(cfg.Limits)
 	if err != nil {
 		return nil, err
@@ -225,18 +373,28 @@ func New(cfg Config) (*Hub, error) {
 	wake := make(chan time.Time)
 	close(wake)
 	return &Hub{
-		cfg:      cfg,
-		gen:      gen,
-		ingress:  make(chan agent.Event, cfg.IngressBuffer),
-		degraded: make(chan string, 1),
-		connects: make(chan *connectReq, connectQueue),
-		statsReq: make(chan chan Stats, statsQueue),
-		stopCh:   make(chan struct{}),
-		done:     make(chan struct{}),
-		fold:     fold,
-		ring:     make([]Frame, cfg.ReplayRing),
-		clients:  make(map[uint64]*Client),
-		wake:     wake,
+		cfg:            cfg,
+		gen:            gen,
+		ingress:        make(chan agent.Event, cfg.IngressBuffer),
+		degraded:       make(chan string, 1),
+		connects:       make(chan *connectReq, connectQueue),
+		statsReq:       make(chan chan Stats, statsQueue),
+		asks:           make(chan agent.PermissionAsk, askQueue),
+		actions:        make(chan *actionReq, actionQueue),
+		membershipWake: make(chan struct{}, 1),
+		acks:           make(chan string, askQueue),
+		promptQ:        make(chan string, operatorPromptQueue),
+		abortQ:         make(chan struct{}, 1),
+		promptFailed:   make(chan struct{}, operatorPromptQueue+1),
+		ctl:            make(chan *ctlReq, ctlQueue),
+		agentIdle:      true,
+		perm:           newPermRegistry(cfg.MaxPendingPermissions),
+		stopCh:         make(chan struct{}),
+		done:           make(chan struct{}),
+		fold:           fold,
+		ring:           make([]Frame, cfg.ReplayRing),
+		clients:        make(map[uint64]*Client),
+		wake:           wake,
 	}, nil
 }
 
@@ -363,13 +521,19 @@ func (h *Hub) Run(ctx context.Context) error {
 	h.started = true
 	h.mu.Unlock()
 	defer close(h.done)
+	opsCtx, opsCancel := context.WithCancel(ctx)
+	defer opsCancel() // ends the operator lanes and any in-flight agent call
+	h.lanesCancel = opsCancel
+	h.runOperatorLanes(opsCtx)
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	defer timer.Stop()
+	defer h.disarmPermissionTimer()
 	for {
 		// Hydrations run at the top of each iteration under the per-iteration
 		// cap, so a burst of reconnects cannot monopolise the loop (§5.3).
 		immediate, retryIn := h.serviceHydrations()
+		h.armPermissionTimer()
 		var wake, retry <-chan time.Time
 		if immediate {
 			wake = h.wake // closed: forces another iteration for deferred work
@@ -391,6 +555,22 @@ func (h *Hub) Run(ctx context.Context) error {
 			h.handleDegraded(reason)
 		case req := <-h.connects:
 			h.intake(req)
+		case ask := <-h.asks:
+			h.handleAsk(ask)
+		case act := <-h.actions:
+			h.handleAction(act)
+		case req := <-h.ctl:
+			h.handleCtl(req)
+		case <-h.membershipWake:
+			// No work here: the end-of-iteration reap below re-evaluates the
+			// broadcast set; this case only guarantees an iteration happens.
+		case id := <-h.acks:
+			h.onHandlerReturned(id)
+		case <-h.promptFailed:
+			h.retractPrompts(1)
+		case <-h.permC:
+			h.permC, h.permStop, h.permArmed = nil, nil, time.Time{}
+			h.expirePermissions()
 		case <-wake:
 		case <-retry:
 		case reply := <-h.statsReq:
@@ -398,9 +578,13 @@ func (h *Hub) Run(ctx context.Context) error {
 			s := h.st
 			s.Head = h.seq
 			s.Remote, s.TUIAttached = h.membership()
+			s.PendingPermissions = h.perm.len()
+			s.ShuttingDown = h.closing
 			trySend(reply, s)
 		}
 		h.mutFlush()
+		h.reapEmptyBroadcastSet()
+		h.releaseIdleWaiters()
 	}
 }
 
@@ -462,6 +646,17 @@ func (h *Hub) handleEvent(ev agent.Event) {
 		return
 	}
 	h.fold.Apply(ev)
+	switch ev.Kind {
+	case agent.KindTurnStart:
+		h.agentIdle, h.turnRunning = false, true
+		// A turn started: it consumes one accepted prompt (a turn.start with
+		// none pending, e.g. an agent-initiated turn, leaves the count at 0).
+		h.promptsPending = max(h.promptsPending-1, 0)
+	case agent.KindIdle:
+		// Idle only when no accepted prompt is still waiting for its turn.
+		h.turnRunning = false
+		h.agentIdle = h.promptsPending == 0
+	}
 	kind, payload := mapEvent(ev, h.fold.lim.MaxEntryTextBytes)
 	if ev.Kind == agent.KindDelta {
 		// Live deltas carry exactly what the fold accepted, so a client that
@@ -622,7 +817,7 @@ func (h *Hub) sweep() {
 // instead of waiting on a hub that will never send again. A pump should drain
 // Frames() after Done to pick up the queued shutdown frame.
 func (h *Hub) shutdown(reason string) {
-	h.publish(KindServerShutdown, ShutdownPayload{Reason: reason})
+	h.announceShutdown(reason)
 	for id, c := range h.clients {
 		c.close()
 		h.unregister(id, c)
@@ -645,6 +840,12 @@ type ConnectOptions struct {
 	Buffer int
 	// Resume, when set, is the client's last-applied (gen, seq) cursor.
 	Resume *Position
+	// Role is the authorization role of a remote client, taken by the
+	// transport from the credential record that authenticated the connection
+	// (ADR MVP-3) and never from a message. The zero value observes only. The
+	// local TUI is always an approver by construction: this field is ignored
+	// for ClientTUI.
+	Role Role
 }
 
 type connectResp struct {
@@ -663,6 +864,12 @@ type connectReq struct {
 func (h *Hub) Connect(ctx context.Context, opts ConnectOptions) (*Client, error) {
 	if opts.Kind != ClientTUI && opts.Kind != ClientRemote {
 		return nil, apperr.New(apperr.KindConfig, "hub: invalid client kind")
+	}
+	// Connect-time validation: a remote role must be one of the defined
+	// roles, so a corrupt value fails the connection instead of silently
+	// carrying whatever privilege its bits happen to compare to.
+	if opts.Kind == ClientRemote && opts.Role > RoleApprover {
+		return nil, apperr.New(apperr.KindConfig, "hub: invalid client role")
 	}
 	req := &connectReq{opts: opts, reply: make(chan connectResp, 1)}
 	select {
@@ -738,6 +945,9 @@ func (h *Hub) admitPending(req *connectReq) {
 	}
 	remote, _ := h.membership()
 	switch {
+	case h.closing:
+		trySend(req.reply, connectResp{err: apperr.Wrap(apperr.KindPolicy, ErrShuttingDown)})
+		return
 	case req.opts.Kind == ClientTUI && tuiPending:
 		trySend(req.reply, connectResp{err: apperr.New(apperr.KindAlreadyConsumed, "hub: local TUI already attached")})
 		return
@@ -752,6 +962,11 @@ func (h *Hub) admitPending(req *connectReq) {
 // any hydration budget is charged, so refused connects neither consume the
 // per-iteration budget nor count as deferred.
 func (h *Hub) admission(req *connectReq) error {
+	if h.closing {
+		// Shutdown step 0 closed admission: a request queued before it is
+		// refused too, so no client is admitted after that step.
+		return apperr.Wrap(apperr.KindPolicy, ErrShuttingDown)
+	}
 	if req.opts.Kind == ClientTUI && h.tui != nil {
 		return apperr.New(apperr.KindAlreadyConsumed, "hub: local TUI already attached")
 	}
@@ -848,12 +1063,43 @@ func (h *Hub) serviceHydrations() (immediate bool, retryIn time.Duration) {
 // The snapshot is the fold's pre-marshalled entries, so this is a copy plus a
 // header (design §5.3), done inside the hub.
 func (h *Hub) hydrateFrame() (Frame, bool) {
-	f, err := encodeFrame(h.gen, h.seq, h.cfg.Clock(), KindSessionHydrate, h.cfg.SessionID, h.fold.Snapshot())
+	f, err := encodeFrame(h.gen, h.seq, h.cfg.Clock(), KindSessionHydrate, h.cfg.SessionID, h.hydratePayload())
 	if err != nil {
 		h.cfg.Logger.Error("hub: build hydrate failed", "err", err)
 		return Frame{}, false
 	}
 	return f, true
+}
+
+// hydratePayload is the fold's pre-marshalled snapshot with the unresolved
+// pending permissions appended (design §5.4: pending permissions are
+// arbitration state, not fold state, but a reconnecting surface must still
+// re-render the modal with its remaining time). Entries that are decided or
+// finished are absent. The section is bounded by MaxPendingPermissions and
+// MaxPermissionSummaryBytes.
+func (h *Hub) hydratePayload() []byte {
+	snap := h.fold.Snapshot() // always ends with '}'
+	pending := h.perm.unresolved()
+	views := make([]PermissionRequestedPayload, 0, len(pending))
+	for _, e := range pending {
+		views = append(views, PermissionRequestedPayload{
+			RequestID:      e.id,
+			ToolCallID:     e.toolCallID,
+			PermissionKind: permKindName(e.kind),
+			Summary:        e.summary,
+			RemainingMS:    h.remainingMS(e),
+		})
+	}
+	enc, err := json.Marshal(views)
+	if err != nil { // plain strings and ints: cannot fail; fail closed anyway
+		h.cfg.Logger.Error("hub: marshal pending permissions failed", "err", err)
+		enc = []byte("[]")
+	}
+	out := make([]byte, 0, len(snap)+len(enc)+32)
+	out = append(out, snap[:len(snap)-1]...)
+	out = append(out, `,"pending_permissions":`...)
+	out = append(out, enc...)
+	return append(out, '}')
 }
 
 // rehydrate serves a stale client a fresh snapshot, reporting success. A
@@ -907,6 +1153,12 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 	}
 	h.nextID++
 	c := newClient(h.nextID, req.opts.Kind, req.opts.Buffer)
+	c.notify = h.membershipWake
+	c.hub = h
+	c.role = req.opts.Role
+	if c.kind == ClientTUI {
+		c.role = RoleApprover // fixed by construction, needs no credential (ADR MVP-3)
+	}
 	if replay {
 		c.mode = ModeReplay
 		for _, f := range h.replayFrom(req.opts.Resume.Seq) {
