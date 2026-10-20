@@ -214,9 +214,14 @@ type Hub struct {
 	// worker goroutines that call the agent off the hub.
 	promptQ chan string
 	abortQ  chan struct{}
-	// lanesStop is closed by shutdown step 0: the lanes stop taking work and
-	// cancel their in-flight call.
-	lanesStop chan struct{}
+	// lanesCancel is called by shutdown step 0 (on the hub goroutine) and
+	// cancels the lanes' context synchronously: the lanes take no more work and
+	// any in-flight agent call's context is done before step 0 returns. It is
+	// set by Run.
+	lanesCancel context.CancelFunc
+	// promptFailed carries "a dispatched prompt did not start a turn" reports
+	// from the prompt lane (the Send failed, or was never made).
+	promptFailed chan struct{}
 	// ctl carries the shutdown executor's hub-control messages (067.006-T).
 	ctl chan *ctlReq
 	// closing is set by shutdown step 0: admission is closed. announced
@@ -229,9 +234,14 @@ type Hub struct {
 	// agentIdle is the last observed session state: false from a turn.start,
 	// true from an idle event (and initially: no turn ever ran). It is only as
 	// fresh as the ingress queue is empty (see WaitIdle). idleWaiters are the
-	// WaitIdle callers.
-	agentIdle   bool
-	idleWaiters []*ctlReq
+	// WaitIdle callers. turnRunning is true from a turn.start to the next idle.
+	// promptsPending counts accepted prompts that have neither failed, been
+	// dropped, nor been followed by a turn.start: while it is positive the
+	// session is not idle even though no turn has been observed yet.
+	agentIdle      bool
+	turnRunning    bool
+	promptsPending int
+	idleWaiters    []*ctlReq
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -371,7 +381,7 @@ func New(cfg Config) (*Hub, error) {
 		acks:           make(chan string, askQueue),
 		promptQ:        make(chan string, operatorPromptQueue),
 		abortQ:         make(chan struct{}, 1),
-		lanesStop:      make(chan struct{}),
+		promptFailed:   make(chan struct{}, operatorPromptQueue+1),
 		ctl:            make(chan *ctlReq, ctlQueue),
 		agentIdle:      true,
 		perm:           newPermRegistry(cfg.MaxPendingPermissions),
@@ -509,6 +519,7 @@ func (h *Hub) Run(ctx context.Context) error {
 	defer close(h.done)
 	opsCtx, opsCancel := context.WithCancel(ctx)
 	defer opsCancel() // ends the operator lanes and any in-flight agent call
+	h.lanesCancel = opsCancel
 	h.runOperatorLanes(opsCtx)
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
@@ -551,6 +562,8 @@ func (h *Hub) Run(ctx context.Context) error {
 			// broadcast set; this case only guarantees an iteration happens.
 		case id := <-h.acks:
 			h.onHandlerReturned(id)
+		case <-h.promptFailed:
+			h.retractPrompts(1)
 		case <-h.permC:
 			h.permC, h.permStop, h.permArmed = nil, nil, time.Time{}
 			h.expirePermissions()
@@ -631,9 +644,10 @@ func (h *Hub) handleEvent(ev agent.Event) {
 	h.fold.Apply(ev)
 	switch ev.Kind {
 	case agent.KindTurnStart:
-		h.agentIdle = false
+		h.agentIdle, h.turnRunning = false, true
+		h.promptsPending = 0 // a turn started: the dispatched prompts have taken effect
 	case agent.KindIdle:
-		h.agentIdle = true
+		h.agentIdle, h.turnRunning = true, false
 	}
 	kind, payload := mapEvent(ev, h.fold.lim.MaxEntryTextBytes)
 	if ev.Kind == agent.KindDelta {

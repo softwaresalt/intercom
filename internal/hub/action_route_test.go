@@ -24,10 +24,11 @@ type fakeAgent struct {
 	abortBlock chan struct{} // when non-nil, Abort blocks until closed or its ctx ends
 	sendErr    error
 	sendCtxE   chan error // Send's ctx error when it returns because of it
+	sendCtx    chan context.Context
 }
 
 func newFakeAgent() *fakeAgent {
-	return &fakeAgent{sendCh: make(chan string, 64), abortCh: make(chan struct{}, 64), sendCtxE: make(chan error, 8)}
+	return &fakeAgent{sendCh: make(chan string, 64), abortCh: make(chan struct{}, 64), sendCtxE: make(chan error, 8), sendCtx: make(chan context.Context, 64)}
 }
 
 func (a *fakeAgent) Send(ctx context.Context, prompt string) error {
@@ -35,6 +36,7 @@ func (a *fakeAgent) Send(ctx context.Context, prompt string) error {
 	a.prompts = append(a.prompts, prompt)
 	block, err := a.block, a.sendErr
 	a.mu.Unlock()
+	a.sendCtx <- ctx
 	a.sendCh <- prompt
 	if block != nil {
 		select {
