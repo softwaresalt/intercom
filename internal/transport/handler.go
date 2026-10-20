@@ -60,6 +60,13 @@ type Config struct {
 	// ActionTimeout bounds one hub action round trip (default
 	// [DefaultActionTimeout]).
 	ActionTimeout time.Duration
+	// ActionRate (actions/second) and ActionBurst configure the
+	// per-connection inbound token bucket; MaxRateViolations is how many
+	// consecutive rate-limited actions close the connection. Defaults:
+	// [DefaultActionRate], [DefaultActionBurst], [DefaultMaxRateViolations].
+	ActionRate        float64
+	ActionBurst       int
+	MaxRateViolations int
 	// Logger receives transport diagnostics. The transport never logs
 	// headers, URLs or request dumps. Default: discard.
 	Logger *slog.Logger
@@ -84,6 +91,9 @@ type Handler struct {
 	idleTimeout   time.Duration
 	actionTimeout time.Duration
 	maxMessage    int
+	actionRate    float64
+	actionBurst   int
+	maxViolations int
 	sessions      atomic.Int64
 	pings         atomic.Int64
 }
@@ -124,6 +134,16 @@ func NewHandler(cfg Config) (*Handler, error) {
 	h.closeGrace = durOr(cfg.CloseGrace, DefaultCloseGrace)
 	h.idleTimeout = durOr(cfg.IdleTimeout, DefaultIdleTimeout)
 	h.actionTimeout = durOr(cfg.ActionTimeout, DefaultActionTimeout)
+	h.actionRate, h.actionBurst, h.maxViolations = cfg.ActionRate, cfg.ActionBurst, cfg.MaxRateViolations
+	if h.actionRate <= 0 {
+		h.actionRate = DefaultActionRate
+	}
+	if h.actionBurst <= 0 {
+		h.actionBurst = DefaultActionBurst
+	}
+	if h.maxViolations <= 0 {
+		h.maxViolations = DefaultMaxRateViolations
+	}
 	h.maxMessage = cfg.MaxMessageBytes
 	if h.maxMessage <= 0 {
 		h.maxMessage = DefaultMaxMessageBytes

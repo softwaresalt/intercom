@@ -33,6 +33,7 @@ const (
 	closeReasonGoingAway   = "closing"
 	closeReasonIdle        = "idle timeout"
 	closeReasonProtocol    = "protocol violation"
+	closeReasonRate        = "rate limit"
 	closeReasonUnavailable = "unavailable"
 )
 
@@ -56,6 +57,10 @@ type session struct {
 	closeReq chan closeRequest // capacity 1: first request wins
 	replies  chan []byte       // transport replies to this client, written by the pump
 	idle     *time.Timer
+
+	// read-pump-owned (no lock): inbound rate limiting.
+	bucket     *tokenBucket
+	violations int
 }
 
 // replyQueue bounds queued replies per connection; a client that lets them
@@ -67,6 +72,7 @@ func newSession(h *Handler, sock *websocket.Conn, client *hub.Client, grant *Gra
 		h: h, sock: sock, client: client, grant: grant,
 		closeReq: make(chan closeRequest, 1),
 		replies:  make(chan []byte, replyQueue),
+		bucket:   newTokenBucket(h.actionRate, h.actionBurst, h.now),
 	}
 }
 
@@ -261,6 +267,26 @@ func (s *session) violation(ctx context.Context) {
 // and queues the verdict for this client only. It reports whether the read
 // loop should continue.
 func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
+	if v := s.h.revalidate(s.grant, s.client.Role()); v.reason != "" {
+		s.queueReply(refusalFor(act, v.reason))
+		if v.closeConn {
+			s.requestClose(websocket.StatusPolicyViolation, closeReasonEnded)
+			<-ctx.Done() // the pump flushes the refusal, closes, then cancels
+			return false
+		}
+		return true
+	}
+	if !s.bucket.allow() {
+		s.violations++
+		s.queueReply(refusalFor(act, ReasonRateLimited))
+		if s.violations >= s.h.maxViolations {
+			s.requestClose(websocket.StatusPolicyViolation, closeReasonRate)
+			<-ctx.Done()
+			return false
+		}
+		return true
+	}
+	s.violations = 0
 	actx, cancel := context.WithTimeout(ctx, s.h.actionTimeout)
 	defer cancel()
 	res, err := s.client.Do(actx, act)

@@ -35,6 +35,14 @@ type envOpts struct {
 	cfgTweak  func(*Config)
 	srvTweak  func(*ServerConfig)
 	noMintObs bool
+	clock     *fakeClock
+}
+
+func nowOf(c *fakeClock) func() time.Time {
+	if c == nil {
+		return nil
+	}
+	return c.Now
 }
 
 func newEnv(t *testing.T, o envOpts) *env {
@@ -57,7 +65,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 	runDone := make(chan struct{})
 	go func() { defer close(runDone); _ = h.Run(hubCtx) }()
 
-	creds, err := NewCredentialStore(CredentialConfig{Gen: h.Gen(), Lifetime: o.lifetime})
+	creds, err := NewCredentialStore(CredentialConfig{Gen: h.Gen(), Lifetime: o.lifetime, Now: nowOf(o.clock)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +74,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 		Hub: h, Creds: creds,
 		AllowedOrigins: o.origins, AllowedHosts: o.hosts,
 		Logger: slog.New(logs),
+		Now:    nowOf(o.clock),
 	}
 	if o.cfgTweak != nil {
 		o.cfgTweak(&cfg)

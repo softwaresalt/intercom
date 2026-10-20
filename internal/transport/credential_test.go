@@ -22,7 +22,8 @@ type fakeClock struct {
 	t  time.Time
 }
 
-func newFakeClock() *fakeClock { return &fakeClock{t: time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)} }
+func newFakeClock() *fakeClock              { return &fakeClock{t: time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)} }
+func newFakeClockAt(t time.Time) *fakeClock { return &fakeClock{t: t} }
 func (c *fakeClock) Now() time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
