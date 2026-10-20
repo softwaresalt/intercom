@@ -214,6 +214,9 @@ type Hub struct {
 	// worker goroutines that call the agent off the hub.
 	promptQ chan string
 	abortQ  chan struct{}
+	// lanesStop is closed by shutdown step 0: the lanes stop taking work and
+	// cancel their in-flight call.
+	lanesStop chan struct{}
 	// ctl carries the shutdown executor's hub-control messages (067.006-T).
 	ctl chan *ctlReq
 	// closing is set by shutdown step 0: admission is closed. announced
@@ -368,6 +371,7 @@ func New(cfg Config) (*Hub, error) {
 		acks:           make(chan string, askQueue),
 		promptQ:        make(chan string, operatorPromptQueue),
 		abortQ:         make(chan struct{}, 1),
+		lanesStop:      make(chan struct{}),
 		ctl:            make(chan *ctlReq, ctlQueue),
 		agentIdle:      true,
 		perm:           newPermRegistry(cfg.MaxPendingPermissions),

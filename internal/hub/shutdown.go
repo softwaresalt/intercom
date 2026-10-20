@@ -391,6 +391,7 @@ func (h *Hub) handleCtl(r *ctlReq) {
 // is held until the registry has drained.
 func (h *Hub) beginShutdown(r *ctlReq) {
 	h.closing = true
+	h.stopLanes()
 	for _, e := range h.perm.unresolved() {
 		h.decide(e, ActorHub, agent.PermissionDecision{Kind: agent.DecisionUnavailable}, permReasonShutdown)
 	}

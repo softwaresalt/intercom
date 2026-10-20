@@ -15,14 +15,15 @@ import (
 
 // fakeAgent records the calls the hub makes on behalf of operators.
 type fakeAgent struct {
-	mu       sync.Mutex
-	prompts  []string
-	aborts   int
-	sendCh   chan string   // a prompt, as it enters Send
-	abortCh  chan struct{} // an abort, as it enters Abort
-	block    chan struct{} // when non-nil, Send blocks until closed or its ctx ends
-	sendErr  error
-	sendCtxE chan error // Send's ctx error when it returns because of it
+	mu         sync.Mutex
+	prompts    []string
+	aborts     int
+	sendCh     chan string   // a prompt, as it enters Send
+	abortCh    chan struct{} // an abort, as it enters Abort
+	block      chan struct{} // when non-nil, Send blocks until closed or its ctx ends
+	abortBlock chan struct{} // when non-nil, Abort blocks until closed or its ctx ends
+	sendErr    error
+	sendCtxE   chan error // Send's ctx error when it returns because of it
 }
 
 func newFakeAgent() *fakeAgent {
@@ -46,11 +47,19 @@ func (a *fakeAgent) Send(ctx context.Context, prompt string) error {
 	return err
 }
 
-func (a *fakeAgent) Abort(context.Context) error {
+func (a *fakeAgent) Abort(ctx context.Context) error {
 	a.mu.Lock()
 	a.aborts++
+	block := a.abortBlock
 	a.mu.Unlock()
 	a.abortCh <- struct{}{}
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return nil
 }
 
