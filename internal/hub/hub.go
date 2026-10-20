@@ -34,6 +34,17 @@ const (
 	// connectBatch is the most connect requests taken from the connect queue
 	// in one hub iteration, so a connect flood cannot monopolise the loop.
 	connectBatch = 16
+	// DefaultMaxPendingPermissions bounds the permission registry (pending
+	// plus awaiting-ack entries), and with it the pending section of a
+	// hydrate frame and the number of ack watcher goroutines.
+	DefaultMaxPendingPermissions = 8
+	// DefaultPermissionTimeout is the hub-owned approval deadline (design
+	// §5.4 item 4); the outcome on expiry is UserNotAvailable.
+	DefaultPermissionTimeout = 2 * time.Minute
+	// askQueue is the capacity of the permission-ask channel.
+	askQueue = 16
+	// actionQueue is the capacity of the operator-action channel.
+	actionQueue = 64
 )
 
 // Config configures a [Hub]. Zero values select the documented defaults.
@@ -72,6 +83,15 @@ type Config struct {
 	// Now supplies the time used for rate limiting (not envelope timestamps;
 	// see Clock). Default time.Now.
 	Now func() time.Time
+	// MaxPendingPermissions caps the permission registry. An ask beyond it is
+	// answered UserNotAvailable at once (fail closed). Default
+	// [DefaultMaxPendingPermissions].
+	MaxPendingPermissions int
+	// PermissionTimeout is how long a permission request waits for an
+	// operator before the hub resolves it to UserNotAvailable. The hub owns
+	// this clock; the adapter's handler runs none. Default
+	// [DefaultPermissionTimeout].
+	PermissionTimeout time.Duration
 
 	// ---- TEST-ONLY MUTATION HOOK (066.005-T; accepted trade-off, see S4) ----
 	// mutHydrateThenRegister, when set, makes a hydrating connect snapshot in
@@ -117,7 +137,10 @@ type Stats struct {
 	Hydrations      uint64
 	DegradedSignals uint64
 	Replays         uint64
-	Rehydrations    uint64
+	// PendingPermissions counts registry entries (unresolved plus awaiting
+	// handler acknowledgement).
+	PendingPermissions int
+	Rehydrations       uint64
 }
 
 // Hub is the single-writer event hub. See the package documentation. Every
@@ -131,6 +154,8 @@ type Hub struct {
 	degraded chan string // capacity 1: adapter fault signal, out-of-band (§4.2)
 	connects chan *connectReq
 	statsReq chan chan Stats
+	asks     chan agent.PermissionAsk // permission asks from the adapter (§5.4)
+	actions  chan *actionReq          // operator actions (§4.1: never mutate off-hub)
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -157,6 +182,7 @@ type Hub struct {
 	pending     []*connectReq  // connect requests waiting for hydration budget
 	staleQ      []*Client      // clients awaiting a forced re-hydrate
 	wake        chan time.Time // closed; selecting on it forces another iteration
+	perm        *permRegistry  // pending permission requests (arbitration state, not fold state)
 	// test-only mutation state (see Config.mutHydrateThenRegister).
 	mutLate  []*Client
 	mutReady []*Client
@@ -206,6 +232,18 @@ func New(cfg Config) (*Hub, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.MaxPendingPermissions < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: MaxPendingPermissions must not be negative")
+	}
+	if cfg.MaxPendingPermissions == 0 {
+		cfg.MaxPendingPermissions = DefaultMaxPendingPermissions
+	}
+	if cfg.PermissionTimeout < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: PermissionTimeout must not be negative")
+	}
+	if cfg.PermissionTimeout == 0 {
+		cfg.PermissionTimeout = DefaultPermissionTimeout
+	}
 	fold, err := NewFold(cfg.Limits)
 	if err != nil {
 		return nil, err
@@ -231,6 +269,9 @@ func New(cfg Config) (*Hub, error) {
 		degraded: make(chan string, 1),
 		connects: make(chan *connectReq, connectQueue),
 		statsReq: make(chan chan Stats, statsQueue),
+		asks:     make(chan agent.PermissionAsk, askQueue),
+		actions:  make(chan *actionReq, actionQueue),
+		perm:     newPermRegistry(cfg.MaxPendingPermissions),
 		stopCh:   make(chan struct{}),
 		done:     make(chan struct{}),
 		fold:     fold,
@@ -391,6 +432,10 @@ func (h *Hub) Run(ctx context.Context) error {
 			h.handleDegraded(reason)
 		case req := <-h.connects:
 			h.intake(req)
+		case ask := <-h.asks:
+			h.handleAsk(ask)
+		case act := <-h.actions:
+			h.handleAction(act)
 		case <-wake:
 		case <-retry:
 		case reply := <-h.statsReq:
@@ -398,6 +443,7 @@ func (h *Hub) Run(ctx context.Context) error {
 			s := h.st
 			s.Head = h.seq
 			s.Remote, s.TUIAttached = h.membership()
+			s.PendingPermissions = h.perm.len()
 			trySend(reply, s)
 		}
 		h.mutFlush()

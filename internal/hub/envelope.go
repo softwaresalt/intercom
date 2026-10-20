@@ -29,6 +29,7 @@ const (
 	KindAgentIdle           Kind = "agent.idle"
 	KindPermissionRequested Kind = "permission.requested"
 	KindPermissionResolved  Kind = "permission.resolved"
+	KindPermissionAborted   Kind = "permission.aborted"
 	KindToolStarted         Kind = "tool.started"
 	KindToolEnded           Kind = "tool.ended"
 	KindError               Kind = "error"
@@ -76,19 +77,34 @@ type (
 	IdlePayload struct {
 		Aborted bool `json:"aborted"`
 	}
-	// PermissionRequestedPayload is provisional; shipment S4 owns the final
-	// arbitration payloads.
+	// PermissionRequestedPayload is the payload of permission.requested. It is
+	// broadcast to every surface, observers included (ADR MVP-3).
 	PermissionRequestedPayload struct {
 		RequestID      string `json:"request_id"`
 		ToolCallID     string `json:"tool_call_id"`
 		PermissionKind string `json:"permission_kind"`
 		Summary        string `json:"summary"`
+		// RemainingMS is the time left before the hub-owned timeout resolves
+		// the request to UserNotAvailable.
+		RemainingMS int64 `json:"remaining_ms,omitempty"`
 	}
-	// PermissionResolvedPayload is provisional; see PermissionRequestedPayload.
+	// PermissionResolvedPayload is the payload of permission.resolved: it is
+	// published only after the agent adapter's handler acknowledged receiving
+	// the decision (design §5.4 item 7).
 	PermissionResolvedPayload struct {
 		RequestID string `json:"request_id"`
 		Decision  string `json:"decision"`
-		Actor     string `json:"actor"`
+		// Actor is the winning surface: local-tui, remote-approver or hub.
+		Actor string `json:"actor"`
+		// Reason qualifies a hub-made decision (timeout, shutdown,
+		// no_surface); it is empty when an operator answered.
+		Reason string `json:"reason,omitempty"`
+	}
+	// PermissionAbortedPayload is the payload of permission.aborted: the
+	// request ended without the agent receiving a decision.
+	PermissionAbortedPayload struct {
+		RequestID string `json:"request_id"`
+		Reason    string `json:"reason"`
 	}
 	// ToolStartedPayload is the payload of tool.started.
 	ToolStartedPayload struct {
