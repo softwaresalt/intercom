@@ -27,6 +27,19 @@ const (
 	teardownBudget = 15 * time.Second
 )
 
+// maxApproval caps [timeouts].approval_seconds so the seconds-to-Duration
+// conversion cannot overflow (the config schema has no upper bound).
+const maxApproval = 365 * 24 * time.Hour
+
+// approvalTimeout maps [timeouts].approval_seconds to the hub's permission
+// deadline; 0 selects the hub default.
+func approvalTimeout(seconds uint64) time.Duration {
+	if seconds >= uint64(maxApproval/time.Second) {
+		return maxApproval
+	}
+	return time.Duration(seconds) * time.Second //nolint:gosec // bounded just above
+}
+
 // lateAgent breaks the construction cycle between the hub and the agent: the
 // hub needs an AgentControl at New, but the adapter needs the hub's ingress,
 // so the hub is given this forwarder and the real agent is bound afterwards.
@@ -170,6 +183,7 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 		Logger:                   a.log,
 		MaxRemote:                cfg.Remote.MaxConnections,
 		RemoteApproveDestructive: cfg.Remote.RemoteApproveDestructive,
+		PermissionTimeout:        approvalTimeout(cfg.Timeouts.ApprovalSeconds),
 		Agent:                    late,
 	})
 	if err != nil {
