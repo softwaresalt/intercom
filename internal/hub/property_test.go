@@ -113,7 +113,7 @@ func runProperty(t *testing.T, o propertyOpts) []string {
 				return
 			}
 			opts := ConnectOptions{Kind: kind, Buffer: 4 + rng.Intn(60)}
-			if chk.have && rng.Intn(4) != 0 { // mostly resume, sometimes connect fresh
+			if chk.have && !chk.awaiting && rng.Intn(4) != 0 { // mostly resume (never while stale: force a hydrate), sometimes connect fresh
 				opts.Resume = &Position{Gen: h.Gen(), Seq: chk.last}
 			}
 			cctx, ccancel := context.WithTimeout(context.Background(), 3*time.Second)

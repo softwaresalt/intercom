@@ -198,9 +198,7 @@ func TestOverflowedTUIIsForcedToRehydrate(t *testing.T) {
 		case f := <-tui.Frames():
 			if f.Kind() == KindSessionHydrate {
 				rehydrates++
-				if awaiting || rehydrates > 1 { // first hydrate is the connect snapshot
-					forced++
-				}
+				forced++ // connect() consumed the initial hydrate: every one seen here is forced
 				awaiting = false
 				next = f.Seq() + 1
 				continue
