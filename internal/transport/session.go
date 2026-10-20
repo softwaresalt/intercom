@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/coder/websocket"
@@ -17,12 +18,22 @@ const (
 	DefaultWriteTimeout = 10 * time.Second
 	// DefaultCloseGrace bounds the close handshake before the abort.
 	DefaultCloseGrace = 2 * time.Second
+	// DefaultIdleTimeout closes a connection with no inbound activity.
+	DefaultIdleTimeout = 90 * time.Second
+	// DefaultActionTimeout bounds one hub action round trip.
+	DefaultActionTimeout = 10 * time.Second
+	// DefaultMaxMessageBytes is the inbound message size limit. Actions are
+	// small JSON objects; this is generous for a prompt.
+	DefaultMaxMessageBytes = 16 << 10
 
 	// closeReasonEnded is the neutral reason sent when a credential expires,
 	// is revoked, or fails re-validation: it reveals nothing about why.
 	closeReasonEnded = "session ended"
 	// closeReasonGoingAway is sent on drop or shutdown.
-	closeReasonGoingAway = "closing"
+	closeReasonGoingAway   = "closing"
+	closeReasonIdle        = "idle timeout"
+	closeReasonProtocol    = "protocol violation"
+	closeReasonUnavailable = "unavailable"
 )
 
 // closeRequest asks the write pump to close the socket (the read pump and
@@ -43,10 +54,38 @@ type session struct {
 	grant  *Grant
 
 	closeReq chan closeRequest // capacity 1: first request wins
+	replies  chan []byte       // transport replies to this client, written by the pump
+	idle     *time.Timer
 }
 
+// replyQueue bounds queued replies per connection; a client that lets them
+// pile up is not reading and is dropped.
+const replyQueue = 16
+
 func newSession(h *Handler, sock *websocket.Conn, client *hub.Client, grant *Grant) *session {
-	return &session{h: h, sock: sock, client: client, grant: grant, closeReq: make(chan closeRequest, 1)}
+	return &session{
+		h: h, sock: sock, client: client, grant: grant,
+		closeReq: make(chan closeRequest, 1),
+		replies:  make(chan []byte, replyQueue),
+	}
+}
+
+// touch records inbound activity (a message or a pong), re-arming the idle
+// deadline. Safe from any goroutine.
+func (s *session) touch() {
+	if s.idle != nil {
+		s.idle.Reset(s.h.idleTimeout)
+	}
+}
+
+// queueReply hands a reply to the write pump. It never blocks: a full queue
+// means the client is not reading, so it is closed through the pump.
+func (s *session) queueReply(b []byte) {
+	select {
+	case s.replies <- b:
+	default:
+		s.requestClose(websocket.StatusPolicyViolation, closeReasonEnded)
+	}
 }
 
 // requestClose asks the write pump to close the connection with status and a
@@ -67,6 +106,10 @@ func (s *session) run() {
 
 	ctx, cancel := context.WithCancel(s.h.ctx)
 	defer cancel()
+	s.idle = time.AfterFunc(s.h.idleTimeout, func() {
+		s.requestClose(websocket.StatusPolicyViolation, closeReasonIdle)
+	})
+	defer s.idle.Stop()
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
@@ -103,11 +146,17 @@ func (s *session) writePump(ctx context.Context) {
 				s.fail()
 				return
 			}
+		case b := <-s.replies:
+			if err := s.writeFrame(ctx, b); err != nil {
+				s.fail()
+				return
+			}
 		case <-ping.C:
 			if err := s.pingPeer(ctx); err != nil {
 				s.fail()
 				return
 			}
+			s.touch() // a pong is inbound activity
 		case <-expiry.C:
 			s.closeSocket(websocket.StatusPolicyViolation, closeReasonEnded)
 			return
@@ -115,6 +164,7 @@ func (s *session) writePump(ctx context.Context) {
 			s.closeSocket(websocket.StatusPolicyViolation, closeReasonEnded)
 			return
 		case rq := <-s.closeReq:
+			s.flushReplies(ctx) // a refusal precedes the close that follows it
 			s.closeSocket(rq.status, rq.reason)
 			return
 		case <-s.client.Done():
@@ -122,6 +172,20 @@ func (s *session) writePump(ctx context.Context) {
 			return
 		case <-ctx.Done():
 			s.closeSocket(websocket.StatusGoingAway, closeReasonGoingAway)
+			return
+		}
+	}
+}
+
+// flushReplies writes any queued replies without blocking for new ones.
+func (s *session) flushReplies(ctx context.Context) {
+	for {
+		select {
+		case b := <-s.replies:
+			if err := s.writeFrame(ctx, b); err != nil {
+				return
+			}
+		default:
 			return
 		}
 	}
@@ -157,14 +221,56 @@ func (s *session) closeSocket(status websocket.StatusCode, reason string) {
 	_ = s.sock.Close(status, reason)
 }
 
-// readPump reads (and for now discards) inbound messages until the socket
-// ends, then drops the client so the write pump closes down. It never writes
-// or closes the socket.
+// readPump reads inbound messages until the socket ends. It never writes or
+// closes the socket: protocol violations and every other close go through
+// requestClose to the write pump, and replies through queueReply. A read
+// error (peer close, oversize, abort) drops the client so the pump finishes.
 func (s *session) readPump(ctx context.Context) {
+	s.sock.SetReadLimit(int64(s.h.maxMessage))
 	for {
-		if _, _, err := s.sock.Read(ctx); err != nil {
+		typ, data, err := s.sock.Read(ctx)
+		if err != nil {
 			s.client.Close()
 			return
 		}
+		s.touch()
+		if typ != websocket.MessageText {
+			s.violation(ctx)
+			return
+		}
+		act, err := decodeAction(data)
+		if err != nil {
+			s.violation(ctx)
+			return
+		}
+		if !s.dispatch(ctx, act) {
+			return
+		}
 	}
+}
+
+// violation asks the pump for a policy-violation close and waits for it (the
+// pump cancels ctx once the socket is closed), so the pump, not this
+// goroutine, decides the close status.
+func (s *session) violation(ctx context.Context) {
+	s.requestClose(websocket.StatusPolicyViolation, closeReasonProtocol)
+	<-ctx.Done()
+}
+
+// dispatch submits one decoded action to the hub as this connection's client
+// and queues the verdict for this client only. It reports whether the read
+// loop should continue.
+func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
+	actx, cancel := context.WithTimeout(ctx, s.h.actionTimeout)
+	defer cancel()
+	res, err := s.client.Do(actx, act)
+	if err != nil {
+		if ctx.Err() == nil && !errors.Is(err, hub.ErrClientClosed) {
+			s.requestClose(websocket.StatusInternalError, closeReasonUnavailable)
+			<-ctx.Done()
+		}
+		return false
+	}
+	s.queueReply(replyFor(act, res))
+	return true
 }

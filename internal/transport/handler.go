@@ -51,6 +51,15 @@ type Config struct {
 	// ClientBuffer is the hub send-buffer capacity per remote client
 	// (default hub.DefaultRemoteBuffer).
 	ClientBuffer int
+	// MaxMessageBytes caps one inbound message (default
+	// [DefaultMaxMessageBytes]); a larger one closes the connection.
+	MaxMessageBytes int
+	// IdleTimeout closes a connection with no inbound activity (messages or
+	// pongs) for this long (default [DefaultIdleTimeout]).
+	IdleTimeout time.Duration
+	// ActionTimeout bounds one hub action round trip (default
+	// [DefaultActionTimeout]).
+	ActionTimeout time.Duration
 	// Logger receives transport diagnostics. The transport never logs
 	// headers, URLs or request dumps. Default: discard.
 	Logger *slog.Logger
@@ -69,11 +78,14 @@ type Handler struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	pingEvery    time.Duration
-	writeTimeout time.Duration
-	closeGrace   time.Duration
-	sessions     atomic.Int64
-	pings        atomic.Int64
+	pingEvery     time.Duration
+	writeTimeout  time.Duration
+	closeGrace    time.Duration
+	idleTimeout   time.Duration
+	actionTimeout time.Duration
+	maxMessage    int
+	sessions      atomic.Int64
+	pings         atomic.Int64
 }
 
 // NewHandler validates cfg and returns a Handler.
@@ -110,6 +122,12 @@ func NewHandler(cfg Config) (*Handler, error) {
 	h.pingEvery = durOr(cfg.PingInterval, DefaultPingInterval)
 	h.writeTimeout = durOr(cfg.WriteTimeout, DefaultWriteTimeout)
 	h.closeGrace = durOr(cfg.CloseGrace, DefaultCloseGrace)
+	h.idleTimeout = durOr(cfg.IdleTimeout, DefaultIdleTimeout)
+	h.actionTimeout = durOr(cfg.ActionTimeout, DefaultActionTimeout)
+	h.maxMessage = cfg.MaxMessageBytes
+	if h.maxMessage <= 0 {
+		h.maxMessage = DefaultMaxMessageBytes
+	}
 	h.ctx, h.cancel = context.WithCancel(context.Background())
 	return h, nil
 }
@@ -144,6 +162,7 @@ const (
 	rejectOrigin      = "origin_not_allowed"
 	rejectCredential  = "credential_rejected"
 	rejectHubRegister = "hub_refused"
+	rejectCursor      = "bad_cursor"
 )
 
 func (h *Handler) reject(w http.ResponseWriter, status int, reason string) {
@@ -321,7 +340,14 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, grant *Grant) 
 	h.wg.Add(1)
 	defer h.wg.Done()
 
-	client, err := h.cfg.Hub.Connect(r.Context(), hub.ConnectOptions{Kind: hub.ClientRemote, Role: grant.Role(), Buffer: h.cfg.ClientBuffer})
+	resume, ok := parseCursor(r.URL.Query())
+	if !ok {
+		h.reject(w, http.StatusBadRequest, rejectCursor)
+		return
+	}
+	client, err := h.cfg.Hub.Connect(r.Context(), hub.ConnectOptions{
+		Kind: hub.ClientRemote, Role: grant.Role(), Buffer: h.cfg.ClientBuffer, Resume: resume,
+	})
 	if err != nil {
 		h.reject(w, http.StatusServiceUnavailable, rejectHubRegister)
 		return

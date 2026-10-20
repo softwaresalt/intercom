@@ -192,7 +192,7 @@ func TestCredentialInURLIsNeverAccepted(t *testing.T) {
 		wantStatus(t, e.rawUpgrade(bearer(tok), q), http.StatusUnauthorized, "url+header: "+q)
 	}
 	// a benign query (cursor) with a header credential is fine
-	wantStatus(t, e.rawUpgrade(bearer(tok), "seq=1"), http.StatusSwitchingProtocols, "benign query")
+	wantStatus(t, e.rawUpgrade(bearer(tok), "gen="+e.hub.Gen()+"&seq=0"), http.StatusSwitchingProtocols, "benign query")
 }
 
 func TestSubprotocolCarriageSelectsOnlyNonSecretProtocol(t *testing.T) {
