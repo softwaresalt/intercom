@@ -13,12 +13,12 @@ import (
 // broadcast set, so "empty" means the last remote surface is gone AND the TUI
 // is not attached. An overflowed (stale) TUI is still a member.
 
-func wantDecision(t *testing.T, a *testAsk, want agent.DecisionKind) {
+func wantUnavailable(t *testing.T, a *testAsk) {
 	t.Helper()
 	select {
 	case d := <-a.reply:
-		if d.Kind != want {
-			t.Fatalf("decision = %v, want %v", d.Kind, want)
+		if d.Kind != agent.DecisionUnavailable {
+			t.Fatalf("decision = %v, want unavailable", d.Kind)
 		}
 	case <-time.After(testWait):
 		t.Fatalf("no decision within %v (the request waited for its deadline)", testWait)
@@ -58,7 +58,7 @@ func TestAskWithNoSurfaceAtAllResolvesUnavailableImmediately(t *testing.T) {
 	h := startHub(t, Config{PermissionTimeout: time.Hour})
 	a := newTestAsk(agent.PermissionKindShell, "cmd")
 	a.post(t, h)
-	wantDecision(t, a, agent.DecisionUnavailable)
+	wantUnavailable(t, a)
 }
 
 func TestLastRemoteDisconnectWithoutTUIResolvesWithoutWaitingForDeadline(t *testing.T) {
@@ -70,7 +70,7 @@ func TestLastRemoteDisconnectWithoutTUIResolvesWithoutWaitingForDeadline(t *test
 	assertStillPending(t, h, a) // a remote surface is still present
 
 	rem.Close() // the last surface goes away
-	wantDecision(t, a, agent.DecisionUnavailable)
+	wantUnavailable(t, a)
 }
 
 func TestTUIPresenceKeepsRequestPendingAfterLastRemoteLeaves(t *testing.T) {
@@ -86,7 +86,7 @@ func TestTUIPresenceKeepsRequestPendingAfterLastRemoteLeaves(t *testing.T) {
 	assertStillPending(t, h, a)
 
 	tui.Close() // now the set is empty by the permanent-TUI rule
-	wantDecision(t, a, agent.DecisionUnavailable)
+	wantUnavailable(t, a)
 }
 
 func TestOverflowedTUIStillCountsAsAMember(t *testing.T) {
@@ -117,6 +117,6 @@ func TestEmptySetFastResolveIsRaceCleanUnderChurn(t *testing.T) {
 		a.post(t, h)
 		recvKind(t, rem, KindPermissionRequested)
 		rem.Close()
-		wantDecision(t, a, agent.DecisionUnavailable)
+		wantUnavailable(t, a)
 	}
 }

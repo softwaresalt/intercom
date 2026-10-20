@@ -223,6 +223,12 @@ type Hub struct {
 	closing      bool
 	announced    bool
 	drainWaiters []*ctlReq
+	// agentIdle is the last observed session state: false from a turn.start,
+	// true from an idle event (and initially: no turn ever ran). It is only as
+	// fresh as the ingress queue is empty (see WaitIdle). idleWaiters are the
+	// WaitIdle callers.
+	agentIdle   bool
+	idleWaiters []*ctlReq
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -363,6 +369,7 @@ func New(cfg Config) (*Hub, error) {
 		promptQ:        make(chan string, operatorPromptQueue),
 		abortQ:         make(chan struct{}, 1),
 		ctl:            make(chan *ctlReq, ctlQueue),
+		agentIdle:      true,
 		perm:           newPermRegistry(cfg.MaxPendingPermissions),
 		stopCh:         make(chan struct{}),
 		done:           make(chan struct{}),
@@ -556,6 +563,7 @@ func (h *Hub) Run(ctx context.Context) error {
 		}
 		h.mutFlush()
 		h.reapEmptyBroadcastSet()
+		h.releaseIdleWaiters()
 	}
 }
 
@@ -617,6 +625,12 @@ func (h *Hub) handleEvent(ev agent.Event) {
 		return
 	}
 	h.fold.Apply(ev)
+	switch ev.Kind {
+	case agent.KindTurnStart:
+		h.agentIdle = false
+	case agent.KindIdle:
+		h.agentIdle = true
+	}
 	kind, payload := mapEvent(ev, h.fold.lim.MaxEntryTextBytes)
 	if ev.Kind == agent.KindDelta {
 		// Live deltas carry exactly what the fold accepted, so a client that

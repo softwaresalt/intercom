@@ -93,16 +93,34 @@ type fakeShutdownAgent struct {
 	waitFor   chan struct{} // when non-nil Stop waits until this closes: a session that cannot stop while a handler is parked
 	stops     atomic.Int32
 	stopErr   error
+	// abortHook runs inside Abort (after it is recorded): a real session
+	// answers an abort with an idle event on ingress.
+	abortHook func()
+	abortErr  error
+	aborts    atomic.Int32
+	// stopIgnoresCtx makes Stop block on stopBlock without honouring ctx.
+	stopIgnoresCtx bool
 }
 
 func (a *fakeShutdownAgent) Start(context.Context) (agent.SessionHandle, error) {
 	return agent.SessionHandle{ID: "s"}, nil
 }
 func (a *fakeShutdownAgent) Send(context.Context, string) error { return nil }
-func (a *fakeShutdownAgent) Abort(context.Context) error        { return nil }
+func (a *fakeShutdownAgent) Abort(context.Context) error {
+	a.aborts.Add(1)
+	a.rec.mark("agent.abort")
+	if a.abortHook != nil {
+		a.abortHook()
+	}
+	return a.abortErr
+}
 func (a *fakeShutdownAgent) Stop(ctx context.Context) error {
 	a.stops.Add(1)
 	a.rec.mark("agent.stop")
+	if a.stopIgnoresCtx && a.stopBlock != nil {
+		<-a.stopBlock
+		return a.stopErr
+	}
 	for _, ch := range []chan struct{}{a.waitFor, a.stopBlock} {
 		if ch == nil {
 			continue

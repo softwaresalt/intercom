@@ -1,0 +1,315 @@
+package copilot
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	copilotsdk "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
+
+	"github.com/softwaresalt/intercom-go/internal/hub"
+)
+
+// ---- 067.007-T: shutdown steps 2-4 against the REAL adapter ----
+//
+// The REAL adapter (latch, Stop, ForceStop escalation, permission bridge) and a
+// REAL hub run under the REAL shutdown executor; only the SDK client/session
+// (the existing fakeClient/fakeSession seam) and the transport gate are fakes.
+// fakeClient.childAlive models the CLI child process, so "no stranded CLI
+// child" is an assertion, not a hope.
+
+type rigGate struct {
+	revokes, closes atomic.Int32
+}
+
+func (g *rigGate) RevokeCredentials(context.Context) error { g.revokes.Add(1); return nil }
+func (g *rigGate) CloseListener(context.Context) error     { g.closes.Add(1); return nil }
+
+type frameLog struct {
+	mu    sync.Mutex
+	kinds []string
+}
+
+func (f *frameLog) add(s string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.kinds = append(f.kinds, s)
+}
+
+func (f *frameLog) has(s string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, k := range f.kinds {
+		if k == s {
+			return true
+		}
+	}
+	return false
+}
+
+type lockedBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *lockedBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+type shutdownRig struct {
+	hub    *hub.Hub
+	h      *harness
+	gate   *rigGate
+	frames *frameLog
+	logs   *lockedBuf
+	stopC  chan struct{}
+}
+
+func newShutdownRig(t *testing.T) *shutdownRig {
+	t.Helper()
+	hb, err := hub.New(hub.Config{SessionID: "sess-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &shutdownRig{hub: hb, gate: &rigGate{}, frames: &frameLog{}, logs: &lockedBuf{}, stopC: make(chan struct{})}
+	r.h = newHarness(t, func(c *Config, _ *fakeClient) {
+		c.Ingress = hb.Ingress()
+		c.Asks = hb.Asks()
+		c.HubDone = hb.Done()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- hb.Run(ctx) }()
+	t.Cleanup(func() {
+		close(r.stopC)
+		cancel()
+		select {
+		case <-runDone:
+		case <-time.After(intWait):
+			t.Error("hub Run did not return")
+		}
+	})
+	if _, err := r.h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	tui, err := hb.Connect(context.Background(), hub.ConnectOptions{Kind: hub.ClientTUI, Buffer: 128})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			select {
+			case f := <-tui.Frames():
+				name := string(f.Kind())
+				if f.Kind() == hub.KindPermissionResolved {
+					var env hub.Envelope
+					var p hub.PermissionResolvedPayload
+					_ = json.Unmarshal(f.Bytes(), &env)
+					_ = json.Unmarshal(env.Payload, &p)
+					name += ":" + p.Reason
+				}
+				r.frames.add(name)
+			case <-r.stopC:
+				return
+			}
+		}
+	}()
+	return r
+}
+
+func (r *shutdownRig) newShutdown(t *testing.T, mutate func(*hub.ShutdownConfig)) *hub.Shutdown {
+	t.Helper()
+	cfg := hub.ShutdownConfig{
+		Hub: r.hub, Agent: r.h.ad, Gate: r.gate, Reason: "test",
+		Timeouts: hub.ShutdownTimeouts{Permissions: 2 * time.Second, Gate: time.Second, Announce: time.Second,
+			Abort: time.Second, Idle: 2 * time.Second, Stop: 3 * time.Second, Drain: 200 * time.Millisecond},
+		Logger: slog.New(slog.NewTextHandler(r.logs, nil)),
+	}
+	if mutate != nil {
+		mutate(&cfg)
+	}
+	s, err := hub.NewShutdown(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func waitDone(t *testing.T, s *hub.Shutdown) {
+	t.Helper()
+	select {
+	case <-s.Done():
+	case <-time.After(3 * intWait):
+		t.Fatal("shutdown did not finish")
+	}
+}
+
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(intWait)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func (r *shutdownRig) emit(ev rpc.SessionEventData) {
+	r.h.client.session.emit(copilotsdk.SessionEvent{Data: ev})
+}
+
+// activeTurn starts a turn and waits until the hub has folded it.
+func (r *shutdownRig) activeTurn(t *testing.T) {
+	t.Helper()
+	r.emit(&rpc.AssistantTurnStartData{TurnID: "t1"})
+	eventually(t, "the hub to fold turn.start", func() bool {
+		s, err := r.hub.Stats(context.Background())
+		return err == nil && s.Head >= 1
+	})
+}
+
+func idleAborted() rpc.SessionEventData {
+	aborted := true
+	return &rpc.SessionIdleData{Aborted: &aborted}
+}
+
+func (r *shutdownRig) assertNoStrandedChild(t *testing.T) {
+	t.Helper()
+	eventually(t, "the CLI child to be terminated", func() bool { return !r.h.client.childAlive.Load() })
+}
+
+func TestShutdownAbortsWaitsForPositiveIdleThenStopsTheRealAdapter(t *testing.T) {
+	r := newShutdownRig(t)
+	if !r.h.client.childAlive.Load() {
+		t.Fatal("harness: the CLI child never came up")
+	}
+	r.activeTurn(t)
+
+	var abortsAtStop atomic.Int32
+	r.h.client.onStop = func() { abortsAtStop.Store(r.h.client.session.aborts.Load()) }
+	idleRelease := make(chan struct{})
+	r.h.client.session.abortHook = func() {
+		go func() { // the SDK answers an abort with an idle event, asynchronously
+			<-idleRelease
+			r.emit(idleAborted())
+		}()
+	}
+	s := r.newShutdown(t, func(c *hub.ShutdownConfig) { c.Timeouts.Idle = 10 * time.Second })
+	s.Start(context.Background())
+
+	eventually(t, "Abort", func() bool { return r.h.client.session.aborts.Load() == 1 })
+	time.Sleep(100 * time.Millisecond)
+	if n := r.h.client.stops.Load(); n != 0 {
+		t.Fatalf("Client.Stop ran (%d) before the positive idle signal: stale-flag shutdown", n)
+	}
+	close(idleRelease)
+	waitDone(t, s)
+
+	if err := s.Err(); err != nil {
+		t.Fatalf("shutdown error: %v", err)
+	}
+	if abortsAtStop.Load() != 1 {
+		t.Fatalf("Client.Stop ran after %d aborts, want Abort first", abortsAtStop.Load())
+	}
+	c := r.h.client
+	if c.stops.Load() != 1 || c.forceStops.Load() != 0 {
+		t.Fatalf("Stop=%d ForceStop=%d, want a clean graceful stop", c.stops.Load(), c.forceStops.Load())
+	}
+	if c.session.disconnects.Load() != 1 {
+		t.Fatalf("session disconnected %d times", c.session.disconnects.Load())
+	}
+	if r.gate.revokes.Load() != 1 || r.gate.closes.Load() != 1 {
+		t.Fatalf("gate revokes=%d closes=%d", r.gate.revokes.Load(), r.gate.closes.Load())
+	}
+	r.assertNoStrandedChild(t)
+}
+
+func TestStopExceedingItsDeadlineTriggersForceStopAndNoChildIsStranded(t *testing.T) {
+	r := newShutdownRig(t)
+	r.h.client.stopBlock = make(chan struct{}) // the runtime ignores the graceful stop
+	t.Cleanup(func() { close(r.h.client.stopBlock) })
+	s := r.newShutdown(t, func(c *hub.ShutdownConfig) { c.Timeouts.Stop = 300 * time.Millisecond })
+	s.Start(context.Background())
+	waitDone(t, s)
+
+	eventually(t, "ForceStop", func() bool { return r.h.client.forceStops.Load() >= 1 })
+	if n := r.h.client.forceStops.Load(); n != 1 {
+		t.Fatalf("ForceStop ran %d times, want exactly once (single-flight)", n)
+	}
+	r.assertNoStrandedChild(t)
+	if s.Err() == nil {
+		t.Fatal("a stop that blew its deadline must be reported, not swallowed")
+	}
+}
+
+func TestShutdownAggregatesAndLogsAdapterStopErrors(t *testing.T) {
+	r := newShutdownRig(t)
+	r.h.client.stopErr = errors.New("cli exited with status 7")
+	s := r.newShutdown(t, nil)
+	s.Start(context.Background())
+	waitDone(t, s)
+
+	if err := s.Err(); err == nil || !strings.Contains(err.Error(), "cli exited with status 7") {
+		t.Fatalf("Err() = %v, want the adapter's stop error aggregated", err)
+	}
+	if !strings.Contains(r.logs.String(), "cli exited with status 7") {
+		t.Fatalf("the stop error was not logged:\n%s", r.logs.String())
+	}
+	// The failed graceful stop escalates to ForceStop, which still kills the child.
+	eventually(t, "ForceStop after a failed Stop", func() bool { return r.h.client.forceStops.Load() == 1 })
+	r.assertNoStrandedChild(t)
+}
+
+func TestShutdownWithABlockedPermissionHandlerDoesNotDeadlockOrForceStop(t *testing.T) {
+	r := newShutdownRig(t)
+	res := make(chan rpc.PermissionDecision, 1)
+	handler := r.h.client.createCfg.OnPermissionRequest
+	go func() {
+		d, _ := handler(&rpc.PermissionRequestShell{FullCommandText: "rm -rf /"}, copilotsdk.PermissionInvocation{})
+		res <- d
+	}()
+	eventually(t, "the request to be broadcast", func() bool { return r.frames.has("permission.requested") })
+
+	s := r.newShutdown(t, nil)
+	s.Start(context.Background())
+	waitDone(t, s)
+
+	select {
+	case d := <-res:
+		if d.Kind() != rpc.PermissionDecisionKindUserNotAvailable {
+			t.Fatalf("handler returned %q", d.Kind())
+		}
+	default:
+		t.Fatal("the parked handler was never released")
+	}
+	if err := s.Err(); err != nil {
+		t.Fatalf("shutdown error: %v", err)
+	}
+	if n := r.h.client.forceStops.Load(); n != 0 {
+		t.Fatalf("ForceStop ran %d times: the handler deadlock was not avoided", n)
+	}
+	// Released by step 0 through the hub (resolved, shutdown reason), not by
+	// the adapter's own stop path (aborted).
+	eventually(t, "permission.resolved with the shutdown reason", func() bool { return r.frames.has("permission.resolved:shutdown") })
+	if r.frames.has("permission.aborted") {
+		t.Fatal("the request was aborted instead of failed through the hub at step 0")
+	}
+	r.assertNoStrandedChild(t)
+}

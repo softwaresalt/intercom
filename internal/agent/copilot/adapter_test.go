@@ -33,6 +33,8 @@ type fakeSession struct {
 	sendErr             error
 	abortErr            error
 	abortCtxHasDeadline bool
+	aborts              atomic.Int32
+	abortHook           func() // runs inside Abort: a real session answers with an idle event
 	disconnects         atomic.Int32
 	disconnectBlock     chan struct{} // when non-nil, Disconnect blocks until closed
 	sendBlock           bool          // Send blocks until its ctx is done
@@ -56,6 +58,10 @@ func (s *fakeSession) Send(ctx context.Context, o copilotsdk.MessageOptions) (st
 }
 func (s *fakeSession) Abort(ctx context.Context) error {
 	_, s.abortCtxHasDeadline = ctx.Deadline()
+	s.aborts.Add(1)
+	if s.abortHook != nil {
+		s.abortHook()
+	}
 	return s.abortErr
 }
 func (s *fakeSession) Disconnect() error {
@@ -83,6 +89,11 @@ type fakeClient struct {
 	createEntered chan struct{}
 	stopBlock     chan struct{} // when non-nil, Stop blocks until closed
 	forceBlock    chan struct{} // when non-nil, ForceStop blocks until closed
+	// childAlive models the CLI child process: true once Start succeeds,
+	// false once a Stop that returned cleanly or a ForceStop has terminated it.
+	// A test that ends with childAlive true has stranded a CLI child.
+	childAlive atomic.Bool
+	onStop     func() // runs at the start of Stop, before any blocking
 }
 
 func newFakeClient() *fakeClient {
@@ -98,6 +109,9 @@ func (c *fakeClient) Start(ctx context.Context) error {
 		close(c.startEntered)
 		<-ctx.Done()
 		return ctx.Err()
+	}
+	if c.startErr == nil {
+		c.childAlive.Store(true) // the CLI child is up
 	}
 	return c.startErr
 }
@@ -121,8 +135,14 @@ func (c *fakeClient) CreateSession(_ context.Context, cfg *copilotsdk.SessionCon
 }
 func (c *fakeClient) Stop() error {
 	c.stops.Add(1)
+	if c.onStop != nil {
+		c.onStop()
+	}
 	if c.stopBlock != nil {
 		<-c.stopBlock
+	}
+	if c.stopErr == nil {
+		c.childAlive.Store(false) // a clean Stop terminates the child
 	}
 	return c.stopErr
 }
@@ -131,6 +151,7 @@ func (c *fakeClient) ForceStop() {
 	if c.forceBlock != nil {
 		<-c.forceBlock
 	}
+	c.childAlive.Store(false) // ForceStop kills the child unconditionally
 }
 
 type harness struct {

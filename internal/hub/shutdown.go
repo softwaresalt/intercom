@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
@@ -140,12 +141,15 @@ func (s *Shutdown) run(ctx context.Context) {
 	t, h := s.cfg.Timeouts, s.cfg.Hub
 	// step runs fn under its own budget, logs a failure and records it; a
 	// failed step never skips the later ones.
-	step := func(name string, parent context.Context, budget time.Duration, fn func(context.Context) error) {
-		if err := boundedStep(parent, budget, fn); err != nil {
-			err = fmt.Errorf("shutdown %s: %w", name, err)
-			s.cfg.Logger.Error("shutdown step failed", "step", name, "err", err)
-			errs = append(errs, err)
+	step := func(name string, parent context.Context, budget time.Duration, fn func(context.Context) error) error {
+		err := boundedStep(parent, budget, fn)
+		if err == nil {
+			return nil
 		}
+		err = fmt.Errorf("shutdown %s: %w", name, err)
+		s.cfg.Logger.Error("shutdown step failed", "step", name, "err", err)
+		errs = append(errs, err)
+		return err
 	}
 	// Steps whose effect must happen even if the overall budget is spent keep
 	// their own deadline but not the parent's cancellation.
@@ -154,17 +158,18 @@ func (s *Shutdown) run(ctx context.Context) {
 	// Step 0: fail every pending permission through the hub (and close
 	// admission, atomically with it), then revoke credentials and close the
 	// listener so no client is admitted after this step.
-	step("0 fail pending permissions", always, t.Permissions, h.BeginShutdown)
-	step("0 revoke credentials", always, t.Gate, s.cfg.Gate.RevokeCredentials)
-	step("0 close listener", always, t.Gate, s.cfg.Gate.CloseListener)
+	_ = step("0 fail pending permissions", always, t.Permissions, h.BeginShutdown)
+	_ = step("0 revoke credentials", always, t.Gate, s.cfg.Gate.RevokeCredentials)
+	_ = step("0 close listener", always, t.Gate, s.cfg.Gate.CloseListener)
 	// Step 1: tell the operators why, before any teardown.
-	step("1 broadcast server.shutdown", always, t.Announce, func(c context.Context) error {
+	_ = step("1 broadcast server.shutdown", always, t.Announce, func(c context.Context) error {
 		return h.AnnounceShutdown(c, s.cfg.Reason)
 	})
-	// Steps 2-4: the agent (067.007-T refines this stage).
-	step("2-4 stop agent", ctx, t.Stop, s.cfg.Agent.Stop)
+	// Steps 2-4: the agent. See agentStage for how the design's ordering maps
+	// onto the adapter's Stop.
+	s.agentStage(ctx, step)
 	// Step 5: bounded drain of the write pumps, then abort the sockets.
-	step("5 drain clients", ctx, t.Drain+time.Second, func(c context.Context) error {
+	_ = step("5 drain clients", ctx, t.Drain+time.Second, func(c context.Context) error {
 		return h.drainAndCloseClients(c, t.Drain)
 	})
 	// Step 6: the hub outlives everything above.
@@ -174,6 +179,41 @@ func (s *Shutdown) run(ctx context.Context) {
 	}
 	s.err = errors.Join(errs...)
 	close(s.done)
+}
+
+// agentStage is design §3.1 steps 2-4.
+//
+// Step 3 first: Agent.Abort the in-flight turn, then wait for a POSITIVE idle
+// signal from the hub (a real idle event with ingress drained, never a stale
+// flag), bounded by a deadline. Then Agent.Stop, which performs steps 2 and 4
+// in the adapter: it closes the callback latch and waits (bounded) for
+// in-flight callbacks to drain (step 2), shuts the runtime down with
+// Client.Stop under the deadline and escalates to ForceStop when that fails or
+// expires (step 4), aggregating its own errors. Step 2's quiesce runs inside
+// Stop, after the idle wait, rather than before the abort as the design lists
+// it: the adapter registers its handler at session creation (no separate
+// unsubscribe handle), and closing the latch first would discard the very
+// idle event step 3 waits for (agent.Agent.Stop documents this order).
+//
+// A failed or timed-out step is logged and aggregated, and never skips the
+// stop: the runtime and its CLI child must be torn down regardless.
+func (s *Shutdown) agentStage(ctx context.Context, step func(string, context.Context, time.Duration, func(context.Context) error) error) {
+	t := s.cfg.Timeouts
+	var noSession atomic.Bool // Abort reported there is no session to abort
+	err := step("3 abort turn", ctx, t.Abort, func(c context.Context) error {
+		err := s.cfg.Agent.Abort(c)
+		if errors.Is(err, agent.ErrNotRunning) || errors.Is(err, agent.ErrStopped) {
+			noSession.Store(true) // nothing to abort is not a failure
+			return nil
+		}
+		return err
+	})
+	// With nothing to abort there is no idle to wait for, and after a failed
+	// abort the wait could only burn its deadline.
+	if err == nil && !noSession.Load() {
+		_ = step("3 await idle", ctx, t.Idle, s.cfg.Hub.WaitIdle)
+	}
+	_ = step("2+4 stop agent", ctx, t.Stop, s.cfg.Agent.Stop)
 }
 
 // boundedStep runs fn under a budget-bound child of parent. fn may ignore its
@@ -206,7 +246,31 @@ const (
 	ctlBegin ctlOp = iota + 1
 	ctlAnnounce
 	ctlClients
+	ctlIdle
 )
+
+// WaitIdle blocks until the agent session is positively idle (design §3.1
+// step 3): the hub has observed an idle event (or no turn ever started) AND its
+// ingress is drained. It never reads the fold's idle flag while events are
+// still queued, because that flag is stale until they are folded. It returns
+// the context's error at its deadline, or ErrStopped if the hub stops first.
+func (h *Hub) WaitIdle(ctx context.Context) error {
+	_, err := h.ctlCall(ctx, ctlIdle, "")
+	return err
+}
+
+// releaseIdleWaiters answers the WaitIdle callers whose condition now holds.
+// It runs at the end of every hub iteration, after ingress had a chance to be
+// served, so "ingress empty" is judged against the state just folded.
+func (h *Hub) releaseIdleWaiters() {
+	if len(h.idleWaiters) == 0 || !h.agentIdle || len(h.ingress) > 0 {
+		return
+	}
+	for _, w := range h.idleWaiters {
+		trySend(w.reply, ctlResp{})
+	}
+	h.idleWaiters = nil
+}
 
 type ctlResp struct {
 	err     error
@@ -280,6 +344,8 @@ func (h *Hub) handleCtl(r *ctlReq) {
 			out = append(out, c)
 		}
 		trySend(r.reply, ctlResp{clients: out})
+	case ctlIdle:
+		h.idleWaiters = append(h.idleWaiters, r)
 	default:
 		trySend(r.reply, ctlResp{err: apperr.New(apperr.KindConfig, "hub: unknown control message")})
 	}

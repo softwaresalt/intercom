@@ -130,11 +130,10 @@ func (a *testAsk) takeReply(t *testing.T) agent.PermissionDecision {
 
 // handlerAcks plays the adapter handler: it consumes the reply and then
 // returns (closing Resolved), which is the acknowledgement.
-func (a *testAsk) handlerAcks(t *testing.T) agent.PermissionDecision {
+func (a *testAsk) handlerAcks(t *testing.T) {
 	t.Helper()
-	d := a.takeReply(t)
+	a.takeReply(t)
 	close(a.resolved)
-	return d
 }
 
 func TestHubTimeoutResolvesUnavailableThroughTheHubOnly(t *testing.T) {
