@@ -202,6 +202,12 @@ func (m Model) act(act hub.OperatorAction) tea.Cmd {
 }
 
 func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Single choke point: an armed approval survives only until the very next
+	// key, and only Enter may confirm it. Every other key (shortcuts, scrolling,
+	// credential dismissal) disarms before any handler can return early.
+	if k.Type != tea.KeyEnter {
+		m.armed = ""
+	}
 	if k.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
