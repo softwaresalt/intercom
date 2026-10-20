@@ -16,6 +16,7 @@ import (
 	"github.com/softwaresalt/intercom-go/internal/config"
 	"github.com/softwaresalt/intercom-go/internal/hub"
 	"github.com/softwaresalt/intercom-go/internal/transport"
+	"github.com/softwaresalt/intercom-go/internal/tui"
 )
 
 const (
@@ -65,8 +66,9 @@ type App struct {
 	agent      agent.Agent
 	ui         *localUI
 
-	mu    sync.Mutex
-	creds []transport.Issued // live credentials, for LOCAL display only
+	mu     sync.Mutex
+	mintMu sync.Mutex         // serializes mint/re-issue so two cannot interleave their role order
+	creds  []transport.Issued // live credentials, for LOCAL display only
 
 	done     chan struct{}
 	doneOnce sync.Once
@@ -212,11 +214,12 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 		// The UI outlives Start: Start's ctx bounds startup only, so the feed
 		// (whose lifetime is its Start ctx) gets a context that is not cancelled
 		// with it; ui.stop releases it.
-		ui, err := startUI(context.WithoutCancel(ctx), h, o.TUI)
+		ui, err := startUI(context.WithoutCancel(ctx), h, o.TUI, a.tuiReissue)
 		if err != nil {
 			return fmt.Errorf("start tui: %w", err)
 		}
 		a.ui = ui
+		ui.prog.Send(a.credentialsMsg(a.Credentials())) // the one display of the credentials: local TUI only
 		go func() {
 			<-ui.done
 			a.finish()
@@ -230,19 +233,74 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 // mintAll issues the approver and observer credentials. Only the role, the
 // fingerprint and the expiry are ever logged.
 func (a *App) mintAll() error {
-	issued := make([]transport.Issued, 0, 2)
-	for _, role := range []hub.Role{hub.RoleApprover, hub.RoleObserver} {
+	_, err := a.mint(nil)
+	return err
+}
+
+// credentialRoles are the roles minted, in display order.
+var credentialRoles = [...]hub.Role{hub.RoleApprover, hub.RoleObserver}
+
+// mint issues a fresh credential for every role, each revoking that role's
+// previous one, and publishes the live set. A failure part-way keeps the
+// roles already replaced and the old credential of the rest, so Credentials
+// always describes what is actually live. Only role, fingerprint and expiry
+// are logged.
+func (a *App) mint(current []transport.Issued) ([]transport.Issued, error) {
+	a.mintMu.Lock()
+	defer a.mintMu.Unlock()
+	next := make([]transport.Issued, len(credentialRoles))
+	copy(next, current)
+	var firstErr error
+	for i, role := range credentialRoles {
 		iss, err := a.remote.Mint(role)
 		if err != nil {
-			return fmt.Errorf("mint credential: %w", err)
+			firstErr = fmt.Errorf("mint %s credential: %w", roleName(role), err)
+			break
 		}
 		a.log.Info("credential issued", "role", roleName(role), "fingerprint", iss.Fingerprint, "expires_at", iss.ExpiresAt)
-		issued = append(issued, iss)
+		next[i] = iss
+		a.mu.Lock()
+		a.creds = append([]transport.Issued(nil), next...)
+		a.mu.Unlock()
 	}
-	a.mu.Lock()
-	a.creds = issued
-	a.mu.Unlock()
-	return nil
+	return next, firstErr
+}
+
+// Reissue mints a new credential for every role and revokes the previous ones
+// (re-issue; ADR MVP-2). Sockets authenticated by a revoked credential are
+// closed by the transport. The plaintext is for the local TUI only.
+func (a *App) Reissue(context.Context) ([]transport.Issued, error) {
+	fresh, err := a.mint(a.Credentials())
+	if err != nil {
+		return nil, err
+	}
+	a.log.Info("credentials re-issued", "approver", fresh[0].Fingerprint, "observer", fresh[1].Fingerprint)
+	return fresh, nil
+}
+
+// tuiReissue is the TUI's re-issue key handler.
+func (a *App) tuiReissue(ctx context.Context) (tui.CredentialsMsg, error) {
+	fresh, err := a.Reissue(ctx)
+	if err != nil {
+		return tui.CredentialsMsg{}, err
+	}
+	return a.credentialsMsg(fresh), nil
+}
+
+// credentialsMsg is the one place the plaintext leaves the minted records: it
+// builds the local TUI's credential panel, which is delivered by
+// tea.Program.Send and nowhere else.
+func (a *App) credentialsMsg(issued []transport.Issued) tui.CredentialsMsg {
+	msg := tui.CredentialsMsg{URL: a.WSURL(), Credentials: make([]tui.Credential, 0, len(issued))}
+	for _, iss := range issued {
+		msg.Credentials = append(msg.Credentials, tui.Credential{
+			Role:        roleName(iss.Role),
+			Secret:      iss.Token.Reveal(),
+			Fingerprint: iss.Fingerprint,
+			ExpiresAt:   iss.ExpiresAt,
+		})
+	}
+	return msg
 }
 
 func roleName(r hub.Role) string {

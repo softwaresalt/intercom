@@ -49,6 +49,9 @@ type Options struct {
 	// ActionTimeout bounds one ingress call. Zero selects
 	// [DefaultActionTimeout].
 	ActionTimeout time.Duration
+	// Reissue re-mints the session credentials (Ctrl+R). Nil disables the
+	// key.
+	Reissue Reissuer
 }
 
 type styles struct {
@@ -101,6 +104,12 @@ type Model struct {
 	promptBusy bool
 	input      []rune
 
+	// Credential panel: the plaintext lives here only while it is shown, and
+	// is dropped when the operator dismisses it (shown once, local only).
+	reissue  Reissuer
+	creds    CredentialsMsg
+	credOpen bool
+
 	vp            viewport.Model
 	width, height int
 }
@@ -110,7 +119,7 @@ func New(o Options) Model {
 	if o.ActionTimeout <= 0 {
 		o.ActionTimeout = DefaultActionTimeout
 	}
-	return Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0)}
+	return Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0), reissue: o.Reissue}
 }
 
 // Init implements tea.Model.
@@ -137,6 +146,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ActionResultMsg:
 		return m.onActionResult(msg), nil
+	case CredentialsMsg:
+		return m.showCredentials(msg), nil
+	case ReissueFailedMsg:
+		m.notice = "re-issue failed: " + SanitizeLine(msg.Err.Error())
+		return m, nil
 	case tea.KeyMsg:
 		return m.onKey(msg)
 	}
@@ -162,6 +176,9 @@ func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if k.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
+	if k.Type == tea.KeyCtrlR {
+		return m.reissueCmd()
+	}
 	if len(m.pending) > 0 {
 		return m.onModalKey(k)
 	}
@@ -173,6 +190,9 @@ func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input = m.input[:n-1]
 		}
 	case tea.KeyEsc:
+		if m.credOpen {
+			return m.dismissCredentials(), nil
+		}
 		m.input = nil
 	case tea.KeyCtrlX:
 		return m.abortCmd()
@@ -568,9 +588,12 @@ func (m Model) View() string {
 	header := m.st.header.Render(m.fit("intercom | "+turn, m.width))
 
 	var area string
-	if len(m.pending) > 0 {
+	switch {
+	case len(m.pending) > 0:
 		area = m.modalView(m.areaHeight())
-	} else {
+	case m.credOpen:
+		area = m.credentialView(m.areaHeight())
+	default:
 		area = m.vp.View()
 	}
 

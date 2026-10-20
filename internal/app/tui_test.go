@@ -68,6 +68,12 @@ func TestTUIAttachesToHubAsTheSingleLocalClient(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
+	// The credential panel is shown first and covers the transcript; Esc
+	// dismisses it (the plaintext is then dropped from the model).
+	waitOutput(t, out, "shown once")
+	if _, err := inW.Write([]byte("\x1b")); err != nil {
+		t.Fatal(err)
+	}
 	f.fake().emit(agent.Event{Kind: agent.KindAgentMessage, MessageID: "m1", Text: "tui sees this"})
 	waitOutput(t, out, "tui sees this")
 }
