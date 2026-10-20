@@ -304,5 +304,6 @@ func TestNonReadingPeerCannotHoldSessionPastCloseGrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "session ended within the close grace", 2*time.Second, func() bool { return e.handler.ActiveSessions() == 0 })
+	eventually(t, "connection slot released", 2*time.Second, func() bool { return e.srv.ActiveConnections() == 0 })
 	_ = c
 }
