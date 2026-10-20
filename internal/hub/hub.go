@@ -219,8 +219,10 @@ type Hub struct {
 	// any in-flight agent call's context is done before step 0 returns. It is
 	// set by Run.
 	lanesCancel context.CancelFunc
-	// promptFailed carries "a dispatched prompt did not start a turn" reports
-	// from the prompt lane (the Send failed, or was never made).
+	// promptFailed carries "an accepted prompt provably never reached
+	// Agent.Send" reports from the prompt lane (picked up after the lanes were
+	// cancelled). A Send that was invoked and failed is NOT reported: it may
+	// have started a turn, so it cannot be correlated and stays counted.
 	promptFailed chan struct{}
 	// ctl carries the shutdown executor's hub-control messages (067.006-T).
 	ctl chan *ctlReq
@@ -236,8 +238,8 @@ type Hub struct {
 	// ever ran). It is only as fresh as the ingress queue is empty (see
 	// WaitIdle). idleWaiters are the WaitIdle callers. turnRunning is true from
 	// a turn.start to the next idle.
-	// promptsPending counts accepted prompts that have neither failed, been
-	// dropped, nor yet had a turn.start folded for them: each turn.start
+	// promptsPending counts accepted prompts that have neither provably
+	// missed Agent.Send, been dropped, nor yet had a turn.start folded for them: each turn.start
 	// consumes one (never below zero). While it is positive an idle event does
 	// not make the session idle, because a further turn is still to come.
 	agentIdle      bool

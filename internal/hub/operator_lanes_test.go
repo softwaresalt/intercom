@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -43,10 +44,10 @@ func TestBeginShutdownCancelsTheLanesContextBeforeItReturns(t *testing.T) {
 	}
 }
 
-// A Send that fails while no turn is known to be running means the prompt
-// started nothing: the session is idle again, so the shutdown idle wait must
-// not burn its whole deadline on the stale "prompt dispatched" flag.
-func TestFailedPromptSendRestoresIdleWhenNoTurnStarted(t *testing.T) {
+// A Send that returns an error after it was invoked proves nothing about
+// delivery (the runtime may have started a turn before the call timed out), so
+// the prompt keeps the session busy: only the bounded idle wait covers it.
+func TestFailedPromptSendKeepsTheSessionBusy(t *testing.T) {
 	ag := newFakeAgent()
 	ag.sendErr = errors.New("sdk send failed")
 	h := startHub(t, Config{Agent: ag})
@@ -55,10 +56,71 @@ func TestFailedPromptSendRestoresIdleWhenNoTurnStarted(t *testing.T) {
 		t.Fatalf("prompt = %+v", res)
 	}
 	awaitPrompt(t, ag)
-	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	stats(t, h)
+	time.Sleep(50 * time.Millisecond) // let any failure report reach the hub
+	short, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
+	if err := h.WaitIdle(short); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitIdle = %v: a delivery-uncertain failed Send must not release the idle wait", err)
+	}
+}
+
+// lateFailAgent fails its first Send only after gate is closed (a call that
+// times out after the runtime already started the turn); later Sends succeed.
+type lateFailAgent struct {
+	gate  chan struct{}
+	sent  chan string
+	mu    sync.Mutex
+	calls int
+}
+
+func (a *lateFailAgent) Send(_ context.Context, p string) error {
+	a.mu.Lock()
+	a.calls++
+	first := a.calls == 1
+	a.mu.Unlock()
+	a.sent <- p
+	if first {
+		<-a.gate
+		return errors.New("send timed out after the turn started")
+	}
+	return nil
+}
+
+func (a *lateFailAgent) Abort(context.Context) error { return nil }
+
+// Review: A's turn.start consumes A's pending count, B is accepted, and then
+// A's Send reports a late failure. The failure must not consume B's count, or
+// A's idle would release WaitIdle before B's turn.start.
+func TestLateSendFailureOfAStartedPromptDoesNotConsumeALaterPromptsCount(t *testing.T) {
+	ag := &lateFailAgent{gate: make(chan struct{}), sent: make(chan string, 8)}
+	h := startHub(t, Config{Agent: ag, OperatorActionTimeout: time.Minute})
+	tui := connectRole(t, h, ClientTUI, 0)
+	if res := do(t, tui, prompt("A")); !res.Accepted {
+		t.Fatalf("prompt A = %+v", res)
+	}
+	<-ag.sent
+	send(t, h, turnStart()) // A's turn starts (consumes A's count)
+	if res := do(t, tui, prompt("B")); !res.Accepted {
+		t.Fatalf("prompt B = %+v", res)
+	}
+	close(ag.gate) // A's Send now reports failure, late
+	<-ag.sent      // the lane moved on to B: A's failure has been reported
+	stats(t, h)
+	time.Sleep(50 * time.Millisecond) // let the report reach the hub
+	send(t, h, idleEvent())           // A ends; B's turn.start has not arrived
+	short, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	err := h.WaitIdle(short)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitIdle = %v: A's late failure consumed B's count and A's idle released the wait", err)
+	}
+	send(t, h, turnStart()) // B's turn
+	send(t, h, idleEvent())
+	ctx, cancel2 := context.WithTimeout(context.Background(), testWait)
+	defer cancel2()
 	if err := h.WaitIdle(ctx); err != nil {
-		t.Fatalf("WaitIdle = %v: a failed Send must restore the idle flag when no turn started", err)
+		t.Fatalf("WaitIdle = %v after B's turn finished, want idle", err)
 	}
 }
 
@@ -111,10 +173,11 @@ func TestIdleOfARunningTurnDoesNotReleaseWaitIdleBeforeAPendingPromptsTurnStart(
 	}
 }
 
-// Prompts dropped at step 0 never ran: with no turn known running the session
-// is idle, so the executor's idle wait is satisfied by a positive state rather
-// than a stale "prompt dispatched" flag.
-func TestStep0DroppedPromptsRestoreIdleWhenNoTurnRuns(t *testing.T) {
+// Prompts dropped at step 0 never ran, so their counts are retracted; the
+// in-flight prompt already entered Agent.Send (delivery-uncertain) and keeps
+// its count. So the session stays busy until that prompt's turn starts and
+// ends, and then it is idle: the two dropped prompts left no stale count.
+func TestStep0DroppedPromptsAreRetractedButTheInFlightPromptStaysCounted(t *testing.T) {
 	ag := newFakeAgent()
 	ag.block = make(chan struct{})
 	h := startHub(t, Config{Agent: ag, OperatorActionTimeout: time.Minute})
@@ -130,8 +193,16 @@ func TestStep0DroppedPromptsRestoreIdleWhenNoTurnRuns(t *testing.T) {
 	if err := h.BeginShutdown(ctx); err != nil {
 		t.Fatalf("BeginShutdown: %v", err)
 	}
+	short, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	err := h.WaitIdle(short)
+	cancel2()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitIdle = %v: the in-flight prompt may have started a turn, so the session must stay busy", err)
+	}
+	send(t, h, turnStart()) // the in-flight prompt's turn
+	send(t, h, idleEvent())
 	if err := h.WaitIdle(ctx); err != nil {
-		t.Fatalf("WaitIdle = %v: dropped prompts must not leave the session marked busy", err)
+		t.Fatalf("WaitIdle = %v: the dropped prompts' counts were not retracted", err)
 	}
 }
 
