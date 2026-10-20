@@ -41,6 +41,9 @@ const (
 	// DefaultPermissionTimeout is the hub-owned approval deadline (design
 	// §5.4 item 4); the outcome on expiry is UserNotAvailable.
 	DefaultPermissionTimeout = 2 * time.Minute
+	// DefaultPermissionAckTimeout bounds the wait for the handler's
+	// acknowledgement of a delivered decision.
+	DefaultPermissionAckTimeout = 5 * time.Second
 	// askQueue is the capacity of the permission-ask channel.
 	askQueue = 16
 	// actionQueue is the capacity of the operator-action channel.
@@ -92,6 +95,17 @@ type Config struct {
 	// this clock; the adapter's handler runs none. Default
 	// [DefaultPermissionTimeout].
 	PermissionTimeout time.Duration
+	// PermissionAckTimeout bounds how long a decided request waits for the
+	// handler to acknowledge receipt before the hub gives up and emits
+	// permission.aborted. Default [DefaultPermissionAckTimeout].
+	PermissionAckTimeout time.Duration
+
+	// ---- TEST-ONLY SEAM (067.002-T): permAfter replaces the real timer that
+	// wakes the hub for the earliest permission deadline, so tests drive the
+	// hub-owned timeout without sleeping. It returns the fire channel and a
+	// stop function. Never set in production.
+	permAfter func(d time.Duration) (<-chan time.Time, func())
+	// ---- end test-only seam ----
 
 	// ---- TEST-ONLY MUTATION HOOK (066.005-T; accepted trade-off, see S4) ----
 	// mutHydrateThenRegister, when set, makes a hydrating connect snapshot in
@@ -159,6 +173,9 @@ type Hub struct {
 	// membershipWake is signalled (non-blocking) by Client.Close so the hub
 	// re-evaluates the broadcast set when a surface goes away.
 	membershipWake chan struct{}
+	// acks carries "handler returned" reports from the per-ask watcher
+	// goroutines (067.002-T). Watchers block on it only until the hub is done.
+	acks chan string
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -186,6 +203,11 @@ type Hub struct {
 	staleQ      []*Client      // clients awaiting a forced re-hydrate
 	wake        chan time.Time // closed; selecting on it forces another iteration
 	perm        *permRegistry  // pending permission requests (arbitration state, not fold state)
+	// hub-owned permission timer state: one wake-up armed for the earliest
+	// registry deadline.
+	permC     <-chan time.Time
+	permStop  func()
+	permArmed time.Time
 	// test-only mutation state (see Config.mutHydrateThenRegister).
 	mutLate  []*Client
 	mutReady []*Client
@@ -247,6 +269,15 @@ func New(cfg Config) (*Hub, error) {
 	if cfg.PermissionTimeout == 0 {
 		cfg.PermissionTimeout = DefaultPermissionTimeout
 	}
+	if cfg.PermissionAckTimeout < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: PermissionAckTimeout must not be negative")
+	}
+	if cfg.PermissionAckTimeout == 0 {
+		cfg.PermissionAckTimeout = DefaultPermissionAckTimeout
+	}
+	if cfg.permAfter == nil {
+		cfg.permAfter = realAfter
+	}
 	fold, err := NewFold(cfg.Limits)
 	if err != nil {
 		return nil, err
@@ -275,6 +306,7 @@ func New(cfg Config) (*Hub, error) {
 		asks:           make(chan agent.PermissionAsk, askQueue),
 		actions:        make(chan *actionReq, actionQueue),
 		membershipWake: make(chan struct{}, 1),
+		acks:           make(chan string, askQueue),
 		perm:           newPermRegistry(cfg.MaxPendingPermissions),
 		stopCh:         make(chan struct{}),
 		done:           make(chan struct{}),
@@ -411,10 +443,12 @@ func (h *Hub) Run(ctx context.Context) error {
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	defer timer.Stop()
+	defer h.disarmPermissionTimer()
 	for {
 		// Hydrations run at the top of each iteration under the per-iteration
 		// cap, so a burst of reconnects cannot monopolise the loop (§5.3).
 		immediate, retryIn := h.serviceHydrations()
+		h.armPermissionTimer()
 		var wake, retry <-chan time.Time
 		if immediate {
 			wake = h.wake // closed: forces another iteration for deferred work
@@ -443,6 +477,11 @@ func (h *Hub) Run(ctx context.Context) error {
 		case <-h.membershipWake:
 			// No work here: the end-of-iteration reap below re-evaluates the
 			// broadcast set; this case only guarantees an iteration happens.
+		case id := <-h.acks:
+			h.onHandlerReturned(id)
+		case <-h.permC:
+			h.permC, h.permStop, h.permArmed = nil, nil, time.Time{}
+			h.expirePermissions()
 		case <-wake:
 		case <-retry:
 		case reply := <-h.statsReq:

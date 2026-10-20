@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"time"
 
@@ -144,19 +145,163 @@ func permKindName(k agent.PermissionKind) string {
 	}
 }
 
-// Reasons the hub itself resolves a request (carried in permission.resolved).
+// realAfter is the production permission timer.
+func realAfter(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTimer(d)
+	return t.C, func() { t.Stop() }
+}
+
+// Reasons the hub itself resolves a request (carried in
+// permission.resolved) or abandons it (carried in permission.aborted).
 const (
 	permReasonNoSurface = "no_surface"
+	permReasonTimeout   = "timeout"
+
+	permAbortHandlerGone      = "handler_gone"
+	permAbortReplyUnavailable = "reply_unavailable"
+	permAbortAckTimeout       = "ack_timeout"
 )
+
+// decisionName is the wire name of a decision.
+func decisionName(k agent.DecisionKind) string {
+	switch k {
+	case agent.DecisionAllowOnce:
+		return "allow_once"
+	case agent.DecisionDeny:
+		return "deny"
+	case agent.DecisionUnavailable:
+		return "unavailable"
+	default:
+		return "invalid"
+	}
+}
 
 // decide resolves e on the hub's own authority (timeout, shutdown, empty
 // broadcast set): the same first-responder CAS an operator action goes
-// through, then the decision goes to the handler.
+// through, then the hand-off to the handler.
 func (h *Hub) decide(e *pendingPerm, actor string, d agent.PermissionDecision, reason string) {
 	if out, _ := h.perm.cas(e.id, actor, d, reason); out != casWon {
 		return
 	}
-	trySend(e.ask.Reply, d)
+	h.handoff(e)
+}
+
+// handoff delivers the decided entry's decision to the handler and starts the
+// acknowledgement wait. Finality is the hand-off, not the CAS (design §5.4
+// item 7): permission.resolved is published only once the handler has
+// acknowledged (onHandlerReturned); if the handler is already gone, or the
+// capacity-1 reply send takes the default branch, the request is abandoned
+// with permission.aborted instead, so no surface renders "allowed" for a
+// decision the SDK never received. The hub never blocks here.
+func (h *Hub) handoff(e *pendingPerm) {
+	e.deadline = h.cfg.Now().Add(h.cfg.PermissionAckTimeout) // the ack wait is hub-timed too
+	select {
+	case <-e.ask.Resolved:
+		h.abortPerm(e, permAbortHandlerGone)
+		return
+	default:
+	}
+	if !trySend(e.ask.Reply, e.decision) {
+		h.abortPerm(e, permAbortReplyUnavailable)
+	}
+}
+
+// watchAsk reports the handler's return (Resolved closed) to the hub. It
+// exits when the hub is done, so it cannot outlive the hub; the handler always
+// returns (it selects on hub-done and its own stop), so it cannot outlive the
+// request either.
+func (h *Hub) watchAsk(id string, resolved <-chan struct{}) {
+	select {
+	case <-resolved:
+	case <-h.done:
+		return
+	}
+	select {
+	case h.acks <- id:
+	case <-h.done:
+	}
+}
+
+// onHandlerReturned is the acknowledgement step. A decided entry whose reply
+// has been consumed (the buffer is empty) was received: publish resolved. If
+// the decision is still sitting in the reply buffer the handler returned by
+// another path (stop, hub-done): abort. An entry that was never decided means
+// the handler is gone without an answer (SDK Abort/Stop, CLI-side timeout):
+// abort. An id that is no longer registered is a late duplicate: ignore.
+func (h *Hub) onHandlerReturned(id string) {
+	e := h.perm.lookup(id)
+	if e == nil {
+		return
+	}
+	if e.state == permDecided && len(e.ask.Reply) == 0 {
+		h.finishResolved(e)
+		return
+	}
+	h.abortPerm(e, permAbortHandlerGone)
+}
+
+// finishResolved publishes permission.resolved and retires the entry.
+func (h *Hub) finishResolved(e *pendingPerm) {
+	h.perm.remove(e.id)
+	h.publish(KindPermissionResolved, PermissionResolvedPayload{
+		RequestID: e.id,
+		Decision:  decisionName(e.decision.Kind),
+		Actor:     e.winner,
+		Reason:    e.reason,
+	})
+}
+
+// abortPerm publishes permission.aborted and retires the entry.
+func (h *Hub) abortPerm(e *pendingPerm, reason string) {
+	h.perm.remove(e.id)
+	h.publish(KindPermissionAborted, PermissionAbortedPayload{RequestID: e.id, Reason: reason})
+}
+
+// expirePermissions is the hub-owned clock firing. A pending entry past its
+// deadline resolves to UserNotAvailable through the same path an operator
+// answer takes; a decided entry past its ack deadline is aborted. The hub is
+// the only clock: the handler runs none (design §5.4 item 4).
+func (h *Hub) expirePermissions() {
+	now := h.cfg.Now()
+	for _, e := range slices.Clone(h.perm.order) {
+		if e.deadline.After(now) {
+			continue
+		}
+		switch e.state {
+		case permPending:
+			h.decide(e, ActorHub, agent.PermissionDecision{Kind: agent.DecisionUnavailable}, permReasonTimeout)
+		case permDecided:
+			h.abortPerm(e, permAbortAckTimeout)
+		}
+	}
+}
+
+// armPermissionTimer keeps one wake-up armed for the earliest registry
+// deadline, re-arming only when that deadline changes.
+func (h *Hub) armPermissionTimer() {
+	var earliest time.Time
+	for _, e := range h.perm.order {
+		if earliest.IsZero() || e.deadline.Before(earliest) {
+			earliest = e.deadline
+		}
+	}
+	if earliest.IsZero() {
+		h.disarmPermissionTimer()
+		return
+	}
+	if h.permC != nil && h.permArmed.Equal(earliest) {
+		return
+	}
+	h.disarmPermissionTimer()
+	h.permC, h.permStop = h.cfg.permAfter(max(earliest.Sub(h.cfg.Now()), 0))
+	h.permArmed = earliest
+}
+
+func (h *Hub) disarmPermissionTimer() {
+	if h.permStop != nil {
+		h.permStop()
+	}
+	h.permC, h.permStop, h.permArmed = nil, nil, time.Time{}
 }
 
 // reapEmptyBroadcastSet resolves every unresolved request to UserNotAvailable
@@ -220,6 +365,7 @@ func (h *Hub) handleAsk(ask agent.PermissionAsk) {
 		Summary:        e.summary,
 		RemainingMS:    h.remainingMS(e),
 	})
+	go h.watchAsk(e.id, ask.Resolved)
 }
 
 // remainingMS is the time left on e's deadline in whole milliseconds, never
@@ -251,6 +397,7 @@ func (h *Hub) resolvePermission(r *actionReq) ActionResult {
 	}
 	switch out, e := h.perm.cas(r.act.RequestID, r.from.label(), r.act.Decision, ""); out {
 	case casWon:
+		h.handoff(e)
 		return ActionResult{Accepted: true}
 	case casLost:
 		return ActionResult{Reason: ReasonAlreadyResolved, Winner: e.winner}
