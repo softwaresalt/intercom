@@ -113,7 +113,11 @@ func (c *Config) Validate() (Report, error) {
 	//     must be added to database.path BEFORE it does — at the exact
 	//     same trigger as scripts/check-write-path-precondition.sh's own
 	//     gate: the first code path that actually opens, creates, or
-	//     writes database.path. The consolidated risk register in
+	//     writes database.path. (070.001-T: the first production
+	//     pathsafe.Root.Resolve caller, process workspace resolution in
+	//     internal/app, is a read-only use and does not touch database.path,
+	//     so it does not trip this trigger; see the register addendum in
+	//     internal/pathsafe's package doc.) The consolidated risk register in
 	//     internal/pathsafe's package doc (root.go) names the same
 	//     trigger for its own tracked findings, so all three artifacts
 	//     (this exception, the register, and the mechanical gate) expire

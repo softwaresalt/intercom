@@ -245,6 +245,31 @@
 // internal/config/validate.go rule 7's Constitution Check exception all
 // expire together at that one trigger.
 //
+// 070.001-T (first production Root.Resolve caller; ADDENDUM, not a
+// retirement): internal/app/workspace.go resolves the process workspace
+// root (the --workspace flag, below an authorized config root) through
+// NewRoot + Resolve. That call fired the 049.005-T tripwire in
+// scripts/check-write-path-precondition.sh, so every finding above was
+// re-evaluated against this concrete call site in the same change:
+//   - Resolve -> use TOCTOU window: ACCEPTED, re-justified. The resolved
+//     directory is validated once at startup and then used only as the
+//     agent's working directory; intercom itself performs no write to it.
+//     The workspace flag and filesystem belong to the operator who starts
+//     the process, so there is no attacker-controlled race window.
+//   - SEC-5 (hardlinks): not applicable, the target is a directory and
+//     directory hardlinks do not exist; ACCEPTED unchanged.
+//   - 5FE4A7BE-a (darwin case-fold): fails closed (a legitimately in-root
+//     path that differs only by case is refused at startup); ACCEPTED
+//     unchanged.
+//   - All other entries are CLOSED and unaffected by a read-only caller.
+//
+// This is NOT the arrival of a real write path: no intercom code opens,
+// creates or writes anything under the workspace or database.path, so this
+// register, the write-path gate and validate.go rule 7's exception stay in
+// force and their trigger is unchanged. The gate records the reviewed call
+// site in an exact-path list (reviewedResolveCallers); any other Root.Resolve
+// caller still fires it and needs its own re-evaluation here.
+//
 // ANTI-GOAL (011.004-T): no TOCTOU/hardlink mitigation mechanism is added
 // by this register's creation; it records status quo risk, it does not
 // change it.
