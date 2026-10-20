@@ -135,6 +135,22 @@ registers a connection with a revocation re-check in the same hub step. Re-valid
 a policy-violation close. When the hub-owned permission timeout fires, the outcome is deny
 (`UserNotAvailable`, design 5.4).
 
+## Addendum: hub-added reason codes and transport-owned codes (shipment 059-S)
+
+* The hub adds two reason codes beyond the stable list above, for conditions the
+  list does not cover: `agent_unavailable` (the hub cannot hand a prompt or
+  abort to the agent: none configured, or its operator queue is full) and
+  `shutting_down` (the credential-less local TUI attempted a privileged action
+  after shutdown step 0; a remote surface gets `credential_revoked` instead).
+* `credential_expired`, `generation_mismatch` and `local_only_action`, and the
+  wire shape of `action.refused`, are owned by the transport (plan S5): the
+  hub's arbitration returns the codes it can decide itself and does not
+  produce those.
+* A queued action whose remote connection closed before the hub processed it
+  is refused `credential_revoked` (re-validation runs at the hub step).
+* Unknown kinds remain destructive: default-deny for remote approvers, and
+  covered by `remote_approve_destructive` exactly like `shell` and `write`.
+
 ## Accepted exposure
 
 An observer sees full transcripts: prompts, agent output, tool arguments, command lines, and

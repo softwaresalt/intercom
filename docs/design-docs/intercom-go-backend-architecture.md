@@ -147,22 +147,37 @@ Normative sequence:
    registry to `UserNotAvailable` *through the hub* and broadcast
    `permission.resolved` with a shutdown reason. Until this completes, the
    permission handler goroutines cannot return and the session cannot go idle.
+   The same hub step closes admission, drops queued operator prompts/aborts and
+   cancels the in-flight one (no operator prompt may start a turn after the
+   shutdown abort), and settles any permission decided but not yet acknowledged
+   (a decision still in the reply buffer is revoked to `UserNotAvailable` and
+   the request is `permission.aborted`; one the handler already took is
+   `permission.resolved`). Credentials are then revoked and the listener closed.
 1. **Broadcast `server.shutdown`** so operators learn why the session ended.
    This happens *before* any teardown, not after.
-2. **Unsubscribe and quiesce SDK callbacks.** Call the `func()` returned by
-   `Session.On`, then wait (bounded) for in-flight callbacks to drain via a
-   `WaitGroup`/refcount. **Never close the ingress channel** — use a separate
-   `done` channel. Closing ingress while a callback is in flight panics on an
-   SDK-owned goroutine.
+2. **Quiesce SDK callbacks.** Close the callback latch (the adapter registers
+   its handler at session creation, so there is no unsubscribe handle), then
+   wait (bounded) for in-flight callbacks to drain via a `WaitGroup`/refcount.
+   **Never close the ingress channel** — use a separate `done` channel. Closing
+   ingress while a callback is in flight panics on an SDK-owned goroutine.
+   **Executes after step 3, inside `Agent.Stop`:** latching first would discard
+   the very idle event step 3 waits for.
 3. **`Session.Abort(ctx)`** any in-flight turn, then wait for a *positive*
    idle signal after ingress quiesces, bounded by a deadline. Do not read a
-   stale fold-derived idle flag while events are still queued.
+   stale fold-derived idle flag while events are still queued. **Executes
+   before step 2**, so the effective order is abort → positive idle → quiesce
+   → stop.
 4. **`Client.Stop()`** — the SDK's documented graceful path (close sessions →
    request runtime shutdown → close JSON-RPC → terminate the CLI process it
    spawned). If it exceeds its deadline, **`Client.ForceStop()`**.
    *Note:* `Stop()` already closes sessions, so an explicit
    `Session.Disconnect()` is optional and is omitted here — it adds a race
-   (step 3's idleness precondition) and buys nothing.
+   (step 3's idleness precondition) and buys nothing. Once the caller's
+   context is done or a graceful step fails, the adapter skips the remaining
+   graceful steps and goes straight to `ForceStop`. The executor does not
+   proceed to step 5/6 until `Agent.Stop` returns or a hard budget (stop +
+   force) is spent; a cancelled shutdown context hurries the stop but never
+   abandons it, and an unconfirmed stop is reported as an orphan risk.
 5. **Bounded drain of client write pumps (1-2 s), then abort sockets.** Each client's `done` MUST be closed (via its `sync.Once`) before the abort, per §5.5's drop protocol. An
    unbounded drain can block for minutes on a client with a closed TCP window
    — precisely what §5.5 forbids.
@@ -427,8 +442,28 @@ counter, and MUST be captured once at hub construction.
 
 **Envelope kinds (initial set):** `session.hydrate`, `agent.message`,
 `agent.message.delta`, `agent.turn.start`, `agent.turn.end`, `agent.idle`,
-`permission.requested`, `permission.resolved`, `tool.started`, `tool.ended`,
-`error`, `server.shutdown`.
+`permission.requested`, `permission.resolved`, `permission.aborted`,
+`tool.started`, `tool.ended`, `error`, `server.shutdown`.
+
+**Permission and shutdown payloads (hub-produced; closed vocabularies):**
+
+* `permission.requested`: `request_id`, `tool_call_id` (bounded identifier),
+  `permission_kind` (`shell` | `write` | `read` | `url` | `other` | `unknown`),
+  `summary` (sanitized, bounded), `remaining_ms` (time left before the
+  hub-owned timeout, measured at the envelope's `ts`; see §5.3).
+* `permission.resolved`: `request_id`, `decision` (`allow_once` | `deny` |
+  `unavailable`), `actor` (`local-tui` | `remote-approver` | `hub`), `reason`
+  (empty when an operator answered; `timeout` | `shutdown` | `no_surface` when
+  the hub decided). **`unavailable` means the SDK's `UserNotAvailable`: nobody
+  could answer in time or at all — it is not a user denial** and surfaces must
+  not render it as one.
+* `permission.aborted`: `request_id`, `reason` (`handler_gone` |
+  `reply_unavailable` | `ack_timeout` | `shutdown`): the agent did not receive a
+  decision, so no surface may render one.
+* `server.shutdown`: `reason`, a short free-form string (the executor's reason,
+  default `shutdown`; the hub's own stop uses `stopped` or `context cancelled`).
+  Published once, by the hub step, whether the executor or the hub's stop
+  announces it first.
 
 ### 5.3 Hydration and reconnect
 
@@ -454,6 +489,16 @@ counter, and MUST be captured once at hub construction.
   into permanent loss (receive 105 then 99 → 99 discarded forever). A detected
   gap forces re-hydration.
 * Never block to serve a replay; drop to full hydrate instead.
+* **Pending permissions in `session.hydrate`.** The hydrate payload carries a
+  `pending_permissions` array beside the fold snapshot: one object per
+  *unresolved* request (decided-but-unacknowledged and finished requests are
+  absent), each shaped exactly like a `permission.requested` payload
+  (`request_id`, `tool_call_id`, `permission_kind`, `summary`, `remaining_ms`),
+  in registration order, always present (empty array when none). Its size is
+  bounded by the hub's pending-permission cap and the summary cap. `remaining_ms` is
+  computed by the hub when the envelope is built, so it is anchored to that
+  envelope's `ts`: a client derives the deadline as `ts + remaining_ms` and
+  must not count from its own receipt time.
 
 ### 5.4 First-responder action arbitration
 
@@ -501,7 +546,13 @@ below load-bearing rather than stylistic.
    SDK received nothing, which is the original dual-owner defect in miniature.
    A third party can also abandon the request (SDK `Abort`, `Stop`/`ForceStop`,
    or a CLI-side RPC timeout); those paths resolve through the same
-   `permission.aborted` envelope.
+   `permission.aborted` envelope. The reply buffer is the evidence: when the
+   acknowledgement is overdue (or shutdown step 0 begins) a decision still in
+   the buffer was never taken, so the hub replaces it with `UserNotAvailable`
+   and publishes `permission.aborted`; an empty buffer means the handler took
+   it, so the hub publishes `permission.resolved`. A request whose hub deadline
+   has passed is expired before any later action is processed, so a late
+   approval cannot win a race with the timer.
 
 **Pending permissions are arbitration state, not fold state.** `session.hydrate`
 MUST carry unresolved pending permissions with their remaining deadlines —

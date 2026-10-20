@@ -425,8 +425,7 @@ func (h *Hub) remainingMS(e *pendingPerm) int64 {
 }
 
 // handleAction processes one operator action inside a hub step. Authorization
-// (067.004) runs before the CAS; until then this path is reachable only from
-// in-package callers, never from a transport.
+// runs before the CAS (see resolvePermission).
 func (h *Hub) handleAction(r *actionReq) {
 	trySend(r.reply, h.processAction(r))
 }
