@@ -40,7 +40,7 @@ covering every key in this reference.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `timeouts.approval_seconds` | integer | `3600` | |
+| `timeouts.approval_seconds` | integer | `3600` | How long a permission request waits for an operator answer before the hub resolves it `UserNotAvailable`. Consumed by the process wiring (`internal/app`); `0` selects the hub's built-in default (2 minutes); values above one year are clamped. |
 | `timeouts.prompt_seconds` | integer | `1800` | |
 | `timeouts.wait_seconds` | integer | `0` | `0` means "no timeout". |
 
