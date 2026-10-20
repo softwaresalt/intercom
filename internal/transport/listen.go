@@ -243,6 +243,19 @@ func (s *Server) CloseListener(ctx context.Context) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.cancel()
 	lerr := s.closeListener()
+	// Session draining runs CONCURRENTLY with the HTTP shutdown: http.Server's
+	// graceful Shutdown waits on connections that never finished their
+	// handshake (StateNew counts as idle only after 5s), and that wait must
+	// not consume the deadline the session drain needs. Drain cancels every
+	// session (each closes within the close grace, aborting the raw conn if
+	// the peer never answers), so a ctx expiry here still leaves no session
+	// running past the caller's budget plus the grace.
+	drainDone := make(chan error, 1)
+	if s.drain != nil {
+		go func() { drainDone <- s.drain(ctx) }()
+	} else {
+		drainDone <- nil
+	}
 	err := s.srv.Shutdown(ctx)
 	if errors.Is(err, net.ErrClosed) {
 		err = nil // the listener was already closed by closeListener
@@ -253,10 +266,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if err != nil {
 		_ = s.srv.Close()
 	}
-	if s.drain != nil {
-		if derr := s.drain(ctx); derr != nil && err == nil {
-			err = derr
-		}
+	if derr := <-drainDone; derr != nil && err == nil {
+		err = derr
 	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
