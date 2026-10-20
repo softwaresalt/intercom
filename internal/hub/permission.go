@@ -397,10 +397,28 @@ func (h *Hub) processAction(r *actionReq) ActionResult {
 	}
 }
 
-// resolvePermission is the first-responder arbitration step.
+// resolvePermission is the first-responder arbitration step. The order is the
+// ADR MVP-3 one: the pending-request lookup (request_unknown, or
+// already_resolved for the loser), then the role and kind check, then the CAS.
+// A refused action leaves the request open for an authorized surface.
 func (h *Hub) resolvePermission(r *actionReq) ActionResult {
 	if k := r.act.Decision.Kind; k != agent.DecisionAllowOnce && k != agent.DecisionDeny {
 		return ActionResult{Reason: ReasonActionUnknown} // an operator answers allow or deny only
+	}
+	e := h.perm.lookup(r.act.RequestID)
+	switch {
+	case e == nil:
+		return ActionResult{Reason: ReasonRequestUnknown}
+	case e.state != permPending:
+		return ActionResult{Reason: ReasonAlreadyResolved, Winner: e.winner}
+	}
+	// The kind comes from the registry entry the adapter's classification
+	// created, never from the action.
+	if ok, why := authorize(authzInput{
+		p: r.from, op: r.act.Type, kind: e.kind, decision: r.act.Decision.Kind,
+		remoteApproveDestructive: h.cfg.RemoteApproveDestructive,
+	}); !ok {
+		return ActionResult{Reason: why}
 	}
 	switch out, e := h.perm.cas(r.act.RequestID, r.from.label(), r.act.Decision, ""); out {
 	case casWon:

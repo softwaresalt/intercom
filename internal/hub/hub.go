@@ -109,6 +109,10 @@ type Config struct {
 	// handler to acknowledge receipt before the hub gives up and emits
 	// permission.aborted. Default [DefaultPermissionAckTimeout].
 	PermissionAckTimeout time.Duration
+	// RemoteApproveDestructive is [remote].remote_approve_destructive: when
+	// false (the default) a remote approver may not approve shell, write or
+	// unknown-kind permissions (ADR MVP-3). The local TUI is unaffected.
+	RemoteApproveDestructive bool
 
 	// ---- TEST-ONLY SEAM (067.002-T): permAfter replaces the real timer that
 	// wakes the hub for the earliest permission deadline, so tests drive the
@@ -748,6 +752,12 @@ type ConnectOptions struct {
 	Buffer int
 	// Resume, when set, is the client's last-applied (gen, seq) cursor.
 	Resume *Position
+	// Role is the authorization role of a remote client, taken by the
+	// transport from the credential record that authenticated the connection
+	// (ADR MVP-3) and never from a message. The zero value observes only. The
+	// local TUI is always an approver by construction: this field is ignored
+	// for ClientTUI.
+	Role Role
 }
 
 type connectResp struct {
@@ -766,6 +776,12 @@ type connectReq struct {
 func (h *Hub) Connect(ctx context.Context, opts ConnectOptions) (*Client, error) {
 	if opts.Kind != ClientTUI && opts.Kind != ClientRemote {
 		return nil, apperr.New(apperr.KindConfig, "hub: invalid client kind")
+	}
+	// Connect-time validation: a remote role must be one of the defined
+	// roles, so a corrupt value fails the connection instead of silently
+	// carrying whatever privilege its bits happen to compare to.
+	if opts.Kind == ClientRemote && opts.Role > RoleApprover {
+		return nil, apperr.New(apperr.KindConfig, "hub: invalid client role")
 	}
 	req := &connectReq{opts: opts, reply: make(chan connectResp, 1)}
 	select {
@@ -1042,6 +1058,11 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 	h.nextID++
 	c := newClient(h.nextID, req.opts.Kind, req.opts.Buffer)
 	c.notify = h.membershipWake
+	c.hub = h
+	c.role = req.opts.Role
+	if c.kind == ClientTUI {
+		c.role = RoleApprover // fixed by construction, needs no credential (ADR MVP-3)
+	}
 	if replay {
 		c.mode = ModeReplay
 		for _, f := range h.replayFrom(req.opts.Resume.Seq) {

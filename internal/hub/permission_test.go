@@ -196,7 +196,7 @@ func TestFastOperatorAnswerIsNeverRejectedForAMissingEntry(t *testing.T) {
 }
 
 func TestSecondResponderGetsExplicitRejectionWithWinner(t *testing.T) {
-	h := startHub(t, Config{})
+	h := startHub(t, Config{RemoteApproveDestructive: true})
 	tui := connect(t, h, ClientTUI, 32)
 	a := newTestAsk(agent.PermissionKindShell, "cmd")
 	a.post(t, h)
@@ -234,7 +234,7 @@ func TestSecondResponderGetsExplicitRejectionWithWinner(t *testing.T) {
 
 func TestExactlyOneWinnerUnderContention(t *testing.T) {
 	const responders = 16
-	h := startHub(t, Config{})
+	h := startHub(t, Config{RemoteApproveDestructive: true})
 	tui := connect(t, h, ClientTUI, 32)
 	newTestAsk(agent.PermissionKindShell, "cmd").post(t, h)
 	id := requestID(t, recvKind(t, tui, KindPermissionRequested))

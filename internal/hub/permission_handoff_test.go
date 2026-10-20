@@ -168,7 +168,7 @@ func TestHubTimeoutResolvesUnavailableThroughTheHubOnly(t *testing.T) {
 }
 
 func TestResolvedIsPublishedOnlyAfterHandlerAck(t *testing.T) {
-	r := newPermRig(t, Config{})
+	r := newPermRig(t, Config{RemoteApproveDestructive: true})
 	tui := connect(t, r.h, ClientTUI, 16)
 	rem := connect(t, r.h, ClientRemote, 16)
 	a := newTestAsk(agent.PermissionKindShell, "cmd")
