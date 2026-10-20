@@ -198,6 +198,54 @@ func TestShutdownDowngradesOnlyAllowDecisions(t *testing.T) {
 	}
 }
 
+// Deterministic variant of the above for the decisions that must never change:
+// the handler is made to take the hub's reply (the test waits until the reply
+// buffer is drained, so the select has certainly chosen the reply branch) and
+// only then is the stop signal closed, so "gone" is true at the downgrade check.
+// A deny must still be a deny and a hub-issued unavailable must stay
+// unavailable, both for the SDK and in the recorded outcome. (An allow is the
+// only decision whose result depends on that check; its interleavings are
+// covered by the test above.)
+func TestShutdownAfterTakingReplyKeepsDenyAndUnavailableExactly(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   agent.DecisionKind
+		sdk  rpc.PermissionDecisionKind
+	}{
+		{"deny", agent.DecisionDeny, rpc.PermissionDecisionKindReject},
+		{"unavailable", agent.DecisionUnavailable, rpc.PermissionDecisionKindUserNotAvailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asks := make(chan agent.PermissionAsk, 1)
+			b := newPermissionBridge(asks, make(chan struct{}), nil)
+			stop := make(chan struct{})
+			b.stop = stop // set before the handler goroutine starts
+			res := make(chan rpc.PermissionDecision, 1)
+			go func() { d, _ := b.handle(testRequest(), copilot.PermissionInvocation{}); res <- d }()
+			ask := <-asks // the ask is out: the reply is not yet sent
+			ask.Reply <- agent.PermissionDecision{Kind: tc.in, Feedback: "f"}
+			deadline := time.After(5 * time.Second)
+			for len(ask.Reply) != 0 {
+				select {
+				case <-deadline:
+					t.Fatal("the handler never took the reply")
+				case <-time.After(time.Millisecond):
+				}
+			}
+			close(stop) // gone() is now true for the downgrade check
+			d := <-res
+			<-ask.Resolved
+			if d.Kind() != tc.sdk {
+				t.Fatalf("SDK got %q, want %q", d.Kind(), tc.sdk)
+			}
+			got, ok := ask.Outcome.Delivered()
+			if !ok || got.Kind != tc.in {
+				t.Fatalf("recorded %+v ok=%v, want exactly %v", got, ok, tc.in)
+			}
+		})
+	}
+}
+
 // A decision the handler consumed is recorded without re-buffering anything:
 // the hub does not read the reply buffer.
 func TestHandlerLeavesTheReplyBufferEmptyAfterConsuming(t *testing.T) {
