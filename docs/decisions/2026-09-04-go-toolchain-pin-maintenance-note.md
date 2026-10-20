@@ -23,6 +23,18 @@ toolchain go1.26.9
 > The pin value drifts with each toolchain bump, so treat `go.mod` as the source
 > of truth. The rationale below is unchanged.
 
+> **Annotation (2026-10-20, 061-S / 069-F):** the language floor is now
+> `go 1.25.0`, not `go 1.24`; the `go 1.24` in the example above and in the
+> bullet below is the historical value. The floor was raised because the
+> TUI's security-fixed transitive modules (`golang.org/x/sys v0.44.0`,
+> `golang.org/x/text v0.41.0`) declare `go 1.25.0`. This is a *dependency
+> requirement*, not a CVE side effect: raising the toolchain alone cannot
+> remediate those advisories, because a module's `go` directive gates the
+> minimum Go version of every consumer. Rule 3 below is therefore satisfied,
+> not violated. The Copilot SDK floor is still `go 1.24`. Consumers building
+> with a Go toolchain older than 1.25.0 are affected and must upgrade. The
+> toolchain-first rule (rule 2) is unchanged.
+
 These exist for **different reasons**, and conflating them is the failure mode
 this note prevents.
 

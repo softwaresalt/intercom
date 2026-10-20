@@ -95,7 +95,7 @@ isolates workspace lifecycles completely.
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Language | **Go 1.24+** | Hard floor: `github.com/github/copilot-sdk/go` declares `go 1.24`. **Raised** (shipment 004-S / U-A1): the repository's `go.mod` language floor is now `go 1.24` (toolchain pinned at `go1.26.5` per go.mod's own CVE-remediation comment). |
+| Language | **Go 1.25.0+** | Repository `go.mod` floor is `go 1.25.0`, raised in shipment 061-S / 069-F because the security-fixed transitive modules `golang.org/x/sys v0.44.0` and `golang.org/x/text v0.41.0` declare `go 1.25.0`. The SDK floor is unchanged: `github.com/github/copilot-sdk/go` still declares `go 1.24`. (The floor was first raised to `go 1.24` in shipment 004-S / U-A1.) The toolchain pin (currently `go1.26.9`) lives in `go.mod`, which is the source of truth. |
 | Agent SDK | `github.com/github/copilot-sdk/go` **v1.0.11** (tag `go/v1.0.11`, commit `a550258d5c37bd662197536992a23d633bfe5804`) | Only stable Go release; GA with SemVer. See §7 for risk controls. |
 | TUI | `charmbracelet/bubbletea` + `lipgloss` + `bubbles/viewport` | Elm architecture decouples terminal rendering from asynchronous event streams. `viewport` is required so continuous token streaming does not destroy native scrollback. |
 | WebSocket | **Implemented** in `internal/transport` (060-S) with `github.com/coder/websocket` as a direct dependency ([ADR MVP-1](../decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md)) | The SDK already pulled in `coder/websocket`, so no second WS implementation is in the binary. The write pump owns pings so an idle tunnel is not dropped while the agent is "thinking". |

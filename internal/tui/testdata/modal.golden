@@ -1,0 +1,16 @@
+intercom | idle
+╭────────────────────────────────────────────────────────────────────╮
+│ Permission request                                                 │
+│ expires: 12:02:00Z                                                 │
+│ kind: shell                                                        │
+│ tool call: call-1                                                  │
+│                                                                    │
+│ git status --short                                                 │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│ y approve (then Enter to confirm)   n deny                         │
+│ lines 1-4 of 4                                                     │
+╰────────────────────────────────────────────────────────────────────╯
+connected
+> (answer the permission request first)
