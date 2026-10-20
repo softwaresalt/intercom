@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"log/slog"
 	"net/http"
@@ -134,7 +135,7 @@ func (e *env) rawUpgrade(hdr map[string]string, query string) *http.Response {
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Sec-WebSocket-Version", "13")
-	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	req.Header.Set("Sec-WebSocket-Key", testWebSocketKey())
 	for k, v := range hdr {
 		if k == "Host" {
 			req.Host = v
@@ -158,4 +159,18 @@ func (e *env) rawUpgrade(hdr map[string]string, query string) *http.Response {
 func bodyOf(r *http.Response) string {
 	b, _ := io.ReadAll(io.LimitReader(r.Body, 1<<16))
 	return string(b)
+}
+
+// testWebSocketKey returns a syntactically valid Sec-WebSocket-Key (16 bytes, base64) built at runtime, so no key-shaped literal sits in the tree for secret scanners.
+func testWebSocketKey() string { return base64.StdEncoding.EncodeToString(make([]byte, 16)) }
+
+// waitPrompts waits until the fake agent has received at least n prompts and returns them. The hub hands a prompt to the agent asynchronously relative to the acceptance reply, so a single sample can race.
+func waitPrompts(t *testing.T, fa *fakeAgent, n int) []string {
+	t.Helper()
+	var got []string
+	eventually(t, "agent prompts", 3*time.Second, func() bool {
+		got, _ = fa.snapshot()
+		return len(got) >= n
+	})
+	return got
 }

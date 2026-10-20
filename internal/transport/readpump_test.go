@@ -280,7 +280,13 @@ func TestActionsDispatchThroughHubAndReplyToSenderOnly(t *testing.T) {
 	if r := nextResult(t, app); r.Type != "action.accepted" || r.Op != "prompt" {
 		t.Fatalf("approver prompt reply = %+v", r)
 	}
-	prompts, _ := fa.snapshot()
+	// the hub hands the prompt to the agent asynchronously relative to the
+	// acceptance reply, so wait for it rather than sampling once.
+	var prompts []string
+	eventually(t, "agent to receive the prompt", 3*time.Second, func() bool {
+		prompts, _ = fa.snapshot()
+		return len(prompts) >= 1
+	})
 	if len(prompts) != 1 || prompts[0] != "do it" {
 		t.Fatalf("agent prompts = %v", prompts)
 	}

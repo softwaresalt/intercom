@@ -53,7 +53,7 @@ func TestDrainConcurrentWithUpgradesIsRaceFree(t *testing.T) {
 			req.Header.Set("Connection", "Upgrade")
 			req.Header.Set("Upgrade", "websocket")
 			req.Header.Set("Sec-WebSocket-Version", "13")
-			req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+			req.Header.Set("Sec-WebSocket-Key", testWebSocketKey())
 			e.handler.ServeHTTP(httptest.NewRecorder(), req)
 		}()
 		if i == 8 {
@@ -81,7 +81,7 @@ func TestNonUpgradeRequestsRejectedBeforeHubRegistration(t *testing.T) {
 		"Connection":            "Upgrade",
 		"Upgrade":               "websocket",
 		"Sec-WebSocket-Version": "13",
-		"Sec-WebSocket-Key":     "dGhlIHNhbXBsZSBub25jZQ==",
+		"Sec-WebSocket-Key":     testWebSocketKey(),
 	}
 	without := func(k string) map[string]string {
 		m := map[string]string{}

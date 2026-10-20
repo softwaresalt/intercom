@@ -484,7 +484,9 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, grant *Grant) 
 	if err != nil {
 		return // Accept has already written the HTTP error
 	}
-	newSession(h, conn, client, grant).run()
+	s := newSession(h, conn, client, grant)
+	s.rawConn, _ = r.Context().Value(rawConnKey{}).(net.Conn)
+	s.run()
 }
 
 func durOr(d, def time.Duration) time.Duration {

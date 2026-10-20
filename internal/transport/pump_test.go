@@ -187,9 +187,9 @@ func TestSlowClientIsDroppedAndNeverBlocksHubOrOthers(t *testing.T) {
 		if err == nil && st.DroppedClients >= 1 {
 			break
 		}
-		if sent%50 == 0 {
-			time.Sleep(5 * time.Millisecond)
-		}
+		// pace the producer so a healthy reader (even under -race or a
+		// loaded CI runner) is never the one that overflows its buffer
+		time.Sleep(time.Millisecond)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	st, err := e.hub.Stats(ctx)
@@ -289,4 +289,20 @@ func TestSessionsLeaveNoGoroutinesAfterShutdown(t *testing.T) {
 		_ = c.CloseNow()
 	}
 	eventually(t, "connection slots released", 5*time.Second, func() bool { return e.srv.ActiveConnections() == 0 })
+}
+
+// A peer that never reads can never complete the close handshake. The pump's
+// close must be bounded by CloseGrace (not the library's 5s handshake wait),
+// otherwise such a peer holds a connection slot far longer than documented.
+func TestNonReadingPeerCannotHoldSessionPastCloseGrace(t *testing.T) {
+	e := newEnv(t, envOpts{cfgTweak: func(c *Config) {
+		c.CloseGrace = 300 * time.Millisecond
+	}})
+	c := dialWS(t, e, e.app.Token.Reveal()) // never reads: no close echo
+	eventually(t, "session registered", 3*time.Second, func() bool { return e.handler.ActiveSessions() == 1 })
+	if _, err := e.creds.Mint(hub.RoleApprover); err != nil { // re-issue revokes: the pump closes
+		t.Fatal(err)
+	}
+	eventually(t, "session ended within the close grace", 2*time.Second, func() bool { return e.handler.ActiveSessions() == 0 })
+	_ = c
 }

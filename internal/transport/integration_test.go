@@ -95,9 +95,7 @@ func TestIntegrationSlowClientDropped(t *testing.T) {
 		if err == nil && st.DroppedClients >= 1 {
 			break
 		}
-		if sent%50 == 0 {
-			time.Sleep(5 * time.Millisecond)
-		}
+		time.Sleep(time.Millisecond) // pace so a healthy reader is never the overflowing one
 	}
 	eventually(t, "slow client dropped, fast client kept", 8*time.Second, func() bool {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -283,7 +281,12 @@ func TestIntegrationSubprotocolCarriageAndApproverFlow(t *testing.T) {
 			break
 		}
 	}
-	if prompts, _ := fa.snapshot(); len(prompts) != 1 || prompts[0] != "ship it" {
+	var prompts []string
+	eventually(t, "agent to receive the prompt", 3*time.Second, func() bool {
+		prompts, _ = fa.snapshot()
+		return len(prompts) >= 1
+	})
+	if len(prompts) != 1 || prompts[0] != "ship it" {
 		t.Fatalf("prompts = %v", prompts)
 	}
 }

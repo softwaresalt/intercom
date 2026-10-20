@@ -79,7 +79,7 @@ func TestExpiredCredentialActionRefusedAndConnectionClosed(t *testing.T) {
 		t.Fatalf("expired action reply = %+v", r)
 	}
 	expectClose(t, c, websocket.StatusPolicyViolation, 3*time.Second)
-	if prompts, _ := fa.snapshot(); len(prompts) != 1 {
+	if prompts := waitPrompts(t, fa, 1); len(prompts) != 1 {
 		t.Fatalf("agent received %v; the expired action must never reach it", prompts)
 	}
 }
@@ -219,7 +219,7 @@ func TestInboundFloodIsRateLimitedThenClosed(t *testing.T) {
 	if accepted != 3 || limited != 2 {
 		t.Fatalf("accepted=%d limited=%d; want the burst of 3 then limiting", accepted, limited)
 	}
-	if prompts, _ := fa.snapshot(); len(prompts) != 3 {
+	if prompts := waitPrompts(t, fa, 3); len(prompts) != 3 {
 		t.Fatalf("agent saw %d prompts; rate-limited ones must not reach it", len(prompts))
 	}
 	// refill: after a second one more is allowed again

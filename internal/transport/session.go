@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/coder/websocket"
@@ -61,6 +62,10 @@ type session struct {
 	closeReq chan closeRequest // capacity 1: first request wins
 	replies  chan []byte       // transport replies to this client, written by the pump
 	idle     *time.Timer
+	// abortRead cancels the read pump's context. coder/websocket closes the connection when a Read context ends, which is the only way to abort a close handshake that Close is already waiting on (CloseNow is a no-op wait once Close has begun).
+	abortRead context.CancelFunc
+	// rawConn is the accepted connection (nil when the handler is not served by Server, e.g. httptest). Closing it is the abort of last resort: once Close has begun, CloseNow only waits, and the library's own handshake wait is 5s.
+	rawConn net.Conn
 
 	// read is the read-pump body; it is s.readPump except in tests that
 	// exercise the panic guard.
@@ -128,6 +133,7 @@ func (s *session) run() {
 
 	ctx, cancel := context.WithCancel(s.h.ctx)
 	defer cancel()
+	s.abortRead = cancel
 	s.idle = time.AfterFunc(s.h.idleTimeout, func() {
 		s.requestClose(websocket.StatusPolicyViolation, closeReasonIdle)
 	})
@@ -270,7 +276,15 @@ func (s *session) fail() {
 // from another goroutine if the peer never completes the close handshake.
 func (s *session) closeSocket(status websocket.StatusCode, reason string) {
 	s.client.Close()
-	abort := time.AfterFunc(s.h.closeGrace, func() { _ = s.sock.CloseNow() })
+	abort := time.AfterFunc(s.h.closeGrace, func() {
+		if s.abortRead != nil {
+			s.abortRead() // ends the in-flight Read, so the library tears the socket down and Close returns
+		}
+		if s.rawConn != nil {
+			_ = s.rawConn.Close() // abort after done: releases the slot and unblocks Close
+		}
+		_ = s.sock.CloseNow()
+	})
 	defer abort.Stop()
 	_ = s.sock.Close(status, reason)
 }

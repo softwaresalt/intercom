@@ -185,6 +185,8 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		MaxHeaderBytes:    MaxHeaderBytes,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 		BaseContext:       func(net.Listener) context.Context { return base },
+		// ConnContext hands each request its raw (slot-counting) connection so a session can abort a close handshake the library will not abandon (see session.closeSocket).
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context { return context.WithValue(ctx, rawConnKey{}, c) },
 	}
 	// Only /ws is served and every pre-upgrade rejection must release its
 	// connection-cap slot at once, so HTTP keep-alive is never useful.
@@ -261,3 +263,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	return err
 }
+
+// rawConnKey keys the accepted net.Conn in a request context (set by Server's ConnContext).
+type rawConnKey struct{}
