@@ -70,11 +70,12 @@ func (r *permRegistry) register(ask agent.PermissionAsk, deadline time.Time) (*p
 		return nil, false
 	}
 	r.next++
+	toolCallID, _ := capIdent(ask.Request.ToolCallID) // adapter-controlled, shown to every surface: bounded
 	e := &pendingPerm{
 		id:         "perm-" + strconv.FormatUint(r.next, 10),
 		ask:        ask,
 		kind:       ask.Request.Kind,
-		toolCallID: ask.Request.ToolCallID,
+		toolCallID: toolCallID,
 		summary:    ask.Request.Summary,
 		deadline:   deadline,
 		state:      permPending,
@@ -385,6 +386,13 @@ func (h *Hub) handleAsk(ask agent.PermissionAsk) {
 		// Shutdown step 0 has run: a new request must not park a handler that
 		// nothing will ever release. Answer it at once, register nothing.
 		trySend(ask.Reply, agent.PermissionDecision{Kind: agent.DecisionUnavailable})
+		return
+	}
+	if ask.Request.Truncated {
+		// The adapter could not show the whole request, so no operator can
+		// approve it (fail closed, independent of the adapter having denied it).
+		h.cfg.Logger.Warn("hub: truncated permission request denied", "full_len", ask.Request.FullLen)
+		trySend(ask.Reply, agent.PermissionDecision{Kind: agent.DecisionDeny, Feedback: "request cannot be reviewed in full; denied"})
 		return
 	}
 	if len(ask.Request.Summary) > MaxPermissionSummaryBytes {

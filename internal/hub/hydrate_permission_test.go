@@ -147,6 +147,43 @@ func TestOversizedPermissionSummaryIsDeniedNotRegistered(t *testing.T) {
 	}
 }
 
+// Review finding G: a request the adapter says was truncated cannot be reviewed
+// in full, so the hub denies it itself (fail closed) rather than trusting every
+// adapter to have denied it first; and a client-visible identifier is bounded.
+func TestTruncatedPermissionRequestIsDeniedByTheHubNotRegistered(t *testing.T) {
+	h := startHub(t, Config{})
+	tui := connect(t, h, ClientTUI, 16)
+	a := newTestAsk(agent.PermissionKindShell, "echo ok…")
+	a.ask.Request.Truncated, a.ask.Request.FullLen = true, 9999
+	a.post(t, h)
+	if d := a.takeReply(t); d.Kind != agent.DecisionDeny {
+		t.Fatalf("decision = %v, want deny", d.Kind)
+	}
+	if n := stats(t, h).PendingPermissions; n != 0 {
+		t.Fatalf("a truncated request was registered (%d)", n)
+	}
+	noFrame(t, h, tui, "a truncated request must never be broadcast as approvable")
+}
+
+func TestPermissionToolCallIDIsBoundedInTheBroadcastAndHydrate(t *testing.T) {
+	h := startHub(t, Config{})
+	tui := connect(t, h, ClientTUI, 16)
+	a := newTestAsk(agent.PermissionKindRead, "x")
+	a.ask.Request.ToolCallID = strings.Repeat("c", 100000)
+	a.post(t, h)
+	var p PermissionRequestedPayload
+	if err := json.Unmarshal(decode(t, recvKind(t, tui, KindPermissionRequested)).Payload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.ToolCallID) == 0 || len(p.ToolCallID) > maxIdentBytes {
+		t.Fatalf("broadcast tool_call_id is %d bytes, want 1..%d", len(p.ToolCallID), maxIdentBytes)
+	}
+	v := hydrateFor(t, h)
+	if len(v.PendingPermissions) != 1 || len(v.PendingPermissions[0].ToolCallID) > maxIdentBytes {
+		t.Fatalf("hydrate carries an unbounded tool_call_id: %+v", v.PendingPermissions)
+	}
+}
+
 func TestHydratePermissionSectionIsBounded(t *testing.T) {
 	const max = 4
 	h := startHub(t, Config{MaxPendingPermissions: max})
