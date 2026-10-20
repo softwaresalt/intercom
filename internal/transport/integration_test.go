@@ -54,7 +54,7 @@ func handshakeStatus(t *testing.T, err error) int {
 
 func TestIntegrationSlowClientDropped(t *testing.T) {
 	e := newEnv(t, envOpts{cfgTweak: func(c *Config) {
-		c.ClientBuffer = 4
+		c.ClientBuffer = 32 // large enough that the (reading) fast client is never the one dropped
 		c.WriteTimeout = 400 * time.Millisecond
 		c.CloseGrace = 300 * time.Millisecond
 	}})
@@ -103,7 +103,7 @@ func TestIntegrationSlowClientDropped(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		st, err := e.hub.Stats(ctx)
-		return err == nil && st.DroppedClients >= 1 && st.Remote == 1 && e.handler.ActiveSessions() == 1
+		return err == nil && st.DroppedClients == 1 && st.Remote == 1 && e.handler.ActiveSessions() == 1
 	})
 	eventually(t, "fast client received every event", 10*time.Second, func() bool { return got.Load() >= int64(sent) })
 
@@ -196,10 +196,10 @@ func TestIntegrationExpiredWrongAndWrongRoleCredentials(t *testing.T) {
 }
 
 func TestIntegrationMidConnectionExpiryClosesWithPolicyViolation(t *testing.T) {
-	e := newEnv(t, envOpts{lifetime: 400 * time.Millisecond})
+	e := newEnv(t, envOpts{lifetime: 1500 * time.Millisecond}) // generous: only the dial must beat it
 	c := dialRef(t, e, refOpts(e, e.obs.Token.Reveal()))
 	nextMsg(t, c)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_, err := c.Next(ctx)
 	code, reason, ok := wsclient.CloseStatus(err)

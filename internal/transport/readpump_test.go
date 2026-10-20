@@ -227,6 +227,13 @@ func TestDecodeActionIsStrict(t *testing.T) {
 		`{"op":"prompt","op":"abort_turn"}`,
 		`{"op":"resolve_permission","request_id":"r","decision":"allow_always"}`,
 		`{"op":"resolve_permission","request_id":"r","decision":"allow_once","kind":"shell"}`,
+		// strictness: JSON null and any non-string value are never a string
+		`{"op":null}`, `{"op":true}`, `{"op":["prompt"]}`, `{"op":{"a":"b"}}`,
+		`{"op":"prompt","prompt":null}`, `{"op":"prompt","request_id":null}`,
+		`{"op":"abort_turn","feedback":null}`, `{"op":"abort_turn","decision":null}`,
+		`{"op":"prompt","prompt":5}`, `{"op":"prompt","prompt":false}`,
+		`{"op":"resolve_permission","request_id":"r","decision":null}`,
+		`{"op":"resolve_permission","request_id":"r","decision":"deny","feedback":7}`,
 	} {
 		if _, err := decodeAction([]byte(in)); err == nil {
 			t.Errorf("decodeAction(%q) accepted; want a protocol violation", in)

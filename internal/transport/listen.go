@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
@@ -25,6 +26,11 @@ const (
 	MaxHeaderBytes = 16 << 10
 	// idleHTTPTimeout bounds keep-alive connections for non-upgrade requests.
 	idleHTTPTimeout = 30 * time.Second
+	// MinShutdownBudget is the smallest [Server.Shutdown] context budget that
+	// cannot end in a deadline error merely because a peer never answered the
+	// close handshake: the pump aborts such a socket after DefaultCloseGrace,
+	// and one second of margin covers scheduling and the hub drain.
+	MinShutdownBudget = DefaultCloseGrace + time.Second
 )
 
 // resolveFunc resolves a host name to addresses (injectable for tests).
@@ -140,6 +146,8 @@ type Server struct {
 	srv    *http.Server
 	cancel context.CancelFunc
 	drain  func(ctx context.Context) error
+
+	lnClosed atomic.Bool // the listener was closed by CloseListener/Shutdown
 }
 
 // NewServer binds the loopback listener and returns a Server. A non-loopback
@@ -169,20 +177,19 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.OnBind != nil {
 		cfg.OnBind(ln.Addr())
 	}
-	return &Server{
-		ln:     ln,
-		cancel: cancel,
-		drain:  cfg.Drain,
-		srv: &http.Server{
-			Handler:           cfg.Handler,
-			ReadHeaderTimeout: hs,
-			ReadTimeout:       hs,
-			IdleTimeout:       idleHTTPTimeout,
-			MaxHeaderBytes:    MaxHeaderBytes,
-			ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
-			BaseContext:       func(net.Listener) context.Context { return base },
-		},
-	}, nil
+	hsrv := &http.Server{
+		Handler:           cfg.Handler,
+		ReadHeaderTimeout: hs,
+		ReadTimeout:       hs,
+		IdleTimeout:       idleHTTPTimeout,
+		MaxHeaderBytes:    MaxHeaderBytes,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		BaseContext:       func(net.Listener) context.Context { return base },
+	}
+	// Only /ws is served and every pre-upgrade rejection must release its
+	// connection-cap slot at once, so HTTP keep-alive is never useful.
+	hsrv.SetKeepAlivesEnabled(false)
+	return &Server{ln: ln, cancel: cancel, drain: cfg.Drain, srv: hsrv}, nil
 }
 
 // ActiveConnections reports the sockets currently holding a connection slot.
@@ -191,16 +198,56 @@ func (s *Server) ActiveConnections() int { return int(s.ln.active.Load()) }
 // Addr returns the bound (loopback) listener address.
 func (s *Server) Addr() net.Addr { return s.ln.Addr() }
 
-// Serve accepts connections until Shutdown; it then returns
-// [http.ErrServerClosed].
-func (s *Server) Serve() error { return s.srv.Serve(s.ln) }
+// Serve accepts connections until [Server.CloseListener] or
+// [Server.Shutdown]; it then returns [http.ErrServerClosed].
+func (s *Server) Serve() error {
+	err := s.srv.Serve(s.ln)
+	if err != nil && s.lnClosed.Load() && errors.Is(err, net.ErrClosed) {
+		return http.ErrServerClosed
+	}
+	return err
+}
 
-// Shutdown stops accepting, cancels every in-flight request/connection
+// closeListener closes the bound listener once, ignoring net.ErrClosed.
+func (s *Server) closeListener() error {
+	s.lnClosed.Store(true)
+	if err := s.ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		return apperr.Wrap(apperr.KindIO, err)
+	}
+	return nil
+}
+
+// CloseListener ONLY stops accepting new connections: the bound listener is
+// closed, but no session is touched, no context is canceled and nothing is
+// drained, so established connections keep running. It is the primitive for
+// step 0 of the hub.Gate shutdown sequence (stop admitting before the
+// server.shutdown broadcast); [Server.Shutdown] remains the final step that
+// tears sessions down. It is idempotent and ctx is honoured only before the
+// (non-blocking) close.
+func (s *Server) CloseListener(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return apperr.Wrap(apperr.KindIO, err)
+	}
+	return s.closeListener()
+}
+
+// Shutdown stops accepting (closing the listener explicitly, so it also works
+// when Serve was never called), cancels every in-flight request/connection
 // context, and waits for them until ctx ends, then force-closes whatever is
-// left. It returns within ctx's deadline plus a small close margin.
+// left. A peer that never completes the close handshake holds its session for
+// the close grace, so callers should pass a budget of at least
+// [MinShutdownBudget]; below that a deadline error is possible. It returns
+// within ctx's deadline plus a small close margin.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.cancel()
+	lerr := s.closeListener()
 	err := s.srv.Shutdown(ctx)
+	if errors.Is(err, net.ErrClosed) {
+		err = nil // the listener was already closed by closeListener
+	}
+	if err == nil {
+		err = lerr
+	}
 	if err != nil {
 		_ = s.srv.Close()
 	}

@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/coder/websocket"
@@ -20,8 +21,11 @@ const (
 	DefaultCloseGrace = 2 * time.Second
 	// DefaultIdleTimeout closes a connection with no inbound activity.
 	DefaultIdleTimeout = 90 * time.Second
-	// DefaultActionTimeout bounds one hub action round trip.
-	DefaultActionTimeout = 10 * time.Second
+	// DefaultActionTimeout bounds one hub action round trip. The read pump is
+	// blocked for it and cannot answer a ping meanwhile, so it must stay well
+	// below DefaultWriteTimeout (the ping's deadline); see
+	// [actionFitsWriteTimeout], which NewHandler enforces.
+	DefaultActionTimeout = 5 * time.Second
 	// DefaultMaxMessageBytes is the inbound message size limit. Actions are
 	// small JSON objects; this is generous for a prompt.
 	DefaultMaxMessageBytes = 16 << 10
@@ -58,6 +62,10 @@ type session struct {
 	replies  chan []byte       // transport replies to this client, written by the pump
 	idle     *time.Timer
 
+	// read is the read-pump body; it is s.readPump except in tests that
+	// exercise the panic guard.
+	read func(ctx context.Context)
+
 	// read-pump-owned (no lock): inbound rate limiting.
 	bucket     *tokenBucket
 	violations int
@@ -68,16 +76,24 @@ type session struct {
 const replyQueue = 16
 
 func newSession(h *Handler, sock *websocket.Conn, client *hub.Client, grant *Grant) *session {
-	return &session{
+	s := &session{
 		h: h, sock: sock, client: client, grant: grant,
 		closeReq: make(chan closeRequest, 1),
 		replies:  make(chan []byte, replyQueue),
 		bucket:   newTokenBucket(h.actionRate, h.actionBurst, h.now),
 	}
+	s.read = s.readPump
+	return s
 }
 
 // touch records inbound activity (a message or a pong), re-arming the idle
 // deadline. Safe from any goroutine.
+//
+// Idle semantics: a pong answering the server's ping IS activity (the pump
+// calls touch after each successful ping round trip). A peer that keeps
+// answering pings therefore never idles out; the idle timer only ends a
+// connection whose peer has gone silent, and the credential lifetime (expiry
+// or revocation) is what bounds an otherwise healthy session.
 func (s *session) touch() {
 	if s.idle != nil {
 		s.idle.Reset(s.h.idleTimeout)
@@ -119,12 +135,31 @@ func (s *session) run() {
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		s.readPump(ctx)
+		// A panic in the read pump (decode, dispatch, hub client) must not
+		// take the process down: close the client so the write pump finishes
+		// the session. The panic value is never logged (it could carry
+		// message content); only its type is.
+		defer func() {
+			if r := recover(); r != nil {
+				s.h.log.Error("transport: read pump panic recovered", "panic_type", fmt.Sprintf("%T", r))
+				s.client.Close()
+			}
+		}()
+		s.read(ctx)
 	}()
 	s.writePump(ctx)
 	cancel()
 	s.client.Close()
 	<-readDone
+}
+
+// endedClose delivers the neutral "session ended" close for a credential that
+// expired or was revoked. Replies already queued (notably a refusal of the
+// action that exposed the problem) are flushed first so ADR MVP-3's refusal
+// reaches the client before the 1008 close.
+func (s *session) endedClose(ctx context.Context) {
+	s.flushReplies(ctx)
+	s.closeSocket(websocket.StatusPolicyViolation, closeReasonEnded)
 }
 
 // writePump is the sole writer of the socket. Frames, keep-alive pings, the
@@ -134,7 +169,9 @@ func (s *session) run() {
 func (s *session) writePump(ctx context.Context) {
 	ping := time.NewTicker(s.h.pingEvery)
 	defer ping.Stop()
-	expiry := time.NewTimer(s.grant.ExpiresAt().Sub(s.h.now()))
+	// The expiry timer is derived from the credential store's clock, the same
+	// source Validate uses, so the two cannot disagree about expiry.
+	expiry := time.NewTimer(s.h.cfg.Creds.Remaining(s.grant))
 	defer expiry.Stop()
 
 	for {
@@ -143,6 +180,17 @@ func (s *session) writePump(ctx context.Context) {
 		select {
 		case <-s.client.Done():
 			s.closeSocket(websocket.StatusGoingAway, closeReasonGoingAway)
+			return
+		default:
+		}
+		// Revocation and expiry come next, ahead of frames, pings and queued
+		// replies: a dead credential must not keep receiving traffic.
+		select {
+		case <-s.grant.Revoked():
+			s.endedClose(ctx)
+			return
+		case <-expiry.C:
+			s.endedClose(ctx)
 			return
 		default:
 		}
@@ -164,10 +212,10 @@ func (s *session) writePump(ctx context.Context) {
 			}
 			s.touch() // a pong is inbound activity
 		case <-expiry.C:
-			s.closeSocket(websocket.StatusPolicyViolation, closeReasonEnded)
+			s.endedClose(ctx)
 			return
 		case <-s.grant.Revoked():
-			s.closeSocket(websocket.StatusPolicyViolation, closeReasonEnded)
+			s.endedClose(ctx)
 			return
 		case rq := <-s.closeReq:
 			s.flushReplies(ctx) // a refusal precedes the close that follows it
@@ -266,6 +314,12 @@ func (s *session) violation(ctx context.Context) {
 // dispatch submits one decoded action to the hub as this connection's client
 // and queues the verdict for this client only. It reports whether the read
 // loop should continue.
+//
+// The revalidate step compares the grant's role with the role the hub client
+// was registered with. Both come from the same credential, so a mismatch
+// cannot happen today; the comparison is intentional defence in depth (a
+// future change to either side must fail closed, never silently widen
+// privilege).
 func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
 	if v := s.h.revalidate(s.grant, s.client.Role()); v.reason != "" {
 		s.queueReply(refusalFor(act, v.reason))

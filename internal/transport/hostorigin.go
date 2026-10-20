@@ -2,7 +2,20 @@ package transport
 
 import (
 	"net/netip"
+	"strconv"
 	"strings"
+)
+
+// Limits and number format of canonHostPort.
+const (
+	// maxAuthorityLen bounds a host[:port] before any parsing (a DNS name is
+	// at most 253 bytes; the rest is port and brackets).
+	maxAuthorityLen = 261
+	// maxPortDigits bounds the port text, leading zeros included.
+	maxPortDigits = 5
+	// portBase and portBits are the strconv parameters of a TCP port.
+	portBase = 10
+	portBits = 16
 )
 
 // canonHostPort canonicalises a host[:port] (the HTTP Host header, an
@@ -14,7 +27,7 @@ import (
 // unbracketed IPv6 literal is malformed (fail closed; IDN hosts must arrive
 // in punycode form, which is ASCII).
 func canonHostPort(s string) (host, port string, ok bool) {
-	if s == "" || len(s) > 261 {
+	if s == "" || len(s) > maxAuthorityLen {
 		return "", "", false
 	}
 	for i := 0; i < len(s); i++ {
@@ -44,23 +57,22 @@ func canonHostPort(s string) (host, port string, ok bool) {
 			}
 		}
 		name = strings.TrimSuffix(name, ".")
-		if name == "" || strings.HasPrefix(name, ".") || strings.Contains(name, "..") {
+		// a second trailing dot ("example.com..") is not canonicalisable
+		if name == "" || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") || strings.Contains(name, "..") {
 			return "", "", false
 		}
 		host = name
 	}
 	switch {
 	case rest == "":
-	case rest[0] == ':' && len(rest) > 1 && len(rest) <= 6:
-		for _, c := range rest[1:] {
-			if c < '0' || c > '9' {
-				return "", "", false
-			}
-		}
-		port = strings.TrimLeft(rest[1:], "0")
-		if port == "" || len(port) > 5 || (len(port) == 5 && port > "65535") {
+	case rest[0] == ':' && len(rest) > 1 && len(rest)-1 <= maxPortDigits:
+		// ParseUint (base 10, 16 bits) accepts only digits and rejects
+		// anything above 65535; port 0 is not a usable port.
+		n, err := strconv.ParseUint(rest[1:], portBase, portBits)
+		if err != nil || n == 0 {
 			return "", "", false
 		}
+		port = strconv.FormatUint(n, portBase)
 	default:
 		return "", "", false
 	}

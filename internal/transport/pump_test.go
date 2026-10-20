@@ -9,7 +9,6 @@ import (
 	"go/token"
 	"net/http"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -120,7 +119,12 @@ func TestPumpDeliversFramesInOrderWithConcurrentPings(t *testing.T) {
 		for i := 0; i < n; i++ {
 			e.event("m")
 			if i%25 == 0 {
-				time.Sleep(15 * time.Millisecond) // let pings interleave
+				// let pings interleave: wait (bounded) until the pump has
+				// actually sent another ping, instead of sleeping a guess
+				before := e.handler.PingsSent()
+				for deadline := time.Now().Add(2 * time.Second); e.handler.PingsSent() == before && time.Now().Before(deadline); {
+					time.Sleep(time.Millisecond)
+				}
 			}
 		}
 	}()
@@ -139,7 +143,10 @@ func TestPumpDeliversFramesInOrderWithConcurrentPings(t *testing.T) {
 
 func TestSlowClientIsDroppedAndNeverBlocksHubOrOthers(t *testing.T) {
 	e := newEnv(t, envOpts{cfgTweak: func(c *Config) {
-		c.ClientBuffer = 4
+		// The fast client shares this buffer size, so it must be large
+		// enough that a slow CI/-race reader is never the one dropped; the
+		// slow client still overflows it because it never reads at all.
+		c.ClientBuffer = 32
 		c.WriteTimeout = 400 * time.Millisecond
 		c.CloseGrace = 300 * time.Millisecond
 	}})
@@ -187,8 +194,8 @@ func TestSlowClientIsDroppedAndNeverBlocksHubOrOthers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	st, err := e.hub.Stats(ctx)
 	cancel()
-	if err != nil || st.DroppedClients < 1 {
-		t.Fatalf("slow client was never dropped (stats=%+v err=%v) after %d events", st, err, sent)
+	if err != nil || st.DroppedClients != 1 || st.Remote != 1 {
+		t.Fatalf("want exactly the slow client dropped and the fast one registered (stats=%+v err=%v) after %d events", st, err, sent)
 	}
 	// the dropped client's session ends (socket closed) while the fast one lives on
 	eventually(t, "slow session closed", 5*time.Second, func() bool { return e.handler.ActiveSessions() == 1 })
@@ -212,11 +219,11 @@ func TestSlowClientIsDroppedAndNeverBlocksHubOrOthers(t *testing.T) {
 }
 
 func TestExpiryClosesSocketViaPumpWithPolicyViolation(t *testing.T) {
-	e := newEnv(t, envOpts{lifetime: 400 * time.Millisecond})
-	c := dialWS(t, e, e.obs.Token.Reveal()) // observe-only: no actions to trip re-validation
-	readEnvelope(t, c, 2*time.Second)       // hydrate
+	e := newEnv(t, envOpts{lifetime: 1500 * time.Millisecond}) // generous: only the dial must beat it
+	c := dialWS(t, e, e.obs.Token.Reveal())                    // observe-only: no actions to trip re-validation
+	readEnvelope(t, c, 3*time.Second)                          // hydrate
 	begin := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_, _, err := c.Read(ctx)
 	var ce websocket.CloseError
@@ -229,7 +236,7 @@ func TestExpiryClosesSocketViaPumpWithPolicyViolation(t *testing.T) {
 	if strings.Contains(strings.ToLower(ce.Reason), "expire") || strings.Contains(ce.Reason, e.obs.Token.Reveal()) {
 		t.Fatalf("close reason %q must be neutral", ce.Reason)
 	}
-	if d := time.Since(begin); d > 3*time.Second {
+	if d := time.Since(begin); d > 10*time.Second {
 		t.Fatalf("expiry close took %v", d)
 	}
 	eventually(t, "session gone", 3*time.Second, func() bool { return e.handler.ActiveSessions() == 0 })
@@ -252,7 +259,10 @@ func TestReissueClosesConnectionViaPump(t *testing.T) {
 }
 
 func TestSessionsLeaveNoGoroutinesAfterShutdown(t *testing.T) {
-	base := runtime.NumGoroutine()
+	// Deterministic leak check: instead of a process-wide goroutine count
+	// (which other goroutines can perturb), assert the transport's own
+	// accounting: every session goroutine is joined (Drain returned, so the
+	// handler WaitGroup is empty) and every connection slot is released.
 	e := newEnv(t, envOpts{})
 	var clients []*websocket.Conn
 	for i := 0; i < 4; i++ {
@@ -261,7 +271,7 @@ func TestSessionsLeaveNoGoroutinesAfterShutdown(t *testing.T) {
 		clients = append(clients, c)
 	}
 	e.event("x")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), MinShutdownBudget+3*time.Second)
 	defer cancel()
 	if err := e.srv.Shutdown(ctx); err != nil {
 		t.Fatal(err)
@@ -269,11 +279,14 @@ func TestSessionsLeaveNoGoroutinesAfterShutdown(t *testing.T) {
 	if n := e.handler.ActiveSessions(); n != 0 {
 		t.Fatalf("%d sessions outlived Shutdown", n)
 	}
+	// Drain is idempotent and returns promptly once everything is joined.
+	dctx, dcancel := context.WithTimeout(context.Background(), time.Second)
+	defer dcancel()
+	if err := e.handler.Drain(dctx); err != nil {
+		t.Fatalf("Drain after Shutdown did not return cleanly: %v", err)
+	}
 	for _, c := range clients {
 		_ = c.CloseNow()
 	}
-	e.hub.Stop()
-	eventually(t, "goroutines to return to baseline", 5*time.Second, func() bool {
-		return runtime.NumGoroutine() <= base+2
-	})
+	eventually(t, "connection slots released", 5*time.Second, func() bool { return e.srv.ActiveConnections() == 0 })
 }

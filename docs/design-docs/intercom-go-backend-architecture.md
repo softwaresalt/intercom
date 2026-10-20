@@ -98,7 +98,7 @@ isolates workspace lifecycles completely.
 | Language | **Go 1.24+** | Hard floor: `github.com/github/copilot-sdk/go` declares `go 1.24`. **Raised** (shipment 004-S / U-A1): the repository's `go.mod` language floor is now `go 1.24` (toolchain pinned at `go1.26.5` per go.mod's own CVE-remediation comment). |
 | Agent SDK | `github.com/github/copilot-sdk/go` **v1.0.11** (tag `go/v1.0.11`, commit `a550258d5c37bd662197536992a23d633bfe5804`) | Only stable Go release; GA with SemVer. See §7 for risk controls. |
 | TUI | `charmbracelet/bubbletea` + `lipgloss` + `bubbles/viewport` | Elm architecture decouples terminal rendering from asynchronous event streams. `viewport` is required so continuous token streaming does not destroy native scrollback. |
-| WebSocket | **Deferred to implementation** (MVP: decided, `coder/websocket`, [ADR MVP-1](../decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md)) | Note the SDK already pulls in `coder/websocket`; reusing it avoids a second WS implementation in the binary. Whatever is chosen must expose ping/pong control so an idle tunnel is not dropped while the agent is "thinking". |
+| WebSocket | **Implemented** in `internal/transport` (060-S) with `github.com/coder/websocket` as a direct dependency ([ADR MVP-1](../decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md)) | The SDK already pulled in `coder/websocket`, so no second WS implementation is in the binary. The write pump owns pings so an idle tunnel is not dropped while the agent is "thinking". |
 | Tunnel | Microsoft Dev Tunnels | Outbound TLS relay; no inbound firewall rules. See §6 for the trust-boundary caveat. |
 | Config | `BurntSushi/toml` (already shipped) | See §8. |
 
@@ -623,6 +623,15 @@ decided before phase C5. See §6. *Decided for the MVP (2026-10-19):* see
 * **Local TUI is not a WebSocket client.** It receives envelopes through its
   own buffered channel and pump (§4). It is subject to the same arbitration
   rules but not to socket backpressure.
+* **Wire-contract reference.** The package documentation of
+  `internal/transport/wsclient` (the reference Go client) is the executable
+  description of the wire protocol: carriages, statuses, frames, replies, close
+  codes and idle semantics.
+* **Accepted exception to pump-only writes.** The `coder/websocket` library
+  itself emits the 1009 (message too big) close frame and the pong and
+  close-echo frames from inside `Read`; these library-serialised writes are
+  not application writes. Every application write (frames, pings, replies,
+  close) still goes through the write pump.
 
 ---
 
@@ -647,7 +656,8 @@ decided before phase C5. See §6. *Decided for the MVP (2026-10-19):* see
 ### 6.1 Controls that MUST be specified before C6/C10 (decided for the MVP)
 
 **Decided 2026-10-19 for the MVP** (shipment 056-S). The controls below are
-specified, not yet implemented, by three ADRs:
+**implemented in `internal/transport` (060-S)**; wiring into the composition
+root is pending (062-S). They are specified by three ADRs:
 
 * [ADR MVP-2: credentials, carriage, Origin, Host](../decisions/2026-10-19-intercom-go-mvp-adr-2-credentials-and-origin.md)
   covers Origin/CSWSH, credential carriage per client type, token replay and

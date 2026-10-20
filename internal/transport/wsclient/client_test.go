@@ -44,9 +44,19 @@ func TestCursorAppliesDiscardsAndDetectsGaps(t *testing.T) {
 }
 
 func TestDialErrorNeverCarriesCredential(t *testing.T) {
-	err := scrub(errString("dial failed for Bearer SECRETVALUE here"), "SECRETVALUE")
-	if err.Error() == "" || contains(err.Error(), "SECRETVALUE") {
+	const secret = "SECRETVALUE"
+	in := errString("dial failed: Bearer " + secret + " rejected by proxy")
+	if !contains(in.Error(), secret) {
+		t.Fatal("test input must actually embed the secret")
+	}
+	err := scrub(in, secret)
+	if err.Error() == "" || contains(err.Error(), secret) {
 		t.Fatalf("scrub leaked: %v", err)
+	}
+	// an error that does not embed the secret passes through unchanged
+	clean := errString("connection refused")
+	if got := scrub(clean, secret); got.Error() != clean.Error() {
+		t.Fatalf("scrub altered a clean error: %v", got)
 	}
 }
 

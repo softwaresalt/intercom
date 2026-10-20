@@ -37,7 +37,7 @@ var errProtocol = errors.New("transport: protocol violation")
 // decodeAction strictly decodes one inbound text message into an operator
 // action. The message must be exactly one JSON object whose keys are drawn
 // from {op, request_id, decision, feedback, prompt}, each at most once, each
-// with a string value; "op" is required. Anything else (malformed JSON,
+// with a string value (JSON null is NOT accepted as an empty string); "op" is required. Anything else (malformed JSON,
 // trailing data, unknown or duplicate fields, non-string values, an unknown
 // decision) is a protocol violation. An op that is a well-formed string but
 // not a known operation decodes to hub.OpUnknown, which the hub refuses as
@@ -69,8 +69,15 @@ func decodeAction(data []byte) (hub.OperatorAction, error) {
 		if _, dup := fields[key]; dup {
 			return bad()
 		}
+		// Decode the raw value first: json.Unmarshal of null into a string
+		// succeeds silently, so a null (or any non-string) must be refused
+		// explicitly. Strictness: only a JSON string is a string value.
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil || len(raw) == 0 || raw[0] != '"' {
+			return bad()
+		}
 		var v string
-		if err := dec.Decode(&v); err != nil {
+		if err := json.Unmarshal(raw, &v); err != nil {
 			return bad()
 		}
 		fields[key] = v

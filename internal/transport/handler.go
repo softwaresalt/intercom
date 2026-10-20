@@ -41,7 +41,10 @@ type Config struct {
 	// AllowedHosts is [remote].allowed_hosts, in addition to the loopback
 	// names for the bound port.
 	AllowedHosts []string
-	// Now is the clock for credential expiry timers; default time.Now.
+	// Now is the clock for the per-connection action token bucket ONLY;
+	// default time.Now. Credential validity and the pump's expiry timer come
+	// from the credential store's own clock ([CredentialStore.Remaining]), so
+	// the pump and Validate can never disagree about expiry.
 	Now func() time.Time
 	// PingInterval, WriteTimeout and CloseGrace override the Default* timing
 	// constants (tests).
@@ -55,10 +58,16 @@ type Config struct {
 	// [DefaultMaxMessageBytes]); a larger one closes the connection.
 	MaxMessageBytes int
 	// IdleTimeout closes a connection with no inbound activity (messages or
-	// pongs) for this long (default [DefaultIdleTimeout]).
+	// pongs) for this long (default [DefaultIdleTimeout]). A pong answering a
+	// server ping IS activity, so a peer that keeps answering pings never
+	// idles out; the credential lifetime is what bounds such a session.
 	IdleTimeout time.Duration
 	// ActionTimeout bounds one hub action round trip (default
-	// [DefaultActionTimeout]).
+	// [DefaultActionTimeout], reduced to fit a small WriteTimeout). The read
+	// pump is blocked for the duration of an action and cannot answer pings
+	// meanwhile, so NewHandler requires that ActionTimeout leave a pong margin
+	// under WriteTimeout (see [actionFitsWriteTimeout]) and refuses a
+	// configuration that does not.
 	ActionTimeout time.Duration
 	// ActionRate (actions/second) and ActionBurst configure the
 	// per-connection inbound token bucket; MaxRateViolations is how many
@@ -84,6 +93,12 @@ type Handler struct {
 	ctx    context.Context //nolint:containedctx // handler-lifetime context, canceled by Drain
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// admitMu is the admission fence: wg.Add happens only under it while
+	// draining is false, and Drain sets draining under it before waiting, so
+	// an Add can never race the Wait.
+	admitMu  sync.Mutex
+	draining bool
 
 	pingEvery     time.Duration
 	writeTimeout  time.Duration
@@ -133,7 +148,17 @@ func NewHandler(cfg Config) (*Handler, error) {
 	h.writeTimeout = durOr(cfg.WriteTimeout, DefaultWriteTimeout)
 	h.closeGrace = durOr(cfg.CloseGrace, DefaultCloseGrace)
 	h.idleTimeout = durOr(cfg.IdleTimeout, DefaultIdleTimeout)
-	h.actionTimeout = durOr(cfg.ActionTimeout, DefaultActionTimeout)
+	if cfg.ActionTimeout > 0 {
+		h.actionTimeout = cfg.ActionTimeout
+		if !actionFitsWriteTimeout(h.actionTimeout, h.writeTimeout) {
+			return nil, apperr.New(apperr.KindConfig, "transport: action timeout leaves no margin under the write timeout; ping replies would starve")
+		}
+	} else {
+		h.actionTimeout = DefaultActionTimeout
+		if !actionFitsWriteTimeout(h.actionTimeout, h.writeTimeout) {
+			h.actionTimeout = h.writeTimeout / 2
+		}
+	}
 	h.actionRate, h.actionBurst, h.maxViolations = cfg.ActionRate, cfg.ActionBurst, cfg.MaxRateViolations
 	if h.actionRate <= 0 {
 		h.actionRate = DefaultActionRate
@@ -161,9 +186,33 @@ func (h *Handler) SetBoundAddr(a net.Addr) {
 	}
 }
 
-// Drain cancels every connection and waits (until ctx ends) for their
-// goroutines, so Shutdown leaves none behind.
+// actionFitsWriteTimeout reports whether an action round trip of the given
+// duration leaves a pong margin (one fifth of the write timeout) under the
+// ping write timeout. The read pump is blocked for the whole action and
+// cannot answer a ping meanwhile.
+func actionFitsWriteTimeout(action, write time.Duration) bool {
+	return action > 0 && action+write/5 < write
+}
+
+// admit registers one connection goroutine unless the handler is draining.
+func (h *Handler) admit() bool {
+	h.admitMu.Lock()
+	defer h.admitMu.Unlock()
+	if h.draining {
+		return false
+	}
+	h.wg.Add(1)
+	return true
+}
+
+// Drain refuses every new upgrade, cancels every connection and waits (until
+// ctx ends) for their goroutines, so Shutdown leaves none behind. A peer that
+// never completes the close handshake delays its session by CloseGrace, so a
+// ctx budget below [MinShutdownBudget] can end in a deadline error.
 func (h *Handler) Drain(ctx context.Context) error {
+	h.admitMu.Lock()
+	h.draining = true
+	h.admitMu.Unlock()
 	h.cancel()
 	done := make(chan struct{})
 	go func() { h.wg.Wait(); close(done) }()
@@ -183,14 +232,47 @@ const (
 	rejectCredential  = "credential_rejected"
 	rejectHubRegister = "hub_refused"
 	rejectCursor      = "bad_cursor"
+	rejectNotUpgrade  = "not_an_upgrade"
+	rejectDraining    = "draining"
 )
 
+// reject answers a pre-upgrade refusal. Connection: close makes the rejected
+// socket release its connection-cap slot immediately instead of idling as a
+// keep-alive connection.
 func (h *Handler) reject(w http.ResponseWriter, status int, reason string) {
 	h.log.Warn("transport: upgrade rejected", "status", status, "reason", reason)
+	w.Header().Set("Connection", "close")
 	if status == http.StatusUnauthorized {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 	}
 	w.WriteHeader(status)
+}
+
+// isUpgradeRequest reports whether r is shaped like a WebSocket opening
+// handshake: GET, "Upgrade: websocket", a Connection header listing the
+// upgrade token, and Sec-WebSocket-Version and -Key present. It exists so a
+// plain request from a credential holder never reaches Hub.Connect.
+func isUpgradeRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	if !headerHasToken(r.Header, "Upgrade", "websocket") || !headerHasToken(r.Header, "Connection", "upgrade") {
+		return false
+	}
+	return r.Header.Get("Sec-WebSocket-Version") != "" && r.Header.Get("Sec-WebSocket-Key") != ""
+}
+
+// headerHasToken reports whether any comma-separated value of header name
+// equals token, case-insensitively.
+func headerHasToken(h http.Header, name, token string) bool {
+	for _, v := range h.Values(name) {
+		for _, p := range strings.Split(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(p), token) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // acceptOptions are the library options. InsecureSkipVerify stays false and
@@ -229,6 +311,7 @@ func (h *Handler) hostAllowed(host string) bool {
 // cap (503) is added ahead of these by the pre-auth limiter.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != WSPath {
+		w.Header().Set("Connection", "close")
 		http.NotFound(w, r)
 		return
 	}
@@ -252,6 +335,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.reject(w, http.StatusUnauthorized, rejectCredential)
 		return
 	}
+	// After authentication (so unauthenticated probes learn nothing) and
+	// before any hub registration: a plain GET by a credential holder must
+	// not churn hub client registration.
+	if !isUpgradeRequest(r) {
+		h.reject(w, http.StatusBadRequest, rejectNotUpgrade)
+		return
+	}
 	h.upgrade(w, r, grant)
 }
 
@@ -268,7 +358,7 @@ func (h *Handler) originAllowed(origins []string) bool {
 }
 
 // extractCredential returns the presented credential from exactly one of the
-// two permitted carriages: the Authorization: Bearer header (native clients)
+// two permitted carriages: the "Authorization: Bearer <credential>" header (native clients)
 // or the "bearer.<token>" WebSocket subprotocol offered next to "intercom.v1"
 // (browsers). Both together, a duplicate, a missing intercom.v1, a malformed
 // value, or a credential-shaped URL query parameter all fail: the caller
@@ -357,7 +447,10 @@ func queryCarriesCredential(rawQuery string) bool {
 // upgrade registers the client with the hub, then completes the WebSocket
 // handshake and serves the connection until it ends.
 func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, grant *Grant) {
-	h.wg.Add(1)
+	if !h.admit() { // draining: refuse before touching the hub
+		h.reject(w, http.StatusServiceUnavailable, rejectDraining)
+		return
+	}
 	defer h.wg.Done()
 
 	resume, ok := parseCursor(r.URL.Query())

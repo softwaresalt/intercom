@@ -274,7 +274,7 @@ func originProblem(o string) string {
 // hostProblem returns a non-empty reason if h is not a canonical
 // allowed_hosts entry: a lowercase host name, IPv4 literal, or bracketed
 // IPv6 literal with an optional :port. An entry without a port matches the
-// default port only (the matcher is a later task).
+// default port only (the matcher is internal/transport hostorigin.go).
 func hostProblem(h string) string {
 	if h == "" {
 		return "must not be empty"

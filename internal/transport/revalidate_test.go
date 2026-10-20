@@ -92,8 +92,21 @@ func TestRevokedCredentialActionNeverReachesAgentAndConnectionCloses(t *testing.
 	e.creds.Revoke(e.app.ID)
 	sendText(t, c, `{"op":"prompt","prompt":"too late"}`)
 	// Either the pump's revoke signal or the per-action re-check wins the
-	// race; both end in a policy-violation close and no agent call.
-	expectClose(t, c, websocket.StatusPolicyViolation, 3*time.Second)
+	// race. The pump's revoke signal can legitimately close before the action
+	// is even read, so a refusal is not guaranteed here (the deterministic
+	// pump-level guarantee is TestPumpFlushesQueuedRefusalBeforeRevocationClose);
+	// what IS guaranteed: any reply that does arrive is the credential_revoked
+	// refusal, it precedes the 1008 "session ended" close, and the agent is
+	// never reached.
+	replies, code, reason := readToClose(t, c, 5*time.Second)
+	for _, r := range replies {
+		if r.Type != ReplyRefused || r.Reason != string(hub.ReasonCredentialRevoked) {
+			t.Fatalf("reply before close = %+v; want only the credential_revoked refusal", r)
+		}
+	}
+	if code != websocket.StatusPolicyViolation || reason != closeReasonEnded {
+		t.Fatalf("close = %d %q; want 1008 %q", code, reason, closeReasonEnded)
+	}
 	if prompts, _ := fa.snapshot(); len(prompts) != 0 {
 		t.Fatalf("revoked credential reached the agent: %v", prompts)
 	}

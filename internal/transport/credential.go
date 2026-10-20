@@ -161,6 +161,20 @@ func (s *CredentialStore) GoString() string { return s.String() }
 
 func (s *CredentialStore) compareCount() int64 { return s.compareN.Load() }
 
+// Now reports the store's clock. It is the single clock for credential
+// lifetime: Mint, Verify, Validate and the write pump's expiry timer all read
+// it, so none of them can disagree about expiry.
+func (s *CredentialStore) Now() time.Time { return s.cfg.Now() }
+
+// Remaining is how long the grant's credential has left by the store's clock
+// (zero or negative once expired; a nil grant has none).
+func (s *CredentialStore) Remaining(g *Grant) time.Duration {
+	if g == nil || g.rec == nil {
+		return 0
+	}
+	return g.rec.expiresAt.Sub(s.cfg.Now())
+}
+
 func validRole(r hub.Role) bool { return r == hub.RoleObserver || r == hub.RoleApprover }
 
 // Mint issues a fresh credential for role and revokes the role's previous

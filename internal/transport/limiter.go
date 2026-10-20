@@ -12,8 +12,11 @@ import (
 const DefaultMaxConnections = 8
 
 // refuseWriteTimeout bounds the best-effort 503 written to an over-cap
-// socket before it is closed.
-const refuseWriteTimeout = 200 * time.Millisecond
+// socket before it is closed. The write happens on the accept loop, so this
+// is also the longest one refused socket can delay accepting the next one; it
+// is kept very short on purpose (the 503 is a few dozen bytes into a fresh
+// socket buffer and normally completes immediately).
+const refuseWriteTimeout = 50 * time.Millisecond
 
 const refusal503 = "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
 

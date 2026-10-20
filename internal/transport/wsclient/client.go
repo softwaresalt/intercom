@@ -39,8 +39,21 @@
 // accepts it only if it exactly matches [remote].allowed_origins (empty by
 // default => every browser origin gets 403, even with a valid credential). A
 // client that sends no Origin header (native clients) is accepted with a valid
-// credential alone. Rejection statuses: 503 over the connection cap, 403 bad
-// Host or Origin, 401 any credential failure, 400 malformed cursor.
+// credential alone. Rejection statuses, all sent before the upgrade with
+// Connection: close and an empty body:
+//
+//   - 400: malformed resume cursor, or the request is not a WebSocket
+//     upgrade (not a GET, or the Upgrade/Connection/Sec-WebSocket-* headers
+//     are missing), checked only after authentication;
+//   - 401: any credential failure, with the header "WWW-Authenticate: Bearer"
+//     and no other detail;
+//   - 403: bad Host or Origin;
+//   - 404: any path other than /ws;
+//   - 503: over the connection cap, the server is draining for shutdown, or
+//     the hub is unavailable (retry later).
+//
+// A ws:// URL is accepted only for a loopback host; use wss:// otherwise
+// ([ErrInsecureTransport]).
 //
 // # Connecting, hydrating and resuming (design §5.3)
 //
@@ -109,17 +122,33 @@
 // # Closing
 //
 // The server closes with a standard close frame; the client reconnects and
-// resumes. 1008 (policy violation, reason "session ended", "protocol
-// violation", "idle timeout" or "rate limit") means the credential is no
-// longer valid or the client misbehaved: do not retry blindly with the same
-// credential. 1009 means a message was too large. 1001 means the server is
-// shutting down, the client was too slow (its buffer overflowed and it was
-// dropped) or the connection ended; reconnect with the last applied cursor. A
-// credential is valid for a fixed lifetime (default 4 hours, no refresh) and
-// the connection is closed when it expires or is re-issued; there is no
-// ping/pong duty on the client beyond keeping a reader running (the server
-// sends pings and any compliant WebSocket library answers them while reading).
-// A connection with no inbound activity for the idle timeout is closed.
+// resumes. 1008 (policy violation) means the credential is no longer valid or
+// the client misbehaved: do not retry blindly with the same credential. Its
+// reasons are "session ended" (credential expired, revoked, re-issued or
+// failed re-validation, OR the client stopped reading its own action
+// replies and their queue filled), "protocol violation", "idle timeout" and
+// "rate limit". Before a "session ended" close that follows a refused action,
+// the refusal reply (credential_revoked, credential_expired, ...) is
+// delivered first. 1009 means a message was too large. 1001 means the server
+// is shutting down or dropped the connection (reason "closing"): either the
+// hub dropped this client because its send buffer overflowed (it was too
+// slow to read) or the connection otherwise ended; reconnect with the last
+// applied cursor. 1011 (reason "unavailable") means the hub could not serve
+// an action; the connection is closed and the client should reconnect later
+// with its last applied cursor.
+//
+// A credential is valid for a fixed lifetime (default 4 hours, no refresh)
+// and the connection is closed when it expires or is re-issued.
+//
+// # Keep-alive and idle semantics
+//
+// The server pings; any compliant WebSocket library answers while a reader
+// is running, so there is no ping/pong duty on the client beyond keeping a
+// reader running. A pong counts as inbound activity, exactly like a message:
+// a peer that keeps answering pings never idles out, and only its credential
+// lifetime bounds the session. The idle timeout therefore closes only a
+// connection that has stopped answering pings (and sending anything) for the
+// whole idle period.
 package wsclient
 
 import (
@@ -128,6 +157,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -233,11 +263,42 @@ type Client struct {
 	cur  cursor
 }
 
+// ErrInsecureTransport is returned by [Dial] for a plain-text (ws:// or
+// http://) URL whose host is not a loopback address: the credential would
+// cross the network unencrypted. Use wss://, or reach the server through the
+// tunnel on loopback.
+var ErrInsecureTransport = errors.New("wsclient: refusing plain-text ws:// to a non-loopback host; use wss://")
+
+// checkTransport enforces the transport-security rule: wss/https always;
+// ws/http only to a loopback host (localhost or a loopback IP literal).
+func checkTransport(u *url.URL) error {
+	switch strings.ToLower(u.Scheme) {
+	case "wss", "https":
+		return nil
+	case "ws", "http":
+		host := strings.ToLower(u.Hostname())
+		if host == "localhost" {
+			return nil
+		}
+		if ip, err := netip.ParseAddr(host); err == nil && ip.Zone() == "" && ip.Unmap().IsLoopback() {
+			return nil
+		}
+		return ErrInsecureTransport
+	default:
+		return fmt.Errorf("wsclient: unsupported URL scheme %q: %w", u.Scheme, ErrInsecureTransport)
+	}
+}
+
 // Dial authenticates and upgrades. On refusal it returns a *HandshakeError.
+// A ws:// URL is refused with [ErrInsecureTransport] unless its host is
+// loopback.
 func Dial(ctx context.Context, o Options) (*Client, error) {
 	u, err := url.Parse(o.URL)
 	if err != nil {
 		return nil, fmt.Errorf("wsclient: bad URL: %w", err)
+	}
+	if err := checkTransport(u); err != nil {
+		return nil, err
 	}
 	if o.Resume != nil {
 		q := u.Query()
