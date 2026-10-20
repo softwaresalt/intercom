@@ -22,8 +22,9 @@
 // broadcasts permission.requested, so a fast operator answer can never find no
 // entry. The first action that matches an unresolved entry wins by
 // compare-and-swap inside the hub goroutine; a later one is refused with an
-// explicit reason ([ActionResult]). Authorization (roles, the remote
-// destructive-approval opt-in, unknown kinds denied) is a pure function of
+// explicit reason ([ActionResult]). Authorization (roles; destructive and
+// unknown kinds need the remote destructive-approval opt-in, and denial is
+// always allowed) is a pure function of
 // hub-owned state evaluated before the CAS: the role comes from the
 // registered [Client], the kind from the registry entry, never from the
 // inbound [OperatorAction]. The hub owns the approval timeout, hands the

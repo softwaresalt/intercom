@@ -44,6 +44,16 @@ func TestAuthorizeMatrixRows(t *testing.T) {
 		{"approver approves unknown, default", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: allow}, false, ReasonDestructiveRemoteRefused},
 		{"approver approves other, default", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindOther, decision: allow}, false, ReasonDestructiveRemoteRefused},
 		{"approver approves shell, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindShell, decision: allow, remoteApproveDestructive: true}, true, ""},
+		// ADR MVP-3: unknown kinds are destructive, so they are default-deny for
+		// remote surfaces and the same opt-in that covers shell and write
+		// covers them; nothing else ever lets a remote approver approve them.
+		{"approver approves unknown, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: allow, remoteApproveDestructive: true}, true, ""},
+		{"approver approves other, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindOther, decision: allow, remoteApproveDestructive: true}, true, ""},
+		{"approver approves url, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindURL, decision: allow, remoteApproveDestructive: true}, true, ""},
+		{"approver approves undefined kind, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKind(200), decision: allow, remoteApproveDestructive: true}, true, ""},
+		{"approver approves undefined kind, default", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKind(200), decision: allow}, false, ReasonDestructiveRemoteRefused},
+		{"approver denies unknown, default", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: deny}, true, ""},
+		{"observer approves unknown, opt-in", authzInput{p: obs, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: allow, remoteApproveDestructive: true}, false, ReasonRoleNotPermitted},
 		{"observer prompt", authzInput{p: obs, op: OpPrompt}, false, ReasonRoleNotPermitted},
 		{"observer abort", authzInput{p: obs, op: OpAbortTurn}, false, ReasonRoleNotPermitted},
 		{"observer approves read", authzInput{p: obs, op: OpResolvePermission, kind: agent.PermissionKindRead, decision: allow}, false, ReasonRoleNotPermitted},
