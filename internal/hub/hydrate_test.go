@@ -184,27 +184,44 @@ func TestOverflowedTUIIsForcedToRehydrate(t *testing.T) {
 	// Consume like a TUI pump: a hydrate resets the cursor, every other frame
 	// must be exactly the next seq. The stream must end at 50 with at least
 	// one forced re-hydrate in it, and never skip.
+	// A frame that is not the next seq means the hub dropped frames and a
+	// replacement snapshot is pending (the Cursor contract): discard stale
+	// live frames until a session.hydrate arrives. The hub may deliver later
+	// live frames before that snapshot, which is legal, not a gap.
 	var next uint64 = 1
 	rehydrates := 0
+	forced := 0
+	awaiting := false
 	deadline := time.After(testWait)
 	for next <= 50 {
 		select {
 		case f := <-tui.Frames():
 			if f.Kind() == KindSessionHydrate {
 				rehydrates++
+				if awaiting || rehydrates > 1 { // first hydrate is the connect snapshot
+					forced++
+				}
+				awaiting = false
 				next = f.Seq() + 1
 				continue
 			}
+			if awaiting {
+				continue
+			}
 			if f.Seq() != next {
-				t.Fatalf("gap: got seq %d, want %d", f.Seq(), next)
+				if f.Seq() < next {
+					t.Fatalf("duplicate/out-of-order: got seq %d, want %d", f.Seq(), next)
+				}
+				awaiting = true // skipped frames: wait for the forced hydrate
+				continue
 			}
 			next++
 		case <-deadline:
 			t.Fatalf("TUI stream stalled at seq %d (rehydrates=%d)", next, rehydrates)
 		}
 	}
-	if rehydrates == 0 {
-		t.Fatal("overflowed TUI was never re-hydrated")
+	if forced == 0 {
+		t.Fatalf("overflowed TUI was never force re-hydrated (rehydrates=%d)", rehydrates)
 	}
 	if s := stats(t, h); s.Rehydrations == 0 || s.DroppedClients != 0 || !s.TUIAttached {
 		t.Fatalf("stats = %+v", s)

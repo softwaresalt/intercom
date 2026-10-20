@@ -25,6 +25,10 @@ type streamChecker struct {
 	gen  string
 	last uint64
 	have bool
+	// lenient (TUI only): the hub may drop a slow TUI and queue a replacement
+	// snapshot, so live frames after a gap are discarded until a hydrate.
+	lenient  bool
+	awaiting bool
 }
 
 func (c *streamChecker) check(f Frame) (violation string) {
@@ -32,11 +36,19 @@ func (c *streamChecker) check(f Frame) (violation string) {
 		return fmt.Sprintf("gen %q != hub gen %q", f.Gen(), c.gen)
 	}
 	if f.Kind() == KindSessionHydrate {
+		c.awaiting = false
 		if c.have && f.Seq() < c.last {
 			violation = fmt.Sprintf("hydrate seq %d went backwards from %d", f.Seq(), c.last)
 		}
 		c.last, c.have = f.Seq(), true
 		return violation
+	}
+	if c.awaiting {
+		return "" // stale live frame before the pending hydrate
+	}
+	if c.lenient && c.have && f.Seq() > c.last+1 {
+		c.awaiting = true // overflow: a rehydrate is pending
+		return ""
 	}
 	switch {
 	case !c.have:
@@ -91,7 +103,7 @@ func runProperty(t *testing.T, o propertyOpts) []string {
 		defer wg.Done()
 		who := fmt.Sprintf("worker %d", id)
 		rng := rand.New(rand.NewSource(int64(id) + 1))
-		chk := streamChecker{gen: h.Gen()}
+		chk := streamChecker{gen: h.Gen(), lenient: kind == ClientTUI}
 		for chk.last < uint64(o.events) || !chk.have {
 			if stop.Load() {
 				return
@@ -130,8 +142,13 @@ func runProperty(t *testing.T, o propertyOpts) []string {
 				case <-c.Done():
 					read = quota // dropped by the hub: reconnect and resume
 				case <-time.After(20 * time.Millisecond):
-					if stop.Load() || time.Now().After(deadline) {
+					if stop.Load() {
 						c.Close()
+						return
+					}
+					if time.Now().After(deadline) {
+						c.Close()
+						report(who, fmt.Sprintf("liveness: deadline at seq %d of %d", chk.last, o.events))
 						return
 					}
 				}
