@@ -29,7 +29,30 @@ type Config struct {
 	Database              DatabaseConfig      `toml:"database"`
 	OperatorDetailLevel   OperatorDetailLevel `toml:"operator_detail_level"`
 	Workspaces            []WorkspaceMapping  `toml:"workspace"`
+	Remote                RemoteConfig        `toml:"remote"`
 }
+
+// RemoteConfig is the [remote] section (MVP remote surface). It is
+// deliberately secret-free: credentials never come from config.toml, and
+// Decode rejects any credential-shaped key under [remote].
+type RemoteConfig struct {
+	// TokenLifetimeSeconds is the remote token lifetime (60..86400).
+	TokenLifetimeSeconds int `toml:"token_lifetime_seconds"`
+	// AllowedOrigins lists exact scheme://host[:port] origins. Empty by default.
+	AllowedOrigins []string `toml:"allowed_origins"`
+	// AllowedHosts lists permitted host names. Empty by default.
+	AllowedHosts []string `toml:"allowed_hosts"`
+	// MaxConnections bounds concurrent remote connections (>= 1).
+	MaxConnections int `toml:"max_connections"`
+	// RemoteApproveDestructive permits remote approval of destructive kinds.
+	RemoteApproveDestructive bool `toml:"remote_approve_destructive"`
+}
+
+// Bounds for [remote].token_lifetime_seconds.
+const (
+	MinRemoteTokenLifetimeSeconds = 60
+	MaxRemoteTokenLifetimeSeconds = 86400
+)
 
 // CopilotConfig is the [copilot] section.
 type CopilotConfig struct {

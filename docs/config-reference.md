@@ -60,6 +60,27 @@ covering every key in this reference.
 |---|---|---|---|
 | `database.path` | string | `"data/agent-rc.db"` | May not contain a `..` segment. Absolute paths are permitted. |
 
+## `[remote]`
+
+The MVP remote-surface group (ADR MVP-2 / MVP-3). Every default is secure:
+no origins or hosts are allowed and remote approval of destructive kinds is
+off. This section is secret-free by design.
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `remote.token_lifetime_seconds` | integer | `14400` | Must be between `60` and `86400` inclusive. |
+| `remote.allowed_origins` | array of string | `[]` | Exact lowercase `http(s)://host[:port]` origins. Wildcards, paths (including a trailing `/`), queries, fragments, userinfo, uppercase, other schemes, empty and duplicate entries are rejected. |
+| `remote.allowed_hosts` | array of string | `[]` | Plain lowercase host names (no scheme, port, path, userinfo). Wildcards, empty and duplicate entries are rejected. |
+| `remote.max_connections` | integer | `8` | Must be at least `1`. |
+| `remote.remote_approve_destructive` | bool | `false` | When `true`, remote surfaces may approve `shell`, `write`, and unknown kinds. |
+
+**Credential-shaped keys are rejected.** `Decode`/`Load` fail closed on any
+key at or below `[remote]` whose name looks like a credential (it contains
+`token`, `secret`, `passw`, `pwd`, `credential`, `bearer`, `key`, `auth`,
+`jwt`, `cookie`, `signature`, or `session`, ignoring case and punctuation),
+other than the five known keys above. The error names the key path and never
+echoes the value. Credentials never come from `config.toml`.
+
 ## `[[workspace]]`
 
 | Key | Type | Default | Notes |
@@ -87,6 +108,11 @@ covering every key in this reference.
 | `Copilot.StartupTimeoutSeconds` | `30` |
 | `Database.Path` | `"data/agent-rc.db"` |
 | `OperatorDetailLevel` | `DetailStandard` |
+| `Remote.TokenLifetimeSeconds` | `14400` |
+| `Remote.MaxConnections` | `8` |
+| `Remote.AllowedOrigins` | `[]` (empty) |
+| `Remote.AllowedHosts` | `[]` (empty) |
+| `Remote.RemoteApproveDestructive` | `false` |
 
 `Timeouts.WaitSeconds` is the only field with a zero default (`0`, meaning
 "no timeout") and is therefore excluded from this table.
@@ -106,6 +132,20 @@ yields the same error.
 | 5 | `[copilot]` must be well-formed | `copilot.cli_path '{path}' does not exist`; `copilot.cli_path '{path}' must not be drive-relative; use an absolute path, a bare name, or empty`; `copilot.cli_path '{path}' must not be relative; use an absolute path, a bare name, or empty`; `copilot.startup_timeout_seconds must be greater than zero`; `copilot.startup_timeout_seconds must not exceed 3600` |
 | 6 | Per `[[workspace]]` entry, a non-empty `path` must canonicalize | `workspace path invalid for workspace_id '{id}': {err}` |
 | 7 | `database.path` must not contain a `..` segment | `database.path must not contain '..' segments` |
+
+### `[remote]` rule group
+
+A separate group, run inside `Validate()` after the seven rules above (their
+order is unchanged). Within the group the order is: token lifetime, origins,
+hosts, max connections. Messages never echo entry values.
+
+| Rule | Message |
+|---|---|
+| `token_lifetime_seconds` within 60..86400 | `remote.token_lifetime_seconds must be between 60 and 86400` |
+| each `allowed_origins` entry is an exact origin, unique | `remote.allowed_origins[{i}] {reason}` |
+| each `allowed_hosts` entry is a plain host name, unique | `remote.allowed_hosts[{i}] {reason}` |
+| `max_connections` at least 1 | `remote.max_connections must be at least 1` |
+| no credential-shaped key under `[remote]` (checked by `Decode`, before `Validate`, because it needs the raw key set) | `remote.{key} is a credential-shaped key; credentials must never be stored in config.toml (remove it from [remote])` |
 
 Rule 5 has one additional non-fatal advisory: a bare name that is not
 currently resolvable on `PATH` produces `copilot.cli_path '{name}' was not

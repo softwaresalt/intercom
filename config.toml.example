@@ -43,6 +43,18 @@ default_nudge_message = "Continue working on the current task. Pick up where you
 [database]
 path = "data/agent-rc.db"
 
+# Remote surface (authenticated WebSocket). Secure defaults: nothing is
+# allowed until you list it, and destructive remote approval is off.
+# NEVER put credentials (tokens, secrets, passwords, API keys) in this file:
+# any credential-shaped key under [remote] fails validation. Credentials are
+# issued at runtime and never read from config.toml.
+[remote]
+token_lifetime_seconds = 14400   # 60..86400
+allowed_origins = []   # exact origins only, e.g. ["https://app.example.com"]; no wildcards, paths, or userinfo
+allowed_hosts = []   # plain host names, e.g. ["app.example.com"]; no wildcards, ports, or schemes
+max_connections = 8   # >= 1
+remote_approve_destructive = false   # true lets remote surfaces approve shell/write/unknown kinds
+
 [[workspace]]
 workspace_id = "example-workspace"
 label = "Example workspace"

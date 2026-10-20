@@ -26,5 +26,12 @@ func Default() *Config {
 			Path: "data/agent-rc.db",
 		},
 		OperatorDetailLevel: DetailStandard,
+		Remote: RemoteConfig{
+			TokenLifetimeSeconds:     14400,
+			AllowedOrigins:           []string{},
+			AllowedHosts:             []string{},
+			MaxConnections:           8,
+			RemoteApproveDestructive: false,
+		},
 	}
 }

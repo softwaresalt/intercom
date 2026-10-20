@@ -74,6 +74,10 @@ func Decode(data string) (*Config, Report, error) {
 		return cfg, report, apperr.Newf(apperr.KindConfig, "config keys %q and %q differ only by case; rename one to avoid ambiguous decoding", collision[0], collision[1])
 	}
 
+	if err := rejectRemoteCredentialKeys(md.Keys()); err != nil {
+		return cfg, report, err
+	}
+
 	if !md.IsDefined("default_workspace_root") {
 		return cfg, report, apperr.New(apperr.KindConfig, "default_workspace_root must be set")
 	}
