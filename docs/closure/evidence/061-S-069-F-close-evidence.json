@@ -1,0 +1,174 @@
+{
+  "feature_id": "069-F",
+  "invocation": {
+    "argv_redacted": [
+      "C:\\Tools\\backlogit.EXE",
+      "--no-update-check",
+      "--jsonrpc",
+      "--cwd",
+      "C:\\Source\\GitHub\\intercom-go",
+      "shipment",
+      "ship",
+      "061-S",
+      "--sha",
+      "8bbd57f5907f50c769467708dceee167a4444493",
+      "--message",
+      "Merge pull request #183 from softwaresalt/feat/061-s-mvp-s6-local-bubble-tea-tui",
+      "--author",
+      "Derek Williams"
+    ],
+    "exit_code": 0,
+    "finished_at": "2026-10-20T17:28:18.485003Z",
+    "mutation_state": "completed",
+    "started_at": "2026-10-20T17:26:23.172926Z",
+    "stderr": {
+      "capture_truncated": false,
+      "excerpt": "time=2026-10-20T10:26:23.269-07:00 level=INFO msg=\"shipment command invoked\" operation=shipment-ship shipment_id=061-S\ntime=2026-10-20T10:26:23.272-07:00 level=INFO msg=\"INFO config loaded package=config workspace=C:\\\\Source\\\\GitHub\\\\intercom-go\\\\.backlogit\"\ntime=2026-10-20T10:26:23.297-07:00 level=INFO msg=\"workspace initialized\" storage_root=C:\\Source\\GitHub\\intercom-go\\.backlogit auto_recover=true duration_ms=27\ntime=2026-10-20T10:26:53.614-07:00 level=INFO msg=\"shipment status changed\" shipment_id=061-S new_status=shipped\ntime=2026-10-20T10:26:53.635-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=061-S artifact_type=shipment\ntime=2026-10-20T10:27:27.271-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=069.001-T artifact_type=task\ntime=2026-10-20T10:27:37.584-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=069.002-T artifact_type=task\ntime=2026-10-20T10:27:47.882-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=069.003-T artifact_type=task\ntime=2026-10-20T10:27:58.020-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=069.004-T artifact_type=task\ntime=2026-10-20T10:28:08.711-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=061-S artifact_type=shipment\ntime=2026-10-20T10:28:18.401-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=069-F artifact_type=feature\ntime=2026-10-20T10:28:18.442-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=061-S artifact_type=shipment\n",
+      "redaction_applied": false,
+      "sha256": "3bd96b851f8243d96c259e381f3aff91ccb0c5c43815b0c7df709c9d0c9bebf7",
+      "total_bytes": 1515,
+      "total_lines": 12
+    },
+    "stdout": {
+      "capture_truncated": false,
+      "excerpt": "{\"jsonrpc\":\"2.0\",\"id\":\"backlogit shipment ship\",\"result\":{\"archived_ids\":[\"069.001-T\",\"069.002-T\",\"069.003-T\",\"069.004-T\",\"061-S\",\"069-F\"],\"commit_sha\":\"8bbd57f5907f50c769467708dceee167a4444493\",\"returned_ids\":[],\"shipment_id\":\"061-S\",\"shipment_status\":\"shipped\"}}\n",
+      "redaction_applied": false,
+      "sha256": "213161f68756dcb0d6b75e2a6c496db404ab635063df5ae349df1e91616bac68",
+      "total_bytes": 265,
+      "total_lines": 1
+    },
+    "timed_out": false
+  },
+  "merge_commit_sha": "8bbd57f5907f50c769467708dceee167a4444493",
+  "phase": "post_close",
+  "post_close": {
+    "allowed_ids": [
+      "061-S",
+      "069-F",
+      "069.001-T",
+      "069.002-T",
+      "069.003-T",
+      "069.004-T"
+    ],
+    "baseline_invariant": true,
+    "disposition_byte_identical": true,
+    "failures": [],
+    "linked_deliberation_drift": [],
+    "missing_required": [],
+    "parent_id_preserved": true,
+    "parse_error": null,
+    "parsed_result": {
+      "archived_ids": [
+        "061-S",
+        "069-F",
+        "069.001-T",
+        "069.002-T",
+        "069.003-T",
+        "069.004-T"
+      ],
+      "commit_sha": "8bbd57f5907f50c769467708dceee167a4444493",
+      "returned_ids": [],
+      "shipment_id": "061-S",
+      "shipment_status": "shipped"
+    },
+    "postcondition_verdict": "pass",
+    "required_ids": [
+      "061-S",
+      "069-F",
+      "069.001-T",
+      "069.002-T",
+      "069.003-T",
+      "069.004-T"
+    ],
+    "shipment_archived_shipped": true,
+    "shipment_record_archived_status": "shipped",
+    "shipment_record_status": "archived",
+    "unexpected_archived": []
+  },
+  "pre_close": {
+    "captured_at": "2026-10-20T17:26:19Z",
+    "classifier_reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted",
+    "classifier_verdict": "CASCADE",
+    "close_path_selection": {
+      "reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted; backlogit 1.11.0 (cli) is on verified engine minor line 1.11",
+      "selected_close_path": "cascade"
+    },
+    "engine_semantics": {
+      "invocation_surface": "cli",
+      "minor_line": [
+        1,
+        11
+      ],
+      "probe_surface": "cli",
+      "probed_commit": "131577c",
+      "probed_version": "1.11.0",
+      "reason": "backlogit 1.11.0 (cli) is on verified engine minor line 1.11",
+      "verdict": "VERIFIED"
+    },
+    "linked_deliberation_disposition": {
+      "dispositions": [],
+      "planning_error": null,
+      "read_failures": [],
+      "unresolved_references": []
+    },
+    "manifest_members": [
+      {
+        "artifact_type": "feature",
+        "declared_status": "done",
+        "id": "069-F",
+        "location": "archive",
+        "parent_id": null,
+        "sha256": "2da9ee0346b8109d81948ed687415094a2e418a74e41d50f8841cd0320cbc7bb"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "069.001-T",
+        "location": "archive",
+        "parent_id": "069-F",
+        "sha256": "3f9f56590a0e6b3541afc1a279acdbd0f5dde324318c9f762bc7dd2c251d70f3"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "069.002-T",
+        "location": "archive",
+        "parent_id": "069-F",
+        "sha256": "a2d89dd21d893727efe328f59be888f7b0c0958bcca1a805b788ce60365bfe7e"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "069.003-T",
+        "location": "archive",
+        "parent_id": "069-F",
+        "sha256": "3f90f7b75c704d1e082005545cfade0c186fb5a296139ceca5c9725f0830d78b"
+      },
+      {
+        "artifact_type": "task",
+        "declared_status": "done",
+        "id": "069.004-T",
+        "location": "archive",
+        "parent_id": "069-F",
+        "sha256": "0f0c79cc456b721d465f0be2c2ea66179d2c7ca24281d8ef82161018dfe97338"
+      }
+    ],
+    "out_of_manifest_descendants": [],
+    "qualifying_feature_ids": [
+      "069-F"
+    ],
+    "shipment_record": {
+      "declared_status": "active",
+      "location": "queue",
+      "sha256": "784fc3e0bb27e20907615e48efacf9f8634fa3bbbaa4aa68cadb928dbb5a0140"
+    }
+  },
+  "run_id": "0e43d0af63374dcc908874560289ed71",
+  "schema_version": 1,
+  "shipment_id": "061-S",
+  "tool": {
+    "binary_path": "C:\\Tools\\backlogit.EXE",
+    "binary_sha256": "e822756bb661435f7351811c54554ec8e76f69868ca386b6590bb56ae1489f3a",
+    "version_excerpt": "{\n  \"version\": \"1.11.0\",\n  \"current\": \"1.11.0\",\n  \"latest\": \"\",\n  \"update_available\": false,\n  \"update_check\": \"skipped\",\n  \"commit\": \"131577c\",\n  \"build_date\": \"2026-09-29T00:15:25Z\",\n  \"go_version\": \"go1.24.13\"\n}\n"
+  }
+}
