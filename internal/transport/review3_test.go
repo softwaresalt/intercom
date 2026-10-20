@@ -61,7 +61,13 @@ func TestVerifyShutdownRevokedCredentialIs503(t *testing.T) {
 		t.Fatalf("503 body = %q; want empty", b)
 	}
 	// An unknown credential stays an indistinguishable 401.
-	// change the LAST character to one that differs, so the value is always a different (same-shape) credential\n	last := byte('A')\n	if tok[len(tok)-1] == last {\n		last = 'B'\n	}\n	wantStatus(t, e.rawUpgrade(bearer(tok[:len(tok)-1]+string(last)), ""), http.StatusUnauthorized, "wrong credential during shutdown")
+	// change the LAST character to one that differs, so the value is always a
+	// different (same-shape) credential
+	last := byte('A')
+	if tok[len(tok)-1] == last {
+		last = 'B'
+	}
+	wantStatus(t, e.rawUpgrade(bearer(tok[:len(tok)-1]+string(last)), ""), http.StatusUnauthorized, "wrong credential during shutdown")
 }
 
 // F-11: the 404 for a non-/ws path has an empty body like every rejection.

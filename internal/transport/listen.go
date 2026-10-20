@@ -248,8 +248,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// handshake (StateNew counts as idle only after 5s), and that wait must
 	// not consume the deadline the session drain needs. Drain cancels every
 	// session (each closes within the close grace, aborting the raw conn if
-	// the peer never answers), so a ctx expiry here still leaves no session
-	// running past the caller's budget plus the grace.
+	// the peer never answers), so Shutdown returns within ctx and every session ends within the close
+	// grace after Drain cancels it.
 	drainDone := make(chan error, 1)
 	if s.drain != nil {
 		go func() { drainDone <- s.drain(ctx) }()
