@@ -455,9 +455,14 @@ func (h *Hub) processAction(r *actionReq) ActionResult {
 		}
 		return ActionResult{Reason: ReasonCredentialRevoked}
 	}
-	if r.from.surface == surfaceRemote && r.client != nil && r.client.isClosed() {
+	if r.client != nil && r.client.isClosed() {
 		// The connection ended (credential revoked, client dropped) after the
-		// action was queued: ADR MVP-3 re-validates per message, at the hub step.
+		// action was queued: ADR MVP-3 re-validates per message, at the hub
+		// step. The rule is uniform over every registered client; only the
+		// reason differs, as the local TUI holds no credential to revoke.
+		if r.from.surface == surfaceTUI {
+			return ActionResult{Reason: ReasonClientClosed}
+		}
 		return ActionResult{Reason: ReasonCredentialRevoked}
 	}
 	// The hub's clock is authoritative: a request already at or past its

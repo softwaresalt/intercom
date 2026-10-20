@@ -84,6 +84,10 @@ const (
 	// ReasonShuttingDown: the hub is shutting down (design §3.1 step 0) and no
 	// longer accepts privileged actions from the credential-less local TUI.
 	ReasonShuttingDown Reason = "shutting_down"
+	// ReasonClientClosed: the acting client (the local TUI, which holds no
+	// credential to revoke) was closed after it queued the action and before the
+	// hub's step. Remote clients get ReasonCredentialRevoked.
+	ReasonClientClosed Reason = "client_closed"
 )
 
 // OpType is the kind of operator action. The zero value is unknown and is
