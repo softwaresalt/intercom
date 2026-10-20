@@ -122,6 +122,12 @@ func (c *Config) Validate() (Report, error) {
 		return report, apperr.New(apperr.KindConfig, "database.path must not contain '..' segments")
 	}
 
+	// Remote rule group (MVP; ADR MVP-2/MVP-3): a separate group that runs
+	// after the seven shipped rules, so their fixed order is untouched.
+	if err := validateRemote(c.Remote); err != nil {
+		return report, err
+	}
+
 	// Deferred commit: every rule has passed.
 	c.DefaultWorkspaceRoot = root.Path()
 	for i, p := range canonicalWorkspacePaths {

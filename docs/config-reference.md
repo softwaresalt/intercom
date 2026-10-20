@@ -60,6 +60,33 @@ covering every key in this reference.
 |---|---|---|---|
 | `database.path` | string | `"data/agent-rc.db"` | May not contain a `..` segment. Absolute paths are permitted. |
 
+## `[remote]`
+
+The MVP remote-surface group (ADR MVP-2 / MVP-3). Every default is secure:
+no origins or hosts are allowed and remote approval of destructive kinds is
+off. This section is secret-free by design.
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `remote.token_lifetime_seconds` | integer | `14400` | Must be between `60` and `86400` inclusive. |
+| `remote.allowed_origins` | array of string | `[]` | Exact lowercase `http(s)://host[:port]` origins in canonical form; bracketed IPv6 literals (`http://[::1]:3000`) are allowed. An explicit default port (`https://x:443`, `http://x:80`) is rejected: the default port must be omitted. Wildcards, paths (including a trailing `/`), queries (including a bare `?`), fragments, userinfo, `%` escapes, leading-zero or out-of-range ports, uppercase, other schemes, trailing dots, empty and duplicate entries are rejected. |
+| `remote.allowed_hosts` | array of string | `[]` | A lowercase host with an optional `:port` (decimal 1-65535, no leading zeros), e.g. `app.example.com`, `localhost:3000`, `[::1]`, `[::1]:3000`. An entry without a port matches the default port only (the request carries no port); an entry with an explicit port matches only that port. **Default-port policy:** explicit `:80` and `:443` are accepted as ordinary explicit ports and are NOT treated as equivalent to the bare host by config validation; `example.com` and `example.com:443` are distinct entries (both may be listed), and the matcher task must not silently equate them. Numeric-looking hosts must be canonical dotted-quad IPv4 (`127.0.0.1`); forms such as `127.1`, `2130706433`, `01.2.3.4` or `999.999.999.999` are rejected as a non-canonical IPv4 address (as are bracketed non-IPv6 origins such as `http://[127.0.0.1]`). Host names are at most 253 characters with no empty label, no trailing dot, labels of at most 63 characters that do not start or end with a hyphen. Wildcards, schemes, paths, userinfo, whitespace/control or non-ASCII characters, empty and duplicate entries are rejected. |
+| `remote.max_connections` | integer | `8` | Must be between `1` and `1024` (`MaxRemoteConnections`) inclusive. |
+| `remote.remote_approve_destructive` | bool | `false` | When `true`, remote surfaces may approve `shell`, `write`, and unknown kinds. |
+
+**Credential-shaped keys are rejected.** `Decode`/`Load` fail closed on any
+key at or below `[remote]` whose name looks like a credential (it contains
+`token`, `secret`, `pass`, `pwd`, `credential`, `bearer`, `key`, `auth`,
+`jwt`, `cookie`, `signature`, `session`, `pat`, `psk`, `otp`, `pin`, `private`,
+`cert`, `hmac`, `salt`, `dsn`, `connstr`, or `connection`, ignoring case and
+punctuation), other than the five known keys above. The screen is
+intentionally broader than ADR MVP-2's list; a new `[remote]` key must be
+added to `remoteKnownKeys` in `internal/config/remote.go`.
+
+An absent `[remote]` section = secure defaults; no migration is needed for
+existing config files. The error names the key path and never
+echoes the value. Credentials never come from `config.toml`.
+
 ## `[[workspace]]`
 
 | Key | Type | Default | Notes |
@@ -87,6 +114,11 @@ covering every key in this reference.
 | `Copilot.StartupTimeoutSeconds` | `30` |
 | `Database.Path` | `"data/agent-rc.db"` |
 | `OperatorDetailLevel` | `DetailStandard` |
+| `Remote.TokenLifetimeSeconds` | `14400` |
+| `Remote.MaxConnections` | `8` |
+| `Remote.AllowedOrigins` | `[]` (empty) |
+| `Remote.AllowedHosts` | `[]` (empty) |
+| `Remote.RemoteApproveDestructive` | `false` |
 
 `Timeouts.WaitSeconds` is the only field with a zero default (`0`, meaning
 "no timeout") and is therefore excluded from this table.
@@ -106,6 +138,20 @@ yields the same error.
 | 5 | `[copilot]` must be well-formed | `copilot.cli_path '{path}' does not exist`; `copilot.cli_path '{path}' must not be drive-relative; use an absolute path, a bare name, or empty`; `copilot.cli_path '{path}' must not be relative; use an absolute path, a bare name, or empty`; `copilot.startup_timeout_seconds must be greater than zero`; `copilot.startup_timeout_seconds must not exceed 3600` |
 | 6 | Per `[[workspace]]` entry, a non-empty `path` must canonicalize | `workspace path invalid for workspace_id '{id}': {err}` |
 | 7 | `database.path` must not contain a `..` segment | `database.path must not contain '..' segments` |
+
+### `[remote]` rule group
+
+A separate group, run inside `Validate()` after the seven rules above (their
+order is unchanged). Within the group the order is: token lifetime, origins,
+hosts, max connections. Messages never echo entry values.
+
+| Rule | Message |
+|---|---|
+| `token_lifetime_seconds` within 60..86400 | `remote.token_lifetime_seconds must be between 60 and 86400` |
+| each `allowed_origins` entry is an exact origin, unique | `remote.allowed_origins[{i}] {reason}` |
+| each `allowed_hosts` entry is a canonical host[:port], unique | `remote.allowed_hosts[{i}] {reason}` |
+| `max_connections` at least 1 | `remote.max_connections must be at least 1`; `remote.max_connections must not exceed 1024` |
+| no credential-shaped key under `[remote]` (checked by `Decode`, before `Validate`, because it needs the raw key set) | `remote.{key} is a credential-shaped key; credentials must never be stored in config.toml (remove it from [remote])` |
 
 Rule 5 has one additional non-fatal advisory: a bare name that is not
 currently resolvable on `PATH` produces `copilot.cli_path '{name}' was not
@@ -128,7 +174,10 @@ internal order, which is fixed whenever `Validate()` is called directly.
 `Validate()` is ever invoked. A document that both omits
 `default_workspace_root` and violates an earlier `Validate()` rule (for
 example rule 1) therefore still reports `default_workspace_root must be set`
-from `Load`/`Decode`, not the rule-1 message.
+from `Load`/`Decode`, not the rule-1 message. Likewise the `[remote]`
+credential-key screen runs in `Decode` after the case-fold check and before the
+required-key check, so a credential-shaped `[remote]` key is reported ahead of
+a missing `default_workspace_root` and ahead of every `Validate()` rule.
 
 ## Migration from pre-correction configs
 
