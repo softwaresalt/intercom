@@ -49,6 +49,13 @@ type Options struct {
 	// ActionTimeout bounds one ingress call. Zero selects
 	// [DefaultActionTimeout].
 	ActionTimeout time.Duration
+	// Reissue re-mints the session credentials (Ctrl+R). Nil disables the
+	// key.
+	Reissue Reissuer
+	// Credentials is the initial credential set, shown from the first frame.
+	// Passing it here (rather than sending it after start) means no startup
+	// message can race a Ctrl+R re-issue.
+	Credentials CredentialsMsg
 }
 
 type styles struct {
@@ -101,6 +108,19 @@ type Model struct {
 	promptBusy bool
 	input      []rune
 
+	// Credential panel: the plaintext lives here only while it is shown, and
+	// is dropped when the operator dismisses it (shown once, local only).
+	reissue  Reissuer
+	creds    CredentialsMsg
+	credOpen bool
+	// credScroll is the first visible row of the panel; reissuing is true while
+	// a re-issue Cmd is in flight (cleared when its result is processed).
+	credScroll int
+	reissuing  bool
+	// credsKnown is true once the initial credentials were set (Options or the
+	// first CredentialsMsg); Ctrl+R is a no-op before that.
+	credsKnown bool
+
 	vp            viewport.Model
 	width, height int
 }
@@ -110,7 +130,11 @@ func New(o Options) Model {
 	if o.ActionTimeout <= 0 {
 		o.ActionTimeout = DefaultActionTimeout
 	}
-	return Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0)}
+	m := Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0), reissue: o.Reissue}
+	if len(o.Credentials.Credentials) > 0 {
+		m = m.showCredentials(o.Credentials)
+	}
+	return m
 }
 
 // Init implements tea.Model.
@@ -137,6 +161,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ActionResultMsg:
 		return m.onActionResult(msg), nil
+	case CredentialsMsg:
+		// An initial delivery only: once credentials are known a plain message
+		// is stale (a re-issue revoked them) and must not replace the live set
+		// nor clear an in-flight re-issue.
+		if m.credsKnown {
+			return m, nil
+		}
+		return m.showCredentials(msg), nil
+	case reissuedMsg:
+		m.reissuing = false
+		return m.showCredentials(msg.CredentialsMsg), nil
+	case ReissueFailedMsg:
+		m.reissuing = false
+		if len(msg.Live.Credentials) > 0 {
+			// A partial failure replaced some roles: show what is really live.
+			m = m.showCredentials(msg.Live)
+		}
+		m.notice = "re-issue failed: " + SanitizeLine(msg.Err.Error())
+		return m, nil
 	case tea.KeyMsg:
 		return m.onKey(msg)
 	}
@@ -159,11 +202,37 @@ func (m Model) act(act hub.OperatorAction) tea.Cmd {
 }
 
 func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Single choke point: an armed approval survives only until the very next
+	// key, and only Enter may confirm it. Every other key (shortcuts, scrolling,
+	// credential dismissal) disarms before any handler can return early.
+	if k.Type != tea.KeyEnter {
+		m.armed = ""
+	}
 	if k.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
+	if k.Type == tea.KeyCtrlR {
+		return m.reissueCmd()
+	}
+	if k.Type == tea.KeyEsc && m.credOpen {
+		// Dismissing the credential panel has priority, even behind a permission
+		// modal: the plaintext must not linger, and Esc never answers a request.
+		return m.dismissCredentials(), nil
+	}
 	if len(m.pending) > 0 {
 		return m.onModalKey(k)
+	}
+	if m.credOpen {
+		switch k.Type { //nolint:exhaustive // other keys fall through
+		case tea.KeyUp:
+			return m.scrollCredentials(-1), nil
+		case tea.KeyDown:
+			return m.scrollCredentials(1), nil
+		case tea.KeyPgUp:
+			return m.scrollCredentials(-m.areaHeight()), nil
+		case tea.KeyPgDown:
+			return m.scrollCredentials(m.areaHeight()), nil
+		}
 	}
 	switch k.Type { //nolint:exhaustive // other keys are ignored
 	case tea.KeyEnter:
@@ -568,9 +637,12 @@ func (m Model) View() string {
 	header := m.st.header.Render(m.fit("intercom | "+turn, m.width))
 
 	var area string
-	if len(m.pending) > 0 {
+	switch {
+	case len(m.pending) > 0:
 		area = m.modalView(m.areaHeight())
-	} else {
+	case m.credOpen:
+		area = m.credentialView(m.areaHeight())
+	default:
 		area = m.vp.View()
 	}
 

@@ -656,8 +656,8 @@ decided before phase C5. See §6. *Decided for the MVP (2026-10-19):* see
 ### 6.1 Controls that MUST be specified before C6/C10 (decided for the MVP)
 
 **Decided 2026-10-19 for the MVP** (shipment 056-S). The controls below are
-**implemented in `internal/transport` (060-S)**; wiring into the composition
-root is pending (062-S). They are specified by three ADRs:
+**implemented in `internal/transport` (060-S)** and **wired into the composition
+root (`internal/app`, `cmd/intercom`) in 062-S**. They are specified by three ADRs:
 
 * [ADR MVP-2: credentials, carriage, Origin, Host](../decisions/2026-10-19-intercom-go-mvp-adr-2-credentials-and-origin.md)
   covers Origin/CSWSH, credential carriage per client type, token replay and

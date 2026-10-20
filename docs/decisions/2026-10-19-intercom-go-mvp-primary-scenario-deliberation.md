@@ -111,7 +111,9 @@ shipments become eligible: the dependency edges enforce it.
   live opt-in test re-verifies both.
 * First production caller of `pathsafe.Root.Resolve` (process wiring task) will fire the
   034.005-T tripwire and makes 037-F, 038-F, 039-F unblockable. They remain
-  operator-gated; this MVP does not unblock them.
+  operator-gated; this MVP does not unblock them. *(Status 2026-10-20: the caller landed
+  in 070.001-T, `internal/app/workspace.go`; the tripwire fired and was re-justified in the
+  `internal/pathsafe/root.go` register.)*
 
 ## Recommendation
 

@@ -45,8 +45,8 @@ func TestRootCmd_LogLevelDebugEmitsJSON(t *testing.T) {
 	cmd.SetOut(new(bytes.Buffer))
 	cmd.SetErr(new(bytes.Buffer))
 
-	// RunE deliberately returns the not-implemented sentinel; the log line
-	// is still emitted before that return.
+	// RunE logs a startup line and then runs the process; with no valid config
+	// it returns the startup error. The log line is still emitted first.
 	_ = cmd.Execute()
 
 	line := strings.TrimSpace(buf.String())

@@ -30,7 +30,10 @@
 //     declaration and assignment forms. This same-function binding is closed
 //     by 049.005-T / reject-resolve-first-caller.go. Cross-function flows,
 //     struct fields, package-level variables, and method values remain
-//     residuals.
+//     residuals. The first production caller, internal/app/workspace.go
+//     (070.001-T), was re-evaluated against the pathsafe risk register and is
+//     recorded in reviewedResolveCallers (an exact-path, Root.Resolve-only
+//     allowance); any other caller still fires.
 //  3. Dot imports of write-capable packages are reported at the import spec,
 //     closed by 049.004-T / reject-dot-import-os.go. Blank imports are inert.
 //     Local identifiers shadowing a package name (including a local syscall
@@ -134,6 +137,25 @@ const (
 	pathsafeImportPath = "github.com/softwaresalt/intercom-go/internal/pathsafe"
 	rootResolveDisplay = "pathsafe.Root.Resolve"
 )
+
+// reviewedResolveCallers maps a repo-relative file (forward slashes, exact
+// match) to the task that re-evaluated its pathsafe.Root.Resolve calls against
+// the consolidated risk register and recorded the acceptance there, as the
+// register's RETIREMENT PROCEDURE requires. It is deliberately a closed,
+// exact-path list: a new caller anywhere else still fires the tripwire, and
+// the allowance covers Root.Resolve only, never a write primitive.
+var reviewedResolveCallers = map[string]reviewedResolve{
+	// process workspace-root containment (read-only): exactly one call was reviewed.
+	"internal/app/workspace.go": {task: "070.001-T", calls: 1},
+}
+
+// reviewedResolve is the review record of one allowed file: the task that
+// reviewed it and the number of Root.Resolve calls that review covered. A
+// further call in the same file is a new, unreviewed caller and fires.
+type reviewedResolve struct {
+	task  string
+	calls int
+}
 
 // GitRunner runs `git ls-files -z -- internal cmd` rooted at root and returns
 // its raw stdout bytes: NUL-terminated records, parsed byte-exact by scanListing
@@ -715,6 +737,7 @@ func scanSource(relPath, src string) ([]string, error) {
 	}
 
 	var scanErr error
+	reviewedSeen := 0 // Root.Resolve calls met so far in a reviewed file
 	ast.Inspect(file, func(node ast.Node) bool {
 		if scanErr != nil {
 			return false
@@ -722,6 +745,12 @@ func scanSource(relPath, src string) ([]string, error) {
 		switch n := node.(type) {
 		case *ast.SelectorExpr:
 			if _, rootResolve := rootResolveSelectors[n]; rootResolve {
+				if rev, reviewed := reviewedResolveCallers[relPath]; reviewed {
+					reviewedSeen++
+					if reviewedSeen <= rev.calls {
+						return true // re-evaluated against the register in the change that added it
+					}
+				}
 				tf := fset.File(n.Pos())
 				sourceOffset, ok := physicalSourceOffset(tf, n.Pos(), len(src))
 				if !ok {
