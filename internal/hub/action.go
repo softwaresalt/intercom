@@ -1,6 +1,8 @@
 package hub
 
 import (
+	"context"
+
 	"github.com/softwaresalt/intercom-go/internal/agent"
 )
 
@@ -122,6 +124,16 @@ type ActionResult struct {
 	// Winner is the actor that won the arbitration, set with
 	// ReasonAlreadyResolved.
 	Winner string
+}
+
+// AgentControl is the narrow slice of the agent the hub drives on behalf of an
+// operator. agent.Agent satisfies it; the hub never calls it on its own
+// goroutine.
+type AgentControl interface {
+	// Send submits a prompt.
+	Send(ctx context.Context, prompt string) error
+	// Abort cancels the in-flight turn.
+	Abort(ctx context.Context) error
 }
 
 // actionReq is the hub-internal message carrying an action and the identity

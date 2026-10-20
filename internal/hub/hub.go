@@ -45,6 +45,11 @@ const (
 	// DefaultPermissionAckTimeout bounds the wait for the handler's
 	// acknowledgement of a delivered decision.
 	DefaultPermissionAckTimeout = 5 * time.Second
+	// DefaultOperatorActionTimeout bounds one operator-initiated agent call.
+	DefaultOperatorActionTimeout = 30 * time.Second
+	// operatorPromptQueue is how many accepted prompts may wait for the
+	// prompt lane's worker; a prompt beyond it is refused, never blocked on.
+	operatorPromptQueue = 8
 	// MaxPermissionSummaryBytes bounds a permission request's summary. The
 	// adapter caps it at 2048 runes (at most 4 bytes each); a larger summary
 	// means the request cannot be reviewed in full and is denied outright.
@@ -113,6 +118,14 @@ type Config struct {
 	// false (the default) a remote approver may not approve shell, write or
 	// unknown-kind permissions (ADR MVP-3). The local TUI is unaffected.
 	RemoteApproveDestructive bool
+	// Agent receives operator prompt-send and turn-abort actions after they
+	// pass the role matrix. It is called off the hub goroutine only (design
+	// §4.1). Nil means no agent is attached: such actions are refused with
+	// agent_unavailable.
+	Agent AgentControl
+	// OperatorActionTimeout bounds one Agent.Send or Agent.Abort call made on
+	// behalf of an operator. Default [DefaultOperatorActionTimeout].
+	OperatorActionTimeout time.Duration
 
 	// ---- TEST-ONLY SEAM (067.002-T): permAfter replaces the real timer that
 	// wakes the hub for the earliest permission deadline, so tests drive the
@@ -190,6 +203,10 @@ type Hub struct {
 	// acks carries "handler returned" reports from the per-ask watcher
 	// goroutines (067.002-T). Watchers block on it only until the hub is done.
 	acks chan string
+	// operator lanes (067.005-T): accepted prompts and aborts waiting for the
+	// worker goroutines that call the agent off the hub.
+	promptQ chan string
+	abortQ  chan struct{}
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -292,6 +309,12 @@ func New(cfg Config) (*Hub, error) {
 	if cfg.permAfter == nil {
 		cfg.permAfter = realAfter
 	}
+	if cfg.OperatorActionTimeout < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: OperatorActionTimeout must not be negative")
+	}
+	if cfg.OperatorActionTimeout == 0 {
+		cfg.OperatorActionTimeout = DefaultOperatorActionTimeout
+	}
 	fold, err := NewFold(cfg.Limits)
 	if err != nil {
 		return nil, err
@@ -321,6 +344,8 @@ func New(cfg Config) (*Hub, error) {
 		actions:        make(chan *actionReq, actionQueue),
 		membershipWake: make(chan struct{}, 1),
 		acks:           make(chan string, askQueue),
+		promptQ:        make(chan string, operatorPromptQueue),
+		abortQ:         make(chan struct{}, 1),
 		perm:           newPermRegistry(cfg.MaxPendingPermissions),
 		stopCh:         make(chan struct{}),
 		done:           make(chan struct{}),
@@ -454,6 +479,9 @@ func (h *Hub) Run(ctx context.Context) error {
 	h.started = true
 	h.mu.Unlock()
 	defer close(h.done)
+	opsCtx, opsCancel := context.WithCancel(ctx)
+	defer opsCancel() // ends the operator lanes and any in-flight agent call
+	h.runOperatorLanes(opsCtx)
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	defer timer.Stop()

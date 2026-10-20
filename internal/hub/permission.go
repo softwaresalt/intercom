@@ -392,6 +392,8 @@ func (h *Hub) processAction(r *actionReq) ActionResult {
 	switch r.act.Type {
 	case OpResolvePermission:
 		return h.resolvePermission(r)
+	case OpPrompt, OpAbortTurn:
+		return h.routeToAgent(r)
 	default:
 		return ActionResult{Reason: ReasonActionUnknown}
 	}
