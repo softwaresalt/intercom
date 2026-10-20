@@ -156,6 +156,9 @@ type Hub struct {
 	statsReq chan chan Stats
 	asks     chan agent.PermissionAsk // permission asks from the adapter (§5.4)
 	actions  chan *actionReq          // operator actions (§4.1: never mutate off-hub)
+	// membershipWake is signalled (non-blocking) by Client.Close so the hub
+	// re-evaluates the broadcast set when a surface goes away.
+	membershipWake chan struct{}
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -263,21 +266,22 @@ func New(cfg Config) (*Hub, error) {
 	wake := make(chan time.Time)
 	close(wake)
 	return &Hub{
-		cfg:      cfg,
-		gen:      gen,
-		ingress:  make(chan agent.Event, cfg.IngressBuffer),
-		degraded: make(chan string, 1),
-		connects: make(chan *connectReq, connectQueue),
-		statsReq: make(chan chan Stats, statsQueue),
-		asks:     make(chan agent.PermissionAsk, askQueue),
-		actions:  make(chan *actionReq, actionQueue),
-		perm:     newPermRegistry(cfg.MaxPendingPermissions),
-		stopCh:   make(chan struct{}),
-		done:     make(chan struct{}),
-		fold:     fold,
-		ring:     make([]Frame, cfg.ReplayRing),
-		clients:  make(map[uint64]*Client),
-		wake:     wake,
+		cfg:            cfg,
+		gen:            gen,
+		ingress:        make(chan agent.Event, cfg.IngressBuffer),
+		degraded:       make(chan string, 1),
+		connects:       make(chan *connectReq, connectQueue),
+		statsReq:       make(chan chan Stats, statsQueue),
+		asks:           make(chan agent.PermissionAsk, askQueue),
+		actions:        make(chan *actionReq, actionQueue),
+		membershipWake: make(chan struct{}, 1),
+		perm:           newPermRegistry(cfg.MaxPendingPermissions),
+		stopCh:         make(chan struct{}),
+		done:           make(chan struct{}),
+		fold:           fold,
+		ring:           make([]Frame, cfg.ReplayRing),
+		clients:        make(map[uint64]*Client),
+		wake:           wake,
 	}, nil
 }
 
@@ -436,6 +440,9 @@ func (h *Hub) Run(ctx context.Context) error {
 			h.handleAsk(ask)
 		case act := <-h.actions:
 			h.handleAction(act)
+		case <-h.membershipWake:
+			// No work here: the end-of-iteration reap below re-evaluates the
+			// broadcast set; this case only guarantees an iteration happens.
 		case <-wake:
 		case <-retry:
 		case reply := <-h.statsReq:
@@ -447,6 +454,7 @@ func (h *Hub) Run(ctx context.Context) error {
 			trySend(reply, s)
 		}
 		h.mutFlush()
+		h.reapEmptyBroadcastSet()
 	}
 }
 
@@ -953,6 +961,7 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 	}
 	h.nextID++
 	c := newClient(h.nextID, req.opts.Kind, req.opts.Buffer)
+	c.notify = h.membershipWake
 	if replay {
 		c.mode = ModeReplay
 		for _, f := range h.replayFrom(req.opts.Resume.Seq) {

@@ -58,6 +58,11 @@ type Client struct {
 	stale bool
 	// lastHydrate (hub-owned) rate-limits forced re-hydrates.
 	lastHydrate time.Time
+	// notify is the hub's capacity-1 membership wake channel, set by the hub
+	// before the client is handed out. close signals it (non-blocking) so the
+	// hub re-evaluates the broadcast set promptly when a surface goes away
+	// (067.008-T) instead of at its next unrelated step.
+	notify chan<- struct{}
 }
 
 func newClient(id uint64, kind ClientKind, buffer int) *Client {
@@ -111,6 +116,9 @@ func (c *Client) close() bool {
 		close(c.done)
 		closed = true
 	})
+	if closed && c.notify != nil {
+		trySend(c.notify, struct{}{})
+	}
 	return closed
 }
 

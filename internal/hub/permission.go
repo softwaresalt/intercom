@@ -144,6 +144,43 @@ func permKindName(k agent.PermissionKind) string {
 	}
 }
 
+// Reasons the hub itself resolves a request (carried in permission.resolved).
+const (
+	permReasonNoSurface = "no_surface"
+)
+
+// decide resolves e on the hub's own authority (timeout, shutdown, empty
+// broadcast set): the same first-responder CAS an operator action goes
+// through, then the decision goes to the handler.
+func (h *Hub) decide(e *pendingPerm, actor string, d agent.PermissionDecision, reason string) {
+	if out, _ := h.perm.cas(e.id, actor, d, reason); out != casWon {
+		return
+	}
+	trySend(e.ask.Reply, d)
+}
+
+// reapEmptyBroadcastSet resolves every unresolved request to UserNotAvailable
+// the moment the broadcast set is empty by the permanent-TUI rule (design
+// §5.4): the last remote surface is gone AND the TUI is not attached. An
+// answer nobody can give is definitionally unobtainable, so waiting out the
+// deadline would only keep the agent parked. The TUI counts even when it is
+// stale (overflowed): it is never dropped for backpressure, so presence is
+// registration, not liveness of its buffer. It runs at the end of every hub
+// iteration and is free while nothing is pending.
+func (h *Hub) reapEmptyBroadcastSet() {
+	pending := h.perm.unresolved()
+	if len(pending) == 0 {
+		return
+	}
+	h.sweep() // a client that closed itself is not a member
+	if remote, tui := h.membership(); remote != 0 || tui {
+		return
+	}
+	for _, e := range pending {
+		h.decide(e, ActorHub, agent.PermissionDecision{Kind: agent.DecisionUnavailable}, permReasonNoSurface)
+	}
+}
+
 // Asks is the channel the agent adapter sends permission asks on. The hub
 // answers each by sending exactly one decision on the ask's Reply (capacity 1,
 // select/default) and never blocks on it.
