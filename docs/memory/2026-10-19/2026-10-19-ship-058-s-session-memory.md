@@ -36,4 +36,5 @@ Mode: DARK_MODE_ACTIVE (P-017), operator AFK, scope 058-S only in this session.
 
 ## Next
 
-Open PR, wait for CI and Copilot review, readiness gate, merge, then post-merge closure.
+Completed: PR 177 merged (merge commit ec447f7e7fe6140bc99da28802e96b4317860aa3), cascade close done, closure PR follows.
+Remaining: closure PR through CI and Copilot loop, then confirm 059-S pre_claim eligibility on main.
