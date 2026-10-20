@@ -198,7 +198,7 @@ func (m *Model) noteSeen() {
 // terminal is too small for any body row) is deny-only. This is the guard that
 // keeps a truncated or partly seen request from being approved.
 func (m Model) approvable() bool {
-	if len(m.pending) == 0 || m.modal.Height < 1 || m.modalFor != m.pending[0].RequestID || m.pending[0].Empty {
+	if len(m.pending) == 0 || m.tooSmall() || m.modal.Height < 1 || m.modalFor != m.pending[0].RequestID || m.pending[0].Empty {
 		return false
 	}
 	return m.modalSeen >= m.modal.TotalLineCount() && !m.inflight[m.pending[0].RequestID]

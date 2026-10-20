@@ -271,6 +271,9 @@ func (m Model) onResolveResult(msg ActionResultMsg) Model {
 		m.inflight = without(m.inflight, id)
 		m.notice = "decision refused: " + SanitizeLine(string(msg.Result.Reason))
 	}
+	// A dropped head must advance the modal content and the decision target
+	// together, not wait for the next frame or resize.
+	m.syncModal(false)
 	return m
 }
 
@@ -442,6 +445,12 @@ func (m Model) applyError(raw []byte) Model {
 
 // ---- layout and rendering ----
 
+// tooSmall reports whether the terminal is below the minimum View renders in.
+// View and the approval guard both use it so they cannot diverge.
+func (m Model) tooSmall() bool {
+	return m.width < minWidth || m.height < minHeight
+}
+
 func (m *Model) areaHeight() int {
 	h := m.height - chromeRows
 	if h < 1 {
@@ -549,7 +558,7 @@ func (m Model) fit(s string, width int) string {
 
 // View implements tea.Model.
 func (m Model) View() string {
-	if m.width < minWidth || m.height < minHeight {
+	if m.tooSmall() {
 		return "terminal too small"
 	}
 	turn := "idle"

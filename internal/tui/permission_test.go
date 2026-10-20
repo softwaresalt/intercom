@@ -221,6 +221,111 @@ func TestTinyTerminalIsDenyOnly(t *testing.T) {
 	}
 }
 
+// twoPending builds a model with request "A" (short) ahead of "B" (long, so B
+// needs scrolling before it can be approved).
+func twoPending(t *testing.T, ing Ingress) Model {
+	t.Helper()
+	m := newModel(t, ing, 70, 16)
+	m.pending = []permission{
+		newPermission(hub.PermissionRequestedPayload{RequestID: "A", ToolCallID: "ca", PermissionKind: "shell", Summary: "BODY-OF-A"}, time.Time{}),
+		newPermission(hub.PermissionRequestedPayload{RequestID: "B", ToolCallID: "cb", PermissionKind: "shell", Summary: "BODY-OF-B\n" + longSummary(40)}, time.Time{}),
+	}
+	m.syncModal(true)
+	return m
+}
+
+func TestActionResultDroppingHeadSynchronizesModal(t *testing.T) {
+	results := map[string]hub.ActionResult{
+		"already_resolved": {Reason: hub.ReasonAlreadyResolved, Winner: hub.ActorRemoteApprover},
+		"request_unknown":  {Reason: hub.ReasonRequestUnknown},
+	}
+	for name, res := range results {
+		t.Run(name, func(t *testing.T) {
+			ing := &fakeIngress{result: hub.ActionResult{Accepted: true}}
+			m := twoPending(t, ing)
+			m, _ = step(m, ActionResultMsg{
+				Action: hub.OperatorAction{Type: hub.OpResolvePermission, RequestID: "A"},
+				Result: res,
+			})
+			if len(m.pending) != 1 || m.pending[0].RequestID != "B" {
+				t.Fatalf("pending = %+v, want only B", m.pending)
+			}
+			if m.modalFor != "B" {
+				t.Fatalf("modalFor = %q, want B (modal not synchronized)", m.modalFor)
+			}
+			v := view(m)
+			if !strings.Contains(v, "BODY-OF-B") || strings.Contains(v, "BODY-OF-A") {
+				t.Fatalf("modal shows the wrong body:\n%s", v)
+			}
+			if m.approvable() {
+				t.Fatal("B must not be approvable before it has been fully seen")
+			}
+			// Typed-ahead approval of an unseen B must be refused.
+			m2, _ := step(m, keyRunes("y"))
+			if _, cmd := step(m2, tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
+				t.Fatal("unseen B was approved")
+			}
+			// Deny targets the displayed request.
+			if _, cmd := step(m, keyRunes("n")); cmd == nil {
+				t.Fatal("deny must work")
+			} else if msg, ok := cmd().(ActionResultMsg); !ok || msg.Action.RequestID != "B" {
+				t.Fatalf("deny targeted %+v, want B", msg.Action)
+			}
+			// Once B is fully seen, approval targets B.
+			m = scrollModalToEnd(t, m)
+			m, _ = step(m, keyRunes("y"))
+			_, cmd := step(m, tea.KeyMsg{Type: tea.KeyEnter})
+			if cmd == nil {
+				t.Fatal("seen B should be approvable")
+			}
+			msg, ok := cmd().(ActionResultMsg)
+			if !ok || msg.Action.RequestID != "B" || msg.Action.Decision.Kind != agent.DecisionAllowOnce {
+				t.Fatalf("approval = %+v, want AllowOnce for B", msg.Action)
+			}
+		})
+	}
+}
+
+func TestResizeBelowViewMinimumIsDenyOnly(t *testing.T) {
+	cases := map[string][2]int{
+		"width-only":  {minWidth - 1, 16},
+		"height-only": {70, minHeight - 1},
+	}
+	for name, size := range cases {
+		t.Run(name, func(t *testing.T) {
+			ing := &fakeIngress{result: hub.ActionResult{Accepted: true}}
+			m := newModel(t, ing, 70, 16)
+			m.pending = []permission{newPermission(hub.PermissionRequestedPayload{RequestID: "r1", ToolCallID: "c", PermissionKind: "shell", Summary: "ls"}, time.Time{})}
+			m.syncModal(true)
+			if !m.approvable() {
+				t.Fatal("short request should be approvable at 70x16")
+			}
+			m, _ = step(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			if !strings.Contains(m.View(), "too small") {
+				t.Fatalf("View should report too small:\n%s", m.View())
+			}
+			if m.approvable() {
+				t.Fatal("approvable while View does not render the modal")
+			}
+			m, _ = step(m, keyRunes("y"))
+			if _, cmd := step(m, tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
+				t.Fatal("y+Enter approved an unseen request")
+			}
+			if _, cmd := step(m, keyRunes("n")); cmd == nil {
+				t.Fatal("deny must still work")
+			}
+			// Restoring the size restarts reading: the request was never shown.
+			m, _ = step(m, tea.WindowSizeMsg{Width: 70, Height: 16})
+			if m.modalSeen > m.modal.Height {
+				t.Fatalf("reading state not reset on resize: seen=%d", m.modalSeen)
+			}
+			if !strings.Contains(view(m), "Permission request") {
+				t.Fatalf("modal not shown after restoring size:\n%s", view(m))
+			}
+		})
+	}
+}
+
 func TestBlankSummaryIsDenyOnly(t *testing.T) {
 	for _, summary := range []string{"", "  \n\t "} {
 		ing := &fakeIngress{result: hub.ActionResult{Accepted: true}}
