@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -118,6 +119,12 @@ type ServerConfig struct {
 	Drain func(ctx context.Context) error
 	// HandshakeTimeout overrides [HandshakeTimeout] (tests).
 	HandshakeTimeout time.Duration
+	// MaxConnections is [remote].max_connections: the cap on concurrent
+	// sockets, counting unauthenticated ones. Default [DefaultMaxConnections].
+	MaxConnections int
+	// Logger receives server diagnostics (including net/http errors) through
+	// slog. Default: discard.
+	Logger *slog.Logger
 	// OnBind, when set, is called with the bound loopback address before
 	// Serve (used to tell the handler its port).
 	OnBind func(net.Addr)
@@ -129,7 +136,7 @@ type ServerConfig struct {
 // handler. Its lifecycle: [NewServer] binds (and asserts) the listener,
 // [Server.Serve] runs until [Server.Shutdown].
 type Server struct {
-	ln     net.Listener
+	ln     *limitListener
 	srv    *http.Server
 	cancel context.CancelFunc
 	drain  func(ctx context.Context) error
@@ -145,9 +152,14 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	ln, err := listen(context.Background(), host, cfg.Port, cfg.resolver)
+	raw, err := listen(context.Background(), host, cfg.Port, cfg.resolver)
 	if err != nil {
 		return nil, err
+	}
+	ln := newLimitListener(raw, cfg.MaxConnections)
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
 	hs := cfg.HandshakeTimeout
 	if hs <= 0 {
@@ -167,10 +179,14 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 			ReadTimeout:       hs,
 			IdleTimeout:       idleHTTPTimeout,
 			MaxHeaderBytes:    MaxHeaderBytes,
+			ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 			BaseContext:       func(net.Listener) context.Context { return base },
 		},
 	}, nil
 }
+
+// ActiveConnections reports the sockets currently holding a connection slot.
+func (s *Server) ActiveConnections() int { return int(s.ln.active.Load()) }
 
 // Addr returns the bound (loopback) listener address.
 func (s *Server) Addr() net.Addr { return s.ln.Addr() }

@@ -40,8 +40,6 @@ type Config struct {
 	// AllowedHosts is [remote].allowed_hosts, in addition to the loopback
 	// names for the bound port.
 	AllowedHosts []string
-	// MaxConnections is [remote].max_connections.
-	MaxConnections int
 	// Logger receives transport diagnostics. The transport never logs
 	// headers, URLs or request dumps. Default: discard.
 	Logger *slog.Logger
@@ -325,8 +323,9 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, grant *Grant) 
 // pump tasks.
 func (h *Handler) serveConn(conn *websocket.Conn, client *hub.Client, _ *Grant) {
 	defer func() { _ = conn.CloseNow() }()
+	ctx := conn.CloseRead(h.ctx)
 	select {
 	case <-client.Done():
-	case <-h.ctx.Done():
+	case <-ctx.Done():
 	}
 }

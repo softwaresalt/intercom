@@ -65,8 +65,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 	cfg := Config{
 		Hub: h, Creds: creds,
 		AllowedOrigins: o.origins, AllowedHosts: o.hosts,
-		MaxConnections: o.maxConns,
-		Logger:         slog.New(logs),
+		Logger: slog.New(logs),
 	}
 	if o.cfgTweak != nil {
 		o.cfgTweak(&cfg)
@@ -75,7 +74,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sc := ServerConfig{Host: "127.0.0.1", Handler: handler, Drain: handler.Drain, OnBind: handler.SetBoundAddr}
+	sc := ServerConfig{Host: "127.0.0.1", Handler: handler, MaxConnections: o.maxConns, Logger: slog.New(logs), Drain: handler.Drain, OnBind: handler.SetBoundAddr}
 	if o.srvTweak != nil {
 		o.srvTweak(&sc)
 	}
