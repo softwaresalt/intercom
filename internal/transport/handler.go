@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/softwaresalt/intercom-go/internal/apperr"
@@ -40,6 +41,16 @@ type Config struct {
 	// AllowedHosts is [remote].allowed_hosts, in addition to the loopback
 	// names for the bound port.
 	AllowedHosts []string
+	// Now is the clock for credential expiry timers; default time.Now.
+	Now func() time.Time
+	// PingInterval, WriteTimeout and CloseGrace override the Default* timing
+	// constants (tests).
+	PingInterval time.Duration
+	WriteTimeout time.Duration
+	CloseGrace   time.Duration
+	// ClientBuffer is the hub send-buffer capacity per remote client
+	// (default hub.DefaultRemoteBuffer).
+	ClientBuffer int
 	// Logger receives transport diagnostics. The transport never logs
 	// headers, URLs or request dumps. Default: discard.
 	Logger *slog.Logger
@@ -57,6 +68,12 @@ type Handler struct {
 	ctx    context.Context //nolint:containedctx // handler-lifetime context, canceled by Drain
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	pingEvery    time.Duration
+	writeTimeout time.Duration
+	closeGrace   time.Duration
+	sessions     atomic.Int64
+	pings        atomic.Int64
 }
 
 // NewHandler validates cfg and returns a Handler.
@@ -66,6 +83,9 @@ func NewHandler(cfg Config) (*Handler, error) {
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.DiscardHandler)
+	}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
 	}
 	h := &Handler{
 		cfg:     cfg,
@@ -87,6 +107,9 @@ func NewHandler(cfg Config) (*Handler, error) {
 		}
 		h.hosts[k] = struct{}{}
 	}
+	h.pingEvery = durOr(cfg.PingInterval, DefaultPingInterval)
+	h.writeTimeout = durOr(cfg.WriteTimeout, DefaultWriteTimeout)
+	h.closeGrace = durOr(cfg.CloseGrace, DefaultCloseGrace)
 	h.ctx, h.cancel = context.WithCancel(context.Background())
 	return h, nil
 }
@@ -298,7 +321,7 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, grant *Grant) 
 	h.wg.Add(1)
 	defer h.wg.Done()
 
-	client, err := h.cfg.Hub.Connect(r.Context(), hub.ConnectOptions{Kind: hub.ClientRemote, Role: grant.Role()})
+	client, err := h.cfg.Hub.Connect(r.Context(), hub.ConnectOptions{Kind: hub.ClientRemote, Role: grant.Role(), Buffer: h.cfg.ClientBuffer})
 	if err != nil {
 		h.reject(w, http.StatusServiceUnavailable, rejectHubRegister)
 		return
@@ -316,16 +339,20 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, grant *Grant) 
 	if err != nil {
 		return // Accept has already written the HTTP error
 	}
-	h.serveConn(conn, client, grant)
+	newSession(h, conn, client, grant).run()
 }
 
-// serveConn is replaced by the pump-based implementation in the write/read
-// pump tasks.
-func (h *Handler) serveConn(conn *websocket.Conn, client *hub.Client, _ *Grant) {
-	defer func() { _ = conn.CloseNow() }()
-	ctx := conn.CloseRead(h.ctx)
-	select {
-	case <-client.Done():
-	case <-ctx.Done():
+func durOr(d, def time.Duration) time.Duration {
+	if d > 0 {
+		return d
 	}
+	return def
 }
+
+// ActiveSessions reports connections currently being served.
+func (h *Handler) ActiveSessions() int { return int(h.sessions.Load()) }
+
+// PingsSent reports keep-alive pings written by the pumps (diagnostics).
+func (h *Handler) PingsSent() int64 { return h.pings.Load() }
+
+func (h *Handler) now() time.Time { return h.cfg.Now() }
