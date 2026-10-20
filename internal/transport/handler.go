@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -311,8 +312,9 @@ func (h *Handler) hostAllowed(host string) bool {
 // cap (503) is added ahead of these by the pre-auth limiter.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != WSPath {
+		// Status only, like every other rejection: no body.
 		w.Header().Set("Connection", "close")
-		http.NotFound(w, r)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	if !h.hostAllowed(r.Host) {
@@ -332,6 +334,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	grant, err := h.cfg.Creds.Verify(tok, h.cfg.Hub.Gen())
 	if err != nil {
+		if errors.Is(err, ErrShuttingDown) {
+			h.reject(w, http.StatusServiceUnavailable, rejectDraining)
+			return
+		}
 		h.reject(w, http.StatusUnauthorized, rejectCredential)
 		return
 	}

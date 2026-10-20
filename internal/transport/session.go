@@ -321,15 +321,16 @@ func (s *session) violation(ctx context.Context) {
 // future change to either side must fail closed, never silently widen
 // privilege).
 func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
-	if v := s.h.revalidate(s.grant, s.client.Role()); v.reason != "" {
+	v := s.h.revalidate(s.grant, s.client.Role())
+	if v.closeConn {
 		s.queueReply(refusalFor(act, v.reason))
-		if v.closeConn {
-			s.requestClose(websocket.StatusPolicyViolation, closeReasonEnded)
-			<-ctx.Done() // the pump flushes the refusal, closes, then cancels
-			return false
-		}
-		return true
+		s.requestClose(websocket.StatusPolicyViolation, closeReasonEnded)
+		<-ctx.Done() // the pump flushes the refusal, closes, then cancels
+		return false
 	}
+	// Every other path, including the non-closing shutdown-revoked refusal,
+	// goes through the per-connection limiter below, so a flood during the
+	// revoked state is rate limited and eventually closed.
 	if !s.bucket.allow() {
 		s.violations++
 		s.queueReply(refusalFor(act, ReasonRateLimited))
@@ -338,6 +339,12 @@ func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
 			<-ctx.Done()
 			return false
 		}
+		return true
+	}
+	if v.reason != "" {
+		// Non-closing refusal (shutdown-revoked): it passed the limiter but is
+		// not a successful action, so the violation count is not reset.
+		s.queueReply(refusalFor(act, v.reason))
 		return true
 	}
 	s.violations = 0

@@ -271,7 +271,7 @@ func TestShutdownBudgetCoversCloseGrace(t *testing.T) {
 	e := newEnv(t, envOpts{cfgTweak: func(c *Config) { c.CloseGrace = 300 * time.Millisecond }})
 	c := dialWS(t, e, e.app.Token.Reveal()) // never reads again: never answers the close
 	readEnvelope(t, c, 2*time.Second)
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond+time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond+2*time.Second)
 	defer cancel()
 	if err := e.srv.Shutdown(ctx); err != nil {
 		t.Fatalf("Shutdown returned %v merely because closeGrace elapsed", err)

@@ -52,8 +52,11 @@
 //   - 503: over the connection cap, the server is draining for shutdown, or
 //     the hub is unavailable (retry later).
 //
-// A ws:// URL is accepted only for a loopback host; use wss:// otherwise
-// ([ErrInsecureTransport]).
+// A ws:// URL is accepted only for a loopback host (the literal name
+// "localhost" or a loopback IP literal; the check is name-based and never
+// resolves DNS); use wss:// otherwise ([ErrInsecureTransport]). The URL must
+// carry no userinfo and no query ([ErrInvalidURL]): the client adds the
+// resume cursor itself. Inbound messages are limited to [ReadLimit].
 //
 // # Connecting, hydrating and resuming (design §5.3)
 //
@@ -189,9 +192,9 @@ const (
 
 // Options configures [Dial].
 type Options struct {
-	// URL is the ws:// or wss:// endpoint (path [Path]). The credential must
-	// never be put in it; a query holding a credential is refused by the
-	// server.
+	// URL is the ws:// or wss:// endpoint (path [Path]). It must carry no
+	// userinfo and no query ([ErrInvalidURL]): the credential never travels
+	// in the URL, and the resume cursor is added from Resume.
 	URL string
 	// Credential is the bearer credential.
 	Credential string
@@ -269,8 +272,34 @@ type Client struct {
 // tunnel on loopback.
 var ErrInsecureTransport = errors.New("wsclient: refusing plain-text ws:// to a non-loopback host; use wss://")
 
+// ErrInvalidURL is returned by [Dial] for a URL that could carry a credential
+// or other caller-chosen data to the server: one with userinfo
+// ("user:pass@host") or with any query at all. The only query the client ever
+// sends is the resume cursor (gen, seq) it adds itself from [Options.Resume].
+var ErrInvalidURL = errors.New("wsclient: URL must have no userinfo and no query; the credential never travels in the URL")
+
+// ReadLimit is the largest inbound message [Dial]ed clients accept. The
+// library default (32 KiB) would reject a hydrate snapshot. The limit covers
+// the hub's worst-case hydrate frame (snapshot bound, overhead and the default
+// number of pending permissions at their declared worst-case size, about
+// 660 KiB) with headroom; a larger frame closes the connection with 1009.
+const ReadLimit = 1 << 20
+
+// checkURL rejects URLs that could smuggle data to the server. It never
+// echoes the URL, which may hold secrets.
+func checkURL(u *url.URL) error {
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery {
+		return ErrInvalidURL
+	}
+	return nil
+}
+
 // checkTransport enforces the transport-security rule: wss/https always;
-// ws/http only to a loopback host (localhost or a loopback IP literal).
+// ws/http only to a loopback host (localhost or a loopback IP literal). The
+// check is NAME-BASED: it inspects the literal host in the URL and never
+// resolves it, so "localhost" is trusted by name (a hostile hosts file or
+// resolver could point it elsewhere) and any other name is refused even if it
+// would resolve to loopback.
 func checkTransport(u *url.URL) error {
 	switch strings.ToLower(u.Scheme) {
 	case "wss", "https":
@@ -290,12 +319,17 @@ func checkTransport(u *url.URL) error {
 }
 
 // Dial authenticates and upgrades. On refusal it returns a *HandshakeError.
-// A ws:// URL is refused with [ErrInsecureTransport] unless its host is
-// loopback.
+// A URL with userinfo or any query is refused with [ErrInvalidURL]. A ws://
+// URL is refused with [ErrInsecureTransport] unless its host is a loopback
+// literal or the name "localhost" (a name-based check; see checkTransport).
+// Inbound messages are limited to [ReadLimit].
 func Dial(ctx context.Context, o Options) (*Client, error) {
 	u, err := url.Parse(o.URL)
 	if err != nil {
 		return nil, fmt.Errorf("wsclient: bad URL: %w", err)
+	}
+	if err := checkURL(u); err != nil {
+		return nil, err
 	}
 	if err := checkTransport(u); err != nil {
 		return nil, err
@@ -325,6 +359,7 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 		}
 		return nil, fmt.Errorf("wsclient: dial failed: %w", scrub(err, o.Credential))
 	}
+	conn.SetReadLimit(ReadLimit)
 	c := &Client{conn: conn}
 	if o.Resume != nil {
 		c.cur = cursor{gen: o.Resume.Gen, seq: o.Resume.Seq, have: true}

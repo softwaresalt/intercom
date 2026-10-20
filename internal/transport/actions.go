@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
 	"github.com/softwaresalt/intercom-go/internal/apperr"
@@ -110,7 +111,7 @@ func decodeAction(data []byte) (hub.OperatorAction, error) {
 		}
 		act.Decision.Feedback = fields["feedback"]
 	default:
-		act = hub.OperatorAction{Type: hub.OpUnknown}
+		act = hub.OperatorAction{Type: hub.OpUnknown, RequestID: fields["request_id"]}
 	}
 	return act, nil
 }
@@ -148,18 +149,30 @@ func replyFor(act hub.OperatorAction, res hub.ActionResult) []byte {
 		r.Reason = string(res.Reason)
 		r.Winner = res.Winner
 	}
-	if id := act.RequestID; id != "" {
-		if len(id) > maxEchoedRequestID {
-			id = id[:maxEchoedRequestID]
-		}
-		r.RequestID = id
-	}
+	r.RequestID = echoRequestID(act.RequestID)
 	return marshalReply(r)
 }
 
-// refusalFor builds a refusal with a transport-owned reason code.
+// echoRequestID bounds the client-supplied request id to maxEchoedRequestID
+// bytes, cutting on a rune boundary so the echo stays valid UTF-8.
+func echoRequestID(id string) string {
+	if len(id) <= maxEchoedRequestID {
+		return id
+	}
+	cut := maxEchoedRequestID
+	for cut > 0 && !utf8.RuneStart(id[cut]) {
+		cut--
+	}
+	return id[:cut]
+}
+
+// refusalFor builds a refusal with a transport-owned reason code, echoing the
+// offending action's request id where it carried one.
 func refusalFor(act hub.OperatorAction, reason string) []byte {
-	return marshalReply(reply{V: 1, Type: ReplyRefused, Op: opName(act.Type), Reason: reason})
+	return marshalReply(reply{
+		V: 1, Type: ReplyRefused, Op: opName(act.Type), Reason: reason,
+		RequestID: echoRequestID(act.RequestID),
+	})
 }
 
 func marshalReply(r reply) []byte {

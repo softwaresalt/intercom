@@ -41,6 +41,12 @@ func (e *env) serveSession(t *testing.T, grant *Grant, setup func(s *session)) *
 	t.Cleanup(func() {
 		client.Close()
 		srv.Close()
+		// Wait for the handler (and so the session's pumps) to finish.
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("serveSession handler did not finish")
+		}
 	})
 	dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer dcancel()

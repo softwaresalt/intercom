@@ -221,7 +221,10 @@ func (s *CredentialStore) revokeLocked(r *record, shutdown bool) {
 	if !shutdown {
 		close(r.revCh) // signals connections using it (ADR MVP-3: hub done signal)
 	}
-	if s.live[r.role] == r {
+	// A shutdown-revoked record stays in live so Verify can tell a holder of
+	// that credential "shutting down" (503) from a bad credential (401); Mint
+	// is refused after shutdown, so nothing can replace it.
+	if !shutdown && s.live[r.role] == r {
 		delete(s.live, r.role)
 	}
 }
@@ -288,7 +291,9 @@ func (g *Grant) GoString() string { return g.String() }
 // crypto/subtle.ConstantTimeCompare over fixed-size digests, without early
 // exit, so neither the presented length nor which candidate matched leaks via
 // timing. Every failure is the same [ErrCredentialRejected] (wrapped
-// KindUnauthorized); the error never contains the presented value.
+// KindUnauthorized), except that presenting a credential revoked by shutdown
+// yields [ErrShuttingDown] so the handler can answer 503. The error never
+// contains the presented value.
 func (s *CredentialStore) Verify(presented, currentGen string) (*Grant, error) {
 	digest := sha256.Sum256([]byte(presented))
 
@@ -312,6 +317,11 @@ func (s *CredentialStore) Verify(presented, currentGen string) (*Grant, error) {
 		err = ErrCredentialRejected
 	} else if verr := s.checkLocked(match, currentGen); verr != nil {
 		err = ErrCredentialRejected
+		if errors.Is(verr, ErrShuttingDown) {
+			// Only a holder of a genuine (shutdown-revoked) credential learns
+			// this; every other failure stays the one generic rejection.
+			err = ErrShuttingDown
+		}
 	}
 	s.mu.Unlock()
 	if err != nil {
