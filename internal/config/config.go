@@ -40,9 +40,9 @@ type RemoteConfig struct {
 	TokenLifetimeSeconds int `toml:"token_lifetime_seconds"`
 	// AllowedOrigins lists exact scheme://host[:port] origins. Empty by default.
 	AllowedOrigins []string `toml:"allowed_origins"`
-	// AllowedHosts lists permitted host names. Empty by default.
+	// AllowedHosts lists permitted hosts (host[:port], IPv6 bracketed); no port means the default port only. Empty by default.
 	AllowedHosts []string `toml:"allowed_hosts"`
-	// MaxConnections bounds concurrent remote connections (>= 1).
+	// MaxConnections bounds concurrent remote connections (1..MaxRemoteConnections).
 	MaxConnections int `toml:"max_connections"`
 	// RemoteApproveDestructive permits remote approval of destructive kinds.
 	RemoteApproveDestructive bool `toml:"remote_approve_destructive"`
@@ -53,6 +53,9 @@ const (
 	MinRemoteTokenLifetimeSeconds = 60
 	MaxRemoteTokenLifetimeSeconds = 86400
 )
+
+// MaxRemoteConnections is the upper bound for [remote].max_connections.
+const MaxRemoteConnections = 1024
 
 // CopilotConfig is the [copilot] section.
 type CopilotConfig struct {

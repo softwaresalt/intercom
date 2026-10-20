@@ -35,7 +35,8 @@ const (
 const (
 	DefaultRemoteBuffer = 64
 	DefaultTUIBuffer    = 256
-	minClientBuffer     = 2
+	// minClientBuffer leaves room for a hydrate frame plus one live frame.
+	minClientBuffer = 2
 )
 
 // Client is one registered consumer of the hub's broadcast. The hub writes to
@@ -73,6 +74,9 @@ func bufferFor(kind ClientKind, buffer int) int {
 	}
 	if buffer < minClientBuffer {
 		buffer = minClientBuffer
+	}
+	if buffer > MaxClientBuffer {
+		buffer = MaxClientBuffer
 	}
 	return buffer
 }

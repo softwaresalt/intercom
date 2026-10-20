@@ -52,7 +52,7 @@ func TestDegradedChannelIsCapacityOneAndSignalNeverBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cap(h.Degraded()); got != 1 {
+	if got := cap(h.degraded); got != 1 {
 		t.Fatalf("cap(Degraded) = %d, want 1", got)
 	}
 	done := make(chan struct{})
@@ -106,7 +106,7 @@ func TestDegradedSignalYieldsHubBuiltErrorEnvelopeAndForcedRehydrate(t *testing.
 	}
 }
 
-func TestDegradedReasonIsSanitizedAndBounded(t *testing.T) {
+func TestDegradedReasonNeverReachesTheWire(t *testing.T) {
 	h := startHub(t, Config{})
 	c := connect(t, h, ClientRemote, 8)
 	h.SignalDegraded("bad\x1b[31m" + strings.Repeat("A", 5000))
@@ -114,8 +114,8 @@ func TestDegradedReasonIsSanitizedAndBounded(t *testing.T) {
 	if err := json.Unmarshal(decode(t, recv(t, c)).Payload, &p); err != nil {
 		t.Fatal(err)
 	}
-	if strings.ContainsRune(p.Message, 0x1b) || len(p.Message) > 512 {
-		t.Fatalf("message not sanitized/bounded: %d bytes %q", len(p.Message), p.Message[:20])
+	if p.Message != msgDegraded {
+		t.Fatalf("wire message = %q, want the fixed %q", p.Message, msgDegraded)
 	}
 }
 

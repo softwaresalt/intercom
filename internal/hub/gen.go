@@ -18,7 +18,10 @@ func NewGen(at time.Time) (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", apperr.Wrapf(apperr.KindIO, err, "hub: read entropy for generation id")
 	}
-	ms := uint64(at.UnixMilli()) // #nosec G115 -- pre-epoch clocks wrap harmlessly; entropy still disambiguates
+	var ms uint64 // a pre-epoch clock clamps to 0; entropy still disambiguates
+	if v := at.UnixMilli(); v > 0 {
+		ms = uint64(v)
+	}
 	b[0] = byte(ms >> 40)
 	b[1] = byte(ms >> 32)
 	b[2] = byte(ms >> 24)

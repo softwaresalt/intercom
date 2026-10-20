@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -62,6 +63,7 @@ type propertyOpts struct {
 func runProperty(t *testing.T, o propertyOpts) []string {
 	t.Helper()
 	o.cfg.SessionID = "sess"
+	o.cfg.MaxRemote = MaxRemoteHardLimit // workers may leave clients registered until dropped
 	h, err := New(o.cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -175,6 +177,9 @@ func runProperty(t *testing.T, o propertyOpts) []string {
 }
 
 func TestPropertyNoGapNoDuplicateUnderConcurrentConnectDropReconnect(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow property variants skipped in -short mode")
+	}
 	base := runtime.NumGoroutine()
 	for seed, ring := range []int{16, 64, 1024} { // wrapped, borderline, fully covering
 		v := runProperty(t, propertyOpts{
@@ -221,10 +226,8 @@ func TestPropertyDetectorTripsOnHydrateThenRegisterMutation(t *testing.T) {
 
 func containsAny(s string, subs ...string) bool {
 	for _, sub := range subs {
-		for i := 0; i+len(sub) <= len(s); i++ {
-			if s[i:i+len(sub)] == sub {
-				return true
-			}
+		if strings.Contains(s, sub) {
+			return true
 		}
 	}
 	return false

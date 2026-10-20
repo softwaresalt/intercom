@@ -12,7 +12,12 @@ import (
 
 // remoteKnownKeys are the schema keys under [remote]. They are exempt from
 // credential-shape screening (token_lifetime_seconds legitimately contains
-// "token" but is a plain duration).
+// "token" but is a plain duration, max_connections contains "connection").
+//
+// NEW [remote] KEYS MUST BE ADDED HERE: the screen below is intentionally a
+// superset of ADR MVP-2 section 4's list and fails closed on anything
+// credential-shaped, so a new legitimate key whose name trips a fragment is
+// rejected until it is listed.
 var remoteKnownKeys = []string{
 	"token_lifetime_seconds",
 	"allowed_origins",
@@ -26,8 +31,10 @@ var remoteKnownKeys = []string{
 // The screen is deliberately broad: it fails closed, because credentials
 // must never come from config.toml.
 var credentialFragments = []string{
-	"token", "secret", "passw", "pwd", "credential", "bearer",
+	"token", "secret", "pwd", "credential", "bearer",
 	"key", "auth", "jwt", "cookie", "signature", "session",
+	"pass", "pat", "psk", "otp", "pin", "private", "cert", "hmac",
+	"salt", "dsn", "connstr", "connection",
 }
 
 // isCredentialShapedKey reports whether a single key segment looks like it
@@ -110,13 +117,81 @@ func validateRemote(r RemoteConfig) error {
 	if r.MaxConnections < 1 {
 		return apperr.New(apperr.KindConfig, "remote.max_connections must be at least 1")
 	}
+	if r.MaxConnections > MaxRemoteConnections {
+		return apperr.Newf(apperr.KindConfig, "remote.max_connections must not exceed %d", MaxRemoteConnections)
+	}
 	return nil
 }
 
 const originForm = "must be an exact lowercase http(s)://host[:port] origin"
 
-// originProblem returns a non-empty reason if o is not an exact origin. The
-// reason never includes o itself (it may carry userinfo).
+// portProblem returns a non-empty reason if p is not a canonical decimal
+// port (1-65535, no sign, no leading zeros).
+func portProblem(p string) string {
+	if p == "" {
+		return "empty port"
+	}
+	for _, r := range p {
+		if r < '0' || r > '9' {
+			return "port must be 1-65535"
+		}
+	}
+	if len(p) > 1 && p[0] == '0' {
+		return "port must not have leading zeros"
+	}
+	if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+		return "port must be 1-65535"
+	}
+	return ""
+}
+
+// ipv6Problem returns a non-empty reason if s (without brackets) is not a
+// canonical lowercase IPv6 literal.
+func ipv6Problem(s string) string {
+	ip := net.ParseIP(s)
+	if ip == nil || !strings.Contains(s, ":") {
+		return "must contain a valid IPv6 literal"
+	}
+	if ip.String() != s {
+		return "IPv6 literal must be in canonical compressed form"
+	}
+	return ""
+}
+
+// hostNameProblem validates a DNS name or IPv4 literal (no port): lowercase
+// ASCII letters, digits, '.', '-', at most 253 bytes, no empty label, no
+// trailing dot, labels of at most 63 bytes that neither start nor end with
+// a hyphen.
+func hostNameProblem(h string) string {
+	if len(h) > 253 {
+		return "host exceeds 253 characters"
+	}
+	if strings.HasSuffix(h, ".") {
+		return "trailing dot is not allowed"
+	}
+	for _, r := range h {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '-' {
+			return hostForm
+		}
+	}
+	for _, label := range strings.Split(h, ".") {
+		switch {
+		case label == "":
+			return "host has an empty label"
+		case len(label) > 63:
+			return "host label exceeds 63 characters"
+		case label[0] == '-' || label[len(label)-1] == '-':
+			return "host label must not start or end with a hyphen"
+		}
+	}
+	return ""
+}
+
+const hostForm = "must be a host[:port] (no scheme, path, userinfo, or whitespace)"
+
+// originProblem returns a non-empty reason if o is not an exact origin in
+// canonical form (ADR MVP-2: default port omitted). The reason never
+// includes o itself (it may carry userinfo).
 func originProblem(o string) string {
 	if o == "" {
 		return "must not be empty"
@@ -132,6 +207,9 @@ func originProblem(o string) string {
 			return originForm + " (whitespace/control characters are not allowed)"
 		}
 	}
+	if strings.Contains(o, "%") {
+		return originForm + " (percent-encoding is not allowed)"
+	}
 	u, err := url.Parse(o)
 	if err != nil {
 		return originForm
@@ -145,25 +223,34 @@ func originProblem(o string) string {
 	if u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.ContainsAny(o, "?#") {
 		return originForm + " (no path, query, or fragment)"
 	}
-	if u.Hostname() == "" {
+	host := u.Hostname()
+	if host == "" {
 		return originForm + " (host is required)"
 	}
 	if p := u.Port(); p != "" {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 1 || n > 65535 {
-			return originForm + " (port must be 1-65535)"
+		if r := portProblem(p); r != "" {
+			return originForm + " (" + r + ")"
+		}
+		if (u.Scheme == "https" && p == "443") || (u.Scheme == "http" && p == "80") {
+			return originForm + " (default port must be omitted)"
 		}
 	} else if strings.HasSuffix(u.Host, ":") {
 		return originForm + " (empty port)"
 	}
-	if hostProblem(u.Hostname()) != "" && net.ParseIP(u.Hostname()) == nil {
+	if strings.Contains(host, ":") {
+		if r := ipv6Problem(host); r != "" {
+			return originForm + " (" + r + ")"
+		}
+	} else if hostNameProblem(host) != "" {
 		return originForm + " (invalid host)"
 	}
 	return ""
 }
 
-// hostProblem returns a non-empty reason if h is not a plain lowercase
-// host name (or IPv4 literal) without scheme, port, path, or wildcard.
+// hostProblem returns a non-empty reason if h is not a canonical
+// allowed_hosts entry: a lowercase host name, IPv4 literal, or bracketed
+// IPv6 literal with an optional :port. An entry without a port matches the
+// default port only (the matcher is a later task).
 func hostProblem(h string) string {
 	if h == "" {
 		return "must not be empty"
@@ -172,16 +259,47 @@ func hostProblem(h string) string {
 		return "must not contain a wildcard"
 	}
 	if h != strings.ToLower(h) {
-		return "must be a lowercase host name (uppercase is not allowed)"
+		return "must be a lowercase host (uppercase is not allowed)"
 	}
 	for _, r := range h {
-		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-'
-		if !ok {
-			return "must be a plain host name (no scheme, port, path, userinfo, or whitespace)"
+		if r <= ' ' || r == 0x7f {
+			return "whitespace/control characters are not allowed"
+		}
+		if r > 0x7e {
+			return "must be ASCII (use the punycode form)"
 		}
 	}
-	if strings.HasPrefix(h, ".") || strings.HasSuffix(h, ".") || strings.HasPrefix(h, "-") || strings.Contains(h, "..") {
-		return "must be a well-formed host name"
+	if strings.HasPrefix(h, "[") {
+		end := strings.LastIndex(h, "]")
+		if end < 0 {
+			return hostForm
+		}
+		if r := ipv6Problem(h[1:end]); r != "" {
+			return r
+		}
+		switch rest := h[end+1:]; {
+		case rest == "":
+			return ""
+		case rest[0] == ':':
+			return portProblem(rest[1:])
+		default:
+			return hostForm
+		}
 	}
-	return ""
+	if strings.ContainsAny(h, `/\@?#%[]`) {
+		return hostForm
+	}
+	name := h
+	switch strings.Count(h, ":") {
+	case 0:
+	case 1:
+		i := strings.IndexByte(h, ':')
+		name = h[:i]
+		if r := portProblem(h[i+1:]); r != "" {
+			return r
+		}
+	default:
+		return hostForm
+	}
+	return hostNameProblem(name)
 }

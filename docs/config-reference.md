@@ -69,16 +69,22 @@ off. This section is secret-free by design.
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `remote.token_lifetime_seconds` | integer | `14400` | Must be between `60` and `86400` inclusive. |
-| `remote.allowed_origins` | array of string | `[]` | Exact lowercase `http(s)://host[:port]` origins. Wildcards, paths (including a trailing `/`), queries, fragments, userinfo, uppercase, other schemes, empty and duplicate entries are rejected. |
-| `remote.allowed_hosts` | array of string | `[]` | Plain lowercase host names (no scheme, port, path, userinfo). Wildcards, empty and duplicate entries are rejected. |
-| `remote.max_connections` | integer | `8` | Must be at least `1`. |
+| `remote.allowed_origins` | array of string | `[]` | Exact lowercase `http(s)://host[:port]` origins in canonical form; bracketed IPv6 literals (`http://[::1]:3000`) are allowed. An explicit default port (`https://x:443`, `http://x:80`) is rejected: the default port must be omitted. Wildcards, paths (including a trailing `/`), queries (including a bare `?`), fragments, userinfo, `%` escapes, leading-zero or out-of-range ports, uppercase, other schemes, trailing dots, empty and duplicate entries are rejected. |
+| `remote.allowed_hosts` | array of string | `[]` | A lowercase host with an optional `:port` (decimal 1-65535, no leading zeros), e.g. `app.example.com`, `localhost:3000`, `[::1]`, `[::1]:3000`. An entry without a port matches the default port only (the matcher is a later task). Host names are at most 253 characters with no empty label, no trailing dot, labels of at most 63 characters that do not start or end with a hyphen. Wildcards, schemes, paths, userinfo, whitespace/control or non-ASCII characters, empty and duplicate entries are rejected. |
+| `remote.max_connections` | integer | `8` | Must be between `1` and `1024` (`MaxRemoteConnections`) inclusive. |
 | `remote.remote_approve_destructive` | bool | `false` | When `true`, remote surfaces may approve `shell`, `write`, and unknown kinds. |
 
 **Credential-shaped keys are rejected.** `Decode`/`Load` fail closed on any
 key at or below `[remote]` whose name looks like a credential (it contains
-`token`, `secret`, `passw`, `pwd`, `credential`, `bearer`, `key`, `auth`,
-`jwt`, `cookie`, `signature`, or `session`, ignoring case and punctuation),
-other than the five known keys above. The error names the key path and never
+`token`, `secret`, `pass`, `pwd`, `credential`, `bearer`, `key`, `auth`,
+`jwt`, `cookie`, `signature`, `session`, `pat`, `psk`, `otp`, `pin`, `private`,
+`cert`, `hmac`, `salt`, `dsn`, `connstr`, or `connection`, ignoring case and
+punctuation), other than the five known keys above. The screen is
+intentionally broader than ADR MVP-2's list; a new `[remote]` key must be
+added to `remoteKnownKeys` in `internal/config/remote.go`.
+
+An absent `[remote]` section = secure defaults; no migration is needed for
+existing config files. The error names the key path and never
 echoes the value. Credentials never come from `config.toml`.
 
 ## `[[workspace]]`
@@ -143,8 +149,8 @@ hosts, max connections. Messages never echo entry values.
 |---|---|
 | `token_lifetime_seconds` within 60..86400 | `remote.token_lifetime_seconds must be between 60 and 86400` |
 | each `allowed_origins` entry is an exact origin, unique | `remote.allowed_origins[{i}] {reason}` |
-| each `allowed_hosts` entry is a plain host name, unique | `remote.allowed_hosts[{i}] {reason}` |
-| `max_connections` at least 1 | `remote.max_connections must be at least 1` |
+| each `allowed_hosts` entry is a canonical host[:port], unique | `remote.allowed_hosts[{i}] {reason}` |
+| `max_connections` at least 1 | `remote.max_connections must be at least 1`; `remote.max_connections must not exceed 1024` |
 | no credential-shaped key under `[remote]` (checked by `Decode`, before `Validate`, because it needs the raw key set) | `remote.{key} is a credential-shaped key; credentials must never be stored in config.toml (remove it from [remote])` |
 
 Rule 5 has one additional non-fatal advisory: a bare name that is not
@@ -168,7 +174,10 @@ internal order, which is fixed whenever `Validate()` is called directly.
 `Validate()` is ever invoked. A document that both omits
 `default_workspace_root` and violates an earlier `Validate()` rule (for
 example rule 1) therefore still reports `default_workspace_root must be set`
-from `Load`/`Decode`, not the rule-1 message.
+from `Load`/`Decode`, not the rule-1 message. Likewise the `[remote]`
+credential-key screen runs in `Decode` after the case-fold check and before the
+required-key check, so a credential-shaped `[remote]` key is reported ahead of
+a missing `default_workspace_root` and ahead of every `Validate()` rule.
 
 ## Migration from pre-correction configs
 

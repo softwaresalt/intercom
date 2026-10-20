@@ -3,7 +3,10 @@ package hub
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
 	"github.com/softwaresalt/intercom-go/internal/apperr"
@@ -39,6 +42,8 @@ const (
 	ErrCodeUnknownEvent = "unknown_event"
 	// ErrCodeDegraded reports an out-of-band degraded signal from the adapter.
 	ErrCodeDegraded = "degraded"
+	// ErrCodeFrameTooLarge replaces a live envelope that exceeded the frame cap.
+	ErrCodeFrameTooLarge = "frame_too_large"
 )
 
 // Envelope is the decoded wire shape of one envelope (design §5.2). It is
@@ -60,10 +65,12 @@ type (
 	MessagePayload struct {
 		MessageID string `json:"message_id"`
 		Text      string `json:"text"`
+		Truncated bool   `json:"truncated,omitempty"`
 	}
 	// TurnPayload is the payload of agent.turn.start and agent.turn.end.
 	TurnPayload struct {
-		TurnID string `json:"turn_id"`
+		TurnID    string `json:"turn_id"`
+		Truncated bool   `json:"truncated,omitempty"`
 	}
 	// IdlePayload is the payload of agent.idle.
 	IdlePayload struct {
@@ -83,17 +90,23 @@ type (
 		Decision  string `json:"decision"`
 		Actor     string `json:"actor"`
 	}
-	// ToolPayload is the payload of tool.started and tool.ended.
-	ToolPayload struct {
+	// ToolStartedPayload is the payload of tool.started.
+	ToolStartedPayload struct {
 		ToolCallID string `json:"tool_call_id"`
 		ToolName   string `json:"tool_name"`
-		Success    bool   `json:"success,omitempty"`
+		Truncated  bool   `json:"truncated,omitempty"`
+	}
+	// ToolEndedPayload is the payload of tool.ended; success is always present.
+	ToolEndedPayload struct {
+		ToolCallID string `json:"tool_call_id"`
+		ToolName   string `json:"tool_name"`
+		Success    bool   `json:"success"`
+		Truncated  bool   `json:"truncated,omitempty"`
 	}
 	// ErrorPayload is the payload of hub-produced error envelopes.
 	ErrorPayload struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
-		RawType string `json:"raw_type,omitempty"`
 	}
 	// ShutdownPayload is the payload of server.shutdown.
 	ShutdownPayload struct {
@@ -208,48 +221,71 @@ func KindFor(k agent.EventKind) (Kind, bool) {
 	}
 }
 
-// maxRawTypeLen bounds the SDK type name echoed in an unknown-event error.
+// maxRawTypeLen bounds the SDK type name written to the log for an unknown
+// event.
 const maxRawTypeLen = 128
 
+// unknownEventError is the single error payload for an unmappable agent
+// event. Its message is fixed: adapter-controlled text (the raw SDK type)
+// must never reach remote clients or the fold.
+func unknownEventError() ErrorPayload {
+	return ErrorPayload{Code: ErrCodeUnknownEvent, Message: msgUnknownEvent}
+}
+
 // mapEvent converts a normalized agent event into an envelope kind and
-// payload. An unmapped event becomes an error envelope (design §4.3: never a
-// silent drop).
-func mapEvent(ev agent.Event) (Kind, any) {
+// payload. Text is capped at textCap bytes and identifiers at maxIdentBytes
+// (the same caps the fold applies), with truncated:true set when anything was
+// cut, so a live envelope can never exceed the declared bounds. An unmapped
+// event becomes an error envelope (design §4.3: never a silent drop).
+func mapEvent(ev agent.Event, textCap int) (Kind, any) {
 	kind, ok := KindFor(ev.Kind)
 	if !ok {
-		return KindError, ErrorPayload{
-			Code:    ErrCodeUnknownEvent,
-			Message: "unrecognised agent event",
-			RawType: sanitize(ev.RawType, maxRawTypeLen),
-		}
+		return KindError, unknownEventError()
 	}
 	switch kind {
 	case KindAgentMessage, KindAgentMessageDelta:
-		return kind, MessagePayload{MessageID: ev.MessageID, Text: ev.Text}
+		id, t1 := capIdent(ev.MessageID)
+		text := truncUTF8(ev.Text, textCap)
+		return kind, MessagePayload{MessageID: id, Text: text, Truncated: t1 || len(text) < len(ev.Text)}
 	case KindAgentTurnStart, KindAgentTurnEnd:
-		return kind, TurnPayload{TurnID: ev.TurnID}
+		id, t := capIdent(ev.TurnID)
+		return kind, TurnPayload{TurnID: id, Truncated: t}
 	case KindAgentIdle:
 		return kind, IdlePayload{Aborted: ev.Aborted}
-	default: // tool.started, tool.ended
-		return kind, ToolPayload{ToolCallID: ev.ToolCallID, ToolName: ev.ToolName, Success: ev.Success}
+	case KindToolStarted:
+		id, t1 := capIdent(ev.ToolCallID)
+		name, t2 := capIdent(ev.ToolName)
+		return kind, ToolStartedPayload{ToolCallID: id, ToolName: name, Truncated: t1 || t2}
+	default: // tool.ended
+		id, t1 := capIdent(ev.ToolCallID)
+		name, t2 := capIdent(ev.ToolName)
+		return kind, ToolEndedPayload{ToolCallID: id, ToolName: name, Success: ev.Success, Truncated: t1 || t2}
 	}
 }
 
-// sanitize bounds s to max bytes (on a rune boundary) and replaces control
-// characters so hub-produced diagnostics cannot smuggle terminal escapes.
-func sanitize(s string, max int) string {
-	out := make([]rune, 0, len(s))
+// capIdent bounds an identifier to maxIdentBytes and reports truncation.
+func capIdent(s string) (string, bool) {
+	out := truncUTF8(s, maxIdentBytes)
+	return out, len(out) < len(s)
+}
+
+// sanitize bounds s to limit bytes (on a rune boundary) and replaces every
+// control rune (C0, DEL and C1 such as U+009B CSI), the Unicode line/paragraph
+// separators and format runes (bidi overrides, zero-width) with '?', so
+// hub-produced diagnostics cannot smuggle terminal escapes or spoof text.
+func sanitize(s string, limit int) string {
+	var b strings.Builder
 	n := 0
 	for _, r := range s {
-		if r < 0x20 || r == 0x7f {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' || unicode.Is(unicode.Cf, r) {
 			r = '?'
 		}
-		sz := len(string(r))
-		if n+sz > max {
+		sz := utf8.RuneLen(r)
+		if n+sz > limit {
 			break
 		}
-		out = append(out, r)
+		b.WriteRune(r)
 		n += sz
 	}
-	return string(out)
+	return b.String()
 }

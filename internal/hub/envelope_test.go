@@ -89,9 +89,9 @@ func goldenCases() []goldenCase {
 			head + `permission.requested","session_id":"sess","payload":{"request_id":"r1","tool_call_id":"c1","permission_kind":"shell","summary":"ls"}}`},
 		{KindPermissionResolved, PermissionResolvedPayload{RequestID: "r1", Decision: "allow_once", Actor: "tui"},
 			head + `permission.resolved","session_id":"sess","payload":{"request_id":"r1","decision":"allow_once","actor":"tui"}}`},
-		{KindToolStarted, ToolPayload{ToolCallID: "c1", ToolName: "bash"},
+		{KindToolStarted, ToolStartedPayload{ToolCallID: "c1", ToolName: "bash"},
 			head + `tool.started","session_id":"sess","payload":{"tool_call_id":"c1","tool_name":"bash"}}`},
-		{KindToolEnded, ToolPayload{ToolCallID: "c1", ToolName: "bash", Success: true},
+		{KindToolEnded, ToolEndedPayload{ToolCallID: "c1", ToolName: "bash", Success: true},
 			head + `tool.ended","session_id":"sess","payload":{"tool_call_id":"c1","tool_name":"bash","success":true}}`},
 		{KindError, ErrorPayload{Code: "degraded", Message: "ingress stalled"},
 			head + `error","session_id":"sess","payload":{"code":"degraded","message":"ingress stalled"}}`},
@@ -172,22 +172,22 @@ func TestKindForMapsAgentEventKinds(t *testing.T) {
 }
 
 func TestMapEventUnknownBecomesErrorEnvelopeNotDropped(t *testing.T) {
-	kind, payload := mapEvent(agent.Event{Kind: agent.KindUnknown, RawType: "assistant.reasoning"})
+	kind, payload := mapEvent(agent.Event{Kind: agent.KindUnknown, RawType: "assistant.reasoning"}, 1024)
 	if kind != KindError {
 		t.Fatalf("unknown event kind = %q, want %q", kind, KindError)
 	}
 	ep, ok := payload.(ErrorPayload)
-	if !ok || ep.Code != ErrCodeUnknownEvent || ep.RawType != "assistant.reasoning" {
+	if !ok || ep.Code != ErrCodeUnknownEvent || ep.Message != "unrecognised agent event" {
 		t.Fatalf("payload = %#v", payload)
 	}
 }
 
 func TestMapEventKnownKindsCarryFields(t *testing.T) {
-	kind, payload := mapEvent(agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c", ToolName: "n", Success: true})
+	kind, payload := mapEvent(agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c", ToolName: "n", Success: true}, 1024)
 	if kind != KindToolEnded {
 		t.Fatal(kind)
 	}
-	if tp, ok := payload.(ToolPayload); !ok || tp != (ToolPayload{ToolCallID: "c", ToolName: "n", Success: true}) {
+	if tp, ok := payload.(ToolEndedPayload); !ok || tp != (ToolEndedPayload{ToolCallID: "c", ToolName: "n", Success: true}) {
 		t.Fatalf("payload = %#v", payload)
 	}
 }

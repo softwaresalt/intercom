@@ -68,20 +68,31 @@ func TestValidateRemoteTokenLifetimeBoundaries(t *testing.T) {
 }
 
 func TestValidateRemoteMaxConnections(t *testing.T) {
-	const msg = "remote.max_connections must be at least 1"
+	const (
+		low  = "remote.max_connections must be at least 1"
+		high = "remote.max_connections must not exceed 1024"
+	)
+	if MaxRemoteConnections != 1024 {
+		t.Fatalf("MaxRemoteConnections = %d, want 1024", MaxRemoteConnections)
+	}
 	for _, tc := range []struct {
 		v    int
-		fail bool
-	}{{-1, true}, {0, true}, {1, false}, {8, false}} {
+		want string
+	}{{-1, low}, {0, low}, {1, ""}, {8, ""}, {1024, ""}, {1025, high}} {
 		cfg := validRemoteCfg(t)
 		cfg.Remote.MaxConnections = tc.v
 		_, err := cfg.Validate()
-		if tc.fail != (err != nil) || (tc.fail && !strings.Contains(err.Error(), msg)) {
-			t.Errorf("max_connections %d: err = %v, fail want %v (%q)", tc.v, err, tc.fail, msg)
+		if tc.want == "" {
+			if err != nil {
+				t.Errorf("max_connections %d: unexpected error %v", tc.v, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("max_connections %d: err = %v, want %q", tc.v, err, tc.want)
 		}
 	}
 }
-
 func TestValidateRemoteStructLiteralZeroFailsClosed(t *testing.T) {
 	cfg := &Config{
 		MaxConcurrentSessions: 1,
@@ -100,6 +111,10 @@ func TestValidateRemoteOrigins(t *testing.T) {
 		{"https://app.example.com"},
 		{"http://localhost:5173", "https://app.example.com:8443"},
 		{"http://127.0.0.1:3000"},
+		{"http://[::1]:3000"},
+		{"https://[::1]"},
+		{"https://[2001:db8::1]:8443"},
+		{"https://example.com:444", "http://example.com:443", "https://example.com:80"},
 	}
 	for _, o := range good {
 		cfg := validRemoteCfg(t)
@@ -108,69 +123,157 @@ func TestValidateRemoteOrigins(t *testing.T) {
 			t.Errorf("origins %v: unexpected error %v", o, err)
 		}
 	}
-	bad := map[string][]string{
-		"empty":        {""},
-		"wildcard":     {"*"},
-		"wildcardHost": {"https://*.example.com"},
-		"wildcardPort": {"https://example.com:*"},
-		"path":         {"https://example.com/app"},
-		"trailing":     {"https://example.com/"},
-		"query":        {"https://example.com?x=1"},
-		"fragment":     {"https://example.com#x"},
-		"userinfo":     {"https://user:hunter2@example.com"},
-		"uppercase":    {"https://Example.com"},
-		"upperScheme":  {"HTTPS://example.com"},
-		"noScheme":     {"example.com"},
-		"badScheme":    {"ftp://example.com"},
-		"noHost":       {"https://"},
-		"badPort":      {"https://example.com:99999"},
-		"space":        {"https://exa mple.com"},
-		"duplicate":    {"https://a.example.com", "https://a.example.com"},
+	const form = "must be an exact lowercase http(s)://host[:port] origin"
+	bad := []struct {
+		name, entry, reason string
+	}{
+		{"empty", "", "must not be empty"},
+		{"wildcard", "*", "must not contain a wildcard"},
+		{"wildcardHost", "https://*.example.com", "must not contain a wildcard"},
+		{"wildcardPort", "https://example.com:*", "must not contain a wildcard"},
+		{"path", "https://example.com/app", "no path, query, or fragment"},
+		{"trailing", "https://example.com/", "no path, query, or fragment"},
+		{"query", "https://example.com?x=1", "no path, query, or fragment"},
+		{"forceQuery", "https://example.com?", "no path, query, or fragment"},
+		{"fragment", "https://example.com#x", "no path, query, or fragment"},
+		{"userinfo", "https://user:hunter2@example.com", "userinfo is not allowed"},
+		{"userinfoNoPass", "https://hunter2@example.com", "userinfo is not allowed"},
+		{"uppercase", "https://Example.com", "uppercase is not allowed"},
+		{"upperScheme", "HTTPS://example.com", "uppercase is not allowed"},
+		{"noScheme", "example.com", "scheme must be http or https"},
+		{"badScheme", "ftp://example.com", "scheme must be http or https"},
+		{"noHost", "https://", "host is required"},
+		{"badPort", "https://example.com:99999", "port must be 1-65535"},
+		{"zeroPort", "https://example.com:0", "port must be 1-65535"},
+		{"emptyPort", "https://example.com:", "empty port"},
+		{"leadingZeroPort", "https://example.com:08443", "leading zeros"},
+		{"defaultHTTPS", "https://example.com:443", "default port must be omitted"},
+		{"defaultHTTP", "http://example.com:80", "default port must be omitted"},
+		{"percent", "https://exa%6dple.com", "percent-encoding is not allowed"},
+		{"space", "https://exa mple.com", "whitespace/control characters are not allowed"},
+		{"trailingDot", "https://example.com.", "invalid host"},
+		{"ipv6Upper", "http://[::FFFF]:3000", "uppercase is not allowed"},
+		{"ipv6Unclosed", "http://[::1", form},
+		{"ipv6EmptyPort", "http://[::1]:", "empty port"},
+		{"ipv6DefaultPort", "https://[::1]:443", "default port must be omitted"},
+		{"ipv6NonCanonical", "http://[0:0:0:0:0:0:0:1]", "canonical compressed form"},
+		{"ipv6Zone", "http://[fe80::1%25eth0]", "percent-encoding is not allowed"},
 	}
-	for name, o := range bad {
+	for _, tc := range bad {
 		cfg := validRemoteCfg(t)
-		cfg.Remote.AllowedOrigins = o
+		cfg.Remote.AllowedOrigins = []string{tc.entry}
 		_, err := cfg.Validate()
-		if err == nil || !strings.Contains(err.Error(), "remote.allowed_origins[") {
-			t.Errorf("%s: error = %v, want field-specific remote.allowed_origins[i]", name, err)
+		if err == nil || !strings.Contains(err.Error(), "remote.allowed_origins[0] ") || !strings.Contains(err.Error(), tc.reason) {
+			t.Errorf("%s: error = %v, want remote.allowed_origins[0] ... %q", tc.name, err, tc.reason)
 			continue
 		}
 		if strings.Contains(err.Error(), "hunter2") {
-			t.Errorf("%s: error echoes userinfo secret: %v", name, err)
+			t.Errorf("%s: error echoes userinfo secret: %v", tc.name, err)
 		}
 	}
 }
 
+func TestValidateRemoteOriginDuplicateMessage(t *testing.T) {
+	cfg := validRemoteCfg(t)
+	cfg.Remote.AllowedOrigins = []string{"https://a.example.com", "http://[::1]:3000", "http://[::1]:3000"}
+	_, err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "remote.allowed_origins[2] is a duplicate entry") {
+		t.Errorf("err = %v", err)
+	}
+}
+
 func TestValidateRemoteHosts(t *testing.T) {
-	for _, h := range [][]string{nil, {"app.example.com"}, {"localhost", "127.0.0.1"}} {
+	good := [][]string{
+		nil, {"app.example.com"}, {"localhost", "127.0.0.1"},
+		{"localhost:3000", "127.0.0.1:8080", "app.example.com:443"},
+		{"[::1]", "[::1]:3000", "[2001:db8::1]:8443"},
+		{"xn--bcher-kva.example", "a-b.example"},
+		{strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 61)},
+	}
+	for _, h := range good {
 		cfg := validRemoteCfg(t)
 		cfg.Remote.AllowedHosts = h
 		if _, err := cfg.Validate(); err != nil {
 			t.Errorf("hosts %v: unexpected error %v", h, err)
 		}
 	}
-	bad := map[string][]string{
-		"empty":     {""},
-		"wildcard":  {"*"},
-		"wildSub":   {"*.example.com"},
-		"scheme":    {"https://example.com"},
-		"path":      {"example.com/x"},
-		"port":      {"example.com:80"},
-		"userinfo":  {"u@example.com"},
-		"uppercase": {"Example.com"},
-		"space":     {"exa mple.com"},
-		"duplicate": {"a.example.com", "a.example.com"},
+	const plain = "must be a host[:port] (no scheme, path, userinfo, or whitespace)"
+	bad := []struct {
+		name, entry, reason string
+	}{
+		{"empty", "", "must not be empty"},
+		{"wildcard", "*", "must not contain a wildcard"},
+		{"wildSub", "*.example.com", "must not contain a wildcard"},
+		{"wildPort", "example.com:*", "must not contain a wildcard"},
+		{"scheme", "https://example.com", plain},
+		{"path", "example.com/x", plain},
+		{"userinfo", "u@example.com", plain},
+		{"uppercase", "Example.com", "uppercase is not allowed"},
+		{"space", "exa mple.com", "whitespace/control characters are not allowed"},
+		{"control", "example.com\x00", "whitespace/control characters are not allowed"},
+		{"nonASCII", "b\u00fccher.example", "must be ASCII"},
+		{"trailingDot", "example.com.", "trailing dot is not allowed"},
+		{"leadingDot", ".example.com", "empty label"},
+		{"emptyLabel", "a..example.com", "empty label"},
+		{"tooLong", strings.Repeat("a.", 127) + "a", "exceeds 253"},
+		{"longLabel", strings.Repeat("a", 64) + ".example", "label exceeds 63"},
+		{"emptyPort", "example.com:", "empty port"},
+		{"zeroPort", "example.com:0", "port must be 1-65535"},
+		{"bigPort", "example.com:65536", "port must be 1-65535"},
+		{"leadingZeroPort", "example.com:080", "leading zeros"},
+		{"signPort", "example.com:+80", "port must be 1-65535"},
+		{"nonNumericPort", "example.com:http", "port must be 1-65535"},
+		{"twoPorts", "example.com:80:81", plain},
+		{"bareIPv6", "::1", plain},
+		{"ipv6Unclosed", "[::1", plain},
+		{"ipv6EmptyPort", "[::1]:", "empty port"},
+		{"ipv6Junk", "[::1]x", plain},
+		{"ipv6NonCanonical", "[0:0:0:0:0:0:0:1]", "canonical compressed form"},
+		{"ipv6Upper", "[::FFFF]", "uppercase is not allowed"},
+		{"ipv6NotIP", "[example]", "valid IPv6 literal"},
+		{"ipv6Zone", "[fe80::1%eth0]", "valid IPv6 literal"},
+		{"hyphenLabel", "-a.example", "must not start or end with a hyphen"},
+		{"duplicate", "a.example.com", "is a duplicate entry"},
 	}
-	for name, h := range bad {
+	for _, tc := range bad {
 		cfg := validRemoteCfg(t)
-		cfg.Remote.AllowedHosts = h
+		cfg.Remote.AllowedHosts = []string{tc.entry}
+		if tc.name == "duplicate" {
+			cfg.Remote.AllowedHosts = []string{"x.example.com", tc.entry, tc.entry}
+		}
 		_, err := cfg.Validate()
-		if err == nil || !strings.Contains(err.Error(), "remote.allowed_hosts[") {
-			t.Errorf("%s: error = %v, want field-specific remote.allowed_hosts[i]", name, err)
+		prefix := "remote.allowed_hosts[0] "
+		if tc.name == "duplicate" {
+			prefix = "remote.allowed_hosts[2] "
+		}
+		if err == nil || !strings.Contains(err.Error(), prefix) || !strings.Contains(err.Error(), tc.reason) {
+			t.Errorf("%s: error = %v, want %s... %q", tc.name, err, prefix, tc.reason)
 		}
 	}
 }
 
+func TestValidateRemoteIntraGroupOrder(t *testing.T) {
+	cfg := validRemoteCfg(t)
+	cfg.Remote.TokenLifetimeSeconds = 1
+	cfg.Remote.AllowedOrigins = []string{"*"}
+	cfg.Remote.AllowedHosts = []string{"*"}
+	cfg.Remote.MaxConnections = 0
+	want := []string{"remote.token_lifetime_seconds", "remote.allowed_origins[0]", "remote.allowed_hosts[0]", "remote.max_connections"}
+	for i, w := range want {
+		_, err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), w) {
+			t.Fatalf("step %d: err = %v, want %s", i, err, w)
+		}
+		switch i {
+		case 0:
+			cfg.Remote.TokenLifetimeSeconds = 60
+		case 1:
+			cfg.Remote.AllowedOrigins = nil
+		case 2:
+			cfg.Remote.AllowedHosts = nil
+		}
+	}
+}
 func TestValidateRemoteRunsAfterShippedRulesAndNeverMutates(t *testing.T) {
 	// An earlier rule (database.path) wins over a remote violation.
 	cfg := validRemoteCfg(t)
@@ -254,7 +357,8 @@ func TestDecodeRemoteInvalidValuesFieldSpecific(t *testing.T) {
 func TestDecodeRemoteCredentialShapedKeyRejectedWithoutEchoingValue(t *testing.T) {
 	const secret = "s3cr3t-VALUE-9f8e7d"
 	keys := []string{"token", "secret", "password", "api_key", "apiKey", "credential", "credentials",
-		"bearer", "bearer_token", "auth_token", "private_key", "access_key", "Token", "PASSWORD", `"my-secret"`, "jwt", "client_secret"}
+		"bearer", "bearer_token", "auth_token", "private_key", "access_key", "Token", "PASSWORD", `"my-secret"`, "jwt", "client_secret",
+		"pass", "passcode", "passphrase", "pat", "psk", "otp", "pwd", "cookie", "signature", "session", "hmac", "salt", "cert", "dsn", "connstr", "connection_string", "pin", "github_pat"}
 	for _, k := range keys {
 		cfg, report, err := Decode(tomlRoot(t) + "[remote]\n" + k + " = \"" + secret + "\"\n")
 		_ = cfg
@@ -352,7 +456,7 @@ func TestExampleConfigDocumentsRemote(t *testing.T) {
 		if !inRemote || strings.HasPrefix(l, "#") || !strings.Contains(l, "=") {
 			continue
 		}
-		if k := strings.ToLower(strings.TrimSpace(strings.SplitN(l, "=", 2)[0])); isCredentialShapedKey(k) && k != "token_lifetime_seconds" {
+		if k := strings.ToLower(strings.TrimSpace(strings.SplitN(l, "=", 2)[0])); isCredentialShapedKey(k) && !isKnownRemoteKey(k) {
 			t.Errorf("config.toml.example contains credential-shaped key %q", k)
 		}
 	}
@@ -368,12 +472,42 @@ func TestConfigReferenceDocumentsRemote(t *testing.T) {
 		"[remote]", "Remote.TokenLifetimeSeconds", "Remote.MaxConnections", "Remote.AllowedOrigins",
 		"Remote.AllowedHosts", "Remote.RemoteApproveDestructive",
 		"remote.token_lifetime_seconds must be between 60 and 86400",
-		"remote.max_connections must be at least 1",
+		"remote.max_connections must be at least 1", "remote.max_connections must not exceed 1024", "MaxRemoteConnections", "default port", "absent `[remote]` section",
 		"remote.allowed_origins[{i}]", "remote.allowed_hosts[{i}]",
 		"credential-shaped",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("docs/config-reference.md missing %q", want)
 		}
+	}
+}
+
+func TestDecodeRemoteOrderCredentialKeyBeatsMissingRoot(t *testing.T) {
+	// Pinned current behaviour: the credential screen runs before the
+	// required-key check, so a credential key wins over a missing root.
+	_, _, err := Decode("[remote]\ntoken = \"x\"\n")
+	if err == nil || !strings.Contains(err.Error(), "credential-shaped") {
+		t.Fatalf("err = %v, want credential-shaped key error", err)
+	}
+}
+
+func TestDecodeRemoteNonBooleanApproveDestructiveRejected(t *testing.T) {
+	for _, v := range []string{`"true"`, "1", "[true]"} {
+		_, _, err := Decode(tomlRoot(t) + "[remote]\nremote_approve_destructive = " + v + "\n")
+		if err == nil {
+			t.Errorf("value %s accepted, want type error", v)
+			continue
+		}
+		var ae *apperr.Error
+		if !errors.As(err, &ae) || ae.Kind() != apperr.KindConfig {
+			t.Errorf("value %s: want KindConfig, got %v", v, err)
+		}
+	}
+}
+
+func TestDecodeRemoteMaxConnectionsUpperBound(t *testing.T) {
+	_, _, err := Decode(tomlRoot(t) + "[remote]\nmax_connections = 1025\n")
+	if err == nil || !strings.Contains(err.Error(), "remote.max_connections must not exceed 1024") {
+		t.Errorf("err = %v", err)
 	}
 }

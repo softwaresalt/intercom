@@ -42,14 +42,19 @@ func TestConnectHydratesAtHighWaterMarkThenStreams(t *testing.T) {
 }
 
 func TestClientRegisteredMidStreamReceivesNoGap(t *testing.T) {
-	h := startHub(t, Config{IngressBuffer: 8})
-	const total = 3000
+	h := startHub(t, Config{IngressBuffer: 8, MaxRemote: 32})
+	const total, nClients = 900, 15 // total+1 hydrate frame fits MaxClientBuffer
+	pctx, pcancel := context.WithTimeout(context.Background(), 4*testWait)
+	defer pcancel()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < total; i++ {
-			h.Ingress() <- msgEvent("m", "x")
+			if err := h.Send(pctx, msgEvent("m", "x")); err != nil {
+				t.Errorf("producer: %v", err)
+				return
+			}
 		}
 	}()
 	type result struct {
@@ -59,9 +64,9 @@ func TestClientRegisteredMidStreamReceivesNoGap(t *testing.T) {
 	var mu sync.Mutex
 	var results []result
 	var cw sync.WaitGroup
-	for i := 0; i < 15; i++ {
+	for i := 0; i < nClients; i++ {
 		time.Sleep(time.Millisecond)
-		c, err := h.Connect(context.Background(), ConnectOptions{Kind: ClientRemote, Buffer: total + 8})
+		c, err := h.Connect(context.Background(), ConnectOptions{Kind: ClientRemote, Buffer: MaxClientBuffer})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,9 +84,11 @@ func TestClientRegisteredMidStreamReceivesNoGap(t *testing.T) {
 							return
 						}
 						r.hydrateSeq, first = f.Seq(), false
-						continue
+					} else {
+						r.got = append(r.got, f.Seq())
 					}
-					r.got = append(r.got, f.Seq())
+					// A client that connected after the final event is complete
+					// once its hydrate already covers total.
 					if f.Seq() == total {
 						mu.Lock()
 						results = append(results, r)
@@ -96,8 +103,8 @@ func TestClientRegisteredMidStreamReceivesNoGap(t *testing.T) {
 	}
 	wg.Wait()
 	cw.Wait()
-	if len(results) != 15 {
-		t.Fatalf("only %d/15 clients saw the end of the stream", len(results))
+	if len(results) != nClients {
+		t.Fatalf("only %d/%d clients saw the end of the stream", len(results), nClients)
 	}
 	for i, r := range results {
 		want := r.hydrateSeq + 1
@@ -109,10 +116,9 @@ func TestClientRegisteredMidStreamReceivesNoGap(t *testing.T) {
 		}
 	}
 }
-
 func TestHydrationsAboveCapAreDeferredNotBlocking(t *testing.T) {
 	const clients, perIter = 12, 2
-	h, err := New(Config{SessionID: "s", HydrationsPerIteration: perIter})
+	h, err := New(Config{SessionID: "s", HydrationsPerIteration: perIter, MaxRemote: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +138,11 @@ func TestHydrationsAboveCapAreDeferredNotBlocking(t *testing.T) {
 			got <- c
 		}()
 	}
+	queueDeadline := time.Now().Add(testWait)
 	for len(h.connects) < clients {
+		if time.Now().After(queueDeadline) {
+			t.Fatalf("only %d/%d connects queued", len(h.connects), clients)
+		}
 		time.Sleep(time.Millisecond)
 	}
 	runDone := make(chan error, 1)

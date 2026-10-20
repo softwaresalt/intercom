@@ -21,14 +21,15 @@ const (
 	// DefaultMaxEntryTextBytes bounds the raw text kept for one entry.
 	DefaultMaxEntryTextBytes = 16 << 10
 	// SnapshotOverhead is the fixed allowance for the snapshot's non-entry
-	// fields: a snapshot never exceeds MaxBytes+SnapshotOverhead bytes.
+	// fields: a snapshot never exceeds MaxBytes+SnapshotOverhead bytes (the
+	// byte cap counts each entry's separating comma).
 	SnapshotOverhead = 1024
 
 	// maxIdentBytes bounds ids and tool names stored in an entry.
 	maxIdentBytes = 128
-	// entrySlack bounds the encoded size of an entry beyond its escaped text:
+	// entryOverhead bounds the encoded size of an entry beyond its escaped text:
 	// two identifiers at worst-case 6x JSON escaping plus keys and punctuation.
-	entrySlack = 2048
+	entryOverhead = 2048
 	// maxJSONExpansion is the worst-case byte expansion of JSON string escaping.
 	maxJSONExpansion = 6
 )
@@ -89,7 +90,7 @@ type item struct {
 type Fold struct {
 	lim        Limits
 	items      []item
-	bytes      int // sum of len(enc) over items
+	bytes      int // sum of itemCost over items
 	evicted    int
 	anyTrunc   bool
 	turnActive bool
@@ -102,7 +103,7 @@ func NewFold(l Limits) (*Fold, error) {
 		return nil, apperr.New(apperr.KindConfig, "hub: fold limits must not be negative")
 	}
 	l = l.withDefaults()
-	if need := maxJSONExpansion*l.MaxEntryTextBytes + entrySlack; l.MaxBytes < need {
+	if need := maxJSONExpansion*l.MaxEntryTextBytes + entryOverhead + 1; l.MaxBytes < need {
 		return nil, apperr.Newf(apperr.KindConfig,
 			"hub: MaxBytes %d cannot hold one entry of MaxEntryTextBytes %d (needs >= %d)", l.MaxBytes, l.MaxEntryTextBytes, need)
 	}
@@ -133,7 +134,8 @@ func (f *Fold) Apply(ev agent.Event) {
 	case agent.KindToolEnded:
 		f.applyToolEnded(ev)
 	default:
-		f.ApplyError(ErrCodeUnknownEvent, "unrecognised agent event: "+sanitize(ev.RawType, maxRawTypeLen))
+		ep := unknownEventError()
+		f.ApplyError(ep.Code, ep.Message)
 	}
 }
 
@@ -207,6 +209,11 @@ func (f *Fold) find(kind, id, status string) int {
 	return -1
 }
 
+// itemCost is an entry's share of the byte cap: its encoding plus the
+// separating comma, so the serialized snapshot is bounded by
+// MaxBytes+SnapshotOverhead no matter how many entries it holds.
+func itemCost(enc []byte) int { return len(enc) + 1 }
+
 func marshalEntry(e entry) []byte {
 	b, err := json.Marshal(e)
 	if err != nil { // unreachable: entry holds only strings and a bool
@@ -217,7 +224,7 @@ func marshalEntry(e entry) []byte {
 
 func (f *Fold) replace(i int, e entry) {
 	enc := marshalEntry(e)
-	f.bytes += len(enc) - len(f.items[i].enc)
+	f.bytes += itemCost(enc) - itemCost(f.items[i].enc)
 	f.items[i] = item{e: e, enc: enc}
 	f.evict()
 }
@@ -225,7 +232,7 @@ func (f *Fold) replace(i int, e entry) {
 func (f *Fold) push(e entry) {
 	enc := marshalEntry(e)
 	f.items = append(f.items, item{e: e, enc: enc})
-	f.bytes += len(enc)
+	f.bytes += itemCost(enc)
 	f.evict()
 }
 
@@ -233,7 +240,7 @@ func (f *Fold) push(e entry) {
 func (f *Fold) evict() {
 	drop := 0
 	for len(f.items)-drop > f.lim.MaxEntries || (f.bytes > f.lim.MaxBytes && len(f.items)-drop > 1) {
-		f.bytes -= len(f.items[drop].enc)
+		f.bytes -= itemCost(f.items[drop].enc)
 		f.items[drop] = item{} // release the encoding
 		drop++
 	}

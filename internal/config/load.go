@@ -33,7 +33,10 @@ const maxUnknownKeys = 64
 //     strings.EqualFold (divergence V2).
 //  4. Required-key check — md.IsDefined("default_workspace_root") only.
 //  5. md.Undecoded() -> Report.UnknownKeys: sorted, sanitized, capped.
-//  6. cfg.Validate() -> its Report merged into the returned Report.
+//  6. Credential-key screen — any credential-shaped key at or below
+//     [remote] fails closed (key path named, value never echoed); runs
+//     after step 3 and before step 4.
+//  7. cfg.Validate() -> its Report merged into the returned Report.
 //
 // Step 5 is actually computed in the implementation immediately after
 // step 2, ahead of steps 3-4, even though it is conceptually presented
@@ -43,7 +46,7 @@ const maxUnknownKeys = 64
 // being silently dropped by an early return.
 //
 // Order-of-checks caveat: step 4's required-key check for
-// default_workspace_root's ABSENCE runs, and can return, before step 6
+// default_workspace_root's ABSENCE runs, and can return, before step 7
 // (cfg.Validate(), whose own fixed-order rule contract is documented
 // in docs/config-reference.md) is ever invoked. A document that BOTH
 // omits default_workspace_root AND violates a rule ordered before

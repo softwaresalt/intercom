@@ -856,17 +856,21 @@ removed and rule 6's presence check is **eliminated** (not relaxed), so it
 drops out of the enumeration entirely: 10 − 2 − 1 = 7.
 
 **New `[remote]` validation rule group (decided 2026-10-19, ADR MVP-2 and
-MVP-3; implemented by the MVP config task, not yet in `internal/config`).** The
-seven-rule contract above is the *shipped* contract and is unchanged until that
-task lands. The MVP adds a separate `[remote]` group with these fields and
-rules: `token_lifetime_seconds` (integer, 60 to 86400, default 14400);
+MVP-3; implemented in `internal/config` by shipment 058-S).** The seven-rule
+contract above is unchanged. `[remote]` is a separate group run inside
+`Validate()` after rule 7, in the order `token_lifetime_seconds`,
+`allowed_origins`, `allowed_hosts`, `max_connections`. Fields:
+`token_lifetime_seconds` (integer, 60 to 86400, default 14400);
 `allowed_origins` (list of exact `scheme://host[:port]` origins, default empty,
-wildcards rejected); `allowed_hosts` (list of host names, default empty,
-wildcards rejected); `max_connections` (integer of at least 1, default 8);
-`remote_approve_destructive` (boolean, default `false`). Config validation also
-rejects any credential-shaped key under `[remote]`, because credentials never
-come from `config.toml`.
-
+wildcards rejected); `allowed_hosts` (list of hosts with an optional port,
+default empty, wildcards rejected); `max_connections` (integer from 1 to 1024,
+default 8); `remote_approve_destructive` (boolean, default `false`). Entries
+must be in canonical form (lowercase, no trailing dot, default port omitted
+from origins) and validation rejects any other spelling, so duplicate
+detection is exact. Config also rejects any credential-shaped key under
+`[remote]`, because credentials never come from `config.toml`; that screen
+needs the raw key set, so it runs in `Decode`/`Load` before `Validate` and
+fails closed.
 **Security note carried forward:** the shipped example contains
 `host_cli_args = ["--dangerously-skip-permissions"]`. Under this architecture
 permission handling is a core product responsibility (§5.4). That example is
