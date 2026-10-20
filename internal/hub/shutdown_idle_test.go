@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -248,6 +249,35 @@ func TestStopThatOutlivesTheHardBudgetReportsOrphanRiskAndDoneWaitsForIt(t *test
 	waitShutdown(t, s)
 	if !errors.Is(s.Err(), ErrOrphanRisk) {
 		t.Fatalf("Err() = %v, want an orphan-risk report", s.Err())
+	}
+}
+
+// Review cycle 2 N1: an Agent.Stop that RETURNS an error wrapping the
+// cleanup-incomplete sentinel could not confirm the CLI child was reaped, so
+// the executor classifies it as orphan risk even though Stop returned in time.
+func TestStopReturningCleanupIncompleteIsOrphanRisk(t *testing.T) {
+	r := newShutdownRig(t, Config{})
+	r.ag.stopErr = fmt.Errorf("agent: %w: ForceStop did not return", agent.ErrCleanupIncomplete)
+	s := r.newShutdown(t, nil)
+	s.Start(context.Background())
+	waitShutdown(t, s)
+	if !errors.Is(s.Err(), ErrOrphanRisk) {
+		t.Fatalf("Err() = %v, want an orphan-risk report", s.Err())
+	}
+	if !errors.Is(s.Err(), agent.ErrCleanupIncomplete) {
+		t.Fatalf("Err() = %v lost the cleanup-incomplete cause", s.Err())
+	}
+}
+
+// An ordinary Stop error is not orphan risk: the adapter confirmed the reap.
+func TestStopReturningAnOrdinaryErrorIsNotOrphanRisk(t *testing.T) {
+	r := newShutdownRig(t, Config{})
+	r.ag.stopErr = errors.New("cli exited with status 7")
+	s := r.newShutdown(t, nil)
+	s.Start(context.Background())
+	waitShutdown(t, s)
+	if s.Err() == nil || errors.Is(s.Err(), ErrOrphanRisk) {
+		t.Fatalf("Err() = %v, want a plain stop error", s.Err())
 	}
 }
 

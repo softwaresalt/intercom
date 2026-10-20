@@ -15,6 +15,7 @@ import (
 	copilotsdk "github.com/github/copilot-sdk/go"
 	"github.com/github/copilot-sdk/go/rpc"
 
+	"github.com/softwaresalt/intercom-go/internal/agent"
 	"github.com/softwaresalt/intercom-go/internal/hub"
 )
 
@@ -311,6 +312,49 @@ func TestShutdownThatCannotConfirmForceStopReportsOrphanRisk(t *testing.T) {
 	}
 	if !c.childAlive.Load() {
 		t.Fatal("harness: the child should still be alive")
+	}
+}
+
+// Review cycle 2 N1: the adapter gives up on ForceStop at its own StopTimeout
+// (1s in the harness), BEFORE the hub's hard budget (Stop+Force) is spent. The
+// adapter then returns a "cleanup incomplete" error; the hub must treat that
+// as an unconfirmed reap (orphan risk), not as an ordinary returned error, and
+// must not close Done before the adapter has answered.
+func TestForceStopOutlastingTheAdapterBoundReportsOrphanRiskNotAnOrdinaryError(t *testing.T) {
+	r := newShutdownRig(t)
+	c := r.h.client
+	c.stopBlock = make(chan struct{})
+	c.forceBlock = make(chan struct{}) // ForceStop never returns
+	t.Cleanup(func() { close(c.stopBlock); close(c.forceBlock) })
+	s := r.newShutdown(t, func(c *hub.ShutdownConfig) {
+		c.Timeouts.Stop = 100 * time.Millisecond
+		c.Timeouts.Force = 5 * time.Second // outlasts the adapter's own 1s ForceStop bound
+	})
+	start := time.Now()
+	s.Start(context.Background())
+	select {
+	case <-s.Done():
+		t.Fatalf("Done closed after %v, before the adapter's ForceStop wait ended", time.Since(start))
+	case <-time.After(500 * time.Millisecond):
+	}
+	waitDone(t, s)
+	if !errors.Is(s.Err(), hub.ErrOrphanRisk) {
+		t.Fatalf("Err() = %v, want an orphan-risk report for an unconfirmed ForceStop", s.Err())
+	}
+	if !errors.Is(s.Err(), agent.ErrCleanupIncomplete) {
+		t.Fatalf("Err() = %v, want the adapter's cleanup-incomplete cause kept in the chain", s.Err())
+	}
+	if !c.childAlive.Load() {
+		t.Fatal("harness: the child should still be alive")
+	}
+}
+
+// The hub's default Force budget must outlast the adapter's default ForceStop
+// wait (its StopTimeout), or the hub would give up on a stop the adapter is
+// still waiting out.
+func TestDefaultForceBudgetOutlastsTheAdapterDefaultStopTimeout(t *testing.T) {
+	if hub.DefaultShutdownForce < defaultStopTimeout+time.Second {
+		t.Fatalf("hub default Force %v must exceed the adapter's default StopTimeout %v by a margin", hub.DefaultShutdownForce, defaultStopTimeout)
 	}
 }
 

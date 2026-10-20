@@ -45,9 +45,14 @@ type ShutdownTimeouts struct {
 	// after this, and the adapter then escalates to ForceStop (default 10s).
 	Stop time.Duration
 	// Force bounds the wait, after Stop's budget, for the adapter's ForceStop
-	// escalation to return (default 5s). Stop+Force is the hard budget: the
-	// executor does not finish, and the hub does not stop, before the agent's
-	// Stop has returned or that budget is spent (then ErrOrphanRisk).
+	// escalation to return (default [DefaultShutdownForce], 7s). Stop+Force is
+	// the hard budget: the executor does not finish, and the hub does not stop,
+	// before the agent's Stop has returned or that budget is spent (then
+	// ErrOrphanRisk). Force must exceed the adapter's own ForceStop wait
+	// (copilot.Config.StopTimeout, default 5s) plus a margin: the adapter
+	// reports an unconfirmed reap as agent.ErrCleanupIncomplete, which the
+	// executor also reports as ErrOrphanRisk, but a shorter Force makes the hub
+	// abandon a stop the adapter is still waiting out.
 	Force time.Duration
 	// Drain bounds the write-pump drain before sockets are aborted (design
 	// §3.1 step 5: 1-2 s; default 2s).
@@ -63,6 +68,12 @@ func (t ShutdownTimeouts) valid() bool {
 	return true
 }
 
+// DefaultShutdownForce is the default [ShutdownTimeouts.Force]. It must exceed
+// the adapter's own ForceStop wait (copilot.Config.StopTimeout, default 5s) by
+// a margin, so the adapter reports an unconfirmed reap before the hub's hard
+// budget is spent.
+const DefaultShutdownForce = 7 * time.Second
+
 func (t ShutdownTimeouts) withDefaults() ShutdownTimeouts {
 	def := func(d *time.Duration, v time.Duration) {
 		if *d == 0 {
@@ -75,7 +86,7 @@ func (t ShutdownTimeouts) withDefaults() ShutdownTimeouts {
 	def(&t.Abort, 5*time.Second)
 	def(&t.Idle, 5*time.Second)
 	def(&t.Stop, 10*time.Second)
-	def(&t.Force, 5*time.Second)
+	def(&t.Force, DefaultShutdownForce)
 	def(&t.Drain, 2*time.Second)
 	return t
 }
@@ -245,7 +256,9 @@ func (s *Shutdown) agentStage(ctx context.Context, step func(string, context.Con
 	if err == nil {
 		return nil
 	}
-	if !returned.Load() {
+	if !returned.Load() || errors.Is(err, agent.ErrCleanupIncomplete) {
+		// Either Stop outlived the hard budget, or it returned but could not
+		// confirm the CLI child was reaped: both leave a possibly live child.
 		err = fmt.Errorf("%w: %w", ErrOrphanRisk, err)
 	}
 	err = fmt.Errorf("shutdown 2+4 stop agent: %w", err)

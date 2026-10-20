@@ -50,7 +50,10 @@ type Config struct {
 	WorkingDirectory string
 	// StartupTimeout bounds Start ([copilot].startup_timeout_seconds).
 	StartupTimeout time.Duration
-	// StopTimeout bounds callback quiescing in Stop. Default 5s.
+	// StopTimeout bounds callback quiescing in Stop and, independently, the wait
+	// for the SDK's ForceStop (past which Stop reports agent.ErrCleanupIncomplete).
+	// Default 5s. The hub's shutdown Force budget must exceed it (see
+	// hub.ShutdownTimeouts.Force).
 	StopTimeout time.Duration
 	// DefaultOpTimeout applies to Send/Abort when the caller's context has no
 	// deadline. Default 30s.
@@ -640,7 +643,7 @@ func (a *Adapter) forceStop() error {
 	case <-a.forceDone:
 		return nil
 	case <-t.C:
-		return fmt.Errorf("agent: cleanup incomplete: ForceStop did not return within %v", a.cfg.StopTimeout)
+		return fmt.Errorf("agent: %w: ForceStop did not return within %v", agent.ErrCleanupIncomplete, a.cfg.StopTimeout)
 	}
 }
 
