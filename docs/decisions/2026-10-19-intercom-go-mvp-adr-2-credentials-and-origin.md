@@ -198,6 +198,23 @@ does not expose an unauthenticated agent.
   check must verify that the `Authorization` header reaches the backend unmodified through
   the tunnel; if it does not, native clients need another carriage and this ADR is amended.
 
+## Implementation addendum (060-S, 2026-10-20)
+
+Recorded after implementing the authenticated transport in `internal/transport`:
+
+* **Host default port is not equated with an omitted port.** Origins drop a scheme's
+  default port (`https://a:443` equals `https://a`); Hosts do not (`a:443` and `a` are
+  distinct keys), as the Host header carries what the client sent.
+* **Per-connection action rate limiting is implemented** (5 actions per second, burst 10;
+  the connection is closed after 20 consecutive rate-limited actions, close reason
+  `rate limit`, refusal reason `rate_limited`). Only per-IP and per-credential **upgrade**
+  rate limiting remains deferred.
+* **Credential revocation** closes the connection through the store's `Grant.Revoked`
+  signal with 1008 `session ended`; a refusal already queued is flushed first.
+* Expiry uses the credential store's clock for both validation and the pump's timer.
+* A connection whose hub registration is refused (hub unavailable or draining) is
+  answered 503 before the upgrade.
+
 ## References
 
 * Design sections 3.1, 5.2, 5.4, 5.5, 6, 6.1, 8

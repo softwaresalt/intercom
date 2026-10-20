@@ -188,6 +188,24 @@ post-MVP control and is not decided here.
   document that enabling it lets a leaked approver credential approve shell and write
   actions.
 
+## Implementation addendum (060-S, 2026-10-20)
+
+Recorded after implementing the WebSocket task in `internal/transport`:
+
+* **Close 1011 `unavailable`** is sent when the hub cannot serve an action (the hub is
+  unavailable); the client reconnects later with its last cursor.
+* **A role mismatch at re-validation closes the connection.** If the grant's role differs
+  from the role the hub client was registered with, the action is refused and the
+  connection is closed (defence in depth; the two come from the same credential).
+* **Revocation closes via the store's `Grant.Revoked` signal** with 1008 `session ended`;
+  expiry and failed re-validation use the same neutral close. Shutdown revocation refuses
+  without closing so the drain can finish.
+* **`local_only_action` is unrepresentable remotely.** The wire protocol has no operation
+  that maps to it, so an unknown `op` string yields the hub's `action_unknown` refusal and
+  the connection stays open.
+* **Per-connection action rate limiting is implemented** (`rate_limited`, close after
+  repeated violations); only upgrade rate limiting remains deferred (see ADR MVP-2).
+
 ## References
 
 * Design sections 5.4, 6, 6.1, 7.1
