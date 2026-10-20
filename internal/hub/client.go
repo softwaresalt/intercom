@@ -95,7 +95,7 @@ func (c *Client) Do(ctx context.Context, act OperatorAction) (ActionResult, erro
 	if c.kind == ClientTUI {
 		p = principal{surface: surfaceTUI, role: RoleApprover}
 	}
-	return c.hub.submit(ctx, p, act)
+	return c.hub.submitFrom(ctx, c, p, act)
 }
 
 func newClient(id uint64, kind ClientKind, buffer int) *Client {

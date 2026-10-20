@@ -139,7 +139,12 @@ type AgentControl interface {
 // actionReq is the hub-internal message carrying an action and the identity
 // it is performed as.
 type actionReq struct {
-	from  principal
-	act   OperatorAction
-	reply chan ActionResult // capacity 1: the hub never blocks on it
+	from principal
+	// client is the registered client the action came from (nil for in-package
+	// callers with no client). The hub re-checks it when it processes the
+	// action, not only when Do queued it, so an action queued by a client that
+	// was closed or revoked in between is refused.
+	client *Client
+	act    OperatorAction
+	reply  chan ActionResult // capacity 1: the hub never blocks on it
 }

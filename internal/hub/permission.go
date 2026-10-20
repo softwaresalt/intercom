@@ -434,6 +434,11 @@ func (h *Hub) processAction(r *actionReq) ActionResult {
 		}
 		return ActionResult{Reason: ReasonCredentialRevoked}
 	}
+	if r.from.surface == surfaceRemote && r.client != nil && r.client.isClosed() {
+		// The connection ended (credential revoked, client dropped) after the
+		// action was queued: ADR MVP-3 re-validates per message, at the hub step.
+		return ActionResult{Reason: ReasonCredentialRevoked}
+	}
 	// The hub's clock is authoritative: a request already at or past its
 	// deadline is expired now, so a ready action cannot win a race against the
 	// timer that has not been serviced yet (it then finds the entry resolved).
@@ -486,7 +491,12 @@ func (h *Hub) resolvePermission(r *actionReq) ActionResult {
 // only way an action reaches the hub step; it blocks on the hub only until ctx
 // ends or the hub stops, and the hub's reply goes through a capacity-1 channel.
 func (h *Hub) submit(ctx context.Context, from principal, act OperatorAction) (ActionResult, error) {
-	req := &actionReq{from: from, act: act, reply: make(chan ActionResult, 1)}
+	return h.submitFrom(ctx, nil, from, act)
+}
+
+// submitFrom is submit for an action performed by a registered client.
+func (h *Hub) submitFrom(ctx context.Context, c *Client, from principal, act OperatorAction) (ActionResult, error) {
+	req := &actionReq{from: from, client: c, act: act, reply: make(chan ActionResult, 1)}
 	select {
 	case h.actions <- req:
 	case <-ctx.Done():
