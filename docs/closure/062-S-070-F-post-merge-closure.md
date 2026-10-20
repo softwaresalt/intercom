@@ -13,8 +13,22 @@ head_sha_reviewed: 6930bde0aef49acb74ce306b578a4532dc254d2c
 closure_branch: post-merge/062-mvp-s7-process-wiring
 close_path: cascade
 close_evidence: docs/closure/evidence/062-S-070-F-close-evidence.json
-closure_status: READY
+closure_status: READY_WITH_CONDITIONS
+releasability: READY_WITH_CONDITIONS
 compaction_status: done
+conditions:
+  - id: "live-sdk-test-pass"
+    description: "The opt-in live SDK test (INTERCOM_LIVE_SDK_TESTS; scenario steps 2, 5 and 7 against a real Copilot runtime) has not been run. The MVP definition of done requires it to pass. Operator-owned: it needs an installed, authenticated Copilot CLI and cannot run in the unattended session."
+    satisfied: false
+    evidence: "Pending: operator runs the command in docs/runbooks/live-sdk-tests.md and records the result"
+  - id: "devtunnel-connect"
+    description: "Manual checkpoint required for release in the workspace profile: Dev Tunnel registration succeeds (anonymous access off) and an authenticated remote client connects, including Authorization header pass-through. Tunnel creation is outside intercom. Operator-owned."
+    satisfied: false
+    evidence: "Pending: operator note or external confirmation per docs/runbooks/intercom-operator-runbook.md"
+  - id: "tool-approval-routing-live"
+    description: "Manual checkpoint required for release: first-responder routing across the local TUI and a remote client against a real runtime. Verified headlessly only (internal/app e2e tests)."
+    satisfied: false
+    evidence: "Pending: operator note or audit log from a live run"
 ---
 
 # 062-S / 070-F post-merge closure
@@ -26,8 +40,8 @@ compaction_status: done
 * Close: plain `--classify-only` (CASCADE, engine VERIFIED), then the mutating `autoharness shipment cascade-close` exited 0 with every postcondition passing, under explicit operator-authored pre-approval (dark-mode scope 056-S..062-S; not an admin fallback). Default timeout used, supervised attached to completion.
 * Post-close verification: 062-S, 070-F and its tasks are present in `.backlogit/archive/`; no archive deletions (P-007). The reconcile checks were performed inline; no separate report under `.backlogit/reconcile/` (degradation, as in earlier shipments).
 * Linked-deliberation disposition: none; nothing archived by Ship.
-* Runtime verification: headless only. The live SDK tests (`INTERCOM_LIVE_SDK_TESTS`) and a real Dev Tunnel run were not executed in this unattended session; see the runbook.
-* Releasability: no deployment, tag or publish step applies. Rollback is a revert of merge commit 6290151. Owner: repository maintainer. Monitoring: first operator-run live test.
+* Runtime verification: headless only. The live SDK tests (`INTERCOM_LIVE_SDK_TESTS`), the Dev Tunnel connect checkpoint and live first-responder routing were not executed in this unattended session; they are recorded above as unsatisfied, operator-owned conditions. Successful archival does not satisfy them. Closure of the backlog is complete; release readiness is READY_WITH_CONDITIONS until the evidence is recorded.
+* Releasability: `READY_WITH_CONDITIONS` (see conditions). No deployment, tag or publish step applies. Rollback is a revert of merge commit 6290151. Owner: repository maintainer. Monitoring: first operator-run live test.
 
 ## Source artifact cleanup
 
