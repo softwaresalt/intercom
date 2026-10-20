@@ -99,3 +99,23 @@ func (r *Remote) Mint(role hub.Role) (Issued, error) { return r.creds.Mint(role)
 // Shutdown closes the listener, cancels every session and waits (bounded by
 // ctx) for their goroutines. Pass a budget of at least [MinShutdownBudget].
 func (r *Remote) Shutdown(ctx context.Context) error { return r.server.Shutdown(ctx) }
+
+// Remote is the transport side of the shutdown executor's step 0.
+var _ hub.Gate = (*Remote)(nil)
+
+// RevokeCredentials implements [hub.Gate]: it revokes every credential so no
+// upgrade or action authenticates afterwards, and refuses further minting (so
+// a re-issue cannot resurrect access mid-shutdown). It does NOT close any
+// established connection: the write pumps close their sockets after the
+// server.shutdown broadcast and drain (ADR MVP-3). It is idempotent.
+func (r *Remote) RevokeCredentials(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return apperr.Wrap(apperr.KindIO, err)
+	}
+	r.creds.RevokeAll()
+	return nil
+}
+
+// CloseListener implements [hub.Gate]: it stops accepting connections and
+// touches nothing else (see [Server.CloseListener]). It is idempotent.
+func (r *Remote) CloseListener(ctx context.Context) error { return r.server.CloseListener(ctx) }

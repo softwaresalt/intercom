@@ -72,8 +72,17 @@ type App struct {
 
 	done     chan struct{}
 	doneOnce sync.Once
-	stopOnce sync.Once
-	stopErr  error
+
+	// Shutdown: shutReq is closed once by the first trigger (signal, TUI quit,
+	// Shutdown call); supervise then runs the §3.1 sequence. shutCtx bounds
+	// the whole sequence and is cancelled (hurried) by a second signal.
+	shutReq    chan struct{}
+	shutOnce   sync.Once
+	shutReason string          // written before shutReq closes
+	shutCtx    context.Context //nolint:containedctx // process-lifetime shutdown budget, cancelled by hurry
+	hurry      context.CancelFunc
+	timeouts   hub.ShutdownTimeouts
+	err        error // aggregated shutdown errors; written before done closes
 }
 
 // Start assembles and starts the process; it returns once the process is
@@ -118,16 +127,32 @@ func Start(ctx context.Context, o Options) (*App, error) {
 		port = o.Port
 	}
 
-	a := &App{log: log, cfg: cfg, workspace: workspace, done: make(chan struct{})}
-	if err := a.assemble(ctx, o, port); err != nil {
+	a := &App{
+		log: log, cfg: cfg, workspace: workspace, timeouts: o.Timeouts,
+		done: make(chan struct{}), shutReq: make(chan struct{}),
+	}
+	// The shutdown context is deliberately NOT derived from ctx or from any
+	// signal: a SIGINT must trigger the ordered sequence, not cancel it (and
+	// the hub runs on a context nothing cancels before step 6).
+	a.shutCtx, a.hurry = context.WithCancel(context.Background())
+
+	// ctx (and a signal) bound startup only.
+	startCtx, cancelStart := context.WithCancel(ctx)
+	defer cancelStart()
+	if o.Signals != nil {
+		go a.watchSignals(o.Signals, cancelStart)
+	}
+	if err := a.assemble(startCtx, o, port); err != nil {
 		tctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), teardownBudget)
 		defer cancel()
 		if terr := a.teardown(tctx); terr != nil {
 			log.Error("teardown after failed start", "error", terr)
 		}
+		a.hurry()
 		a.finish()
 		return nil, err
 	}
+	go a.supervise()
 	return a, nil
 }
 
@@ -222,7 +247,10 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 		ui.prog.Send(a.credentialsMsg(a.Credentials())) // the one display of the credentials: local TUI only
 		go func() {
 			<-ui.done
-			a.finish()
+			if ui.err != nil {
+				a.log.Error("tui exited with error", "error", ui.err)
+			}
+			a.Shutdown("tui quit")
 		}()
 	}
 
@@ -313,8 +341,9 @@ func roleName(r hub.Role) string {
 // finish closes Done once.
 func (a *App) finish() { a.doneOnce.Do(func() { close(a.done) }) }
 
-// Done is closed when the process has nothing left to do: the local TUI has
-// exited or the process has been stopped.
+// Done is closed when the process has finished shutting down (or failed to
+// start): the §3.1 sequence ran, the hub is stopped, the listener is closed
+// and the local TUI has exited.
 func (a *App) Done() <-chan struct{} { return a.done }
 
 // Hub returns the running hub.
@@ -341,20 +370,11 @@ func (a *App) Credentials() []transport.Issued {
 	return append([]transport.Issued(nil), a.creds...)
 }
 
-// Stop forcibly tears the process down: TUI, remote surface, agent, hub. It is
-// the start-failure and test-cleanup path and does NOT follow the design §3.1
-// shutdown order; it is idempotent.
-func (a *App) Stop(ctx context.Context) error {
-	a.stopOnce.Do(func() {
-		a.stopErr = a.teardown(ctx)
-		a.finish()
-	})
-	return a.stopErr
-}
-
-// teardown stops whatever was started, in an order that keeps the hub alive
-// until the agent is gone (SDK teardown produces events and unblocks handlers
-// that need a live hub).
+// teardown is the forced unwind used only when startup fails: it stops
+// whatever was started, in an order that keeps the hub alive until the agent
+// is gone (SDK teardown produces events and unblocks handlers that need a live
+// hub). The ordered design §3.1 shutdown of a running process is
+// [App.Shutdown].
 func (a *App) teardown(ctx context.Context) error {
 	var errs []error
 	if a.ui != nil {

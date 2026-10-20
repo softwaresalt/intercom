@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -30,24 +29,17 @@ func main() {
 type runFunc func(ctx context.Context, o app.Options) error
 
 // runApp is the production runFunc: it assembles the process and runs it until
-// the local TUI exits or an interrupt/terminate signal arrives, then tears it
-// down.
+// the ordered shutdown completes. The shutdown is triggered by SIGINT/SIGTERM
+// (o.Signals), by quitting the local TUI, or by a failed step; a non-nil
+// result exits the process non-zero.
 func runApp(ctx context.Context, o app.Options) error {
 	a, err := app.Start(ctx, o)
 	if err != nil {
 		return err
 	}
-	select {
-	case <-a.Done():
-	case <-o.Signals:
-	}
-	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownBudget)
-	defer cancel()
-	return a.Stop(sctx)
+	<-a.Done()
+	return a.Err()
 }
-
-// shutdownBudget bounds the teardown at exit.
-const shutdownBudget = 30 * time.Second
 
 // newRootCmd builds the intercom root command with the production runner.
 func newRootCmd() *cobra.Command { return newRootCmdWith(runApp) }

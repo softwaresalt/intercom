@@ -148,7 +148,7 @@ func TestStartRefusesBadInvocation(t *testing.T) {
 			defer cancel()
 			a, err := Start(ctx, o)
 			if err == nil {
-				_ = a.Stop(ctx)
+				stopApp(t, a)
 				t.Fatal("Start succeeded; want a startup error (process exits non-zero)")
 			}
 			if a != nil {
@@ -193,7 +193,7 @@ func TestAgentStartFailureTearsEverythingDown(t *testing.T) {
 	defer cancel()
 	a, err := Start(ctx, o)
 	if err == nil {
-		_ = a.Stop(ctx)
+		stopApp(t, a)
 		t.Fatal("Start succeeded though the agent failed to start")
 	}
 	if !errors.Is(err, f.startErr) {

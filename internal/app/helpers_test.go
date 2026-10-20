@@ -31,14 +31,40 @@ func (r *recorder) add(e string) {
 	r.events = append(r.events, e)
 }
 
+func (r *recorder) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.events...)
+}
+
+// waitEvent blocks (bounded) until e has been recorded.
+func (r *recorder) waitEvent(t *testing.T, e string) {
+	t.Helper()
+	deadline := time.Now().Add(waitFor)
+	for time.Now().Before(deadline) {
+		for _, got := range r.snapshot() {
+			if got == e {
+				return
+			}
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("event %q never recorded; got %v", e, r.snapshot())
+}
+
 // fakeAgent is an injected agent.Agent: no CLI child, every call recorded.
 type fakeAgent struct {
 	rec  *recorder
 	deps AgentDeps
 
 	startErr error
-	// stopHook runs inside Stop (before it returns).
-	stopHook func(context.Context)
+	// startBlock makes Start wait for its context (a slow agent start).
+	startBlock bool
+	// abortHook and stopHook run inside Abort/Stop (before they return).
+	abortHook func()
+	stopHook  func(context.Context)
+	// stopBlock makes Stop wait for its context (a stuck stop).
+	stopBlock bool
 
 	mu     sync.Mutex
 	starts int
@@ -46,11 +72,15 @@ type fakeAgent struct {
 	sends  []string
 }
 
-func (f *fakeAgent) Start(context.Context) (agent.SessionHandle, error) {
+func (f *fakeAgent) Start(ctx context.Context) (agent.SessionHandle, error) {
 	f.mu.Lock()
 	f.starts++
 	f.mu.Unlock()
 	f.rec.add("agent.start")
+	if f.startBlock {
+		<-ctx.Done()
+		return agent.SessionHandle{}, ctx.Err()
+	}
 	if f.startErr != nil {
 		return agent.SessionHandle{}, f.startErr
 	}
@@ -66,7 +96,10 @@ func (f *fakeAgent) Send(_ context.Context, p string) error {
 
 func (f *fakeAgent) Abort(context.Context) error {
 	f.rec.add("agent.abort")
-	return agent.ErrNotRunning
+	if f.abortHook != nil {
+		f.abortHook()
+	}
+	return nil
 }
 
 func (f *fakeAgent) Stop(ctx context.Context) error {
@@ -76,6 +109,10 @@ func (f *fakeAgent) Stop(ctx context.Context) error {
 	f.rec.add("agent.stop")
 	if f.stopHook != nil {
 		f.stopHook(ctx)
+	}
+	if f.stopBlock {
+		<-ctx.Done()
+		return ctx.Err()
 	}
 	return nil
 }
@@ -92,12 +129,16 @@ func (f *fakeAgent) emit(ev agent.Event) { f.deps.Ingress <- ev }
 
 // factory records how many times it was invoked and hands out one fakeAgent.
 type factory struct {
-	mu       sync.Mutex
-	calls    int
-	agent    *fakeAgent
-	rec      *recorder
-	startErr error
-	buildErr error
+	mu         sync.Mutex
+	calls      int
+	agent      *fakeAgent
+	rec        *recorder
+	startErr   error
+	buildErr   error
+	startBlock bool
+	stopBlock  bool
+	abortHook  func()
+	stopHook   func(context.Context)
 }
 
 func newFactory() *factory { return &factory{rec: &recorder{}} }
@@ -109,7 +150,7 @@ func (f *factory) build(d AgentDeps) (agent.Agent, error) {
 	if f.buildErr != nil {
 		return nil, f.buildErr
 	}
-	f.agent = &fakeAgent{rec: f.rec, deps: d, startErr: f.startErr}
+	f.agent = &fakeAgent{rec: f.rec, deps: d, startErr: f.startErr, startBlock: f.startBlock, stopBlock: f.stopBlock, abortHook: f.abortHook, stopHook: f.stopHook}
 	return f.agent, nil
 }
 
@@ -193,10 +234,17 @@ func startApp(t *testing.T, o Options) *App {
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	t.Cleanup(func() {
-		sctx, scancel := context.WithTimeout(context.Background(), waitFor)
-		defer scancel()
-		_ = a.Stop(sctx)
-	})
+	t.Cleanup(func() { stopApp(t, a) })
 	return a
+}
+
+// stopApp runs the ordered shutdown and waits for it (bounded).
+func stopApp(t *testing.T, a *App) {
+	t.Helper()
+	a.Shutdown("test cleanup")
+	select {
+	case <-a.Done():
+	case <-time.After(waitFor):
+		t.Error("the app did not finish shutting down")
+	}
 }
