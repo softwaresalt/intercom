@@ -1,0 +1,305 @@
+package tui
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/softwaresalt/intercom-go/internal/hub"
+)
+
+// Default feed sizing and bounds.
+const (
+	// DefaultQueueSize is the capacity of the TUI's own buffered channel.
+	DefaultQueueSize = 256
+	// dialTimeout bounds one (re)connect to the hub.
+	dialTimeout = 5 * time.Second
+)
+
+// queue is the TUI's own buffered channel with a drop-oldest overflow policy
+// (design §4). It is deliberately a plain FIFO of untouched items: nothing is
+// ever merged or re-parsed (no coalescing), because that would be off-hub
+// interpretation of envelopes §5.2 freezes as immutable.
+//
+// There is exactly one producer (the pump goroutine) and one consumer (the
+// deliver goroutine). Only the producer drops, so a push never blocks.
+type queue[T any] struct {
+	ch      chan T
+	dropped atomic.Uint64
+}
+
+func newQueue[T any](size int) *queue[T] {
+	if size < 1 {
+		size = DefaultQueueSize
+	}
+	return &queue[T]{ch: make(chan T, size)}
+}
+
+// push appends v, evicting the oldest queued items while the queue is full. It
+// reports whether anything was dropped. It never blocks.
+func (q *queue[T]) push(v T) (dropped bool) {
+	for {
+		select {
+		case q.ch <- v:
+			return dropped
+		default:
+		}
+		select {
+		case <-q.ch:
+			dropped = true
+			q.dropped.Add(1)
+		default: // the consumer emptied it meanwhile
+		}
+	}
+}
+
+// drain discards everything queued (a re-hydrate supersedes it all).
+func (q *queue[T]) drain() {
+	for {
+		select {
+		case <-q.ch:
+		default:
+			return
+		}
+	}
+}
+
+// item is one queued unit: a hub frame, or an informational resync note.
+type item struct {
+	frame  hub.Frame
+	resync bool
+}
+
+// FeedOptions configures a [Feed].
+type FeedOptions struct {
+	// Dial opens a TUI connection to the hub (see [HubDialer]).
+	Dial Dial
+	// Sink receives the messages for the Bubble Tea program, normally
+	// (*tea.Program).Send. It may block (a stalled renderer); that blocks only
+	// the deliver goroutine. It must return once the program has exited, as
+	// Program.Send does, so Close can finish.
+	Sink func(tea.Msg)
+	// QueueSize is the capacity of the TUI's own channel. 0 selects
+	// [DefaultQueueSize].
+	QueueSize int
+}
+
+// FeedStats are the feed's counters.
+type FeedStats struct {
+	// Dropped counts envelopes evicted from the TUI's own channel.
+	Dropped uint64
+	// Rehydrates counts forced re-hydrates (reconnects) the feed performed.
+	Rehydrates uint64
+}
+
+// Feed connects the TUI to the hub as a client of canonical state (design §4,
+// §5.3). A pump goroutine drains the hub's per-client channel into the TUI's
+// own drop-oldest queue, and a separate deliver goroutine hands queued items
+// to the Bubble Tea program. The hub therefore never waits on the renderer:
+// it writes to its own non-blocking client channel, the pump never blocks on
+// the program, and only the deliver goroutine can stall.
+//
+// When the queue overflows the oldest items are dropped and the feed forces a
+// re-hydrate by reconnecting (a fresh dial always starts with a
+// session.hydrate). The consumer's [hub.Cursor] sees the gap and ignores
+// frames until that hydrate arrives.
+//
+// A Feed also is the model's [Ingress]: Do forwards to the current
+// connection, so actions keep working across re-hydrates.
+type Feed struct {
+	opt FeedOptions
+	q   *queue[item]
+
+	mu   sync.Mutex
+	conn Conn
+
+	rehydrates atomic.Uint64
+
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	pumpDone chan struct{}
+	pumpErr  error // written before pumpDone closes
+
+	closeOnce sync.Once
+}
+
+// NewFeed builds an unstarted feed.
+func NewFeed(o FeedOptions) *Feed {
+	return &Feed{opt: o, q: newQueue[item](o.QueueSize), pumpDone: make(chan struct{})}
+}
+
+// Start dials the hub once, synchronously (so a failure is reported to the
+// caller), and starts the pump and deliver goroutines. They run until ctx is
+// cancelled, [Feed.Close] is called, or the hub goes away.
+func (f *Feed) Start(ctx context.Context) error {
+	dctx, dcancel := context.WithTimeout(ctx, dialTimeout)
+	conn, err := f.opt.Dial(dctx)
+	dcancel()
+	if err != nil {
+		return err
+	}
+	f.mu.Lock()
+	f.conn = conn
+	f.mu.Unlock()
+
+	ctx, f.cancel = context.WithCancel(ctx)
+	f.wg.Add(2)
+	go f.pump(ctx)
+	go f.deliver(ctx)
+	return nil
+}
+
+// Do implements [Ingress] over the current hub connection.
+func (f *Feed) Do(ctx context.Context, act hub.OperatorAction) (hub.ActionResult, error) {
+	f.mu.Lock()
+	c := f.conn
+	f.mu.Unlock()
+	if c == nil {
+		return hub.ActionResult{}, ErrNotConnected
+	}
+	return c.Do(ctx, act)
+}
+
+// Stats returns the feed counters.
+func (f *Feed) Stats() FeedStats {
+	return FeedStats{Dropped: f.q.dropped.Load(), Rehydrates: f.rehydrates.Load()}
+}
+
+// Close stops both goroutines, releases the hub connection and waits for them.
+// It is idempotent.
+func (f *Feed) Close() {
+	f.closeOnce.Do(func() {
+		if f.cancel != nil {
+			f.cancel()
+		}
+		f.wg.Wait()
+		f.mu.Lock()
+		c := f.conn
+		f.conn = nil
+		f.mu.Unlock()
+		if c != nil {
+			c.Close()
+		}
+	})
+}
+
+func (f *Feed) current() Conn {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.conn
+}
+
+// pump owns the hub connection: it moves frames from the hub's channel into
+// the drop-oldest queue and performs the forced re-hydrate on overflow. It
+// never blocks on the program.
+func (f *Feed) pump(ctx context.Context) {
+	defer f.wg.Done()
+	defer close(f.pumpDone)
+	conn := f.current()
+	for {
+		select {
+		case fr := <-conn.Frames():
+			if !f.q.push(item{frame: fr}) {
+				continue
+			}
+			// Overflow: items were dropped, so this consumer has a gap. Only a
+			// fresh snapshot can repair it.
+			next, err := f.reconnect(ctx, conn)
+			if err != nil {
+				f.pumpErr = err
+				return
+			}
+			conn = next
+		case <-conn.Done():
+			// Pick up what the hub queued before it went away (the shutdown
+			// envelope), then end.
+			for {
+				select {
+				case fr := <-conn.Frames():
+					f.q.push(item{frame: fr})
+				default:
+					f.pumpErr = hub.ErrStopped
+					return
+				}
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// reconnect forces a re-hydrate: the old client is closed first (the hub
+// admits one TUI), a new one is dialled, and everything queued is discarded
+// because the hydrate that heads the new stream supersedes it.
+//
+// Known limitation (reported as a hub follow-up): the hub offers no in-place
+// "re-hydrate me" call for a client, so this close-and-redial passes through a
+// moment with no TUI attached. If the TUI is the only surface and a permission
+// request is pending, the hub's empty-broadcast-set rule (§5.4) may resolve it
+// to UserNotAvailable in that window. That fails closed (the agent is denied,
+// never granted), and the default queue is as large as the hub's own TUI
+// buffer so only a genuinely stalled renderer reaches this path.
+func (f *Feed) reconnect(ctx context.Context, old Conn) (Conn, error) {
+	old.Close()
+	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
+	next, err := f.opt.Dial(dctx)
+	if err != nil {
+		f.mu.Lock()
+		f.conn = nil
+		f.mu.Unlock()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, err
+	}
+	f.mu.Lock()
+	f.conn = next
+	f.mu.Unlock()
+	f.rehydrates.Add(1)
+	f.q.drain()
+	f.q.push(item{resync: true})
+	return next, nil
+}
+
+// deliver hands queued items to the program. It is the only goroutine that
+// can be stalled by a slow renderer.
+func (f *Feed) deliver(ctx context.Context) {
+	defer f.wg.Done()
+	send := func(it item) {
+		if it.resync {
+			f.opt.Sink(ResyncMsg{})
+			return
+		}
+		f.opt.Sink(FrameMsg{Frame: it.frame})
+	}
+	for {
+		select {
+		case it := <-f.q.ch:
+			send(it)
+		case <-f.pumpDone:
+			if ctx.Err() != nil {
+				return // Close or cancel: the program is going away, say nothing
+			}
+			for {
+				select {
+				case it := <-f.q.ch:
+					send(it)
+				default:
+					err := f.pumpErr
+					if err == nil {
+						err = errors.New("tui: feed ended")
+					}
+					f.opt.Sink(DisconnectedMsg{Err: err})
+					return
+				}
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}

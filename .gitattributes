@@ -20,3 +20,6 @@ docs/closure/** text eol=lf
 go.mod text eol=lf
 go.sum text eol=lf
 .golangci.yml text eol=lf
+
+# TUI golden frames: LF so frame comparisons are stable across checkouts.
+internal/tui/testdata/** text eol=lf
