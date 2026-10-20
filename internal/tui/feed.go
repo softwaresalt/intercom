@@ -114,18 +114,26 @@ type Feed struct {
 	opt FeedOptions
 	q   *queue[item]
 
-	mu   sync.Mutex
-	conn Conn
+	mu      sync.Mutex // guards conn, cancel, started and closed
+	conn    Conn
+	cancel  context.CancelFunc
+	started bool
+	closed  bool
 
 	rehydrates atomic.Uint64
 
-	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	pumpDone chan struct{}
 	pumpErr  error // written before pumpDone closes
-
-	closeOnce sync.Once
 }
+
+// Errors returned by [Feed.Start].
+var (
+	// ErrFeedClosed reports a Start on a feed that was already closed.
+	ErrFeedClosed = errors.New("tui: feed closed")
+	// ErrFeedStarted reports a second Start on the same feed.
+	ErrFeedStarted = errors.New("tui: feed already started")
+)
 
 // NewFeed builds an unstarted feed.
 func NewFeed(o FeedOptions) *Feed {
@@ -136,19 +144,36 @@ func NewFeed(o FeedOptions) *Feed {
 // caller), and starts the pump and deliver goroutines. They run until ctx is
 // cancelled, [Feed.Close] is called, or the hub goes away.
 func (f *Feed) Start(ctx context.Context) error {
+	f.mu.Lock()
+	switch {
+	case f.closed:
+		f.mu.Unlock()
+		return ErrFeedClosed
+	case f.started:
+		f.mu.Unlock()
+		return ErrFeedStarted
+	}
+	f.started = true
+	f.mu.Unlock()
+
 	dctx, dcancel := context.WithTimeout(ctx, dialTimeout)
 	conn, err := f.opt.Dial(dctx)
 	dcancel()
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err != nil {
+		f.started = false // nothing was started: a retry is allowed
 		return err
 	}
-	f.mu.Lock()
-	f.conn = conn
-	f.mu.Unlock()
-
+	if f.closed { // Close ran while dialling
+		conn.Close()
+		return ErrFeedClosed
+	}
 	ctx, f.cancel = context.WithCancel(ctx)
+	f.conn = conn
 	f.wg.Add(2)
-	go f.pump(ctx)
+	go f.pump(ctx, conn)
 	go f.deliver(ctx)
 	return nil
 }
@@ -170,36 +195,40 @@ func (f *Feed) Stats() FeedStats {
 }
 
 // Close stops both goroutines, releases the hub connection and waits for them.
-// It is idempotent.
+// It is idempotent, and a Start after it fails with [ErrFeedClosed].
 func (f *Feed) Close() {
-	f.closeOnce.Do(func() {
-		if f.cancel != nil {
-			f.cancel()
-		}
-		f.wg.Wait()
-		f.mu.Lock()
-		c := f.conn
-		f.conn = nil
-		f.mu.Unlock()
-		if c != nil {
-			c.Close()
-		}
-	})
-}
-
-func (f *Feed) current() Conn {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.conn
+	f.closed = true
+	cancel := f.cancel
+	f.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	f.wg.Wait()
+	f.mu.Lock()
+	c := f.conn
+	f.conn = nil
+	f.mu.Unlock()
+	if c != nil {
+		c.Close()
+	}
 }
 
 // pump owns the hub connection: it moves frames from the hub's channel into
 // the drop-oldest queue and performs the forced re-hydrate on overflow. It
 // never blocks on the program.
-func (f *Feed) pump(ctx context.Context) {
+func (f *Feed) pump(ctx context.Context, conn Conn) {
 	defer f.wg.Done()
 	defer close(f.pumpDone)
-	conn := f.current()
+	// Whatever way the pump ends (ctx cancel, hub gone, failed re-dial) it
+	// releases its hub connection, so a missed Close cannot hold the hub's
+	// single TUI slot. Close on a Conn is idempotent.
+	defer func() {
+		f.mu.Lock()
+		f.conn = nil
+		f.mu.Unlock()
+		conn.Close()
+	}()
 	for {
 		select {
 		case fr := <-conn.Frames():

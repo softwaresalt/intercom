@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -174,8 +175,7 @@ func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.input = nil
 	case tea.KeyCtrlX:
-		m.notice = "abort requested"
-		return m, m.act(hub.OperatorAction{Type: hub.OpAbortTurn})
+		return m.abortCmd()
 	case tea.KeyPgUp:
 		m.vp.PageUp()
 	case tea.KeyPgDown:
@@ -191,13 +191,22 @@ func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeySpace:
 		m.input = append(m.input, ' ')
 	case tea.KeyRunes:
+		// What the operator typed is sent as typed (ZWJ emoji and other format
+		// runes included); only control runes are dropped. Display safety is
+		// applied when the input line is rendered, not here.
 		for _, r := range k.Runes {
-			if r >= 0x20 && r != 0x7f && (r < 0x80 || r >= 0xa0) {
-				m.input = append(m.input, []rune(Sanitize(string(r)))...)
+			if r >= 0x20 && r != 0x7f && (r < 0x80 || r >= 0xa0) && r != '\u2028' && r != '\u2029' && r != utf8.RuneError {
+				m.input = append(m.input, r)
 			}
 		}
 	}
 	return m, nil
+}
+
+// abortCmd requests an abort of the running turn through the ingress.
+func (m Model) abortCmd() (tea.Model, tea.Cmd) {
+	m.notice = "abort requested"
+	return m, m.act(hub.OperatorAction{Type: hub.OpAbortTurn})
 }
 
 func (m Model) submitPrompt() (tea.Model, tea.Cmd) {
@@ -556,7 +565,7 @@ func (m Model) View() string {
 		area = m.vp.View()
 	}
 
-	prompt := "> " + string(m.input) + "_"
+	prompt := "> " + SanitizeLine(string(m.input)) + "_"
 	if m.disconnected != nil {
 		prompt = "> (disconnected)"
 	} else if len(m.pending) > 0 {

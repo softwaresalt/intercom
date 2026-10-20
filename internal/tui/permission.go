@@ -21,10 +21,16 @@ type permission struct {
 	ToolCallID string
 	Kind       string
 	Summary    string
+	// Empty is set when the request text is blank: nothing was shown to
+	// approve, so the request is deny-only.
+	Empty bool
 	// Deadline is the envelope ts plus the hub-reported remaining time (design
 	// §5.3: anchored to the envelope, not to local receipt). Zero if unknown.
 	Deadline time.Time
 }
+
+// emptyRequestText stands in for a blank summary.
+const emptyRequestText = "(empty request - deny only)"
 
 func unmarshal(raw []byte, v any) error { return json.Unmarshal(raw, v) }
 
@@ -34,6 +40,9 @@ func newPermission(p hub.PermissionRequestedPayload, ts time.Time) permission {
 		ToolCallID: SanitizeLine(p.ToolCallID),
 		Kind:       SanitizeLine(p.PermissionKind),
 		Summary:    Sanitize(p.Summary),
+	}
+	if strings.TrimSpace(p.Summary) == "" {
+		out.Summary, out.Empty = emptyRequestText, true
 	}
 	if p.RemainingMS > 0 && !ts.IsZero() {
 		out.Deadline = ts.Add(time.Duration(p.RemainingMS) * time.Millisecond)
@@ -53,7 +62,7 @@ func appendPermission(list []permission, p hub.PermissionRequestedPayload, ts ti
 
 func (m Model) applyPermissionRequested(raw []byte, ts time.Time) Model {
 	var p hub.PermissionRequestedPayload
-	if err := json.Unmarshal(raw, &p); err != nil || p.RequestID == "" {
+	if err := unmarshal(raw, &p); err != nil || p.RequestID == "" {
 		// Never present a request we could not read: it must not be approvable.
 		m.notice = "received an undecodable permission request; it cannot be answered here"
 		return m
@@ -64,7 +73,7 @@ func (m Model) applyPermissionRequested(raw []byte, ts time.Time) Model {
 
 func (m Model) applyPermissionResolved(raw []byte) Model {
 	var p hub.PermissionResolvedPayload
-	if json.Unmarshal(raw, &p) != nil {
+	if unmarshal(raw, &p) != nil {
 		m.notice = "ignored an undecodable permission.resolved"
 		return m
 	}
@@ -79,7 +88,7 @@ func (m Model) applyPermissionResolved(raw []byte) Model {
 
 func (m Model) applyPermissionAborted(raw []byte) Model {
 	var p hub.PermissionAbortedPayload
-	if json.Unmarshal(raw, &p) != nil {
+	if unmarshal(raw, &p) != nil {
 		m.notice = "ignored an undecodable permission.aborted"
 		return m
 	}
@@ -141,14 +150,21 @@ func keepOnly(set map[string]bool, pending []permission) map[string]bool {
 // ---- modal geometry and viewing ----
 
 // modalBodyRows is the number of body rows available for the request text. A
-// box needs 2 border rows, 3 header rows and 2 hint rows around the body.
-func (m Model) modalBodyRows() int { return m.areaHeight() - 7 }
+// box needs 2 border rows, 2 header rows and 2 hint rows around the body.
+func (m Model) modalBodyRows() int { return m.areaHeight() - 6 }
 
 func (m Model) modalInnerWidth() int {
 	if w := m.width - 4; w > 10 {
 		return w
 	}
 	return 10
+}
+
+// body is the scrollable text of the request. The kind and tool call id sit in
+// it, not in a fixed header row, so a long one is wrapped and has to be
+// scrolled through like the rest before approval unlocks.
+func (p permission) body() string {
+	return "kind: " + p.Kind + "\ntool call: " + p.ToolCallID + "\n\n" + p.Summary
 }
 
 // syncModal keeps the modal viewport in step with the head pending request.
@@ -164,7 +180,7 @@ func (m *Model) syncModal(reset bool) {
 			rows = 0
 		}
 		m.modal = viewport.New(m.modalInnerWidth(), rows)
-		m.modal.SetContent(m.wrap(p.Summary, m.modalInnerWidth()))
+		m.modal.SetContent(m.wrap(p.body(), m.modalInnerWidth()))
 		m.modalFor, m.modalSeen, m.armed = p.RequestID, 0, ""
 	}
 	m.noteSeen()
@@ -182,7 +198,7 @@ func (m *Model) noteSeen() {
 // terminal is too small for any body row) is deny-only. This is the guard that
 // keeps a truncated or partly seen request from being approved.
 func (m Model) approvable() bool {
-	if len(m.pending) == 0 || m.modal.Height < 1 || m.modalFor != m.pending[0].RequestID {
+	if len(m.pending) == 0 || m.modal.Height < 1 || m.modalFor != m.pending[0].RequestID || m.pending[0].Empty {
 		return false
 	}
 	return m.modalSeen >= m.modal.TotalLineCount() && !m.inflight[m.pending[0].RequestID]
@@ -214,6 +230,9 @@ func (m Model) onModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case m.inflight[id]:
 		case !m.approvable():
 			m.notice = "scroll to the end of the request (PgDn) before approving"
+			if m.pending[0].Empty {
+				m.notice = "an empty request cannot be approved"
+			}
 		default:
 			// Approval takes y then Enter, so typing ahead ("yes\n") when the
 			// modal appears cannot approve a command by accident.
@@ -225,8 +244,7 @@ func (m Model) onModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.decisionCmd(agent.DecisionDeny)
 		}
 	case "ctrl+x":
-		m.notice = "abort requested"
-		return m, m.act(hub.OperatorAction{Type: hub.OpAbortTurn})
+		return m.abortCmd()
 	// Contiguous scrolling only: no Home/End jump, so "seen" means every line
 	// really was on screen.
 	case "up":
@@ -249,7 +267,6 @@ func (m Model) modalView(height int) string {
 	if n := len(m.pending); n > 1 {
 		title += fmt.Sprintf(" (1 of %d)", n)
 	}
-	meta := fmt.Sprintf("kind: %s   tool call: %s", p.Kind, p.ToolCallID)
 	expires := "expires: unknown"
 	if !p.Deadline.IsZero() {
 		expires = "expires: " + p.Deadline.UTC().Format("15:04:05Z")
@@ -266,6 +283,8 @@ func (m Model) modalView(height int) string {
 		hint = "decision sent; waiting for the agent to acknowledge..."
 	case m.armed == id:
 		hint = "APPROVE? press Enter to confirm, any other key cancels"
+	case p.Empty:
+		hint = "empty request: approve disabled   n deny"
 	case m.approvable():
 		hint = "y approve (then Enter to confirm)   n deny"
 	default:
@@ -277,7 +296,6 @@ func (m Model) modalView(height int) string {
 
 	rows := []string{
 		m.st.bold.Render(m.fit(title, inner)),
-		m.fit(meta, inner),
 		m.fit(expires, inner),
 		m.modal.View(),
 		m.fit(hint, inner),

@@ -13,7 +13,7 @@ go 1.25.0
 // advisories GO-2026-6603, GO-2026-6607, GO-2026-6608, GO-2026-6611,
 // GO-2026-6612, GO-2026-6613, and GO-2026-6617 (net/http, crypto/tls,
 // net/textproto, mime/multipart; fixed in go1.26.9). This is a toolchain-only
-// change: the go 1.24 language floor is unchanged (see
+// change: the go 1.24 language floor was unchanged by that bump (see
 // docs/decisions/2026-09-04-go-toolchain-pin-maintenance-note.md).
 // The language floor was later raised from go 1.24 to go 1.25.0 (shipment
 // 061-S / 069-F) because the TUI dependencies' security-fixed transitive

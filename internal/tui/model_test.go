@@ -51,6 +51,28 @@ func TestAbortGoesThroughIngressOnly(t *testing.T) {
 	}
 }
 
+func TestTypedInputIsSentVerbatimButFiltered(t *testing.T) {
+	ing := &fakeIngress{result: hub.ActionResult{Accepted: true}}
+	m := newModel(t, ing, 80, 24)
+	emoji := "\U0001F469\u200D\U0001F4BB"
+	m = typeText(m, "hi "+emoji+"\x1b\x07\u009b!")
+	if got := string(m.input); got != "hi "+emoji+"!" {
+		t.Fatalf("input = %q, want format runes kept and controls dropped", got)
+	}
+	v := m.View()
+	for _, bad := range []string{"\x1b", "\x07", "\u009b", "\u200d"} {
+		if strings.Contains(v, bad) {
+			t.Fatalf("view leaks %q: %q", bad, v)
+		}
+	}
+	_, cmd := step(m, tea.KeyMsg{Type: tea.KeyEnter})
+	cmd()
+	c := ing.snapshot()
+	if len(c) != 1 || c[0].Prompt != "hi "+emoji+"!" {
+		t.Fatalf("sent %+v, want the typed text verbatim", c)
+	}
+}
+
 func TestRefusedPromptKeepsInputAndShowsReason(t *testing.T) {
 	ing := &fakeIngress{result: hub.ActionResult{Reason: hub.ReasonAgentUnavailable}}
 	m := newModel(t, ing, 80, 24)

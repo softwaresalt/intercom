@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -240,10 +241,60 @@ func TestFeedClosesCleanlyAndStopsDelivering(t *testing.T) {
 	f := startFeed(t, r, 0, 0, s)
 	f.Close()
 	f.Close() // idempotent
+	// Close waited for both goroutines, so no sink call can be in flight or
+	// start later: the count after Close is final.
 	n := len(s.out)
 	r.send(agent.Event{Kind: agent.KindTurnStart, TurnID: "t"})
-	time.Sleep(10 * time.Millisecond) // negative check only; a late frame would fail below, never the reverse
-	if len(s.out) > n+0 {
-		t.Fatalf("feed delivered after Close: %d -> %d", n, len(s.out))
+	if got := len(s.out); got != n {
+		t.Fatalf("feed delivered after Close: %d -> %d", n, got)
 	}
+}
+
+func TestFeedCloseBeforeStartAndDoubleStart(t *testing.T) {
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		dials.Add(1)
+		return nil, errors.New("unused")
+	}
+	f := NewFeed(FeedOptions{Dial: dial, Sink: func(tea.Msg) {}})
+	f.Close()
+	if err := f.Start(context.Background()); !errors.Is(err, ErrFeedClosed) {
+		t.Fatalf("Start after Close = %v, want ErrFeedClosed", err)
+	}
+	if dials.Load() != 0 {
+		t.Fatal("Start after Close must not dial")
+	}
+
+	r := newRig(t, hub.Config{})
+	s := newSinkRig(false)
+	f = startFeed(t, r, 0, 0, s)
+	if err := f.Start(context.Background()); !errors.Is(err, ErrFeedStarted) {
+		t.Fatalf("second Start = %v, want ErrFeedStarted", err)
+	}
+}
+
+func TestFeedReleasesHubSlotWhenContextCancelledWithoutClose(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	r.c.Close()
+	s := newSinkRig(false)
+	f := NewFeed(FeedOptions{Dial: HubDialer(r.h, 0), Sink: s.sink})
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := f.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cancel() // no Close
+	deadline := time.After(testWait)
+	for {
+		c, err := HubDialer(r.h, 0)(context.Background())
+		if err == nil {
+			c.Close()
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("the single TUI slot was never released: %v", err)
+		case <-time.After(time.Millisecond):
+		}
+	}
+	f.Close()
 }

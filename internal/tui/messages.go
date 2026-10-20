@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/softwaresalt/intercom-go/internal/hub"
@@ -52,7 +51,6 @@ const (
 type hydrateBody struct {
 	Entries            []entry                          `json:"entries"`
 	TurnActive         bool                             `json:"turn_active"`
-	Truncated          bool                             `json:"truncated"`
 	EvictedCount       int                              `json:"evicted_count"`
 	PendingPermissions []hub.PermissionRequestedPayload `json:"pending_permissions"`
 }
@@ -69,6 +67,6 @@ func parseTS(s string) time.Time {
 // decodeEnvelope decodes one frame.
 func decodeEnvelope(f hub.Frame) (hub.Envelope, error) {
 	var env hub.Envelope
-	err := json.Unmarshal(f.Bytes(), &env)
+	err := unmarshal(f.Bytes(), &env)
 	return env, err
 }
