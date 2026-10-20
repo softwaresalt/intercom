@@ -79,6 +79,11 @@ func newRig(t *testing.T, cfg hub.Config) *rig {
 	t.Helper()
 	cfg.SessionID = "sess"
 	cfg.Clock = fixedClock
+	if cfg.Now == nil {
+		// Pin the hub's own clock too: remaining_ms (and so the modal's
+		// 'expires:' line) derives from it, and must not depend on wall time.
+		cfg.Now = fixedClock
+	}
 	h, err := hub.New(cfg)
 	if err != nil {
 		t.Fatal(err)
