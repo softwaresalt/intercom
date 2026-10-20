@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -44,6 +45,15 @@ const (
 	// DefaultPermissionAckTimeout bounds the wait for the handler's
 	// acknowledgement of a delivered decision.
 	DefaultPermissionAckTimeout = 5 * time.Second
+	// MaxPermissionSummaryBytes bounds a permission request's summary. The
+	// adapter caps it at 2048 runes (at most 4 bytes each); a larger summary
+	// means the request cannot be reviewed in full and is denied outright.
+	MaxPermissionSummaryBytes = 8192
+	// PermissionEntryHydrateBytes is the declared upper bound on one pending
+	// permission's encoding in a hydrate frame (summary at worst-case JSON
+	// escaping plus identifiers and keys). A hydrate frame is at most the fold
+	// snapshot bound plus MaxPendingPermissions of these.
+	PermissionEntryHydrateBytes = maxJSONExpansion*MaxPermissionSummaryBytes + 1024
 	// askQueue is the capacity of the permission-ask channel.
 	askQueue = 16
 	// actionQueue is the capacity of the operator-action channel.
@@ -941,12 +951,43 @@ func (h *Hub) serviceHydrations() (immediate bool, retryIn time.Duration) {
 // The snapshot is the fold's pre-marshalled entries, so this is a copy plus a
 // header (design §5.3), done inside the hub.
 func (h *Hub) hydrateFrame() (Frame, bool) {
-	f, err := encodeFrame(h.gen, h.seq, h.cfg.Clock(), KindSessionHydrate, h.cfg.SessionID, h.fold.Snapshot())
+	f, err := encodeFrame(h.gen, h.seq, h.cfg.Clock(), KindSessionHydrate, h.cfg.SessionID, h.hydratePayload())
 	if err != nil {
 		h.cfg.Logger.Error("hub: build hydrate failed", "err", err)
 		return Frame{}, false
 	}
 	return f, true
+}
+
+// hydratePayload is the fold's pre-marshalled snapshot with the unresolved
+// pending permissions appended (design §5.4: pending permissions are
+// arbitration state, not fold state, but a reconnecting surface must still
+// re-render the modal with its remaining time). Entries that are decided or
+// finished are absent. The section is bounded by MaxPendingPermissions and
+// MaxPermissionSummaryBytes.
+func (h *Hub) hydratePayload() []byte {
+	snap := h.fold.Snapshot() // always ends with '}'
+	pending := h.perm.unresolved()
+	views := make([]PermissionRequestedPayload, 0, len(pending))
+	for _, e := range pending {
+		views = append(views, PermissionRequestedPayload{
+			RequestID:      e.id,
+			ToolCallID:     e.toolCallID,
+			PermissionKind: permKindName(e.kind),
+			Summary:        e.summary,
+			RemainingMS:    h.remainingMS(e),
+		})
+	}
+	enc, err := json.Marshal(views)
+	if err != nil { // plain strings and ints: cannot fail; fail closed anyway
+		h.cfg.Logger.Error("hub: marshal pending permissions failed", "err", err)
+		enc = []byte("[]")
+	}
+	out := make([]byte, 0, len(snap)+len(enc)+32)
+	out = append(out, snap[:len(snap)-1]...)
+	out = append(out, `,"pending_permissions":`...)
+	out = append(out, enc...)
+	return append(out, '}')
 }
 
 // rehydrate serves a stale client a fresh snapshot, reporting success. A

@@ -352,6 +352,13 @@ func (h *Hub) handleAsk(ask agent.PermissionAsk) {
 		return
 	default:
 	}
+	if len(ask.Request.Summary) > MaxPermissionSummaryBytes {
+		// An operator cannot approve what cannot be shown in full, and the
+		// hydrate section must stay bounded: deny without registering.
+		h.cfg.Logger.Warn("hub: permission summary over the bound; request denied", "bytes", len(ask.Request.Summary))
+		trySend(ask.Reply, agent.PermissionDecision{Kind: agent.DecisionDeny, Feedback: "request is too large to review; denied"})
+		return
+	}
 	e, ok := h.perm.register(ask, h.cfg.Now().Add(h.cfg.PermissionTimeout))
 	if !ok {
 		h.cfg.Logger.Warn("hub: permission registry full; request denied as unavailable", "max", h.cfg.MaxPendingPermissions)
