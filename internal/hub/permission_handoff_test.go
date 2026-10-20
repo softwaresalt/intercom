@@ -274,6 +274,33 @@ func TestReplyChannelFullEmitsAbortedAndNeverBlocksTheHub(t *testing.T) {
 	recvKind(t, tui, KindAgentMessage)
 }
 
+// Review finding D: the deadline is the hub's, and an answer arriving after it
+// must lose even if the timer has not been serviced yet (the hub's select could
+// pick the action before the timer).
+func TestAnswerAtOrPastTheDeadlineCannotApproveBeforeTheTimerIsServiced(t *testing.T) {
+	for _, past := range []time.Duration{0, time.Second} {
+		r := newPermRig(t, Config{PermissionTimeout: time.Minute, PermissionAckTimeout: time.Hour})
+		tui := connect(t, r.h, ClientTUI, 16)
+		a := newTestAsk(agent.PermissionKindShell, "cmd")
+		a.post(t, r.h)
+		id := requestID(t, recvKind(t, tui, KindPermissionRequested))
+
+		r.clock.Advance(time.Minute + past) // the deadline passes; the timer is NOT fired
+		res := resolveAs(t, r.h, tuiP(), id, allowOnce)
+		if res.Accepted || res.Reason != ReasonAlreadyResolved || res.Winner != ActorHub {
+			t.Fatalf("past=%v: late approval = %+v, want already_resolved won by the hub", past, res)
+		}
+		if d := a.takeReply(t); d.Kind != agent.DecisionUnavailable {
+			t.Fatalf("past=%v: handler got %v, want unavailable (timeout)", past, d.Kind)
+		}
+		close(a.resolved) // the handler returns: acknowledged
+		p := resolvedPayload(t, recvKind(t, tui, KindPermissionResolved))
+		if p.Decision != "unavailable" || p.Actor != ActorHub || p.Reason != "timeout" {
+			t.Fatalf("past=%v: resolved = %+v", past, p)
+		}
+	}
+}
+
 func TestTimerFiringAfterOperatorWonDoesNotOverrideTheDecision(t *testing.T) {
 	r := newPermRig(t, Config{PermissionTimeout: time.Minute, PermissionAckTimeout: time.Hour})
 	tui := connect(t, r.h, ClientTUI, 16)

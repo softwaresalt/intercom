@@ -434,6 +434,10 @@ func (h *Hub) processAction(r *actionReq) ActionResult {
 		}
 		return ActionResult{Reason: ReasonCredentialRevoked}
 	}
+	// The hub's clock is authoritative: a request already at or past its
+	// deadline is expired now, so a ready action cannot win a race against the
+	// timer that has not been serviced yet (it then finds the entry resolved).
+	h.expirePermissions()
 	switch r.act.Type {
 	case OpResolvePermission:
 		return h.resolvePermission(r)
