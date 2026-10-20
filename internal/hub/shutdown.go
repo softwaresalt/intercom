@@ -40,16 +40,21 @@ type ShutdownTimeouts struct {
 	Abort time.Duration
 	// Idle bounds the wait for a positive idle signal (default 5s).
 	Idle time.Duration
-	// Stop bounds Agent.Stop, after which the adapter escalates to ForceStop
-	// (default 10s).
+	// Stop bounds Agent.Stop's graceful phase: the context handed to it expires
+	// after this, and the adapter then escalates to ForceStop (default 10s).
 	Stop time.Duration
+	// Force bounds the wait, after Stop's budget, for the adapter's ForceStop
+	// escalation to return (default 5s). Stop+Force is the hard budget: the
+	// executor does not finish, and the hub does not stop, before the agent's
+	// Stop has returned or that budget is spent (then ErrOrphanRisk).
+	Force time.Duration
 	// Drain bounds the write-pump drain before sockets are aborted (design
 	// §3.1 step 5: 1-2 s; default 2s).
 	Drain time.Duration
 }
 
 func (t ShutdownTimeouts) valid() bool {
-	for _, d := range []time.Duration{t.Permissions, t.Gate, t.Announce, t.Abort, t.Idle, t.Stop, t.Drain} {
+	for _, d := range []time.Duration{t.Permissions, t.Gate, t.Announce, t.Abort, t.Idle, t.Stop, t.Force, t.Drain} {
 		if d < 0 {
 			return false
 		}
@@ -69,12 +74,17 @@ func (t ShutdownTimeouts) withDefaults() ShutdownTimeouts {
 	def(&t.Abort, 5*time.Second)
 	def(&t.Idle, 5*time.Second)
 	def(&t.Stop, 10*time.Second)
+	def(&t.Force, 5*time.Second)
 	def(&t.Drain, 2*time.Second)
 	return t
 }
 
 // drainPollInterval is how often step 5 re-checks the client queues.
 const drainPollInterval = 5 * time.Millisecond
+
+// ErrOrphanRisk is joined into a shutdown's error when the agent's Stop did
+// not return within its hard budget: the CLI child may still be running.
+var ErrOrphanRisk = errors.New("agent did not confirm it stopped; the CLI child may be orphaned")
 
 // ShutdownConfig configures a [Shutdown].
 type ShutdownConfig struct {
@@ -167,7 +177,9 @@ func (s *Shutdown) run(ctx context.Context) {
 	})
 	// Steps 2-4: the agent. See agentStage for how the design's ordering maps
 	// onto the adapter's Stop.
-	s.agentStage(ctx, step)
+	if err := s.agentStage(ctx, step); err != nil {
+		errs = append(errs, err)
+	}
 	// Step 5: bounded drain of the write pumps, then abort the sockets.
 	_ = step("5 drain clients", ctx, t.Drain+time.Second, func(c context.Context) error {
 		return h.drainAndCloseClients(c, t.Drain)
@@ -197,7 +209,14 @@ func (s *Shutdown) run(ctx context.Context) {
 //
 // A failed or timed-out step is logged and aggregated, and never skips the
 // stop: the runtime and its CLI child must be torn down regardless.
-func (s *Shutdown) agentStage(ctx context.Context, step func(string, context.Context, time.Duration, func(context.Context) error) error) {
+//
+// The stop itself is never abandoned. Cancelling ctx hurries it (the adapter
+// then goes straight to ForceStop) but the executor keeps waiting, on a context
+// the parent cannot cancel, until Agent.Stop returns or the hard budget
+// (Stop + Force) is spent; only then may the hub stop and Done close. Running
+// out the hard budget is reported as [ErrOrphanRisk]. It returns the error it
+// recorded for the stop, if any (already logged).
+func (s *Shutdown) agentStage(ctx context.Context, step func(string, context.Context, time.Duration, func(context.Context) error) error) error {
 	t := s.cfg.Timeouts
 	var noSession atomic.Bool // Abort reported there is no session to abort
 	err := step("3 abort turn", ctx, t.Abort, func(c context.Context) error {
@@ -213,7 +232,24 @@ func (s *Shutdown) agentStage(ctx context.Context, step func(string, context.Con
 	if err == nil && !noSession.Load() {
 		_ = step("3 await idle", ctx, t.Idle, s.cfg.Hub.WaitIdle)
 	}
-	_ = step("2+4 stop agent", ctx, t.Stop, s.cfg.Agent.Stop)
+	var returned atomic.Bool
+	err = boundedStep(context.WithoutCancel(ctx), t.Stop+t.Force, func(context.Context) error {
+		defer returned.Store(true)
+		// The graceful phase ends at Stop's budget, or at once if ctx is
+		// cancelled; the adapter then force-stops its runtime.
+		sc, cancel := context.WithTimeout(ctx, t.Stop)
+		defer cancel()
+		return s.cfg.Agent.Stop(sc)
+	})
+	if err == nil {
+		return nil
+	}
+	if !returned.Load() {
+		err = fmt.Errorf("%w: %w", ErrOrphanRisk, err)
+	}
+	err = fmt.Errorf("shutdown 2+4 stop agent: %w", err)
+	s.cfg.Logger.Error("shutdown step failed", "step", "2+4 stop agent", "err", err)
+	return err
 }
 
 // boundedStep runs fn under a budget-bound child of parent. fn may ignore its

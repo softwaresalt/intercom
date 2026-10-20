@@ -259,6 +259,61 @@ func TestStopExceedingItsDeadlineTriggersForceStopAndNoChildIsStranded(t *testin
 	}
 }
 
+// Review finding A: a wedged graceful stop and a cancelled shutdown context must
+// still end in a completed ForceStop BEFORE the executor reports Done.
+func TestCancelledShutdownContextStillWaitsForForceStopToKillTheChild(t *testing.T) {
+	r := newShutdownRig(t)
+	c := r.h.client
+	c.stopBlock = make(chan struct{})  // the runtime ignores the graceful stop
+	c.forceBlock = make(chan struct{}) // and ForceStop takes a while to kill the child
+	var once sync.Once
+	releaseForce := func() { once.Do(func() { close(c.forceBlock) }) }
+	t.Cleanup(func() { close(c.stopBlock); releaseForce() })
+	s := r.newShutdown(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	s.Start(ctx)
+
+	eventually(t, "the graceful Client.Stop to wedge", func() bool { return c.stops.Load() == 1 })
+	cancel()
+	eventually(t, "ForceStop to start", func() bool { return c.forceStops.Load() == 1 })
+	select {
+	case <-s.Done():
+		t.Fatal("Done closed while ForceStop was still killing the CLI child")
+	case <-time.After(300 * time.Millisecond):
+	}
+	if !c.childAlive.Load() {
+		t.Fatal("harness: the child died before ForceStop completed")
+	}
+	releaseForce()
+	waitDone(t, s)
+	if c.childAlive.Load() {
+		t.Fatal("shutdown finished with the CLI child alive")
+	}
+	if s.Err() == nil {
+		t.Fatal("a cancelled shutdown must report its interruption")
+	}
+}
+
+func TestShutdownThatCannotConfirmForceStopReportsOrphanRisk(t *testing.T) {
+	r := newShutdownRig(t)
+	c := r.h.client
+	c.stopBlock = make(chan struct{})
+	c.forceBlock = make(chan struct{}) // ForceStop never returns
+	t.Cleanup(func() { close(c.stopBlock); close(c.forceBlock) })
+	s := r.newShutdown(t, func(c *hub.ShutdownConfig) {
+		c.Timeouts.Stop = 100 * time.Millisecond
+		c.Timeouts.Force = 300 * time.Millisecond // hub gives up before the adapter's own 1s ForceStop bound
+	})
+	s.Start(context.Background())
+	waitDone(t, s)
+	if !errors.Is(s.Err(), hub.ErrOrphanRisk) {
+		t.Fatalf("Err() = %v, want an orphan-risk report", s.Err())
+	}
+	if !c.childAlive.Load() {
+		t.Fatal("harness: the child should still be alive")
+	}
+}
+
 func TestShutdownAggregatesAndLogsAdapterStopErrors(t *testing.T) {
 	r := newShutdownRig(t)
 	r.h.client.stopErr = errors.New("cli exited with status 7")

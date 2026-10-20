@@ -195,12 +195,71 @@ func TestAbortOfAnAbsentSessionIsNotAnError(t *testing.T) {
 	}
 }
 
+// The CLI child may only be considered gone once the adapter's Stop (which
+// escalates to ForceStop) has returned: a cancelled shutdown context must hurry
+// the agent, never abandon it (review finding A).
+func TestCancelledParentDoesNotLetDoneCloseBeforeAgentStopReturns(t *testing.T) {
+	r := newShutdownRig(t, Config{})
+	r.ag.stopBlock = make(chan struct{})
+	r.ag.stopIgnoresCtx = true
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			close(r.ag.stopBlock)
+		}
+	}
+	t.Cleanup(release)
+	s := r.newShutdown(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	s.Start(ctx)
+	waitUntil(t, "the executor to reach Agent.Stop", func() bool { return slices.Contains(r.rec.events(), "agent.stop") })
+	cancel()
+	select {
+	case <-s.Done():
+		t.Fatal("Done closed while Agent.Stop was still running: the CLI child may be alive")
+	case <-r.h.Done():
+		t.Fatal("the hub stopped while Agent.Stop was still running")
+	case <-time.After(300 * time.Millisecond):
+	}
+	release()
+	waitShutdown(t, s)
+	if !errors.Is(s.Err(), context.Canceled) {
+		t.Fatalf("Err() = %v, want the interruption reported", s.Err())
+	}
+}
+
+func TestStopThatOutlivesTheHardBudgetReportsOrphanRiskAndDoneWaitsForIt(t *testing.T) {
+	r := newShutdownRig(t, Config{})
+	r.ag.stopBlock = make(chan struct{})
+	r.ag.stopIgnoresCtx = true
+	t.Cleanup(func() { close(r.ag.stopBlock) })
+	s := r.newShutdown(t, func(c *ShutdownConfig) {
+		c.Timeouts.Stop = 50 * time.Millisecond
+		c.Timeouts.Force = 300 * time.Millisecond
+	})
+	start := time.Now()
+	s.Start(context.Background())
+	select {
+	case <-s.Done():
+		t.Fatalf("Done closed after %v, before the hard budget (stop + force) elapsed", time.Since(start))
+	case <-time.After(200 * time.Millisecond):
+	}
+	waitShutdown(t, s)
+	if !errors.Is(s.Err(), ErrOrphanRisk) {
+		t.Fatalf("Err() = %v, want an orphan-risk report", s.Err())
+	}
+}
+
 func TestStopThatIgnoresItsContextIsBoundedByTheStopDeadline(t *testing.T) {
 	r := newShutdownRig(t, Config{})
 	r.ag.stopBlock = make(chan struct{})
 	r.ag.stopIgnoresCtx = true
 	t.Cleanup(func() { close(r.ag.stopBlock) })
-	s := r.newShutdown(t, func(c *ShutdownConfig) { c.Timeouts.Stop = 50 * time.Millisecond })
+	s := r.newShutdown(t, func(c *ShutdownConfig) {
+		c.Timeouts.Stop = 50 * time.Millisecond
+		c.Timeouts.Force = 50 * time.Millisecond
+	})
 	s.Start(context.Background())
 	waitShutdown(t, s)
 	if !errors.Is(s.Err(), context.DeadlineExceeded) {

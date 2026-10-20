@@ -575,8 +575,18 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 	sess, clientStarted := a.session, a.clientStarted
 	a.mu.Unlock()
 
-	// step runs one bounded SDK call and classifies how it ended.
+	// step runs one bounded SDK call and classifies how it ended. Once the
+	// caller's context is done or an earlier step failed, graceful teardown is
+	// over: the call is not attempted (it would only race the force kill) and
+	// the runtime goes straight to ForceStop.
 	step := func(label string, fn func() error) {
+		if ctx.Err() != nil {
+			noteCtx()
+			return
+		}
+		if needForce {
+			return
+		}
 		err := boundedCall(ctx, a.budget(ctx), fn)
 		switch {
 		case err == nil:

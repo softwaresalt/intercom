@@ -66,6 +66,55 @@ func TestStopBoundedWhenForceStopBlocks(t *testing.T) {
 	}
 }
 
+// Review finding A: once the caller's context is done, graceful teardown is
+// over. Stop must go straight to ForceStop and must not launch a graceful
+// Disconnect or Client.Stop that would race the force kill.
+func TestStopWithADoneContextSkipsGracefulStepsAndForceStops(t *testing.T) {
+	h := newHarness(t, nil)
+	if _, err := h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := h.ad.Stop(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Stop error = %v, want context.Canceled", err)
+	}
+	time.Sleep(50 * time.Millisecond) // a (wrongly) launched graceful call would have run by now
+	if n := h.client.session.disconnects.Load(); n != 0 {
+		t.Errorf("Disconnect ran %d times after the context was done", n)
+	}
+	if n := h.client.stops.Load(); n != 0 {
+		t.Errorf("graceful Client.Stop ran %d times after the context was done", n)
+	}
+	if n := h.client.forceStops.Load(); n != 1 {
+		t.Errorf("ForceStop ran %d times, want 1", n)
+	}
+	if h.client.childAlive.Load() {
+		t.Error("the CLI child survived Stop")
+	}
+}
+
+// A graceful step that failed or timed out means the runtime is going to be
+// force-killed: the remaining graceful steps are skipped, not attempted.
+func TestStopSkipsClientStopAfterDisconnectTimesOut(t *testing.T) {
+	h := newHarness(t, func(c *Config, _ *fakeClient) { c.StopTimeout = 100 * time.Millisecond })
+	h.client.session.disconnectBlock = make(chan struct{})
+	defer close(h.client.session.disconnectBlock)
+	if _, err := h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ad.Stop(context.Background()); err == nil {
+		t.Fatal("a Disconnect that timed out must be reported")
+	}
+	if n := h.client.stops.Load(); n != 0 {
+		t.Errorf("graceful Client.Stop ran %d times after Disconnect timed out, want straight to ForceStop", n)
+	}
+	if n := h.client.forceStops.Load(); n != 1 {
+		t.Errorf("ForceStop ran %d times, want 1", n)
+	}
+}
+
 // Copilot review: Stop observes cancellation of the caller's context during
 // the first call's teardown, and still force-stops the runtime.
 func TestStopObservesContextCancellation(t *testing.T) {
