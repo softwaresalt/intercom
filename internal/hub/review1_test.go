@@ -389,11 +389,11 @@ func TestAdapterDetailNeverReachesWireOrFoldOnlyLog(t *testing.T) {
 		t.Fatal("events not processed")
 	}
 	logged := rec.String()
-	if !strings.Contains(logged, "SECRETREASON") || !strings.Contains(logged, "SECRETRAW") {
-		t.Fatalf("detail missing from the log: %q", logged)
+	if strings.Contains(logged, "SECRET") || strings.ContainsRune(logged, 0x1b) {
+		t.Fatalf("adapter text reached the log: %q", logged)
 	}
-	if strings.ContainsRune(logged, 0x1b) {
-		t.Fatalf("log not sanitized: %q", logged)
+	if !strings.Contains(logged, ErrCodeDegraded) || !strings.Contains(logged, ErrCodeUnknownEvent) {
+		t.Fatalf("fixed codes missing from the log: %q", logged)
 	}
 }
 

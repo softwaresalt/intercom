@@ -2,6 +2,7 @@ package config
 
 import (
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -184,7 +185,27 @@ func hostNameProblem(h string) string {
 			return "host label must not start or end with a hyphen"
 		}
 	}
+	if r := numericHostProblem(h); r != "" {
+		return r
+	}
 	return ""
+}
+
+// numericHostProblem rejects numeric-looking hosts that are not a canonical
+// dotted-quad IPv4 literal. A host whose last label is all digits (or that
+// consists only of digits and dots) is parsed by many resolvers as an
+// abbreviated, octal, or integer IPv4 form (127.1, 2130706433, 01.2.3.4), so
+// only the exact canonical form is accepted.
+func numericHostProblem(h string) string {
+	last := h[strings.LastIndexByte(h, '.')+1:]
+	numeric := last != "" && strings.Trim(last, "0123456789") == ""
+	if !numeric && strings.Trim(h, "0123456789.") != "" {
+		return ""
+	}
+	if ip, err := netip.ParseAddr(h); err == nil && ip.Is4() && ip.String() == h {
+		return ""
+	}
+	return "host is a non-canonical IPv4 address (use dotted-quad without leading zeros)"
 }
 
 const hostForm = "must be a host[:port] (no scheme, path, userinfo, or whitespace)"
@@ -236,6 +257,9 @@ func originProblem(o string) string {
 		}
 	} else if strings.HasSuffix(u.Host, ":") {
 		return originForm + " (empty port)"
+	}
+	if strings.Contains(u.Host, "[") && !strings.Contains(host, ":") {
+		return originForm + " (brackets are only allowed around an IPv6 literal)"
 	}
 	if strings.Contains(host, ":") {
 		if r := ipv6Problem(host); r != "" {

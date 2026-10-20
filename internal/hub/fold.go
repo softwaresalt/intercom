@@ -3,6 +3,7 @@ package hub
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
@@ -95,6 +96,24 @@ type Fold struct {
 	anyTrunc   bool
 	turnActive bool
 	turnID     string
+	// lastDelta is what the most recent KindDelta contributed to the
+	// projection, so the hub can publish exactly that on the wire.
+	lastDelta deltaResult
+}
+
+// deltaResult is the text a delta added to its entry after the cap, and
+// whether the cap clipped it.
+type deltaResult struct {
+	text      string
+	truncated bool
+}
+
+// LastDelta reports what the most recent delta contributed (clipped text and
+// whether it was clipped). Live envelopes carry exactly this, so a client that
+// accumulates deltas holds the same bounded text and truncated flag as a
+// hydrated one.
+func (f *Fold) LastDelta() (text string, truncated bool) {
+	return f.lastDelta.text, f.lastDelta.truncated
 }
 
 // NewFold validates limits and returns an empty projection.
@@ -124,13 +143,15 @@ func (f *Fold) Apply(ev agent.Event) {
 	case agent.KindAgentMessage:
 		f.applyMessage(ev)
 	case agent.KindTurnStart:
-		f.turnActive, f.turnID = true, truncUTF8(ev.TurnID, maxIdentBytes)
+		f.turnActive, f.turnID = true, f.ident(ev.TurnID)
 	case agent.KindTurnEnd:
-		f.turnActive, f.turnID = false, truncUTF8(ev.TurnID, maxIdentBytes)
+		f.turnActive, f.turnID = false, f.ident(ev.TurnID)
 	case agent.KindIdle:
 		f.turnActive = false
 	case agent.KindToolStarted:
-		f.push(entry{Kind: "tool", ID: truncUTF8(ev.ToolCallID, maxIdentBytes), Tool: truncUTF8(ev.ToolName, maxIdentBytes), Status: statusRunning})
+		id, t1 := f.identFlag(ev.ToolCallID)
+		name, t2 := f.identFlag(ev.ToolName)
+		f.push(entry{Kind: "tool", ID: id, Tool: name, Status: statusRunning, Truncated: t1 || t2})
 	case agent.KindToolEnded:
 		f.applyToolEnded(ev)
 	default:
@@ -142,31 +163,54 @@ func (f *Fold) Apply(ev agent.Event) {
 // ApplyError folds a hub-produced error as a transcript entry, so a
 // re-hydrated client still sees that the fault happened.
 func (f *Fold) ApplyError(code, msg string) {
-	e := entry{Kind: "error", ID: truncUTF8(code, maxIdentBytes)}
-	e.Text, e.Truncated = f.capText(msg)
+	e := entry{Kind: "error"}
+	var idT bool
+	e.ID, idT = f.identFlag(code)
+	var txtT bool
+	e.Text, txtT = f.capText(msg)
+	e.Truncated = idT || txtT
 	f.push(e)
 }
 
 func (f *Fold) applyDelta(ev agent.Event) {
-	id := truncUTF8(ev.MessageID, maxIdentBytes)
+	id, idT := f.identFlag(ev.MessageID)
+	f.lastDelta = deltaResult{}
 	if i := f.find("message", id, statusStreaming); i >= 0 {
 		cur := f.items[i].e
-		if cur.Truncated {
-			return // already at the text cap; further deltas change nothing
+		// Cap BEFORE concatenating: only the remaining budget of the delta is
+		// ever copied, so an oversize SDK delta is neither allocated nor kept.
+		remaining := f.lim.MaxEntryTextBytes - len(cur.Text)
+		add, clipped := ev.Text, false
+		if len(add) > remaining {
+			add, clipped = truncUTF8(ev.Text, remaining), true
 		}
-		cur.Text, cur.Truncated = f.capText(cur.Text + ev.Text)
+		add = strings.Clone(add) // "" + s would otherwise alias s
+		f.lastDelta = deltaResult{text: add, truncated: clipped}
+		if clipped {
+			f.anyTrunc = true
+		}
+		if add == "" && !clipped {
+			return
+		}
+		cur.Text += add // fresh allocation of at most MaxEntryTextBytes
+		cur.Truncated = cur.Truncated || clipped
 		f.replace(i, cur)
 		return
 	}
 	e := entry{Kind: "message", ID: id, Status: statusStreaming}
-	e.Text, e.Truncated = f.capText(ev.Text)
+	var txtT bool
+	e.Text, txtT = f.capText(ev.Text)
+	e.Truncated = idT || txtT
+	f.lastDelta = deltaResult{text: e.Text, truncated: txtT}
 	f.push(e)
 }
 
 func (f *Fold) applyMessage(ev agent.Event) {
-	id := truncUTF8(ev.MessageID, maxIdentBytes)
+	id, idT := f.identFlag(ev.MessageID)
 	e := entry{Kind: "message", ID: id, Status: statusComplete}
-	e.Text, e.Truncated = f.capText(ev.Text)
+	var txtT bool
+	e.Text, txtT = f.capText(ev.Text)
+	e.Truncated = idT || txtT
 	if i := f.find("message", id, statusStreaming); i >= 0 {
 		f.replace(i, e)
 		return
@@ -175,7 +219,7 @@ func (f *Fold) applyMessage(ev agent.Event) {
 }
 
 func (f *Fold) applyToolEnded(ev agent.Event) {
-	id := truncUTF8(ev.ToolCallID, maxIdentBytes)
+	id, t1 := f.identFlag(ev.ToolCallID)
 	status := statusFailed
 	if ev.Success {
 		status = statusSucceeded
@@ -186,16 +230,33 @@ func (f *Fold) applyToolEnded(ev agent.Event) {
 		f.replace(i, cur)
 		return
 	}
-	f.push(entry{Kind: "tool", ID: id, Tool: truncUTF8(ev.ToolName, maxIdentBytes), Status: status})
+	name, t2 := f.identFlag(ev.ToolName)
+	f.push(entry{Kind: "tool", ID: id, Tool: name, Status: status, Truncated: t1 || t2})
 }
 
-// capText applies the per-entry text cap and records truncation.
+// capText applies the per-entry text cap and records truncation. The result is
+// always a fresh copy, so a retained entry never pins a huge SDK string.
 func (f *Fold) capText(s string) (string, bool) {
 	if len(s) <= f.lim.MaxEntryTextBytes {
-		return s, false
+		return strings.Clone(s), false
 	}
 	f.anyTrunc = true
-	return truncUTF8(s, f.lim.MaxEntryTextBytes), true
+	return strings.Clone(truncUTF8(s, f.lim.MaxEntryTextBytes)), true
+}
+
+// identFlag bounds an identifier, returns an independent copy, and records
+// truncation (matching the live mapping, which sets truncated for it too).
+func (f *Fold) identFlag(s string) (string, bool) {
+	if len(s) <= maxIdentBytes {
+		return strings.Clone(s), false
+	}
+	f.anyTrunc = true
+	return strings.Clone(truncUTF8(s, maxIdentBytes)), true
+}
+
+func (f *Fold) ident(s string) string {
+	out, _ := f.identFlag(s)
+	return out
 }
 
 // find scans from the newest entry backwards.

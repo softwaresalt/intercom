@@ -215,7 +215,9 @@ func TestPropertyDetectorTripsOnHydrateThenRegisterMutation(t *testing.T) {
 			workers: 10,
 		})
 		for _, v := range last {
-			if containsAny(v, "GAP", "DUPLICATE", "liveness") {
+			// Only a safety violation counts: a liveness/timeout failure
+			// would pass even if the detector were blind to the defect.
+			if containsAny(v, "GAP", "DUPLICATE") {
 				t.Logf("mutation detected as expected: %s", v)
 				return
 			}

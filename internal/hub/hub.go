@@ -31,6 +31,9 @@ const (
 	// DefaultReplayRing is the default replay ring capacity in envelopes.
 	DefaultReplayRing = 1024
 	connectQueue      = 64
+	// connectBatch is the most connect requests taken from the connect queue
+	// in one hub iteration, so a connect flood cannot monopolise the loop.
+	connectBatch = 16
 )
 
 // Config configures a [Hub]. Zero values select the documented defaults.
@@ -274,11 +277,8 @@ func (h *Hub) Send(ctx context.Context, ev agent.Event) error {
 	}
 }
 
-// maxDegradedReason bounds the reason written to the log.
-const maxDegradedReason = 256
-
 // Fixed wire/fold messages: adapter-controlled text never reaches remote
-// clients; the sanitized detail goes to the log only.
+// clients or the log; only fixed codes and lengths are logged.
 const (
 	msgDegraded     = "agent event path degraded"
 	msgUnknownEvent = "unrecognised agent event"
@@ -287,10 +287,12 @@ const (
 
 // SignalDegraded is the single public entry for the adapter to report a fault
 // on the ingress path (design §4.2). It writes to a dedicated capacity-1
-// channel and never blocks: if a signal is already pending the new one
-// coalesces into it, because one pending signal already guarantees an error
-// envelope and a full re-hydrate. The adapter must not build an envelope
-// itself and must not route through ingress (the unavailable resource).
+// channel and never blocks. The channel keeps the FIRST pending reason: a
+// signal arriving while one is still pending is dropped (not merged), which is
+// safe because the one pending signal already guarantees an error envelope and
+// a full re-hydrate of every client. The adapter must not build an envelope
+// itself and must not route through ingress (the unavailable resource). The
+// reason is never logged or sent to clients; only its length is logged.
 func (h *Hub) SignalDegraded(reason string) { trySend(h.degraded, reason) }
 
 // handleDegraded is the hub-side degraded step: it builds the error envelope
@@ -300,10 +302,19 @@ func (h *Hub) SignalDegraded(reason string) { trySend(h.degraded, reason) }
 // than the degraded envelope must full-hydrate, never replay across it.
 func (h *Hub) handleDegraded(reason string) {
 	h.st.DegradedSignals++
-	h.cfg.Logger.Warn("hub: agent event path degraded", "reason", sanitize(reason, maxDegradedReason))
+	// Adapter-controlled text may carry URLs or tokens: log a fixed code and
+	// the byte length only.
+	h.cfg.Logger.Warn("hub: agent event path degraded", "code", ErrCodeDegraded, "reason_bytes", len(reason))
 	h.fold.ApplyError(ErrCodeDegraded, msgDegraded)
-	h.publish(KindError, ErrorPayload{Code: ErrCodeDegraded, Message: msgDegraded})
-	h.degradedSeq = h.seq
+	if seq, ok := h.publish(KindError, ErrorPayload{Code: ErrCodeDegraded, Message: msgDegraded}); ok {
+		h.degradedSeq = seq
+	}
+	h.markAllStale()
+}
+
+// markAllStale forces every live client to re-hydrate: it is skipped by
+// broadcast until served a fresh session.hydrate.
+func (h *Hub) markAllStale() {
 	for _, c := range h.clients {
 		if !c.stale && !c.isClosed() {
 			c.stale = true
@@ -441,9 +452,10 @@ func (h *Hub) membership() (remote int, tui bool) {
 // adapter could not map become error envelopes; nothing is dropped.
 func (h *Hub) handleEvent(ev agent.Event) {
 	if _, ok := KindFor(ev.Kind); !ok {
-		// Built once, fed to both the fold and the wire. The adapter-supplied
-		// type name is logged (sanitized) but never reaches clients.
-		h.cfg.Logger.Warn("hub: unmapped agent event", "kind", string(ev.Kind), "raw_type", sanitize(ev.RawType, maxRawTypeLen))
+		// Built once, fed to both the fold and the wire. Adapter-controlled
+		// text (kind, raw type) is neither logged nor sent: only a fixed code
+		// and the raw type's length are logged.
+		h.cfg.Logger.Warn("hub: unmapped agent event", "code", ErrCodeUnknownEvent, "raw_type_bytes", len(ev.RawType))
 		ep := unknownEventError()
 		h.fold.ApplyError(ep.Code, ep.Message)
 		h.publish(KindError, ep)
@@ -451,27 +463,55 @@ func (h *Hub) handleEvent(ev agent.Event) {
 	}
 	h.fold.Apply(ev)
 	kind, payload := mapEvent(ev, h.fold.lim.MaxEntryTextBytes)
+	if ev.Kind == agent.KindDelta {
+		// Live deltas carry exactly what the fold accepted, so a client that
+		// accumulates them holds the same bounded text and truncated flag as a
+		// hydrated one (hydrated/live parity).
+		if p, ok := payload.(MessagePayload); ok {
+			text, clipped := h.fold.LastDelta()
+			p.Text, p.Truncated = text, p.Truncated || clipped
+			payload = p
+		}
+	}
 	h.publish(kind, payload)
 }
 
 // publish is THE single step that assigns seq and enqueues to all clients
 // (design §5.2): no other code path constructs a sequenced envelope. A frame
-// over MaxFrameBytes is replaced, at the same seq, by a bounded error stub.
-func (h *Hub) publish(kind Kind, payload any) {
-	h.seq++
-	f, err := newFrame(h.gen, h.seq, h.cfg.Clock(), kind, h.cfg.SessionID, payload)
-	if err == nil && f.Len() > h.cfg.MaxFrameBytes {
-		h.cfg.Logger.Warn("hub: envelope exceeds max frame size", "kind", string(kind), "bytes", f.Len(), "max", h.cfg.MaxFrameBytes)
-		f, err = newFrame(h.gen, h.seq, h.cfg.Clock(), KindError, h.cfg.SessionID,
-			ErrorPayload{Code: ErrCodeFrameTooLarge, Message: msgFrameTooBig})
-	}
-	if err != nil {
-		h.seq--
+// over MaxFrameBytes, or one that cannot be built, is replaced at the same seq
+// by a small bounded error stub; because the stub lost the original content,
+// every client is forced to re-hydrate and replay across it is refused.
+// It reports the assigned seq, or false if not even the stub could be built
+// (no seq is consumed then).
+func (h *Hub) publish(kind Kind, payload any) (uint64, bool) {
+	seq := h.seq + 1
+	f, err := newFrame(h.gen, seq, h.cfg.Clock(), kind, h.cfg.SessionID, payload)
+	stub := false
+	switch {
+	case err != nil:
 		h.cfg.Logger.Error("hub: build envelope failed", "kind", string(kind), "err", err)
-		return
+		stub = true
+	case f.Len() > h.cfg.MaxFrameBytes:
+		h.cfg.Logger.Warn("hub: envelope exceeds max frame size", "kind", string(kind), "bytes", f.Len(), "max", h.cfg.MaxFrameBytes)
+		stub = true
+	}
+	if stub {
+		f, err = newFrame(h.gen, seq, h.cfg.Clock(), KindError, h.cfg.SessionID,
+			ErrorPayload{Code: ErrCodeFrameTooLarge, Message: msgFrameTooBig})
+		if err != nil {
+			h.cfg.Logger.Error("hub: build error stub failed", "err", err)
+			return 0, false
+		}
+	}
+	h.seq = seq
+	if stub {
+		h.fold.ApplyError(ErrCodeFrameTooLarge, msgFrameTooBig)
+		h.degradedSeq = seq
+		h.markAllStale() // before broadcast: the hydrate supersedes the lost content
 	}
 	h.ringAppend(f)
 	h.broadcast(f)
+	return seq, true
 }
 
 // ringAppend retains f for reconnect replay. The ring is bounded by frame
@@ -662,18 +702,65 @@ func (h *Hub) Connect(ctx context.Context, opts ConnectOptions) (*Client, error)
 	}
 }
 
-// intake queues a connect request and batches every other request already
-// waiting, so the per-iteration cap sees the whole burst.
+// intake queues a connect request and batches up to connectBatch-1 others
+// already waiting, so the per-iteration cap sees a burst but a connect flood
+// can never monopolise one hub iteration. The pending set is bounded
+// (pendingLimit): a request beyond it is refused immediately with
+// ErrTooManyClients rather than queued, so ingress, degraded signals and stop
+// keep being serviced under a flood.
 func (h *Hub) intake(req *connectReq) {
-	h.pending = append(h.pending, req)
-	for {
+	h.admitPending(req)
+	for i := 1; i < connectBatch; i++ {
 		select {
 		case r := <-h.connects:
-			h.pending = append(h.pending, r)
+			h.admitPending(r)
 		default:
 			return
 		}
 	}
+}
+
+// pendingLimit bounds the connect requests held in pending plus registered
+// remote clients: twice MaxRemote (room to replace dropped clients), plus the
+// one TUI slot.
+func (h *Hub) pendingLimit() int { return 2*h.cfg.MaxRemote + 1 }
+
+func (h *Hub) admitPending(req *connectReq) {
+	live, tuiPending := 0, false
+	for _, p := range h.pending {
+		if p.abandoned.Load() {
+			continue
+		}
+		live++
+		if p.opts.Kind == ClientTUI {
+			tuiPending = true
+		}
+	}
+	remote, _ := h.membership()
+	switch {
+	case req.opts.Kind == ClientTUI && tuiPending:
+		trySend(req.reply, connectResp{err: apperr.New(apperr.KindAlreadyConsumed, "hub: local TUI already attached")})
+		return
+	case live+remote >= h.pendingLimit():
+		trySend(req.reply, connectResp{err: apperr.Wrap(apperr.KindPolicy, ErrTooManyClients)})
+		return
+	}
+	h.pending = append(h.pending, req)
+}
+
+// admission refuses a connect that could never be registered. It runs before
+// any hydration budget is charged, so refused connects neither consume the
+// per-iteration budget nor count as deferred.
+func (h *Hub) admission(req *connectReq) error {
+	if req.opts.Kind == ClientTUI && h.tui != nil {
+		return apperr.New(apperr.KindAlreadyConsumed, "hub: local TUI already attached")
+	}
+	if req.opts.Kind == ClientRemote {
+		if remote, _ := h.membership(); remote >= h.cfg.MaxRemote {
+			return apperr.Wrap(apperr.KindPolicy, ErrTooManyClients)
+		}
+	}
+	return nil
 }
 
 // staleRetryInterval rate-limits forced re-hydrates per client. A consumer
@@ -725,9 +812,14 @@ func (h *Hub) serviceHydrations() (immediate bool, retryIn time.Duration) {
 	h.staleQ = carryStale
 
 	var carry []*connectReq
+	h.sweep()
 	for _, req := range h.pending {
 		if req.abandoned.Load() {
 			trySend(req.reply, connectResp{err: apperr.New(apperr.KindIO, "hub: connect abandoned")})
+			continue
+		}
+		if err := h.admission(req); err != nil {
+			trySend(req.reply, connectResp{err: err})
 			continue
 		}
 		replay := h.replayable(req.opts.Resume, bufferFor(req.opts.Kind, req.opts.Buffer))
@@ -809,15 +901,9 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 		return
 	}
 	h.sweep()
-	if req.opts.Kind == ClientTUI && h.tui != nil {
-		trySend(req.reply, connectResp{err: apperr.New(apperr.KindAlreadyConsumed, "hub: local TUI already attached")})
+	if err := h.admission(req); err != nil {
+		trySend(req.reply, connectResp{err: err})
 		return
-	}
-	if req.opts.Kind == ClientRemote {
-		if remote, _ := h.membership(); remote >= h.cfg.MaxRemote {
-			trySend(req.reply, connectResp{err: apperr.Wrap(apperr.KindPolicy, ErrTooManyClients)})
-			return
-		}
 	}
 	h.nextID++
 	c := newClient(h.nextID, req.opts.Kind, req.opts.Buffer)

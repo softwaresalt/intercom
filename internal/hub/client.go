@@ -83,6 +83,12 @@ func bufferFor(kind ClientKind, buffer int) int {
 
 // Frames is the receive side of the client's buffered envelope channel. It is
 // never closed; consumers select on Done as well.
+//
+// Consumer contract: feed every received frame to a [Cursor] and apply it only
+// on ActionApply. A forced re-hydrate (TUI overflow, degraded signal, oversize
+// frame) drops the queued backlog oldest-first, so a consumer may observe a
+// gap before the session.hydrate arrives; the Cursor reports ActionRehydrate
+// and the consumer discards frames until that hydrate is applied.
 func (c *Client) Frames() <-chan Frame { return c.send }
 
 // Done is closed when the client is dropped or closed.

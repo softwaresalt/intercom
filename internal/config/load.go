@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,6 +69,12 @@ func Decode(data string) (*Config, Report, error) {
 
 	md, err := toml.Decode(data, cfg)
 	if err != nil {
+		var perr toml.ParseError
+		if errors.As(err, &perr) {
+			// Never echo toml's message: it quotes document fragments, which
+			// may be credential values (e.g. an unquoted password).
+			return cfg, report, apperr.Newf(apperr.KindConfig, "invalid TOML syntax at line %d", perr.Position.Line)
+		}
 		return cfg, report, apperr.Wrap(apperr.KindConfig, err)
 	}
 

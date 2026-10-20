@@ -169,7 +169,10 @@ func newFrame(gen string, seq uint64, ts time.Time, kind Kind, sessionID string,
 
 // encodeFrame assembles the envelope bytes by concatenation so that a
 // pre-marshalled payload (the incremental hydrate snapshot) is copied, not
-// re-parsed. The output is byte-identical to json.Marshal of [Envelope].
+// re-parsed. The output decodes to the same [Envelope] as json.Marshal of it
+// and, for payloads produced by json.Marshal (which HTML-escapes <, > and &),
+// matches it byte for byte (see the escaping golden test); a caller-supplied
+// raw payload is embedded as given.
 func encodeFrame(gen string, seq uint64, ts time.Time, kind Kind, sessionID string, payload []byte) (Frame, error) {
 	genQ, err := json.Marshal(gen)
 	if err != nil {
@@ -220,10 +223,6 @@ func KindFor(k agent.EventKind) (Kind, bool) {
 		return "", false
 	}
 }
-
-// maxRawTypeLen bounds the SDK type name written to the log for an unknown
-// event.
-const maxRawTypeLen = 128
 
 // unknownEventError is the single error payload for an unmappable agent
 // event. Its message is fixed: adapter-controlled text (the raw SDK type)

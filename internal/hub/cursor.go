@@ -38,9 +38,15 @@ func (a Action) String() string {
 // §5.3). It keys on (gen, seq), discards anything already applied, and — the
 // part "discard what you've already applied" alone gets wrong — detects gaps:
 // receiving 105 after 100 yields ActionRehydrate rather than applying 105 and
-// then silently discarding the late 101..104 forever. Once a re-hydrate is
-// required the cursor stays in that state (every non-hydrate frame answers
-// ActionRehydrate) until a session.hydrate frame resets it.
+// then silently discarding the late 101..104 forever.
+//
+// Consumer contract (design §4, §5.3): the TUI's channel is drop-oldest with a
+// forced re-hydrate, so a consumer reading around the hub's drain may see a
+// gap before the hydrate frame arrives. The cursor answers ActionRehydrate on
+// the gap and then stays stale: every following non-hydrate frame also answers
+// ActionRehydrate and MUST NOT be applied (the consumer discards it) until a
+// session.hydrate frame arrives, which resets the cursor. A hydrate behind the
+// current position within the same generation is itself rejected.
 //
 // A Cursor is owned by one consumer goroutine and is not safe for concurrent
 // use. The zero value has no baseline.
@@ -53,6 +59,10 @@ type Cursor struct {
 // Apply classifies f and advances the cursor when f is the next envelope.
 func (c *Cursor) Apply(f Frame) Action {
 	if f.Kind() == KindSessionHydrate {
+		if c.have && f.Gen() == c.pos.Gen && f.Seq() < c.pos.Seq {
+			c.stale = true // a snapshot older than what was applied is bogus
+			return ActionRehydrate
+		}
 		c.pos, c.have, c.stale = Position{Gen: f.Gen(), Seq: f.Seq()}, true, false
 		return ActionApply
 	}
