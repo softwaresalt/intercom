@@ -300,9 +300,12 @@ func (h *Hub) retirePerm(e *pendingPerm) {
 
 // expirePermissions is the hub-owned clock firing. A pending entry past its
 // deadline resolves to UserNotAvailable through the same path an operator
-// answer takes; a decided entry past its ack deadline is settled (aborted if
-// its decision never left the reply buffer, otherwise resolved). The hub is
-// the only clock: the handler runs none (design §5.4 item 4).
+// answer takes; a decided entry past its ack deadline is settled by the
+// handler-reported outcome (settleDecided): aborted when the handler had not
+// yet delivered (its ask is revoked, so it can only return UserNotAvailable) or
+// had delivered a downgraded decision, resolved when it had delivered exactly
+// the decision the hub issued. The hub is the only clock: the handler runs none
+// (design §5.4 item 4).
 func (h *Hub) expirePermissions() {
 	now := h.cfg.Now()
 	for _, e := range slices.Clone(h.perm.order) {

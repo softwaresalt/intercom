@@ -69,8 +69,9 @@ func (p principal) label() string {
 // to the refused surface only; it is never broadcast.
 type Reason string
 
-// Stable reason codes. The last two are hub extensions beyond the ADR's list,
-// needed for conditions the ADR does not cover (see the 067-F report).
+// Stable reason codes. The last three (agent_unavailable, shutting_down,
+// client_closed) are hub extensions beyond the ADR's list, needed for
+// conditions the ADR does not cover (see the 067-F report).
 const (
 	ReasonRoleNotPermitted         Reason = "role_not_permitted"
 	ReasonDestructiveRemoteRefused Reason = "destructive_remote_refused"

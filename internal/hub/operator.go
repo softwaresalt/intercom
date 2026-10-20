@@ -82,10 +82,13 @@ func (h *Hub) runOperatorLanes(ctx context.Context) {
 }
 
 // stopLanes is shutdown step 0 for the operator lanes, on the hub goroutine:
-// whatever is queued is dropped and the lanes' context is cancelled, which ends
-// the lanes and the in-flight call before this returns, so no operator prompt
-// can start a turn after the shutdown's own abort. Dropped prompts never ran, so
-// their effect on the idle flag is retracted. It is idempotent.
+// whatever is queued is dropped and the lanes' context is cancelled
+// synchronously. Cancelling the context cancels the context of every agent call
+// the lanes make, so no call can begin with a live context after this returns.
+// It does not wait for a lane that is already inside Agent.Send or Abort: that
+// call sees its context cancelled and returns on its own, and the shutdown's own
+// Abort and idle wait cover the turn it may have started. Dropped prompts never
+// ran, so their effect on the idle flag is retracted. It is idempotent.
 func (h *Hub) stopLanes() {
 	if h.lanesCancel != nil {
 		h.lanesCancel()
