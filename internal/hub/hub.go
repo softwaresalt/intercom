@@ -22,6 +22,9 @@ var (
 	ErrAlreadyRunning = errors.New("hub already running")
 	// ErrTooManyClients reports a remote Connect refused at the MaxRemote cap.
 	ErrTooManyClients = errors.New("hub: too many remote clients")
+	// ErrShuttingDown reports a Connect refused because shutdown has begun
+	// (design §3.1 step 0): no client is admitted after that step.
+	ErrShuttingDown = errors.New("hub: shutting down")
 )
 
 // Defaults for [Config].
@@ -63,6 +66,8 @@ const (
 	askQueue = 16
 	// actionQueue is the capacity of the operator-action channel.
 	actionQueue = 64
+	// ctlQueue is the capacity of the hub-control channel.
+	ctlQueue = 8
 )
 
 // Config configures a [Hub]. Zero values select the documented defaults.
@@ -181,7 +186,9 @@ type Stats struct {
 	// PendingPermissions counts registry entries (unresolved plus awaiting
 	// handler acknowledgement).
 	PendingPermissions int
-	Rehydrations       uint64
+	// ShuttingDown reports that shutdown step 0 has run: admission is closed.
+	ShuttingDown bool
+	Rehydrations uint64
 }
 
 // Hub is the single-writer event hub. See the package documentation. Every
@@ -207,6 +214,15 @@ type Hub struct {
 	// worker goroutines that call the agent off the hub.
 	promptQ chan string
 	abortQ  chan struct{}
+	// ctl carries the shutdown executor's hub-control messages (067.006-T).
+	ctl chan *ctlReq
+	// closing is set by shutdown step 0: admission is closed. announced
+	// records that server.shutdown was already broadcast (step 1), so the
+	// hub's own stop does not repeat it. drainWaiters are the step-0 callers
+	// waiting for the permission registry to empty. All hub-owned.
+	closing      bool
+	announced    bool
+	drainWaiters []*ctlReq
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -346,6 +362,7 @@ func New(cfg Config) (*Hub, error) {
 		acks:           make(chan string, askQueue),
 		promptQ:        make(chan string, operatorPromptQueue),
 		abortQ:         make(chan struct{}, 1),
+		ctl:            make(chan *ctlReq, ctlQueue),
 		perm:           newPermRegistry(cfg.MaxPendingPermissions),
 		stopCh:         make(chan struct{}),
 		done:           make(chan struct{}),
@@ -516,6 +533,8 @@ func (h *Hub) Run(ctx context.Context) error {
 			h.handleAsk(ask)
 		case act := <-h.actions:
 			h.handleAction(act)
+		case req := <-h.ctl:
+			h.handleCtl(req)
 		case <-h.membershipWake:
 			// No work here: the end-of-iteration reap below re-evaluates the
 			// broadcast set; this case only guarantees an iteration happens.
@@ -532,6 +551,7 @@ func (h *Hub) Run(ctx context.Context) error {
 			s.Head = h.seq
 			s.Remote, s.TUIAttached = h.membership()
 			s.PendingPermissions = h.perm.len()
+			s.ShuttingDown = h.closing
 			trySend(reply, s)
 		}
 		h.mutFlush()
@@ -757,7 +777,7 @@ func (h *Hub) sweep() {
 // instead of waiting on a hub that will never send again. A pump should drain
 // Frames() after Done to pick up the queued shutdown frame.
 func (h *Hub) shutdown(reason string) {
-	h.publish(KindServerShutdown, ShutdownPayload{Reason: reason})
+	h.announceShutdown(reason)
 	for id, c := range h.clients {
 		c.close()
 		h.unregister(id, c)
@@ -885,6 +905,9 @@ func (h *Hub) admitPending(req *connectReq) {
 	}
 	remote, _ := h.membership()
 	switch {
+	case h.closing:
+		trySend(req.reply, connectResp{err: apperr.Wrap(apperr.KindPolicy, ErrShuttingDown)})
+		return
 	case req.opts.Kind == ClientTUI && tuiPending:
 		trySend(req.reply, connectResp{err: apperr.New(apperr.KindAlreadyConsumed, "hub: local TUI already attached")})
 		return
@@ -899,6 +922,11 @@ func (h *Hub) admitPending(req *connectReq) {
 // any hydration budget is charged, so refused connects neither consume the
 // per-iteration budget nor count as deferred.
 func (h *Hub) admission(req *connectReq) error {
+	if h.closing {
+		// Shutdown step 0 closed admission: a request queued before it is
+		// refused too, so no client is admitted after that step.
+		return apperr.Wrap(apperr.KindPolicy, ErrShuttingDown)
+	}
 	if req.opts.Kind == ClientTUI && h.tui != nil {
 		return apperr.New(apperr.KindAlreadyConsumed, "hub: local TUI already attached")
 	}

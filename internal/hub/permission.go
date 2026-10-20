@@ -156,6 +156,7 @@ func realAfter(d time.Duration) (<-chan time.Time, func()) {
 const (
 	permReasonNoSurface = "no_surface"
 	permReasonTimeout   = "timeout"
+	permReasonShutdown  = "shutdown"
 
 	permAbortHandlerGone      = "handler_gone"
 	permAbortReplyUnavailable = "reply_unavailable"
@@ -242,7 +243,7 @@ func (h *Hub) onHandlerReturned(id string) {
 
 // finishResolved publishes permission.resolved and retires the entry.
 func (h *Hub) finishResolved(e *pendingPerm) {
-	h.perm.remove(e.id)
+	h.retirePerm(e)
 	h.publish(KindPermissionResolved, PermissionResolvedPayload{
 		RequestID: e.id,
 		Decision:  decisionName(e.decision.Kind),
@@ -253,8 +254,15 @@ func (h *Hub) finishResolved(e *pendingPerm) {
 
 // abortPerm publishes permission.aborted and retires the entry.
 func (h *Hub) abortPerm(e *pendingPerm, reason string) {
-	h.perm.remove(e.id)
+	h.retirePerm(e)
 	h.publish(KindPermissionAborted, PermissionAbortedPayload{RequestID: e.id, Reason: reason})
+}
+
+// retirePerm removes e from the registry and releases any shutdown step-0
+// waiter once the registry is empty.
+func (h *Hub) retirePerm(e *pendingPerm) {
+	h.perm.remove(e.id)
+	h.notifyDrained()
 }
 
 // expirePermissions is the hub-owned clock firing. A pending entry past its
@@ -352,6 +360,12 @@ func (h *Hub) handleAsk(ask agent.PermissionAsk) {
 		return
 	default:
 	}
+	if h.closing {
+		// Shutdown step 0 has run: a new request must not park a handler that
+		// nothing will ever release. Answer it at once, register nothing.
+		trySend(ask.Reply, agent.PermissionDecision{Kind: agent.DecisionUnavailable})
+		return
+	}
 	if len(ask.Request.Summary) > MaxPermissionSummaryBytes {
 		// An operator cannot approve what cannot be shown in full, and the
 		// hydrate section must stay bounded: deny without registering.
@@ -389,6 +403,16 @@ func (h *Hub) handleAction(r *actionReq) {
 }
 
 func (h *Hub) processAction(r *actionReq) ActionResult {
+	if h.closing {
+		// Credentials are revoked at shutdown step 0 (ADR MVP-3): a privileged
+		// action is refused, without closing the connection, so the
+		// server.shutdown broadcast and drain finish. The credential-less
+		// local TUI gets a hub-level reason instead.
+		if r.from.surface == surfaceTUI {
+			return ActionResult{Reason: ReasonShuttingDown}
+		}
+		return ActionResult{Reason: ReasonCredentialRevoked}
+	}
 	switch r.act.Type {
 	case OpResolvePermission:
 		return h.resolvePermission(r)
