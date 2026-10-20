@@ -214,3 +214,128 @@ func TestPartialReissueFailureShowsTheLiveSet(t *testing.T) {
 		t.Errorf("failure not reported:\n%s", v)
 	}
 }
+
+// ---- Copilot round 1: re-issue ordering and panel scrolling ----
+
+// TestRepeatedCtrlRKeepsOneReissueInFlight: a second Ctrl+R while one is
+// pending launches nothing, so two sets cannot race each other.
+func TestRepeatedCtrlRKeepsOneReissueInFlight(t *testing.T) {
+	var calls int
+	reissue := func(context.Context) (CredentialsMsg, error) {
+		calls++
+		return credsMsg(fakeApprover2, fakeObserver2), nil
+	}
+	m := New(Options{Renderer: asciiRenderer(), Reissue: reissue})
+	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, first := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	if first == nil {
+		t.Fatal("first Ctrl+R returned no Cmd")
+	}
+	m, second := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	if second != nil {
+		t.Fatal("second Ctrl+R while one is in flight launched another re-issue")
+	}
+	m, _ = step(m, first())
+	if calls != 1 {
+		t.Fatalf("reissuer called %d times; want 1", calls)
+	}
+	// Once the result is processed, Ctrl+R works again.
+	if _, again := step(m, tea.KeyMsg{Type: tea.KeyCtrlR}); again == nil {
+		t.Fatal("Ctrl+R stayed blocked after the re-issue completed")
+	}
+}
+
+// TestCtrlRUnblocksAfterFailedReissue: a failure also ends the in-flight state.
+func TestCtrlRUnblocksAfterFailedReissue(t *testing.T) {
+	boom := errors.New("entropy unavailable")
+	m := New(Options{Renderer: asciiRenderer(), Reissue: func(context.Context) (CredentialsMsg, error) { return CredentialsMsg{}, boom }})
+	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, cmd := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	m, _ = step(m, cmd())
+	if _, again := step(m, tea.KeyMsg{Type: tea.KeyCtrlR}); again == nil {
+		t.Fatal("Ctrl+R stayed blocked after a failed re-issue")
+	}
+}
+
+// TestDelayedResultsCannotReplaceNewerSet: with results delivered late, the
+// panel ends on the latest set, and a failure's live set still wins.
+func TestDelayedResultsCannotReplaceNewerSet(t *testing.T) {
+	boom := errors.New("entropy unavailable")
+	sets := []CredentialsMsg{credsMsg(fakeApprover2, fakeObserver2)}
+	var i int
+	m := New(Options{Renderer: asciiRenderer(), Reissue: func(context.Context) (CredentialsMsg, error) {
+		s := sets[i%len(sets)]
+		i++
+		return s, nil
+	}})
+	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, _ = step(m, credsMsg(fakeApprover, fakeObserver))
+	m, c1 := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	m, c2 := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	if c2 != nil {
+		t.Fatal("overlapping re-issue was launched")
+	}
+	m, _ = step(m, c1())
+	if v := view(m); !strings.Contains(v, fakeApprover2) || strings.Contains(v, fakeApprover+" ") {
+		t.Fatalf("panel not on the newest set:\n%s", v)
+	}
+	// A late failure carrying the authoritative live set is still shown.
+	m, _ = step(m, ReissueFailedMsg{Err: boom, Live: credsMsg(fakeApprover2, fakeObserver)})
+	if v := view(m); !strings.Contains(v, fakeObserver) || strings.Contains(v, fakeObserver2) {
+		t.Fatalf("live set after failure not authoritative:\n%s", v)
+	}
+}
+
+func scrolledAll(t *testing.T, m Model, want ...string) {
+	t.Helper()
+	seen := map[string]bool{}
+	collect := func() {
+		flat := strings.NewReplacer("\n", "", " ", "").Replace(view(m))
+		for _, w := range want {
+			if strings.Contains(flat, w) {
+				seen[w] = true
+			}
+		}
+	}
+	collect()
+	for range 40 {
+		m, _ = step(m, tea.KeyMsg{Type: tea.KeyDown})
+		collect()
+	}
+	for _, w := range want {
+		if !seen[w] {
+			t.Errorf("%q was never reachable by scrolling the panel", w)
+		}
+	}
+}
+
+// TestCredentialPanelScrollsAtSmallSizes: both credentials stay reachable at
+// the 80x8 and smallest accepted sizes; nothing is silently clipped.
+func TestCredentialPanelScrollsAtSmallSizes(t *testing.T) {
+	for name, size := range map[string][2]int{"80x8": {80, 8}, "min": {minWidth, minHeight}} {
+		t.Run(name, func(t *testing.T) {
+			m := newModel(t, &fakeIngress{}, size[0], size[1])
+			m, _ = step(m, credsMsg("fake-a-1", "fake-o-1"))
+			v := view(m)
+			if got := len(strings.Split(v, "\n")); got != size[1] {
+				t.Fatalf("view is %d rows; want %d", got, size[1])
+			}
+			scrolledAll(t, m, "approver:fake-a-1", "observer:fake-o-1", "Escdismiss")
+			// Scrolling back up returns to the top.
+			for range 40 {
+				m, _ = step(m, tea.KeyMsg{Type: tea.KeyUp})
+			}
+			if !strings.Contains(view(m), "Credentials") {
+				t.Fatalf("panel did not scroll back to the top:\n%s", view(m))
+			}
+		})
+	}
+}
+
+func TestCredentialPanelShowsScrollHintWhenClipped(t *testing.T) {
+	m := newModel(t, &fakeIngress{}, 80, 8)
+	m, _ = step(m, credsMsg(fakeApprover, fakeObserver))
+	if v := view(m); !strings.Contains(v, "scroll") {
+		t.Fatalf("clipped panel gives no scroll hint:\n%s", v)
+	}
+}

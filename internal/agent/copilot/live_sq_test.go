@@ -78,7 +78,11 @@ func TestLiveSQbSQcReverification(t *testing.T) {
 	defer closeHub.Do(func() { close(hubDone) })
 	ingress := make(chan agent.Event, 256)
 	asks := make(chan agent.PermissionAsk, 1)
+	// INTERCOM_LIVE_CLI_PATH (docs/runbooks/live-sdk-tests.md) overrides the PATH
+	// lookup, for both the adapter's validation and the SDK's spawn.
+	cliPath := os.Getenv("INTERCOM_LIVE_CLI_PATH")
 	cfg := Config{
+		CLIPath:          cliPath,
 		WorkingDirectory: dir,
 		StartupTimeout:   120 * time.Second,
 		StopTimeout:      10 * time.Second,
@@ -87,7 +91,11 @@ func TestLiveSQbSQcReverification(t *testing.T) {
 		HubDone:          hubDone,
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-	probe := &probeClient{realClient: realClient{c: copilotsdk.NewClient(&copilotsdk.ClientOptions{WorkingDirectory: dir})}}
+	opts := &copilotsdk.ClientOptions{WorkingDirectory: dir}
+	if cliPath != "" {
+		opts.Connection = copilotsdk.StdioConnection{Path: cliPath}
+	}
+	probe := &probeClient{realClient: realClient{c: copilotsdk.NewClient(opts)}}
 	ad, err := newWithClient(cfg, probe)
 	if err != nil {
 		t.Fatalf("newWithClient: %v", err)

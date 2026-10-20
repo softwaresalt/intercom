@@ -109,6 +109,10 @@ type Model struct {
 	reissue  Reissuer
 	creds    CredentialsMsg
 	credOpen bool
+	// credScroll is the first visible row of the panel; reissuing is true while
+	// a re-issue Cmd is in flight (cleared when its result is processed).
+	credScroll int
+	reissuing  bool
 
 	vp            viewport.Model
 	width, height int
@@ -149,6 +153,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CredentialsMsg:
 		return m.showCredentials(msg), nil
 	case ReissueFailedMsg:
+		m.reissuing = false
 		if len(msg.Live.Credentials) > 0 {
 			// A partial failure replaced some roles: show what is really live.
 			m = m.showCredentials(msg.Live)
@@ -190,6 +195,18 @@ func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if len(m.pending) > 0 {
 		return m.onModalKey(k)
+	}
+	if m.credOpen {
+		switch k.Type { //nolint:exhaustive // other keys fall through
+		case tea.KeyUp:
+			return m.scrollCredentials(-1), nil
+		case tea.KeyDown:
+			return m.scrollCredentials(1), nil
+		case tea.KeyPgUp:
+			return m.scrollCredentials(-m.areaHeight()), nil
+		case tea.KeyPgDown:
+			return m.scrollCredentials(m.areaHeight()), nil
+		}
 	}
 	switch k.Type { //nolint:exhaustive // other keys are ignored
 	case tea.KeyEnter:

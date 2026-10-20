@@ -51,6 +51,8 @@ type Reissuer func(ctx context.Context) (CredentialsMsg, error)
 // (a re-issue revokes the old one, so it must not stay on screen).
 func (m Model) showCredentials(msg CredentialsMsg) Model {
 	m.creds = msg
+	m.credScroll = 0
+	m.reissuing = false
 	m.credOpen = len(msg.Credentials) > 0
 	if m.credOpen {
 		m.notice = "credentials are shown once: copy them now (Esc dismisses)"
@@ -61,6 +63,7 @@ func (m Model) showCredentials(msg CredentialsMsg) Model {
 // dismissCredentials drops the plaintext from the model.
 func (m Model) dismissCredentials() Model {
 	m.creds = CredentialsMsg{}
+	m.credScroll = 0
 	m.credOpen = false
 	m.notice = ""
 	return m
@@ -73,6 +76,12 @@ func (m Model) reissueCmd() (tea.Model, tea.Cmd) {
 		m.notice = "re-issue unavailable"
 		return m, nil
 	}
+	if m.reissuing {
+		// Exactly one re-issue in flight: a second would revoke the first set
+		// and its result could be delivered out of order.
+		return m, nil
+	}
+	m.reissuing = true
 	m.notice = "re-issuing credentials (the previous ones are revoked)..."
 	reissue, timeout := m.reissue, m.timeout
 	return m, func() tea.Msg {
@@ -86,8 +95,8 @@ func (m Model) reissueCmd() (tea.Model, tea.Cmd) {
 	}
 }
 
-// credentialView renders the panel in exactly height rows.
-func (m Model) credentialView(height int) string {
+// credentialRows renders the panel's wrapped content rows.
+func (m Model) credentialRows() []string {
 	rows := []string{
 		m.st.bold.Render("Credentials (shown once - copy them now)"),
 		"Endpoint: " + SanitizeLine(m.creds.URL),
@@ -100,8 +109,44 @@ func (m Model) credentialView(height int) string {
 		)
 	}
 	rows = append(rows, "", "Esc dismiss   Ctrl+R re-issue (revokes these)")
-	for i, r := range rows {
-		rows[i] = m.wrap(r, m.width)
+	var lines []string
+	for _, r := range rows {
+		lines = append(lines, strings.Split(m.wrap(r, m.width), "\n")...)
 	}
-	return padRows(strings.Join(rows, "\n"), height)
+	return lines
+}
+
+// credWindow returns the number of content rows shown at once and the largest
+// scroll offset. When everything fits there is no scrolling; otherwise the
+// last row is a scroll hint, so no credential is ever silently clipped.
+func (m Model) credWindow(total, height int) (window, maxScroll int) {
+	if total <= height {
+		return total, 0
+	}
+	window = height - 1
+	if window < 1 {
+		window = 1
+	}
+	return window, total - window
+}
+
+// scrollCredentials moves the panel by delta rows (clamped).
+func (m Model) scrollCredentials(delta int) Model {
+	_, maxScroll := m.credWindow(len(m.credentialRows()), m.areaHeight())
+	m.credScroll = min(max(m.credScroll+delta, 0), maxScroll)
+	return m
+}
+
+// credentialView renders the panel in exactly height rows, scrollable with
+// Up/Down/PgUp/PgDn when it does not fit.
+func (m Model) credentialView(height int) string {
+	lines := m.credentialRows()
+	window, maxScroll := m.credWindow(len(lines), height)
+	if maxScroll == 0 {
+		return padRows(strings.Join(lines, "\n"), height)
+	}
+	start := min(max(m.credScroll, 0), maxScroll)
+	out := append([]string(nil), lines[start:start+window]...)
+	out = append(out, m.fit(fmt.Sprintf("-- Up/Down/PgUp/PgDn scroll (%d/%d) --", start+1, maxScroll+1), m.width))
+	return padRows(strings.Join(out, "\n"), height)
 }
