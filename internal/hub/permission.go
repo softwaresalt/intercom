@@ -161,6 +161,7 @@ const (
 	permAbortHandlerGone      = "handler_gone"
 	permAbortReplyUnavailable = "reply_unavailable"
 	permAbortAckTimeout       = "ack_timeout"
+	permAbortShutdown         = "shutdown"
 )
 
 // decisionName is the wire name of a decision.
@@ -258,6 +259,25 @@ func (h *Hub) abortPerm(e *pendingPerm, reason string) {
 	h.publish(KindPermissionAborted, PermissionAbortedPayload{RequestID: e.id, Reason: reason})
 }
 
+// settleDecided retires a decided entry whose acknowledgement will not be
+// waited for (its ack deadline passed, or shutdown step 0 began) so the
+// surfaces never render a decision the SDK did not get, and the SDK never gets
+// one the surfaces were told was abandoned. The reply buffer says which it is:
+//   - the decision is still buffered: the handler never took it. It is replaced
+//     by UserNotAvailable (so a late handler cannot receive an allow) and the
+//     request is aborted with reason;
+//   - the buffer is empty: the handler took it, so the SDK received exactly
+//     this decision and the truthful outcome is resolved.
+func (h *Hub) settleDecided(e *pendingPerm, reason string) {
+	select {
+	case <-e.ask.Reply:
+		trySend(e.ask.Reply, agent.PermissionDecision{Kind: agent.DecisionUnavailable}) // sole sender; buffer just emptied
+		h.abortPerm(e, reason)
+	default:
+		h.finishResolved(e)
+	}
+}
+
 // retirePerm removes e from the registry and releases any shutdown step-0
 // waiter once the registry is empty.
 func (h *Hub) retirePerm(e *pendingPerm) {
@@ -267,7 +287,8 @@ func (h *Hub) retirePerm(e *pendingPerm) {
 
 // expirePermissions is the hub-owned clock firing. A pending entry past its
 // deadline resolves to UserNotAvailable through the same path an operator
-// answer takes; a decided entry past its ack deadline is aborted. The hub is
+// answer takes; a decided entry past its ack deadline is settled (aborted if
+// its decision never left the reply buffer, otherwise resolved). The hub is
 // the only clock: the handler runs none (design §5.4 item 4).
 func (h *Hub) expirePermissions() {
 	now := h.cfg.Now()
@@ -279,7 +300,7 @@ func (h *Hub) expirePermissions() {
 		case permPending:
 			h.decide(e, ActorHub, agent.PermissionDecision{Kind: agent.DecisionUnavailable}, permReasonTimeout)
 		case permDecided:
-			h.abortPerm(e, permAbortAckTimeout)
+			h.settleDecided(e, permAbortAckTimeout)
 		}
 	}
 }

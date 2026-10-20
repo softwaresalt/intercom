@@ -126,6 +126,13 @@ type PermissionDecision struct {
 // answers by sending exactly one decision on Reply (capacity 1, so the hub
 // never blocks on it).
 //
+// Reply is bidirectional for one reason: when a decision the handler never
+// took must be withdrawn (its acknowledgement is overdue, or shutdown began),
+// the hub receives it back out of the buffer and replaces it with
+// UserNotAvailable, so an approval can never be delivered after the surfaces
+// were told it was abandoned. The hub is the only party that does so; the
+// adapter only ever receives.
+//
 // Resolved is closed when the adapter no longer needs an answer (the request
 // was answered, or shutdown or hub-done abandoned it). A hub that dequeues an
 // ask whose Resolved is already closed must discard it instead of prompting
@@ -136,7 +143,7 @@ type PermissionDecision struct {
 // infer order across the two.
 type PermissionAsk struct {
 	Request  PermissionRequest
-	Reply    chan<- PermissionDecision
+	Reply    chan PermissionDecision
 	Resolved <-chan struct{}
 }
 

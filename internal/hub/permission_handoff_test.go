@@ -274,23 +274,6 @@ func TestReplyChannelFullEmitsAbortedAndNeverBlocksTheHub(t *testing.T) {
 	recvKind(t, tui, KindAgentMessage)
 }
 
-func TestDecidedRequestThatIsNeverAcknowledgedIsAbortedAtTheAckDeadline(t *testing.T) {
-	r := newPermRig(t, Config{PermissionTimeout: time.Hour, PermissionAckTimeout: 5 * time.Second})
-	tui := connect(t, r.h, ClientTUI, 16)
-	a := newTestAsk(agent.PermissionKindShell, "cmd")
-	a.post(t, r.h)
-	id := requestID(t, recvKind(t, tui, KindPermissionRequested))
-	resolveAs(t, r.h, tuiP(), id, allowOnce)
-	a.takeReply(t) // received, but the handler never returns
-
-	r.clock.Advance(5 * time.Second)
-	r.fire(t)
-	p := abortedPayload(t, recvKind(t, tui, KindPermissionAborted))
-	if p.RequestID != id || p.Reason != "ack_timeout" {
-		t.Fatalf("aborted = %+v", p)
-	}
-}
-
 func TestTimerFiringAfterOperatorWonDoesNotOverrideTheDecision(t *testing.T) {
 	r := newPermRig(t, Config{PermissionTimeout: time.Minute, PermissionAckTimeout: time.Hour})
 	tui := connect(t, r.h, ClientTUI, 16)

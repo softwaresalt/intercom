@@ -106,6 +106,30 @@ func TestAskResolvedClosedWhenHandlerReturns(t *testing.T) {
 	}
 }
 
+// Review finding C: what the SDK receives and what the hub concludes from the
+// reply buffer must agree. The hub publishes permission.resolved only when the
+// decision was consumed, and permission.aborted when it is still buffered, so a
+// handler that downgrades a consumed approval at shutdown must leave the
+// buffer holding the (unavailable) decision it actually returned.
+func TestHandlerDeliveryAndReplyBufferAgreeUnderShutdown(t *testing.T) {
+	for i := 0; i < 300; i++ {
+		asks := make(chan agent.PermissionAsk, 1)
+		hubDone := make(chan struct{})
+		b := newPermissionBridge(asks, hubDone, nil)
+		res := make(chan rpc.PermissionDecision, 1)
+		go func() { d, _ := b.handle(testRequest(), copilot.PermissionInvocation{}); res <- d }()
+		ask := <-asks
+		ask.Reply <- agent.PermissionDecision{Kind: agent.DecisionAllowOnce}
+		close(hubDone)
+		d := <-res
+		approved := d.Kind() == rpc.PermissionDecisionKindApproveOnce
+		consumed := len(ask.Reply) == 0
+		if approved != consumed {
+			t.Fatalf("iteration %d: SDK got %q but the reply buffer says consumed=%v: the hub would publish a decision the SDK never received", i, d.Kind(), consumed)
+		}
+	}
+}
+
 // Stop/hub-done wins over a simultaneously ready approval.
 func TestStaleApprovalNeverWinsOverShutdown(t *testing.T) {
 	for i := 0; i < 300; i++ {

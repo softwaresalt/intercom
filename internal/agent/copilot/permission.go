@@ -194,7 +194,16 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 	select {
 	case d := <-reply:
 		if d.Kind != agent.DecisionDeny && gone() {
-			return unavailable() // never deliver an approval after shutdown began
+			// Never deliver an approval after shutdown began. The hub reads the
+			// reply buffer to learn whether its decision reached the SDK
+			// (empty: delivered, so resolved; full: not delivered, so aborted),
+			// so the buffer must hold what this handler actually returns: put
+			// the downgrade back (we consumed the only slot; capacity 1).
+			select {
+			case reply <- agent.PermissionDecision{Kind: agent.DecisionUnavailable}:
+			default:
+			}
+			return unavailable()
 		}
 		return toSDKDecision(d), nil
 	case <-b.hubDone:

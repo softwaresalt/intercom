@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -392,6 +393,15 @@ func (h *Hub) handleCtl(r *ctlReq) {
 func (h *Hub) beginShutdown(r *ctlReq) {
 	h.closing = true
 	h.stopLanes()
+	// Entries decided before step 0 but not yet acknowledged are settled first
+	// (fail closed: an allow still in the reply buffer is revoked, never
+	// delivered after shutdown began). Entries failed below are fresh
+	// UserNotAvailable decisions and wait for their handler's ack as usual.
+	for _, e := range slices.Clone(h.perm.order) {
+		if e.state == permDecided {
+			h.settleDecided(e, permAbortShutdown)
+		}
+	}
 	for _, e := range h.perm.unresolved() {
 		h.decide(e, ActorHub, agent.PermissionDecision{Kind: agent.DecisionUnavailable}, permReasonShutdown)
 	}
