@@ -132,7 +132,9 @@ func TestReissueThroughTUIMintsNewAndRevokesOld(t *testing.T) {
 	deadline := time.Now().Add(waitFor)
 	for {
 		after = tokens(r.app)
-		if len(after) == 2 && after[0] != oldTokens[0] {
+		// Both roles must differ: the set is published role by role, so the
+		// approver alone changing is an incomplete re-issue.
+		if len(after) == 2 && after[0] != oldTokens[0] && after[1] != oldTokens[1] {
 			break
 		}
 		if time.Now().After(deadline) {

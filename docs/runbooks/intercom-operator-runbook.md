@@ -35,8 +35,8 @@ accepts the same flags. These are all of them (`intercom --help`):
 | Flag | Default | Meaning |
 |---|---|---|
 | `--config` | `config.toml` | Path of the config file. |
-| `--workspace` | the config's `default_workspace_root` | Workspace directory. It must exist and lie inside an authorized root (`default_workspace_root` or a `[[workspace]].path`, checked through `pathsafe`, which resolves symlinks); anything outside every root stops startup. |
-| `--port` | the config's `http_port` (3000) | Loopback TCP port for the WebSocket listener. `--port 0` picks a free port (the chosen address is in the `intercom ready` log line and on the credential panel). |
+| `--workspace` | the config's `default_workspace_root` | Workspace directory; it overrides `default_workspace_root`. It must exist and lie inside an authorized root (`default_workspace_root` or a `[[workspace]].path`, checked through `pathsafe`, which resolves symlinks): the root itself or any subdirectory of it is accepted; anything outside every root stops startup. |
+| `--port` | the config's `http_port` (3000) | Overrides `http_port`. Loopback TCP port for the WebSocket listener. `--port 0` picks a free port (the chosen address is in the `intercom ready` log line and on the credential panel). |
 | `--log-level` | `info` | `debug`, `info`, `warn` or `error`. |
 
 The process then starts, in order: config and workspace checks, the hub, the
@@ -47,7 +47,9 @@ failure unwinds everything already started and exits non-zero.
 
 Prerequisites: the Copilot CLI installed and authenticated for the user that
 runs `intercom`, a `config.toml` with `default_workspace_root` (see
-`config.toml.example`).
+`config.toml.example`), and an interactive terminal: the local TUI draws the
+credential panel on stdout, so `intercom` refuses to start when stdout is
+redirected to a file or pipe (a credential must never be written to one).
 
 ## 3. Configure `[remote]`
 
@@ -121,7 +123,8 @@ devtunnel host intercom-demo
 Use the port you passed to `intercom`. Confirm the tunnel is private with
 `devtunnel show intercom-demo` (no anonymous access entry). Tunnels are
 private by default; if your `devtunnel` version rejects the explicit `false`,
-omit it and verify the same way.
+omit it and verify the same way. The `--allow-anonymous false` syntax is
+unverified against a real devtunnel build.
 
 Then:
 
@@ -170,9 +173,11 @@ Then:
 
 ## 7. Logs
 
-Structured JSON logs go to **stderr**. The local TUI uses the terminal's
-alternate screen, so log lines written to the same terminal corrupt the display.
-Known issue: always redirect stderr when running interactively:
+Structured JSON logs go to **stderr**, except that the local TUI owns the
+terminal's alternate screen: while the TUI is enabled (always, in this build)
+and stderr is a terminal, the process logger discards its output rather than
+corrupt the display. To keep the logs, redirect stderr; they are then written
+there as JSON lines:
 
 ```sh
 intercom --workspace /path/to/workspace --config config.toml 2> intercom.log
@@ -182,8 +187,9 @@ intercom --workspace /path/to/workspace --config config.toml 2> intercom.log
 intercom --workspace C:\src\my-workspace --config config.toml 2> intercom.log
 ```
 
-Raise detail with `--log-level debug`. Logs never contain credentials, only
-roles, fingerprints and expiry times.
+Fatal startup and exit errors are still printed to the terminal after the TUI
+has closed. Raise detail with `--log-level debug`. Logs never contain
+credentials, only roles, fingerprints and expiry times.
 
 ## 8. Shutdown
 
@@ -215,7 +221,8 @@ problem, look for a stray `copilot` process.
 | Remote client gets 403 | `Host` not allowed (add the tunnel host to `allowed_hosts`) or browser `Origin` not in `allowed_origins`. |
 | Remote client gets 503 | Over `max_connections`, or the process is shutting down. |
 | Approve is refused remotely | `destructive_remote_refused`: approve on the local TUI, or set `remote_approve_destructive = true` knowingly. |
-| Terminal display garbled | stderr is not redirected (section 7). |
+| No logs appear | The TUI is enabled and stderr is a terminal, so logs are discarded; redirect stderr to keep them (section 7). |
+| Exits at start: "stdout is not a terminal" | `intercom` was run with stdout redirected; run it in an interactive terminal (section 2). |
 
 ## 10. Verification and live tests
 

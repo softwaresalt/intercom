@@ -29,6 +29,32 @@ func TestReviewedResolveCaller_IsNotAFinding(t *testing.T) {
 	}
 }
 
+// TestReviewedResolveCaller_AllowanceIsExactlyOneCall pins the reviewed count:
+// internal/app/workspace.go was reviewed with ONE Root.Resolve call, so a
+// second call there fires the gate and needs its own review.
+func TestReviewedResolveCaller_AllowanceIsExactlyOneCall(t *testing.T) {
+	const twoCalls = `package app
+import "github.com/softwaresalt/intercom-go/internal/pathsafe"
+func resolve(dir, rel string) (string, error) {
+	base, err := pathsafe.NewRoot(dir)
+	if err != nil {
+		return "", err
+	}
+	if _, err := base.Resolve(rel); err != nil {
+		return "", err
+	}
+	return base.Resolve(rel)
+}
+`
+	got, err := scanSource("internal/app/workspace.go", twoCalls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("two Root.Resolve calls in the reviewed file produced %d findings: %q; want 1 (the second call)", len(got), got)
+	}
+}
+
 func TestReviewedResolveCaller_AnyOtherFileStillFires(t *testing.T) {
 	for _, rel := range []string{
 		"internal/app/other.go",

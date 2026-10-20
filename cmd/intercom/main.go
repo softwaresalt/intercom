@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
 	"github.com/softwaresalt/intercom-go/internal/app"
@@ -17,6 +18,27 @@ import (
 
 // stderr is the destination for structured logs. Overridable in tests.
 var stderr io.Writer = os.Stderr
+
+// isTerminal reports whether a log destination is a terminal. Overridable in
+// tests.
+var isTerminal = isTerminalWriter
+
+// isTerminalWriter reports whether w is a terminal file.
+func isTerminalWriter(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && term.IsTerminal(f.Fd())
+}
+
+// logSink picks the process logger's destination. The local TUI draws on the
+// terminal's alternate screen, so while it is enabled and w is a terminal the
+// logs are discarded rather than corrupting the display; redirect stderr
+// (`2> intercom.log`) to keep them, and they are then written there as JSON.
+func logSink(tuiEnabled bool, w io.Writer, isTerm func(io.Writer) bool) io.Writer {
+	if tuiEnabled && isTerm(w) {
+		return io.Discard
+	}
+	return w
+}
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
@@ -57,7 +79,7 @@ func newRootCmdWith(run runFunc) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			logger := newLogger(logLevel)
+			logger := newLoggerTo(logSink(true, stderr, isTerminal), logLevel)
 			logger.Info("intercom starting", "config", configPath)
 
 			sig := make(chan os.Signal, 2)
@@ -89,8 +111,11 @@ func newRootCmdWith(run runFunc) *cobra.Command {
 }
 
 // newLogger returns a JSON slog.Logger writing to stderr at the given level.
-func newLogger(level string) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: parseLevel(level)}))
+func newLogger(level string) *slog.Logger { return newLoggerTo(stderr, level) }
+
+// newLoggerTo returns a JSON slog.Logger writing to w at the given level.
+func newLoggerTo(w io.Writer, level string) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: parseLevel(level)}))
 }
 
 // parseLevel maps a log-level flag value to a slog.Level, defaulting to Info

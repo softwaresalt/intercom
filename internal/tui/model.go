@@ -149,6 +149,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CredentialsMsg:
 		return m.showCredentials(msg), nil
 	case ReissueFailedMsg:
+		if len(msg.Live.Credentials) > 0 {
+			// A partial failure replaced some roles: show what is really live.
+			m = m.showCredentials(msg.Live)
+		}
 		m.notice = "re-issue failed: " + SanitizeLine(msg.Err.Error())
 		return m, nil
 	case tea.KeyMsg:
@@ -179,6 +183,11 @@ func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if k.Type == tea.KeyCtrlR {
 		return m.reissueCmd()
 	}
+	if k.Type == tea.KeyEsc && m.credOpen {
+		// Dismissing the credential panel has priority, even behind a permission
+		// modal: the plaintext must not linger, and Esc never answers a request.
+		return m.dismissCredentials(), nil
+	}
 	if len(m.pending) > 0 {
 		return m.onModalKey(k)
 	}
@@ -190,9 +199,6 @@ func (m Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input = m.input[:n-1]
 		}
 	case tea.KeyEsc:
-		if m.credOpen {
-			return m.dismissCredentials(), nil
-		}
 		m.input = nil
 	case tea.KeyCtrlX:
 		return m.abortCmd()

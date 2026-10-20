@@ -65,6 +65,60 @@ func liveSDKTestsAllowed(raw string) bool {
 	return err == nil && v
 }
 
+// readInsideWorkspace reports whether the read permission's summary (the
+// requested path, absolute or relative to ws) names an existing location that
+// lies inside ws after symlinks are resolved. Anything else, including an
+// empty or unresolvable summary, is not confirmed inside, so it is denied.
+func readInsideWorkspace(ws, summary string) bool {
+	summary = strings.TrimSpace(summary)
+	if summary == "" || strings.ContainsRune(summary, 0) {
+		return false
+	}
+	root, err := filepath.EvalSymlinks(ws)
+	if err != nil {
+		return false
+	}
+	p := summary
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(root, p)
+	}
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, real)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func TestLiveReadApprovalIsConfinedToWorkspace(t *testing.T) {
+	ws := t.TempDir()
+	inside := filepath.Join(ws, "notes.txt")
+	if err := os.WriteFile(inside, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for summary, want := range map[string]bool{
+		inside:                                   true,
+		"notes.txt":                              true,
+		outside:                                  false,
+		"../" + filepath.Base(outside):           false,
+		"":                                       false,
+		"missing.txt":                            false,
+		filepath.Join(ws, "..", "..", "x"):       false,
+		"notes.txt\x00" + filepath.Base(outside): false,
+	} {
+		if got := readInsideWorkspace(ws, summary); got != want {
+			t.Errorf("readInsideWorkspace(%q) = %v; want %v", summary, got, want)
+		}
+	}
+}
+
 func TestLiveOptInSemantics(t *testing.T) {
 	for raw, want := range map[string]bool{"": false, "1": true, "0": false, "false": false, "off": false, "true": true, "garbage": false} {
 		if got := liveSDKTestsAllowed(raw); got != want {
@@ -164,8 +218,9 @@ func TestLiveCopilotEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(req.Envelope.Payload, &pr); err != nil {
 		t.Fatalf("decode permission request: %v", err)
 	}
-	// Never approve anything but a read, whatever the model decided to do.
-	allow := pr.PermissionKind == "read"
+	// Never approve anything but a read of a path confirmed inside the temp
+	// workspace, whatever the model decided to do; deny everything else.
+	allow := pr.PermissionKind == "read" && readInsideWorkspace(ws, pr.Summary)
 	rctx, rcancel := context.WithTimeout(context.Background(), waitFor)
 	err = approver.c.ResolvePermission(rctx, pr.RequestID, allow, "intercom live test")
 	rcancel()

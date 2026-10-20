@@ -17,11 +17,11 @@ covering every key in this reference.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `default_workspace_root` | string | *(required)* | Canonicalized through `pathsafe.NewRoot`; must exist. |
-| `max_concurrent_sessions` | integer | `3` | Must be greater than zero. |
-| `http_port` | integer (0–65535) | `3000` | Backend HTTP/WebSocket listener port. |
-| `retention_days` | integer | `30` | Retained as a deferred persistence-facing setting. |
-| `operator_detail_level` | string enum | `"standard"` | One of `minimal`, `standard`, `verbose`. |
+| `default_workspace_root` | string | *(required)* | Canonicalized through `pathsafe.NewRoot`; must exist. The process workspace when `--workspace` is not given; `--workspace` overrides it (it may name a subdirectory of this root or of a `[[workspace]].path`; see [runbook section 2](runbooks/intercom-operator-runbook.md#2-start)). |
+| `max_concurrent_sessions` | integer | `3` | Must be greater than zero. Accepted, not yet consumed by the MVP process (it runs exactly one session). |
+| `http_port` | integer (0–65535) | `3000` | Backend HTTP/WebSocket listener port. `--port` overrides it, including `--port 0` for a free port (see [runbook section 2](runbooks/intercom-operator-runbook.md#2-start)). |
+| `retention_days` | integer | `30` | Retained as a deferred persistence-facing setting. Accepted, not yet consumed by the MVP process (no persistence). |
+| `operator_detail_level` | string enum | `"standard"` | One of `minimal`, `standard`, `verbose`. Accepted, not yet consumed by the MVP process. |
 
 ## `[copilot]`
 
@@ -34,17 +34,20 @@ covering every key in this reference.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `commands.<name>` | string | `{}` | Named command shortcuts. Values are operator-authored prompt content. |
+| `commands.<name>` | string | `{}` | Named command shortcuts. Values are operator-authored prompt content. Accepted, not yet consumed by the MVP process. |
 
 ## `[timeouts]`
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `timeouts.approval_seconds` | integer | `3600` | How long a permission request waits for an operator answer before the hub resolves it `UserNotAvailable`. Consumed by the process wiring (`internal/app`); `0` selects the hub's built-in default (2 minutes); values above one year are clamped. |
-| `timeouts.prompt_seconds` | integer | `1800` | |
-| `timeouts.wait_seconds` | integer | `0` | `0` means "no timeout". |
+| `timeouts.prompt_seconds` | integer | `1800` | Accepted, not yet consumed by the MVP process. |
+| `timeouts.wait_seconds` | integer | `0` | `0` means "no timeout". Accepted, not yet consumed by the MVP process. |
 
 ## `[stall]`
+
+Every `stall.*` key is accepted, not yet consumed by the MVP process (no stall
+detection runs).
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
@@ -58,7 +61,7 @@ covering every key in this reference.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `database.path` | string | `"data/agent-rc.db"` | May not contain a `..` segment. Absolute paths are permitted. |
+| `database.path` | string | `"data/agent-rc.db"` | May not contain a `..` segment. Absolute paths are permitted. Validated only: accepted, not yet consumed by the MVP process (nothing is persisted). |
 
 ## `[remote]`
 

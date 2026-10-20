@@ -46,10 +46,13 @@ type TUIOptions struct {
 	// Input and Output replace the terminal; nil uses the process's
 	// stdin/stdout.
 	Input  io.Reader
-	Output io.Writer
+	Output io.Writer // nil: stdout, which must then be a terminal
 	// Width and Height, when both set, give the program an initial window
 	// size (a non-terminal Output reports none).
 	Width, Height int
+	// IsTerminal reports whether a file is a terminal; nil uses the real
+	// check. Tests inject it to exercise the fail-closed refusal.
+	IsTerminal func(*os.File) bool
 }
 
 // Options configures [Start].

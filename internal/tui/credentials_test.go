@@ -166,3 +166,51 @@ func TestPermissionModalTakesPriorityOverCredentialPanel(t *testing.T) {
 		t.Fatalf("credentials drawn behind a permission request:\n%s", v)
 	}
 }
+
+// TestEscDismissesCredentialsBeforeAnsweringAPendingPermission: with the panel
+// open behind a permission modal, Esc drops the plaintext first and never
+// answers the permission.
+func TestEscDismissesCredentialsBeforeAnsweringAPendingPermission(t *testing.T) {
+	ing := &fakeIngress{}
+	m, _, _ := modalModel(t, ing, agent.PermissionKindRead, "read file", 100, 24)
+	m, _ = step(m, credsMsg(fakeApprover, fakeObserver))
+	if !m.credOpen {
+		t.Fatal("credential panel did not open")
+	}
+	m, cmd := step(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.credOpen || m.creds.Credentials != nil {
+		t.Fatal("Esc left the credential plaintext in the model while a permission was pending")
+	}
+	if cmd != nil || len(ing.snapshot()) != 0 {
+		t.Fatal("Esc answered the permission")
+	}
+	if len(m.pending) != 1 {
+		t.Fatalf("pending permissions = %d; want 1 (Esc must not resolve it)", len(m.pending))
+	}
+}
+
+// TestPartialReissueFailureShowsTheLiveSet: a re-issue that replaced some
+// roles before failing reports the authoritative live set, so the panel never
+// keeps showing a credential that was revoked.
+func TestPartialReissueFailureShowsTheLiveSet(t *testing.T) {
+	boom := errors.New("entropy unavailable")
+	live := credsMsg(fakeApprover2, fakeObserver) // approver replaced, observer kept
+	m := New(Options{Renderer: asciiRenderer(), Reissue: func(context.Context) (CredentialsMsg, error) { return live, boom }})
+	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, _ = step(m, credsMsg(fakeApprover, fakeObserver))
+	m, cmd := step(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	if cmd == nil {
+		t.Fatal("Ctrl+R returned no Cmd")
+	}
+	m, _ = step(m, cmd())
+	v := view(m)
+	if strings.Contains(v, fakeApprover) {
+		t.Errorf("the revoked approver credential is still shown:\n%s", v)
+	}
+	if !strings.Contains(v, fakeApprover2) || !strings.Contains(v, fakeObserver) {
+		t.Errorf("the live credentials are not shown:\n%s", v)
+	}
+	if !strings.Contains(v, "re-issue failed") {
+		t.Errorf("failure not reported:\n%s", v)
+	}
+}

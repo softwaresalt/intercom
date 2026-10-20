@@ -2,10 +2,15 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/term"
 
 	"github.com/softwaresalt/intercom-go/internal/hub"
 	"github.com/softwaresalt/intercom-go/internal/tui"
@@ -23,7 +28,37 @@ type localUI struct {
 	done chan struct{} // closed when prog.Run has returned
 	err  error         // prog.Run's error; valid after done
 
+	stopping atomic.Bool // set by stop: a kill then is ours, not a failure
 	stopOnce sync.Once
+}
+
+// readyMsg is the startup handshake: the program has entered its event loop.
+type readyMsg struct{}
+
+// failure is the program's error, excluding the kill our own stop issues. It
+// is valid after done.
+func (u *localUI) failure() error {
+	if u.err == nil || (u.stopping.Load() && errors.Is(u.err, tea.ErrProgramKilled)) {
+		return nil
+	}
+	return u.err
+}
+
+// requireTerminal fails closed when the TUI would draw to the process's own
+// stdout and that is not a terminal: the credential panel must never be
+// redirected to a file or pipe. An injected Output (tests) is not checked.
+func requireTerminal(o TUIOptions) error {
+	if o.Output != nil {
+		return nil
+	}
+	isTerm := o.IsTerminal
+	if isTerm == nil {
+		isTerm = func(f *os.File) bool { return term.IsTerminal(f.Fd()) }
+	}
+	if !isTerm(os.Stdout) {
+		return errors.New("stdout is not a terminal: the local TUI shows the credentials once and will not draw them to a file or pipe; run intercom in an interactive terminal")
+	}
+	return nil
 }
 
 // startUI builds the program, attaches it to the hub and runs it on its own
@@ -37,7 +72,18 @@ func startUI(ctx context.Context, h *hub.Hub, o TUIOptions, reissue tui.Reissuer
 		Dial: tui.HubDialer(h, 0),
 		Sink: func(m tea.Msg) { prog.Send(m) },
 	})
-	opts := []tea.ProgramOption{tea.WithoutSignalHandler()} // signals are owned by the process
+	ready := make(chan struct{})
+	var readyOnce sync.Once
+	opts := []tea.ProgramOption{
+		tea.WithoutSignalHandler(), // signals are owned by the process
+		tea.WithFilter(func(_ tea.Model, m tea.Msg) tea.Msg {
+			if _, ok := m.(readyMsg); ok {
+				readyOnce.Do(func() { close(ready) })
+				return nil
+			}
+			return m
+		}),
+	}
 	if o.Input != nil {
 		opts = append(opts, tea.WithInput(o.Input))
 	}
@@ -53,6 +99,17 @@ func startUI(ctx context.Context, h *hub.Hub, o TUIOptions, reissue tui.Reissuer
 		defer close(ui.done)
 		_, ui.err = prog.Run()
 	}()
+	// Handshake: do not report ready after a failed terminal startup. Send
+	// returns when the loop took the message or the program ended.
+	go prog.Send(readyMsg{})
+	select {
+	case <-ready:
+	case <-ui.done:
+		if ui.err != nil {
+			return nil, fmt.Errorf("terminal startup: %w", ui.err)
+		}
+		return nil, errors.New("terminal startup: the program exited immediately")
+	}
 	if o.Width > 0 && o.Height > 0 {
 		prog.Send(tea.WindowSizeMsg{Width: o.Width, Height: o.Height})
 	}
@@ -67,6 +124,7 @@ func startUI(ctx context.Context, h *hub.Hub, o TUIOptions, reissue tui.Reissuer
 // releases the hub connection. It is idempotent.
 func (u *localUI) stop() {
 	u.stopOnce.Do(func() {
+		u.stopping.Store(true)
 		u.prog.Quit()
 		t := time.NewTimer(uiStopBudget)
 		defer t.Stop()

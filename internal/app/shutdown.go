@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -39,9 +40,38 @@ func (a *App) Err() error {
 	}
 }
 
+// onServeExit handles the remote listener's accept loop ending. An orderly
+// close (nil, or http.ErrServerClosed from Shutdown) is not a failure; anything
+// else is logged, kept for [App.Err] and triggers the ordered shutdown, so a
+// dead listener cannot leave a process that looks alive but serves nobody.
+func (a *App) onServeExit(err error) {
+	if err == nil || errors.Is(err, http.ErrServerClosed) {
+		return
+	}
+	a.log.Error("remote listener failed", "error", err)
+	a.addErr(fmt.Errorf("remote listener: %w", err))
+	a.Shutdown("remote listener failed")
+}
+
+// addErr records a failure to be joined into [App.Err]. Record it before the
+// Shutdown call it accompanies: the shutdown sequence reads it after shutReq
+// closes.
+func (a *App) addErr(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.runErrs = append(a.runErrs, err)
+}
+
+func (a *App) takeErrs() []error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]error(nil), a.runErrs...)
+}
+
 // watchSignals turns interrupt/terminate notifications into shutdown. The
 // first one cancels a startup in progress and requests the ordered shutdown;
-// each later one hurries it (cancels the shutdown context, which makes the
+// if a shutdown is already in progress (for example the operator quit the
+// TUI) it hurries it at once instead. Each later one hurries it (cancels the shutdown context, which makes the
 // agent stop escalate to a force stop) without ever skipping a step. It
 // returns when the process is done.
 func (a *App) watchSignals(sig <-chan os.Signal, cancelStart context.CancelFunc) {
@@ -49,18 +79,29 @@ func (a *App) watchSignals(sig <-chan os.Signal, cancelStart context.CancelFunc)
 	for {
 		select {
 		case s := <-sig:
-			if first {
+			if first && !a.shuttingDown() {
 				first = false
 				a.log.Info("signal received; shutting down", "signal", s.String())
 				cancelStart()
 				a.Shutdown("signal: " + s.String())
 				continue
 			}
-			a.log.Warn("another signal received; hurrying shutdown", "signal", s.String())
+			first = false
+			a.log.Warn("signal received during shutdown; hurrying it", "signal", s.String())
 			a.hurry()
 		case <-a.done:
 			return
 		}
+	}
+}
+
+// shuttingDown reports whether a shutdown has been requested.
+func (a *App) shuttingDown() bool {
+	select {
+	case <-a.shutReq:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -95,7 +136,7 @@ func (a *App) supervise() {
 		tctx, cancel := context.WithTimeout(context.Background(), teardownBudget)
 		errs = append(errs, a.teardown(tctx))
 		cancel()
-		a.err = errors.Join(errs...)
+		a.err = errors.Join(append(a.takeErrs(), errs...)...)
 		return
 	}
 	sd.Start(a.shutCtx)
@@ -119,6 +160,6 @@ func (a *App) supervise() {
 	if a.ui != nil {
 		a.ui.stop()
 	}
-	a.err = errors.Join(errs...)
+	a.err = errors.Join(append(a.takeErrs(), errs...)...) // run failures (TUI, listener) first
 	a.log.Info("shutdown complete", "ok", a.err == nil)
 }

@@ -33,12 +33,18 @@ type CredentialsMsg struct {
 	Credentials []Credential
 }
 
-// ReissueFailedMsg reports a failed re-issue; the previous credentials stay
-// valid.
-type ReissueFailedMsg struct{ Err error }
+// ReissueFailedMsg reports a failed re-issue. Live is the authoritative set of
+// credentials that are live after the failure: a re-issue that replaced some
+// roles before failing revoked their old credentials, so the panel must show
+// Live rather than keep the revoked ones. A zero Live means nothing changed.
+type ReissueFailedMsg struct {
+	Err  error
+	Live CredentialsMsg
+}
 
 // Reissuer mints a fresh credential set and revokes the previous one. It runs
-// inside a tea.Cmd, off the Update goroutine.
+// inside a tea.Cmd, off the Update goroutine. On error it may still return the
+// live set (a partial re-issue); a zero message means nothing changed.
 type Reissuer func(ctx context.Context) (CredentialsMsg, error)
 
 // showCredentials opens the panel with msg, replacing any set already shown
@@ -74,7 +80,7 @@ func (m Model) reissueCmd() (tea.Model, tea.Cmd) {
 		defer cancel()
 		msg, err := reissue(ctx)
 		if err != nil {
-			return ReissueFailedMsg{Err: err}
+			return ReissueFailedMsg{Err: err, Live: msg}
 		}
 		return msg
 	}

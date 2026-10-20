@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -82,6 +81,8 @@ type App struct {
 	mu     sync.Mutex
 	mintMu sync.Mutex         // serializes mint/re-issue so two cannot interleave their role order
 	creds  []transport.Issued // live credentials, for LOCAL display only
+	// runErrs are failures during the run (TUI, listener) joined into err.
+	runErrs []error
 
 	done     chan struct{}
 	doneOnce sync.Once
@@ -119,6 +120,12 @@ func Start(ctx context.Context, o Options) (*App, error) {
 	}
 	if o.Now == nil {
 		o.Now = time.Now
+	}
+
+	if !o.TUI.Disabled {
+		if err := requireTerminal(o.TUI); err != nil {
+			return nil, apperr.Wrap(apperr.KindConfig, err)
+		}
 	}
 
 	cfg, report, err := config.Load(o.ConfigPath)
@@ -240,9 +247,7 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 	a.serveDone = make(chan struct{})
 	go func() {
 		defer close(a.serveDone)
-		if err := remote.Serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.log.Error("remote listener failed", "error", err)
-		}
+		a.onServeExit(remote.Serve())
 	}()
 
 	if err := a.mintAll(); err != nil {
@@ -261,8 +266,11 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 		ui.prog.Send(a.credentialsMsg(a.Credentials())) // the one display of the credentials: local TUI only
 		go func() {
 			<-ui.done
-			if ui.err != nil {
-				a.log.Error("tui exited with error", "error", ui.err)
+			if err := ui.failure(); err != nil {
+				a.log.Error("tui exited with error", "error", err)
+				a.addErr(fmt.Errorf("tui: %w", err))
+				a.Shutdown("tui failed")
+				return
 			}
 			a.Shutdown("tui quit")
 		}()
@@ -275,7 +283,7 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 // mintAll issues the approver and observer credentials. Only the role, the
 // fingerprint and the expiry are ever logged.
 func (a *App) mintAll() error {
-	_, err := a.mint(nil)
+	_, err := a.mint()
 	return err
 }
 
@@ -283,21 +291,24 @@ func (a *App) mintAll() error {
 var credentialRoles = [...]hub.Role{hub.RoleApprover, hub.RoleObserver}
 
 // mint issues a fresh credential for every role, each revoking that role's
-// previous one, and publishes the live set. A failure part-way keeps the
-// roles already replaced and the old credential of the rest, so Credentials
-// always describes what is actually live. Only role, fingerprint and expiry
-// are logged.
-func (a *App) mint(current []transport.Issued) ([]transport.Issued, error) {
+// previous one, and publishes the live set after every role. It always returns
+// the authoritative live set, with the error when a mint fails part-way: the
+// roles already replaced keep their new credential (their old one is revoked)
+// and the rest keep theirs, so neither Credentials nor a caller ever shows a
+// revoked credential. The snapshot the set starts from is taken inside mintMu,
+// so concurrent re-issues cannot start from a stale set. Only role,
+// fingerprint and expiry are logged.
+func (a *App) mint() ([]transport.Issued, error) {
 	a.mintMu.Lock()
 	defer a.mintMu.Unlock()
-	next := make([]transport.Issued, len(credentialRoles))
-	copy(next, current)
-	var firstErr error
+	next := a.Credentials() // under mintMu: the only writer of creds
+	if len(next) != len(credentialRoles) {
+		next = make([]transport.Issued, len(credentialRoles))
+	}
 	for i, role := range credentialRoles {
 		iss, err := a.remote.Mint(role)
 		if err != nil {
-			firstErr = fmt.Errorf("mint %s credential: %w", roleName(role), err)
-			break
+			return next, fmt.Errorf("mint %s credential: %w", roleName(role), err)
 		}
 		a.log.Info("credential issued", "role", roleName(role), "fingerprint", iss.Fingerprint, "expires_at", iss.ExpiresAt)
 		next[i] = iss
@@ -305,28 +316,32 @@ func (a *App) mint(current []transport.Issued) ([]transport.Issued, error) {
 		a.creds = append([]transport.Issued(nil), next...)
 		a.mu.Unlock()
 	}
-	return next, firstErr
+	return next, nil
 }
 
 // Reissue mints a new credential for every role and revokes the previous ones
 // (re-issue; ADR MVP-2). Sockets authenticated by a revoked credential are
-// closed by the transport. The plaintext is for the local TUI only.
+// closed by the transport. The plaintext is for the local TUI only. On a
+// failure part-way it returns the authoritative live set together with the
+// error (some roles may already have been replaced).
 func (a *App) Reissue(context.Context) ([]transport.Issued, error) {
-	fresh, err := a.mint(a.Credentials())
+	live, err := a.mint()
 	if err != nil {
-		return nil, err
+		return live, err
 	}
-	a.log.Info("credentials re-issued", "approver", fresh[0].Fingerprint, "observer", fresh[1].Fingerprint)
-	return fresh, nil
+	a.log.Info("credentials re-issued", "approver", live[0].Fingerprint, "observer", live[1].Fingerprint)
+	return live, nil
 }
 
 // tuiReissue is the TUI's re-issue key handler.
 func (a *App) tuiReissue(ctx context.Context) (tui.CredentialsMsg, error) {
-	fresh, err := a.Reissue(ctx)
+	live, err := a.Reissue(ctx)
 	if err != nil {
-		return tui.CredentialsMsg{}, err
+		// A partial failure may already have revoked some displayed credentials:
+		// hand the panel the authoritative live set with the error.
+		return a.credentialsMsg(live), err
 	}
-	return a.credentialsMsg(fresh), nil
+	return a.credentialsMsg(live), nil
 }
 
 // credentialsMsg is the one place the plaintext leaves the minted records: it
