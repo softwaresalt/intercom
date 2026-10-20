@@ -17,18 +17,22 @@ import (
 type testAsk struct {
 	ask      agent.PermissionAsk
 	reply    chan agent.PermissionDecision // capacity 1, like the adapter's
+	outcome  *agent.PermissionOutcome
 	resolved chan struct{}
 }
 
 func newTestAsk(kind agent.PermissionKind, summary string) *testAsk {
 	reply := make(chan agent.PermissionDecision, 1)
 	resolved := make(chan struct{})
+	outcome := &agent.PermissionOutcome{}
 	return &testAsk{
 		reply:    reply,
+		outcome:  outcome,
 		resolved: resolved,
 		ask: agent.PermissionAsk{
 			Request:  agent.PermissionRequest{ToolCallID: "call-1", Kind: kind, RawKind: "x", Summary: summary},
 			Reply:    reply,
+			Outcome:  outcome,
 			Resolved: resolved,
 		},
 	}

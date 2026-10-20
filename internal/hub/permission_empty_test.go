@@ -20,6 +20,7 @@ func wantUnavailable(t *testing.T, a *testAsk) {
 		if d.Kind != agent.DecisionUnavailable {
 			t.Fatalf("decision = %v, want unavailable", d.Kind)
 		}
+		a.outcome.Deliver(d)
 	case <-time.After(testWait):
 		t.Fatalf("no decision within %v (the request waited for its deadline)", testWait)
 	}

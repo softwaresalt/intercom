@@ -150,9 +150,11 @@ func (b *permissionBridge) handler() copilot.PermissionHandlerFunc { return b.ha
 
 // handle blocks until the hub replies or the hub is gone. It returns only a
 // value the hub sent, or UserNotAvailable when the hub-done or stop channel
-// closes first (shutdown always wins over a simultaneously ready approval). It
-// never approves on its own, and it denies without asking when the request
-// cannot be shown in full.
+// closes first (shutdown always wins over a simultaneously ready approval) or
+// the hub revoked the ask. Whatever it returns it first records in the ask's
+// Outcome, which is how the hub learns what the SDK received. It never
+// approves on its own, and it denies without asking when the request cannot be
+// shown in full.
 func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.PermissionInvocation) (rpc.PermissionDecision, error) {
 	unavailable := func() (rpc.PermissionDecision, error) {
 		return &rpc.PermissionDecisionUserNotAvailable{}, nil
@@ -182,8 +184,19 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 
 	reply := make(chan agent.PermissionDecision, 1)
 	resolved := make(chan struct{})
-	defer close(resolved)
-	ask := agent.PermissionAsk{Request: domain, Reply: reply, Resolved: resolved}
+	outcome := &agent.PermissionOutcome{}
+	defer close(resolved) // runs after the outcome below is recorded
+	ask := agent.PermissionAsk{Request: domain, Reply: reply, Outcome: outcome, Resolved: resolved}
+	// deliver records the decision about to be returned to the SDK, so the hub
+	// knows exactly what the SDK got (see agent.PermissionOutcome). A revoked
+	// ask (the hub gave up waiting) delivers nothing but UserNotAvailable.
+	deliver := func(d agent.PermissionDecision) (rpc.PermissionDecision, error) {
+		if !outcome.Deliver(d) {
+			d = agent.PermissionDecision{Kind: agent.DecisionUnavailable}
+		}
+		return toSDKDecision(d), nil
+	}
+	notAvailable := agent.PermissionDecision{Kind: agent.DecisionUnavailable}
 	select {
 	case b.asks <- ask:
 	case <-b.hubDone:
@@ -193,22 +206,16 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 	}
 	select {
 	case d := <-reply:
-		if d.Kind != agent.DecisionDeny && gone() {
-			// Never deliver an approval after shutdown began. The hub reads the
-			// reply buffer to learn whether its decision reached the SDK
-			// (empty: delivered, so resolved; full: not delivered, so aborted),
-			// so the buffer must hold what this handler actually returns: put
-			// the downgrade back (we consumed the only slot; capacity 1).
-			select {
-			case reply <- agent.PermissionDecision{Kind: agent.DecisionUnavailable}:
-			default:
-			}
-			return unavailable()
+		if d.Kind == agent.DecisionAllowOnce && gone() {
+			// Never deliver an approval after shutdown began. Only an allow is
+			// downgraded: a deny or a hub-issued UserNotAvailable is already
+			// safe and is returned (and recorded) unchanged.
+			d = notAvailable
 		}
-		return toSDKDecision(d), nil
+		return deliver(d)
 	case <-b.hubDone:
-		return unavailable()
+		return deliver(notAvailable)
 	case <-b.stop:
-		return unavailable()
+		return deliver(notAvailable)
 	}
 }

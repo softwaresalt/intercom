@@ -192,10 +192,11 @@ func (h *Hub) decide(e *pendingPerm, actor string, d agent.PermissionDecision, r
 // handoff delivers the decided entry's decision to the handler and starts the
 // acknowledgement wait. Finality is the hand-off, not the CAS (design §5.4
 // item 7): permission.resolved is published only once the handler has
-// acknowledged (onHandlerReturned); if the handler is already gone, or the
-// capacity-1 reply send takes the default branch, the request is abandoned
-// with permission.aborted instead, so no surface renders "allowed" for a
-// decision the SDK never received. The hub never blocks here.
+// acknowledged (onHandlerReturned) having returned the decision to the SDK; if
+// the handler is already gone, or the capacity-1 reply send takes the default
+// branch, the request is abandoned with permission.aborted instead, so no
+// surface renders "allowed" for a decision the SDK never received. The hub
+// never blocks here.
 func (h *Hub) handoff(e *pendingPerm) {
 	e.deadline = h.cfg.Now().Add(h.cfg.PermissionAckTimeout) // the ack wait is hub-timed too
 	select {
@@ -205,6 +206,7 @@ func (h *Hub) handoff(e *pendingPerm) {
 	default:
 	}
 	if !trySend(e.ask.Reply, e.decision) {
+		e.ask.Outcome.Revoke() // abandoned: nothing stale may be delivered later
 		h.abortPerm(e, permAbortReplyUnavailable)
 	}
 }
@@ -225,20 +227,25 @@ func (h *Hub) watchAsk(id string, resolved <-chan struct{}) {
 	}
 }
 
-// onHandlerReturned is the acknowledgement step. A decided entry whose reply
-// has been consumed (the buffer is empty) was received: publish resolved. If
-// the decision is still sitting in the reply buffer the handler returned by
-// another path (stop, hub-done): abort. An entry that was never decided means
-// the handler is gone without an answer (SDK Abort/Stop, CLI-side timeout):
-// abort. An id that is no longer registered is a late duplicate: ignore.
+// onHandlerReturned is the acknowledgement step. The handler has returned and
+// closed Resolved, after recording in the ask's Outcome the exact decision it
+// returned to the SDK. A decided entry whose recorded outcome is the decision
+// the hub issued was delivered as decided: publish resolved. Any other outcome
+// (the handler downgraded an allow at its own shutdown, or returned without
+// recording anything) means the SDK did not get what the surfaces were told:
+// abort. An entry that was never decided means the handler is gone without an
+// answer (SDK Abort/Stop, CLI-side timeout): abort. An id that is no longer
+// registered is a late duplicate: ignore.
 func (h *Hub) onHandlerReturned(id string) {
 	e := h.perm.lookup(id)
 	if e == nil {
 		return
 	}
-	if e.state == permDecided && len(e.ask.Reply) == 0 {
-		h.finishResolved(e)
-		return
+	if e.state == permDecided {
+		if got, ok := e.ask.Outcome.Delivered(); ok && got.Kind == e.decision.Kind {
+			h.finishResolved(e)
+			return
+		}
 	}
 	h.abortPerm(e, permAbortHandlerGone)
 }
@@ -263,20 +270,25 @@ func (h *Hub) abortPerm(e *pendingPerm, reason string) {
 // settleDecided retires a decided entry whose acknowledgement will not be
 // waited for (its ack deadline passed, or shutdown step 0 began) so the
 // surfaces never render a decision the SDK did not get, and the SDK never gets
-// one the surfaces were told was abandoned. The reply buffer says which it is:
-//   - the decision is still buffered: the handler never took it. It is replaced
-//     by UserNotAvailable (so a late handler cannot receive an allow) and the
-//     request is aborted with reason;
-//   - the buffer is empty: the handler took it, so the SDK received exactly
-//     this decision and the truthful outcome is resolved.
+// one the surfaces were told was abandoned. The handler-reported outcome says
+// which it is, atomically (never the reply buffer's length, which cannot tell
+// "consumed, about to deliver" from "delivered"):
+//   - the ask is revoked (the handler had not delivered): its later Deliver
+//     fails, so it returns UserNotAvailable whatever it takes from the reply
+//     buffer, and the request is aborted with reason;
+//   - the handler had already delivered: the SDK received exactly that
+//     decision, so the truthful outcome is resolved when it is the decision the
+//     hub issued, and aborted (with reason) when the handler had downgraded it.
 func (h *Hub) settleDecided(e *pendingPerm, reason string) {
-	select {
-	case <-e.ask.Reply:
-		trySend(e.ask.Reply, agent.PermissionDecision{Kind: agent.DecisionUnavailable}) // sole sender; buffer just emptied
+	if e.ask.Outcome.Revoke() {
 		h.abortPerm(e, reason)
-	default:
-		h.finishResolved(e)
+		return
 	}
+	if got, ok := e.ask.Outcome.Delivered(); ok && got.Kind == e.decision.Kind {
+		h.finishResolved(e)
+		return
+	}
+	h.abortPerm(e, reason)
 }
 
 // retirePerm removes e from the registry and releases any shutdown step-0
@@ -358,7 +370,8 @@ func (h *Hub) reapEmptyBroadcastSet() {
 
 // Asks is the channel the agent adapter sends permission asks on. The hub
 // answers each by sending exactly one decision on the ask's Reply (capacity 1,
-// select/default) and never blocks on it.
+// select/default, never blocking) and learns what the SDK received from the
+// ask's Outcome, never from the reply buffer.
 func (h *Hub) Asks() chan<- agent.PermissionAsk { return h.asks }
 
 // handleAsk registers one permission request and broadcasts it, both in this
@@ -367,9 +380,10 @@ func (h *Hub) Asks() chan<- agent.PermissionAsk { return h.asks }
 // existed and be rejected, denying the agent a permission the operator
 // granted.
 func (h *Hub) handleAsk(ask agent.PermissionAsk) {
-	if ask.Reply == nil || ask.Resolved == nil {
-		// Cannot be answered or abandoned: fail closed rather than register an
-		// entry nothing can ever finish.
+	if ask.Reply == nil || ask.Resolved == nil || ask.Outcome == nil {
+		// Cannot be answered, abandoned or audited: fail closed rather than
+		// register an entry nothing can ever finish (or whose delivery nothing
+		// could confirm).
 		h.cfg.Logger.Error("hub: malformed permission ask discarded")
 		if ask.Reply != nil {
 			trySend(ask.Reply, agent.PermissionDecision{Kind: agent.DecisionUnavailable})

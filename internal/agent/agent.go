@@ -124,26 +124,29 @@ type PermissionDecision struct {
 
 // PermissionAsk is sent to the hub for each permission request. The hub
 // answers by sending exactly one decision on Reply (capacity 1, so the hub
-// never blocks on it).
+// never blocks on it). Reply is send-only for the hub: the hub never reads it.
 //
-// Reply is bidirectional for one reason: when a decision the handler never
-// took must be withdrawn (its acknowledgement is overdue, or shutdown began),
-// the hub receives it back out of the buffer and replaces it with
-// UserNotAvailable, so an approval can never be delivered after the surfaces
-// were told it was abandoned. The hub is the only party that does so; the
-// adapter only ever receives.
+// Outcome is the one-shot record of what the handler actually returned to the
+// SDK. The handler records its decision with Deliver before it returns; the hub
+// revokes the ask (Revoke) when it stops waiting for the handler (ack deadline,
+// shutdown), so a decision the handler had not yet taken is never delivered
+// afterwards, and reads Delivered to publish permission.resolved only for what
+// the SDK really received. The hub never infers delivery from Reply's buffer.
+// An ask with a nil Outcome is malformed and the hub fails it closed.
 //
 // Resolved is closed when the adapter no longer needs an answer (the request
-// was answered, or shutdown or hub-done abandoned it). A hub that dequeues an
-// ask whose Resolved is already closed must discard it instead of prompting
-// the operator. The hub owns any approval timeout; the adapter applies none.
+// was answered, or shutdown or hub-done abandoned it), after Outcome has
+// recorded the handler's decision. A hub that dequeues an ask whose Resolved
+// is already closed must discard it instead of prompting the operator. The hub
+// owns any approval timeout; the adapter applies none.
 //
 // Ordering: asks travel on a different channel from events, so the relative
 // order of an ask and the events around it is undefined; the hub must not
 // infer order across the two.
 type PermissionAsk struct {
 	Request  PermissionRequest
-	Reply    chan PermissionDecision
+	Reply    chan<- PermissionDecision
+	Outcome  *PermissionOutcome
 	Resolved <-chan struct{}
 }
 

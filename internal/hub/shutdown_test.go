@@ -255,8 +255,10 @@ func parkHandler(t *testing.T, h *Hub) (released chan struct{}, decision *atomic
 	go func() {
 		select {
 		case d := <-a.reply:
+			a.outcome.Deliver(d)
 			decision.Store(int32(d.Kind))
 		case <-h.Done():
+			a.outcome.Deliver(agent.PermissionDecision{Kind: agent.DecisionUnavailable})
 			decision.Store(int32(agent.DecisionUnavailable))
 		}
 		close(a.resolved) // the handler returns: acknowledgement

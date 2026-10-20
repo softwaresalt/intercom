@@ -115,9 +115,21 @@ func abortedPayload(t *testing.T, f Frame) PermissionAbortedPayload {
 	return p
 }
 
-// takeReply receives the hub's decision, failing the test (not hanging) when
-// none arrives.
+// takeReply plays the adapter handler's receive-and-deliver: it takes the hub's
+// decision and records it as the decision returned to the SDK (what the real
+// handler does before it returns), failing the test (not hanging) when none
+// arrives. The handler has NOT returned yet: close a.resolved for that.
 func (a *testAsk) takeReply(t *testing.T) agent.PermissionDecision {
+	t.Helper()
+	d := a.consumeOnly(t)
+	a.outcome.Deliver(d)
+	return d
+}
+
+// consumeOnly is the handler's receive WITHOUT the deliver step: the window in
+// which the handler has taken the decision off the reply buffer but has not yet
+// recorded what it returns.
+func (a *testAsk) consumeOnly(t *testing.T) agent.PermissionDecision {
 	t.Helper()
 	select {
 	case d := <-a.reply:
@@ -150,6 +162,7 @@ func TestHubTimeoutResolvesUnavailableThroughTheHubOnly(t *testing.T) {
 		if d.Kind != agent.DecisionUnavailable {
 			t.Fatalf("timeout decision = %v, want unavailable", d.Kind)
 		}
+		a.outcome.Deliver(d)
 	case <-time.After(testWait):
 		t.Fatal("hub timeout did not answer the handler")
 	}
@@ -183,6 +196,7 @@ func TestResolvedIsPublishedOnlyAfterHandlerAck(t *testing.T) {
 		if d.Kind != agent.DecisionAllowOnce {
 			t.Fatalf("handler got %v", d.Kind)
 		}
+		a.outcome.Deliver(d)
 	case <-time.After(testWait):
 		t.Fatal("decision not delivered to the handler")
 	}
