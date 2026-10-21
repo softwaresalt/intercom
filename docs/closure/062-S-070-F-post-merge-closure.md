@@ -20,15 +20,18 @@ conditions:
   - id: "live-sdk-test-pass"
     description: "The opt-in live SDK test (INTERCOM_LIVE_SDK_TESTS; scenario steps 2, 5 and 7 against a real Copilot runtime) has not been run. The MVP definition of done requires it to pass. Operator-owned: it needs an installed, authenticated Copilot CLI and cannot run in the unattended session."
     satisfied: false
-    evidence: "Pending: operator runs the command in docs/runbooks/live-sdk-tests.md and records the result"
+    disposition: "partial-evidence"
+    evidence: "Partial: docs/closure/evidence/062-S-live-verification-evidence.md section A (2026-10-20, operator-present, Copilot CLI 1.0.100): TestLiveCopilotEndToEnd and TestLiveStartAndStop passed and SQ-b verified for the read kind. Still missing: a recorded live run showing shell and write calls reach the permission handler (ADR MVP-1), and SQ-c re-verification (inconclusive; design section 4.4 stays a conservative, unverified assumption)."
   - id: "devtunnel-connect"
     description: "Manual checkpoint required for release in the workspace profile: Dev Tunnel registration succeeds (anonymous access off) and an authenticated remote client connects, including Authorization header pass-through. Tunnel creation is outside intercom. Operator-owned."
-    satisfied: false
-    evidence: "Pending: operator note or external confirmation per docs/runbooks/intercom-operator-runbook.md"
+    satisfied: true
+    disposition: "satisfied-for-reference-client"
+    evidence: "docs/closure/evidence/062-S-live-verification-evidence.md section B (2026-10-20, devtunnel CLI 1.0.2014): private tunnel registered with --allow-anonymous false; Go reference client connected over wss with the Authorization header unmodified. Not tested: real browser, second machine, TUI-launched binary, Origin/allowed_origins, long-lived reconnect."
   - id: "tool-approval-routing-live"
     description: "Manual checkpoint required for release: first-responder routing across the local TUI and a remote client against a real runtime. Verified headlessly only (internal/app e2e tests)."
     satisfied: false
-    evidence: "Pending: operator note or audit log from a live run"
+    disposition: "partial-evidence"
+    evidence: "Partial: docs/closure/evidence/062-S-live-verification-evidence.md sections A and B (2026-10-20): remote-only approval of a read permission through the tunnel and in TestLiveCopilotEndToEnd, both with headless harnesses (the TUI was disabled). Still missing: a live run with the local TUI and a remote client both connected, showing first-responder arbitration; shell and write kinds were not exercised live."
 ---
 
 # 062-S / 070-F post-merge closure
@@ -40,8 +43,43 @@ conditions:
 * Close: plain `--classify-only` (CASCADE, engine VERIFIED), then the mutating `autoharness shipment cascade-close` exited 0 with every postcondition passing, under explicit operator-authored pre-approval (dark-mode scope 056-S..062-S; not an admin fallback). Default timeout used, supervised attached to completion.
 * Post-close verification: 062-S, 070-F and its tasks are present in `.backlogit/archive/`; no archive deletions (P-007). The reconcile checks were performed inline; no separate report under `.backlogit/reconcile/` (degradation, as in earlier shipments).
 * Linked-deliberation disposition: none; nothing archived by Ship.
-* Runtime verification: headless only. The live SDK tests (`INTERCOM_LIVE_SDK_TESTS`), the Dev Tunnel connect checkpoint and live first-responder routing were not executed in this unattended session; they are recorded above as unsatisfied, operator-owned conditions. Successful archival does not satisfy them. Closure of the backlog is complete; release readiness is READY_WITH_CONDITIONS until the evidence is recorded.
+* Runtime verification at merge time: headless only. The live SDK tests (`INTERCOM_LIVE_SDK_TESTS`), the Dev Tunnel connect checkpoint and live first-responder routing were not executed in the unattended session. Successful archival did not satisfy them. They were run later, in an operator-present session; see "Live evidence update (2026-10-20)".
 * Releasability: `READY_WITH_CONDITIONS` (see conditions). No deployment, tag or publish step applies. Rollback is a revert of merge commit 6290151. Owner: repository maintainer. Monitoring: first operator-run live test.
+
+## Live evidence update (2026-10-20)
+
+The three operator-owned conditions were exercised in an operator-present
+session after the merge. The evidence is from live runs, not CI; the summary is
+in `docs/closure/evidence/062-S-live-verification-evidence.md`. Per-condition
+disposition:
+
+* `live-sdk-test-pass`: **partial evidence, not satisfied.** `TestLiveCopilotEndToEnd`
+  (including a remotely answered `read` permission, clean shutdown and no
+  stranded CLI child) and `TestLiveStartAndStop` passed, and SQ-b is verified.
+  `TestLiveSQbSQcReverification` failed as inconclusive: SQ-c is **not**
+  re-verified, so design section 4.4 remains an unverified assumption and its
+  conservative posture stays in force. ADR MVP-1 also requires a recorded live
+  run showing that shell and write calls reach the permission handler; only the
+  `read` kind has been exercised, so the condition stays open.
+* `devtunnel-connect`: **satisfied for the Go reference client** over a private
+  tunnel (devtunnel CLI 1.0.2014; `--allow-anonymous false` accepted; no edge
+  token refused; wrong credential gave 401; `Authorization` header reached
+  intercom unmodified; subprotocol carriage connected). Not tested: a real
+  browser, a second machine, the real TUI-launched binary behind the tunnel,
+  `Origin` and `allowed_origins` through the tunnel, long-lived reconnect.
+* `tool-approval-routing-live`: **partial evidence, not satisfied.** A `read`
+  permission was approved remotely through the tunnel and in the live app test,
+  but both runs used headless harnesses with the local TUI disabled, so
+  first-responder arbitration across the local TUI and a remote client was not
+  exercised live. Shell and write kinds were not exercised live either.
+
+Release readiness stays `READY_WITH_CONDITIONS`: only `devtunnel-connect` is
+satisfied (for the reference client), and two conditions remain open with the
+partial evidence above. The closure-evidence gate requires every condition to be
+satisfied, so it keeps rejecting this artifact with `frontmatter_predicate`
+until the remaining live evidence is recorded; that is the accurate state, not
+a formatting defect. The open residuals are also recorded in the operator
+runbook, sections 5 and 11.
 
 ## Source artifact cleanup
 

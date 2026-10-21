@@ -122,9 +122,10 @@ devtunnel host intercom-demo
 
 Use the port you passed to `intercom`. Confirm the tunnel is private with
 `devtunnel show intercom-demo` (no anonymous access entry). Tunnels are
-private by default; if your `devtunnel` version rejects the explicit `false`,
-omit it and verify the same way. The `--allow-anonymous false` syntax is
-unverified against a real devtunnel build.
+private by default. The explicit `--allow-anonymous false` syntax was accepted
+by devtunnel CLI 1.0.2014 on 2026-10-20 (the tunnel's access control was `{}`,
+with no anonymous entry). If another build rejects the explicit `false`, omit it
+and verify the same way.
 
 Then:
 
@@ -134,12 +135,49 @@ Then:
 2. Connect clients to `wss://<tunnel-host>/ws` (plain `ws://` is accepted only
    for loopback).
 3. A browser SPA also needs its exact origin in `[remote].allowed_origins`.
-4. A private tunnel also asks its clients for a Dev Tunnels access token
-   (edge authentication). That is separate from the intercom credential. Whether
-   the `Authorization` header reaches intercom unmodified through your tunnel is
-   a manual, per-environment check that this build has not performed (ADR MVP-2
-   asks for it): if it does not, native clients need another carriage and the ADR
-   must be amended.
+4. A private tunnel also requires its clients to present a Dev Tunnels access
+   token (edge authentication). That is separate from the intercom credential.
+   Obtain one with `devtunnel token <tunnel-id> --scopes connect` (about 24
+   hours of lifetime) and send it in the `X-Tunnel-Authorization` header as
+   `tunnel <token>`. The intercom credential still travels in `Authorization`.
+   A connection without the edge token is refused at the edge: it receives the
+   Dev Tunnels sign-in page (HTTP 200) and no WebSocket upgrade, and never
+   reaches intercom. Treat the edge token like a credential and keep it out of
+   logs and the repository.
+5. ADR MVP-2 asks for a manual, per-environment check that the `Authorization`
+   header reaches intercom unmodified through the tunnel. It is a per-environment
+   check, so repeat it for yours; if the header does not arrive, native clients
+   need another carriage and the ADR must be amended. See the verified result
+   below.
+
+### Verified on 2026-10-20
+
+Scope: devtunnel CLI 1.0.2014, one user account, one machine. The backend ran
+behind a private tunnel (host pattern `<id>-<port>.<cluster>.devtunnels.ms`)
+with `[remote].allowed_hosts` set to the bare tunnel hostname (no port, which
+worked). The client was the Go reference client (`internal/transport/wsclient`)
+over `wss://<tunnel-host>/ws` from the same machine through the public edge. The
+backend was a temporary harness that wires the real Copilot agent, hub and
+transport, because the real binary shows credentials only on its interactive TUI
+and could not be driven non-interactively (see the closure evidence). The tunnel
+and the harness were deleted afterwards.
+
+* Without the edge token the connection was refused at the edge, so the tunnel
+  is private.
+* With the edge token and a wrong intercom credential, intercom answered 401.
+* An observer and an approver each connected with the credential in the
+  `Authorization` header: the header reached intercom unmodified.
+* The browser-style carriage (`intercom.v1` plus `bearer.<credential>` in
+  `Sec-WebSocket-Protocol`) connected through the tunnel, tested with the
+  reference client only.
+* A full turn completed: the prompt was accepted, a `read` permission was
+  requested, a remote approver approved it, `permission.resolved` and
+  `agent.idle` were observed, and shutdown was clean.
+
+Not tested: a real browser, a second machine, the real binary (launched from its
+TUI) behind the tunnel, `Origin` handling and `allowed_origins` through the
+tunnel, a long-lived connection with reconnect across the tunnel, and permission
+kinds other than `read` (such as shell or write) routed live.
 
 ## 6. Limits and what to expect
 
@@ -241,6 +279,13 @@ $env:INTERCOM_LIVE_SDK_TESTS = "1"; go test ./internal/app -run Live -v
 Prerequisites, what they cover, the stranded-child check and the SQ-b/SQ-c
 re-verification are in [live-sdk-tests.md](live-sdk-tests.md).
 
+The live tests were first run on 2026-10-20 (Copilot CLI 1.0.100, `GH_TOKEN`
+authentication, Windows, go1.26.9). `TestLiveCopilotEndToEnd` and
+`TestLiveStartAndStop` passed, and SQ-b was verified. SQ-c was **not**
+re-verified, so the conservative posture of design section 4.4 stays in force.
+The results and the open SQ-c question are in
+[live-sdk-tests.md](live-sdk-tests.md#results-of-the-first-live-run-2026-10-20).
+
 ## 11. Known residuals
 
 * Credential plaintext may appear in a tunnel or edge log when carried as a
@@ -250,8 +295,13 @@ re-verification are in [live-sdk-tests.md](live-sdk-tests.md).
   are deferred (ADR MVP-2).
 * The unauthenticated connection cap can be held by a party that reaches the
   tunnel (section 6). Accepted.
-* Whether the tunnel's edge authentication forwards the `Authorization` header
-  unmodified is unverified (section 5).
+* The `Authorization` header reached intercom unmodified through a private
+  Dev Tunnel in one environment on 2026-10-20 (section 5). Repeat the check per
+  environment; a real browser, a second machine and long-lived reconnects across
+  the tunnel are untested.
+* Design section 4.4 SQ-c (events keep dispatching while a permission handler is
+  parked) is unverified; the conservative posture stays in force (section 10).
 * A hard-killed intercom (SIGKILL, power loss) skips the ordered shutdown and
   can leave the CLI child running; use the process list to clean up.
-* The live SDK tests have not yet been run against a real runtime.
+* The live SDK tests ran once against a real runtime (section 10); only the
+  `read` permission kind has been exercised live. Shell and write kinds have not.
