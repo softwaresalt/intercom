@@ -69,6 +69,23 @@ logged, never command lines.
 | `INTERCOM_LIVE_CLI_PATH` | Absolute path of the CLI, written to `[copilot].cli_path` for the test. |
 | `INTERCOM_LIVE_CLI_PROCESS` | Process-name needle for the stranded-child check (default `copilot`). |
 
-The live tests are written but have not been run in the unattended build
-session that produced them; the first operator run is their first real
-verification.
+## Results of the first live run (2026-10-20)
+
+Environment: Copilot CLI 1.0.100, `GH_TOKEN` authentication, Windows, go1.26.9.
+These are results from an operator-present session, not from CI.
+
+| Test | Result |
+|---|---|
+| `TestLiveCopilotEndToEnd` | Pass. The real CLI started through `app.CopilotAgent` with the real hub, WebSocket server and reference client. The prompt raised a `read` permission request that the reference client answered. Shutdown was clean. The CLI process tree was seen after `Start` and no CLI child remained after shutdown. |
+| `TestLiveReadApprovalIsConfinedToWorkspace` (and the other `Live` tests in `internal/app`) | Pass. |
+| `TestLiveStartAndStop` | Pass. |
+| `TestLiveSQbSQcReverification` | Failed as inconclusive. SQ-b is **verified**: the maximum number of in-flight callbacks was 1 across 106 events, with one permission handler entry. SQ-c is **not re-verified**: no session event was dispatched in the 30 seconds that the permission handler was parked, although 60 events had been dispatched before the request. The runtime was probably waiting for the answer, but that cannot be told apart from head-of-line blocking. |
+
+Design section 4.4 SQ-c therefore remains an unverified assumption, and the
+conservative posture stays in force. Re-verifying it needs a prompt or event
+source that emits events while the permission request is pending. Until then,
+treat a failure of `TestLiveSQbSQcReverification` for SQ-c as "unknown", not as
+"blocking confirmed".
+
+Only the `read` permission kind has been exercised live. Shell and write kinds
+have not.
