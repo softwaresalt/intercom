@@ -5,6 +5,10 @@ description: "Manages the backlog-to-shipped pipeline: harness generation, build
 maturity: stable
 tools: vscode, execute, read, agent, edit, search, todo, backlogit
 max_subagent_tier: 2
+reasoning_effort: "medium"
+model_provider: "anthropic"
+model_family: "claude-sonnet-5.5"
+context_tier: "long_context"
 subagent_depth: 2
 ---
 
@@ -909,7 +913,7 @@ before falling back to the operator-halt checkpoint:
    summary, last-N action/observation refs, artifact refs, telemetry-
    evidence pointers, resumption checkpoint ref).
 2. **Resolve the escalation route**: `claude-sonnet-5.5` /
-   `anthropic` / `medium`, resolving
+   `anthropic` / `high`, resolving
    this workspace's currently-effective escalation route per the nested
    per-role -> legacy flat (DEPRECATED) -> tier3 precedence defined in
    `escalation-protocol.instructions.md` (F02FD596). This resolution always
@@ -928,10 +932,20 @@ before falling back to the operator-halt checkpoint:
    carried over from this file's frontmatter or a prior session's resolved
    value, and MUST NOT invent a last-known-good fallback. Falls back per
    field to
-   `claude-sonnet-5.5` / `anthropic` /
-   `xhigh` when no override for a field is declared at
+   `gemini-4-argon` / `google` /
+   `high` when no override for a field is declared at
    any tier. This is the config-resolved successor to ad hoc "suggest a
    frontier-tier model" prose — the route is now declared, not improvised.
+   Separately, the escalation `context_tier` resolves to `long_context`
+   (nested `ship.escalation.context_tier` -> legacy flat
+   `escalation.context_tier` only when the flat route is the selected
+   source -> `tier3.context_tier` -> `default`).
+   Record it in the compiled payload's separate
+   `resolved_escalation_context_tier` field — it is not part of the
+   `resolved_escalation_route` tuple and is excluded from the same-route
+   guard. When the runtime cannot honor a non-`default` escalation
+   `context_tier`, record `ROUTING_DEGRADED: context_tier` and hand off at
+   the default context; this never blocks the handoff.
 3. **Same-route guard**: if the resolved escalation tuple equals this
    agent's own role route tuple (P-013.5), treat this as
    `ESCALATION_DEGRADED` (same-route no-op) per the canonical definition in

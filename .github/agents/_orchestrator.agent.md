@@ -5,6 +5,10 @@ description: "Coordinates the Stage → Ship pipeline for continuous iteration: 
 maturity: stable
 tools: vscode, execute, read, agent, edit, search, todo, backlogit
 max_subagent_tier: 3
+reasoning_effort: "medium"
+model_provider: "anthropic"
+model_family: "claude-sonnet-5.5"
+context_tier: "long_context"
 subagent_depth: 3
 ---
 
@@ -450,19 +454,20 @@ This agent operates at **Tier 2 (Standard)** by default, but supports an indepen
 
 | Agent | Tier | Default Model Family |
 |---|---|---|
-| Orchestrator | 2 (overridable) | `gpt-5.4` |
-| Stage | 3 (Frontier) | `claude-opus-5` |
-| Ship | 2 (Standard) | `claude-sonnet-5` |
+| Orchestrator | 2 (overridable) | `claude-sonnet-5.5` |
+| Stage | 3 (Frontier) | `gemini-4-argon` |
+| Ship | 2 (Standard) | `claude-sonnet-5.5` |
 | Auto-MergeInstall | 2 (Standard) | Inherits tier2 default |
 | Auto-Tune | 2 (Standard) | Inherits tier2 default |
 
 **Cross-provider routing**: The orchestrator can run on a different provider (e.g., OpenAI GPT-5.4) while routing Stage and Ship to Anthropic models. This works when the environment supports the `model_family` and `model_provider` frontmatter fields and the operator's subscription includes both providers.
 
-**P-013.5 — Invocation-time enforcement (Stage/Ship role routes)**: Steps 1 and 2 above each contain an explicit routing directive: before invoking Stage or Ship, this agent resolves `config.model_routing.stage` / `config.model_routing.ship` (falling back per sub-field to `tier3` / `tier2` respectively when the role route or a sub-field is unset) and declares the resolved `model_family`/`model_provider`/`reasoning_effort` as the invocation override. This turns the routing mapping below from an informal per-session promise into an enforced, verifiable directive:
+**P-013.5 — Invocation-time enforcement (Stage/Ship role routes)**: Steps 1 and 2 above each contain an explicit routing directive: before invoking Stage or Ship, this agent resolves `config.model_routing.stage` / `config.model_routing.ship` (falling back per sub-field to `tier3` / `tier2` respectively when the role route or a sub-field is unset) and declares the resolved `model_family`/`model_provider`/`reasoning_effort`/`context_tier` as the invocation override. This turns the routing mapping below from an informal per-session promise into an enforced, verifiable directive:
 
 * **Resolve**: read the role route; apply tier fallback per unset sub-field.
 * **Declare**: pass the resolved fields as the invocation override when the runtime supports per-invocation model directives — never a baked provider-specific `--model` CLI flag (Core Rule 3).
 * **Degrade explicitly**: when the runtime cannot honor a per-invocation override, emit `ROUTING_DEGRADED` naming the subagent and the resolved route that could not be honored, and surface it to the operator — never silently fall back to the current session model without declaring the degradation.
+* **Context tier**: `context_tier` is a provider- and environment-agnostic capacity class (`default` or `long_context`). When the runtime cannot honor a non-`default` resolved tier, record `ROUTING_DEGRADED: context_tier` naming the subagent and proceed at the default context without halting. This applies to installed `tier-routed` agents only; plugin-distributed (`plugin-global`) agents carry no `context_tier` and run on the operator-selected session model.
 * **Propagate to inherited skills (P-013.5/H7)**: skills invoked by Stage/Ship at
   depth 2 (see the Subagent Depth table below) have no independent model binding of their own — they execute inside the
   depth-1 agent's own invocation, so the depth-1 override declared above already
@@ -485,7 +490,7 @@ before any P-013.5 invocation-time resolution above is performed:
 1. **Re-read fresh**: read `.autoharness/config.yaml` directly from disk. Never
    reuse a value carried over in conversation context from a previous session,
    and never treat the frontmatter `model_family`/`model_provider`/
-   `reasoning_effort` baked into `.github/agents/*.agent.md` as the live source
+   `reasoning_effort`/`context_tier` baked into `.github/agents/*.agent.md` as the live source
    of truth — those frontmatter values are install-time DEFAULTS/documentation
    only (H8); the authoritative value is always this session's fresh config
    read.
@@ -504,14 +509,14 @@ before any P-013.5 invocation-time resolution above is performed:
    silently, so H6 layers this stricter, reload-specific precheck on top of —
    never in place of — `verify-workspace`'s own compatibility classification.
    Only once the precheck passes, validate the config against the harness-config
-   schema before resolving any role or escalation route from it. Installed
+   schema version matching the document's own `schema_version` before resolving any role or escalation route from it. Installed
    target workspaces do not receive the engine's `schemas/` directory -- the
    schema lives in the autoharness installation
-   (`{autoharness_home}/schemas/harness-config.schema.json`, per Core Rule 3 and
+   (`{autoharness_home}/schemas/harness-config/<schema_version>.schema.json`, per Core Rule 3 and
    `harness-architecture.instructions.md`), never assumed workspace-relative.
    Resolve `autoharness_home` via the same order used elsewhere in this agent
    (`AUTOHARNESS_HOME` env var → `autoharness home` CLI → the directory
-   containing this agent definition, traversed up → `~/.autoharness/`), then
+   containing this agent definition, traversed up → `$HOME/.autoharness/`), then
    run the globally installed CLI:
    `autoharness verify-workspace --workspace {workspace_path} --autoharness-home {autoharness_home} --json`
    and inspect the harness-config schema result (`strict_schema_blockers` for
@@ -550,24 +555,29 @@ each placeholder's source, default, and fallback):
 ```yaml
 model_routing:
   orchestrator:
-    model: "gpt-5.4"
-    model_family: "gpt-5.4"
-    model_provider: ""
-    reasoning_effort: ""
+    model: "claude-sonnet-5.5"
+    model_family: "claude-sonnet-5.5"
+    model_provider: "anthropic"
+    reasoning_effort: "medium"
+    context_tier: "long_context"
   tier2:
-    model: "claude-sonnet-5"
-    model_family: "claude-sonnet-5"
+    model: "claude-sonnet-5.5"
+    model_family: "claude-sonnet-5.5"
+    context_tier: "long_context"
   tier3:
-    model: "claude-opus-5"
-    model_family: "claude-opus-5"
+    model: "gemini-4-argon"
+    model_family: "gemini-4-argon"
+    context_tier: "long_context"
   stage:
-    model_family: "claude-opus-5"
-    model_provider: ""
-    reasoning_effort: ""
+    model_family: "gemini-4-argon"
+    model_provider: "google"
+    reasoning_effort: "high"
+    context_tier: "long_context"
   ship:
-    model_family: "claude-sonnet-5"
-    model_provider: ""
-    reasoning_effort: ""
+    model_family: "claude-sonnet-5.5"
+    model_provider: "anthropic"
+    reasoning_effort: "medium"
+    context_tier: "long_context"
 ```
 
 An installed workspace resolves each placeholder to concrete values (for

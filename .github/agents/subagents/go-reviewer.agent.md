@@ -4,9 +4,10 @@ description: "Reviews code changes for Go-specific safety, correctness, and best
 maturity: stable
 tools: read, search
 max_subagent_tier: 1
-reasoning_effort: ""
-model_provider: ""
-model_family: "gpt-5.4-mini"
+reasoning_effort: "xhigh"
+model_provider: "anthropic"
+model_family: "claude-haiku-5.5"
+context_tier: "long_context"
 subagent_depth: 0
 ---
 
@@ -69,7 +70,7 @@ Return a JSON array of findings:
 
 * No subagent spawning (leaf executor)
 * Read-only analysis — do not modify files
-* Reference the workspace's `go.instructions.md` as the authoritative style guide
+* Reference the workspace's `go.instructions.md` as the authoritative style guide when it is present in this composed workspace. When it is not present, degrade to generic coding-discipline guidance (`coding-discipline.instructions.md` plus this persona's own Review Focus sections above) — never cite or assume the existence of a `go.instructions.md` file that was not actually installed alongside this persona.
 
 ## Model Routing
 

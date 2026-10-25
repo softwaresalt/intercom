@@ -17,7 +17,12 @@ The threshold is exactly three counted failures for the same operation.
 
 * Count every non-zero native process exit, tool failure, validation failure,
   and timeout immediately when it is observed. Do not wait for a later
-  diagnostic step before incrementing the counter.
+  diagnostic step before incrementing the counter. The one exemption is the
+  expected "still running" exit 9 from `autoharness shipment cascade-close`
+  `--detach` or `--poll` while the supervision budget (see Stall Detection)
+  has not elapsed: it is a progress signal, not a failure, and never
+  increments the counter. Exit 9 after the full supervision budget, and every
+  other non-zero exit, remains a counted failure.
 * If any single operation (command execution, code fix attempt, file
   generation, tool invocation, or equivalent workflow action) fails three
   counted times with substantially the same error, the agent MUST STOP
@@ -269,11 +274,11 @@ or otherwise alter the 3-cycle count semantics above.
 
 Commands that exceed their timeout are counted as failures:
 
-| Command type       | Timeout    |
-|--------------------|------------|
-| Build/test         | 45 minutes |
+| Command type                                         | Timeout                                                                                                                                            |
+|------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| Build/test                                           | 45 minutes                                                                                                                                         |
 | `autoharness shipment cascade-close` (mutating mode) | its supervision budget: the command's own `--timeout` (30-3600 s; sized per the shipment-reconcile Timeout sizing note) + 600 s supervision margin |
-| Other commands     | 5 minutes  |
+| Other commands                                       | 5 minutes                                                                                                                                          |
 
 If a command exceeds its timeout, terminate the process and count it as one
 failed attempt toward the retry threshold immediately. The timeout marker is
@@ -296,6 +301,16 @@ running after the full supervision budget is terminated, counted as a failed
 attempt and a session stall, and escalated to the operator, because its
 evidence record and pair lock need operator review.
 
+For a `--detach` run, the supervision budget bounds the whole `--poll` sequence
+that starts at the `--detach` exit 9, not each `--poll` call: `--poll` is a
+short, read-only, idempotent read, and exit 9 from it means the supervised run
+is still going within its budget, not a stall and not a counted failure (see the
+Universal Retry Threshold exemption). A `--poll` that reports exit 7
+with `recovery_available`, or a run still reporting exit 9 after the full
+supervision budget, is escalated to the operator (the latter counted as a
+failed attempt and a session stall); the agent never kills the supervisor or
+deletes the pair lock, and routes the orphaned run to `--recover --dry-run`.
+
 ### Session Stall Counting
 
 A **session stall** occurs when the agent encounters a blocking condition that
@@ -306,7 +321,6 @@ prevents forward progress. The session stall counter increments when:
    600 s; other: 5 min)
 2. A file lock acquisition blocks and the retry also fails (per concurrency protocol)
 3. A required tool or MCP surface becomes unavailable mid-session
-4. An agent-intercom heartbeat ping fails (when the pack is enabled)
 
 After 3 session stalls in a single session, the agent MUST halt execution,
 write a session checkpoint to `docs/memory/`, and prompt the operator:

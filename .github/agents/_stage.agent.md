@@ -5,6 +5,10 @@ description: "Manages the stash-to-backlog pipeline: triage, deliberation, plann
 maturity: stable
 tools: vscode, execute, read, agent, edit, search, todo, backlogit
 max_subagent_tier: 3
+reasoning_effort: "high"
+model_provider: "google"
+model_family: "gemini-4-argon"
+context_tier: "long_context"
 subagent_depth: 2
 ---
 
@@ -1063,7 +1067,7 @@ halt without first following this auto-escalation directive
    (threshold-kind + count, failure summary, last-N action/observation
    refs, artifact refs, telemetry-evidence pointers, resumption checkpoint
    ref).
-2. **Resolve the escalation route**: `gpt-5.6-sol` /
+2. **Resolve the escalation route**: `gpt-6.1-sol` /
    `openai` / `high`, resolving
    this workspace's currently-effective escalation route per the nested
    per-role -> legacy flat (DEPRECATED) -> tier3 precedence defined in
@@ -1082,9 +1086,19 @@ halt without first following this auto-escalation directive
    schema-failing config — Stage MUST NOT continue on a stale/baked route
    carried over from this file's frontmatter or a prior session's resolved
    value, and MUST NOT invent a last-known-good fallback. Falls back per field to
-   `claude-opus-5` / `` /
-   `` when no override for a field is declared at
+   `gemini-4-argon` / `google` /
+   `high` when no override for a field is declared at
    any tier.
+   Separately, the escalation `context_tier` resolves to `long_context`
+   (nested `stage.escalation.context_tier` -> legacy flat
+   `escalation.context_tier` only when the flat route is the selected
+   source -> `tier3.context_tier` -> `default`).
+   Record it in the compiled payload's separate
+   `resolved_escalation_context_tier` field — it is not part of the
+   `resolved_escalation_route` tuple and is excluded from the same-route
+   guard. When the runtime cannot honor a non-`default` escalation
+   `context_tier`, record `ROUTING_DEGRADED: context_tier` and hand off at
+   the default context; this never blocks the handoff.
 3. **Same-route guard**: if the resolved escalation tuple equals this
    agent's own role route tuple (Stage already operates at Tier 3 — see
    Model Routing below — so an unset `escalation` route resolves to the

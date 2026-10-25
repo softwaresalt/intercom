@@ -4,9 +4,10 @@ description: "Expert Go implementation agent — applies language idioms, safety
 maturity: stable
 tools: vscode, execute, read, edit, search
 max_subagent_tier: 2
-reasoning_effort: ""
-model_provider: ""
-model_family: "claude-sonnet-5"
+reasoning_effort: "high"
+model_provider: "anthropic"
+model_family: "claude-sonnet-5.5"
+context_tier: "long_context"
 subagent_depth: 0
 ---
 
@@ -22,7 +23,7 @@ You implement code changes for a single, well-scoped task. You do not orchestrat
 
 Before writing any code, re-read:
 1. `.github/instructions/constitution.instructions.md` — Constitutional principles
-2. `.github/instructions/go.instructions.md` — Language-specific conventions
+2. `.github/instructions/technology-go.instructions.md` — Language-specific conventions
 3. The task description and acceptance criteria
 
 ## Language Idioms
@@ -69,7 +70,7 @@ Ignoring returned errors; naked `panic` for control flow; unbounded goroutine sp
 2. Run `go vet ./...` before starting — confirm baseline compiles
 3. Write the minimal implementation to make the failing harness tests pass
 4. Run `go test ./...` — all harness tests must pass before proceeding
-5. Run quality gates: `go vet ./...` and ``
+5. Run quality gates: `go vet ./...` and `gofmt -l .`
 6. Return to the invoking skill with the result
 
 ## Model Routing
