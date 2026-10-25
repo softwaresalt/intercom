@@ -386,6 +386,23 @@ func TestCallbackUnknownEventIsForwardedNotDropped(t *testing.T) {
 	}
 }
 
+func TestCallbackInformationalEventIsNotForwarded(t *testing.T) {
+	h := newHarness(t, nil)
+	if _, err := h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	h.client.session.emit(copilotsdk.SessionEvent{Data: &rpc.SessionUsageInfoData{}})
+	h.client.session.emit(copilotsdk.SessionEvent{Data: &rpc.AssistantMessageDeltaData{MessageID: "m", DeltaContent: "x"}})
+	select {
+	case ev := <-h.ingress:
+		if ev.Kind != agent.KindDelta {
+			t.Fatalf("informational event leaked to ingress: %+v", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no event delivered")
+	}
+}
+
 func TestCallbackBlockingSendNeverDropsWhenIngressFull(t *testing.T) {
 	h := newHarness(t, func(c *Config, _ *fakeClient) { c.Ingress = make(chan agent.Event) })
 	// replace harness ingress with the unbuffered one for reading

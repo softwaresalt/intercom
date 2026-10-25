@@ -72,6 +72,19 @@ func TestNormalizeUnknownVariantLogsWarnAndIsExplicit(t *testing.T) {
 	}
 }
 
+func TestIsInformationalClassification(t *testing.T) {
+	for _, raw := range []string{"session.usage_info", "assistant.usage", "model.call_start", "session.start", "pending_messages.modified"} {
+		if !isInformational(raw) {
+			t.Errorf("%q should be informational", raw)
+		}
+	}
+	for _, raw := range []string{"assistant.reasoning", "model.call_failure", "session.error", "", "totally.new"} {
+		if isInformational(raw) {
+			t.Errorf("%q must stay visible as unknown", raw)
+		}
+	}
+}
+
 func TestNormalizeNilDataIsUnknownNotPanic(t *testing.T) {
 	log, buf := newBufLogger()
 	got := normalize(rpc.SessionEvent{}, log)
