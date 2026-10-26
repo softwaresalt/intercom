@@ -105,7 +105,7 @@ func TestRunbookStatesCredentialHandling(t *testing.T) {
 		"--allow-anonymous false",
 		"`Authorization: Bearer <credential>`",
 		"Bearer credentials can be replayed within their lifetime",
-		"unverified against a real devtunnel build",
+		"If another build rejects the explicit `false`",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("the runbook no longer says %q", want)

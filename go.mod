@@ -20,7 +20,10 @@ go 1.25.0
 // modules (golang.org/x/sys v0.44.0 for GO-2026-5024, golang.org/x/text v0.41.0
 // for GO-2026-6629 and GO-2026-5970) declare go 1.25.0; the toolchain pin above
 // is unchanged and still newer.
-toolchain go1.26.9
+// The toolchain was raised from go1.26.9 to go1.26.10 to remediate stdlib
+// advisory GO-2026-6809 (crypto/x509 compromised intermediate certificates;
+// fixed in go1.26.10). Toolchain-only change; the language floor is unchanged.
+toolchain go1.26.10
 
 require (
 	github.com/BurntSushi/toml v1.6.0
