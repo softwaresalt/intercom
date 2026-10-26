@@ -9,7 +9,7 @@ Implement a requested feature by continuously looping against a strict, compilin
 
 ## When to Use
 
-Invoked by the ship agent when a task has the `harness-ready` label. Not invoked directly by users.
+Invoked by the ship agent when a task has the `harness-ready` label (code route) or the `harness-verification-gated` label (docs-only route; see Docs Route below). Not invoked directly by users.
 
 ## Inputs
 
@@ -24,10 +24,9 @@ Invoked by the ship agent when a task has the `harness-ready` label. Not invoked
 
 ## Required Protocol
 
-When the `agent-intercom` capability pack is installed, follow
-`.github/instructions/agent-intercom.instructions.md` throughout the loop: establish heartbeat /
-ping visibility up front, broadcast meaningful attempt transitions, and route any destructive
-actions through the intercom approval path rather than improvising local-only approval.
+Route any destructive actions through the workspace's native approval path (`strict-safety`
+classification when that pack is installed, otherwise local confirmation per AGENTS.md
+safe-operations) rather than improvising approval.
 
 When the `agent-engram` capability pack is installed, follow
 `.github/instructions/agent-engram.instructions.md` throughout the loop: prefer indexed symbol and
@@ -127,6 +126,8 @@ After the harness passes:
 
 ### Commit
 
+On the docs route, skip this section entirely: do not stage, commit or complete the task, and return the changes to Ship, which commits after the completion checker passes.
+
 If all quality gates pass:
 
 1. Stage all changes
@@ -143,8 +144,7 @@ If all quality gates pass:
 * Same-operation counters persist across all prior loop attempts; distinct
   errors advance distinct per-operation counters
 * Read coding standards once at task start; targeted re-read for unfamiliar modules
-* One file change per tool call; broadcast after each write
-* When the `agent-intercom` capability pack is installed, use intercom broadcasts for attempt milestones and file-write visibility
+* One file change per tool call
 
 ## Quality Criteria
 

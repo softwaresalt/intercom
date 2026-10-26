@@ -408,6 +408,10 @@ func parseDigits(s string) (int, error) {
 // latch, then a blocking send to ingress. The send is abandoned only when the
 // adapter is stopping or the hub is gone, never because ingress is full.
 func (a *Adapter) onEvent(ev copilotsdk.SessionEvent) {
+	if raw := string(ev.Type()); isInformational(raw) {
+		a.log.Debug("informational agent SDK event ignored", "event_type", raw)
+		return
+	}
 	if !a.latch.enter() {
 		a.log.Warn("agent event arrived after quiesce; discarded", "event_type", string(ev.Type()))
 		return

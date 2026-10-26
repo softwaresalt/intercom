@@ -22,6 +22,8 @@ Invoke when a feature, fix, or risky change is ready to hand off into merge, dep
 ## Output
 
 * **post-merge** mode: Closure artifact at `docs/closure/{shipment_id}-{feature_id}-post-merge-closure.md`
+  * **Required frontmatter keys**: `closure_status` (`READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`) and `compaction_status` (`pending`, `done`, or `degraded`). New artifacts always write `compaction_status`; the legacy `compaction` alias is accepted on read only for already-committed history. Both keys are gate-relevant. The consumer's acceptance requirement, quoted from the closure-evidence contract: "a closure artifact is accepted only when its frontmatter carries a compaction_status (or legacy compaction) of done or degraded AND a closure_status of READY, or of READY_WITH_CONDITIONS with a non-empty conditions list in which every entry is a mapping with satisfied: true (the literal boolean) and a non-empty evidence reference".
+  * **Naming note**: the closure date is carried in frontmatter, never in the filename. Legacy date-prefixed names (`{YYYY-MM-DD}-{shipment_id}-{slug}-closure.md`) remain readable for already-committed history but are never written; recognition on read is not permission to write.
   * **Close-path keys (192-F)**: `close_path` (`cascade` or `safe_close`) and `close_evidence`, the workspace-relative path `docs/closure/evidence/{shipment_id}-{feature_id}-close-evidence.json` that `build_evidence_path` builds for the shipment's `autoharness shipment cascade-close` evidence record (a fixed path, never derived from the closure directory). `close_path` is the record's selected close path: `cascade` after a mutating `cascade-close` exit 0, and `safe_close` after a `--classify-only` exit 3 followed by the safe-close steps. The evidence JSON is committed in the same commit as the closure artifact, and is never hand-edited. When the artifact also carries `merge_commit`, it must equal the record's `merge_commit_sha`. Both keys are gate-relevant: the closure-evidence gate checks them after the acceptance requirement and discoverability (`failed_check` `close_path` or `close_evidence`).
 * **pre-merge** and **post-deploy** modes: Closure artifact at `docs/closure/{YYYY-MM-DD}-{slug}-closure.md`
 * Structured releasability evidence summarizing whether the change is `READY`, `READY_WITH_CONDITIONS`, or `BLOCKED`
@@ -29,11 +31,6 @@ Invoke when a feature, fix, or risky change is ready to hand off into merge, dep
 * Follow-up tasks or compound-learnings triggers when needed
 
 ## Required Protocol
-
-When the `agent-intercom` capability pack is installed, follow
-`.github/instructions/agent-intercom.instructions.md`: broadcast closure readiness, blocked states,
-monitoring handoff details, and any rollback trigger that the operator should be aware of during
-the validation window.
 
 When the `browser-verification` capability pack is installed, also follow
 `.github/instructions/browser-verification.instructions.md`: carry browser
