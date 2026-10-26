@@ -254,6 +254,14 @@ func TestIntegrationReconnectReplayThenHydrate(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		e.event("d")
 	}
+	// Send only queues to the hub's ingress; wait until the hub has folded
+	// the events so the ring has actually rotated past pos.
+	eventually(t, "hub folded the overflow events", 5*time.Second, func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		st, err := e.hub.Stats(ctx)
+		return err == nil && st.Head >= pos.Seq+12
+	})
 	o.Resume = &pos
 	c4 := dialRef(t, e, o)
 	if m := nextMsg(t, c4); m.Envelope.Kind != hub.KindSessionHydrate {
