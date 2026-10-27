@@ -16,7 +16,7 @@ tags:
 
 Following the merge and closure of `062-S` / `070-F` (PR #185, commit `6290151f08fcb300b2bd787c15ce28382242b233`), the first production caller of `pathsafe.Root.Resolve` is live in `internal/app/workspace.go` (`resolveWorkspace`), unblocking `038-F` (sourced from archived stash `37FAB8C2`). In addition, three pre-PR deferred scope expansions from `062-S` (`BDC0ADDF`, `FAE4134F`, and `AD8472DD`) require targeted verification, config-contract, process-lifecycle, credential-hygiene, TUI-observability, and move-only maintainability improvements across `internal/app`, `internal/config`, `internal/hub`, `internal/transport`, `internal/tui`, and operator/decision documentation.
 
-To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and keep behavioral changes cleanly separated from move-only file splits, the work is organized into four sequential single-feature shipments (`063-S -> 064-S -> 065-S -> 066-S`), with `063-S` sequenced behind `061-S` (`closure_status: READY`).
+To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and keep behavioral changes cleanly separated from move-only file splits, the work is organized into four sequential single-feature shipments (`063-S -> 064-S -> 065-S -> 066-S`). Shipments `063-S`..`066-S` functionally depend on code merged in `062-S` (`6290151`, `internal/app/workspace.go`), whose post-merge closure (`docs/closure/062-S-070-F-post-merge-closure.md`) has `compaction_status: done` and `closure_status: READY_WITH_CONDITIONS` with two open operator-owned live-environment conditions (`live-sdk-test-pass` and `tool-approval-routing-live`). Under `.github/policies/workflow-policies.md` P-001 ("unless the operator explicitly overrides P-001"), the operator explicitly invoked dark factory mode on `2026-10-26` strictly scoped to Option 1 (`BDC0ADDF`, `FAE4134F`, `AD8472DD`, `038-F` — the post-`062-S` remediation chain) after reviewing the state assessment that highlighted `062-S`'s open `READY_WITH_CONDITIONS` status; accordingly, `063-S` records this explicit operator P-001 policy exception and uses `labels: ["dag-root"]` (`predecessor_source: "declared_root"`) while preserving `062-S` (`6290151`) as the documented code baseline.
 
 ## Requirements Trace
 
@@ -128,7 +128,7 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and k
 * **Verification**:
   * `GOTOOLCHAIN=go1.26.10 go test -race ./internal/config` passes.
 
-#### Unit 2.4 (`071.004-T`): Replace PowerShell `Win32_Process` snapshot with native Windows `syscall.CreateToolhelp32Snapshot` in `internal/app` (`BDC0ADDF(d)`)
+#### Unit 2.4 (`071.004-T`): Replace PowerShell `Win32_Process` snapshot with native Windows `syscall.CreateToolhelp32Snapshot` + command-line lookup in `internal/app` (`BDC0ADDF(d)`)
 
 * **Domain**: `tests` (`size: S`, `complexity: low`)
 * **Posture**: `test-first`
@@ -137,11 +137,11 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and k
   * `internal/app/liveproc_windows_test.go` (new `//go:build windows` file)
   * `internal/app/liveproc_other_test.go` (new `//go:build !windows` file)
 * **Changes needed**:
-  * In `internal/app/liveproc_windows_test.go`, implement `listProcesses(ctx context.Context) ([]procEntry, error)` using standard library `syscall` (`if err := ctx.Err(); err != nil { return nil, err }`, `syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)`, `defer func() { _ = syscall.CloseHandle(snap) }()`, `var entry syscall.ProcessEntry32; entry.Size = uint32(unsafe.Sizeof(entry))`, `syscall.Process32First(snap, &entry)`, `syscall.Process32Next(snap, &entry)` terminating cleanly on `errors.Is(err, syscall.ERROR_NO_MORE_FILES)`, extracting `int(entry.ProcessID)`, `int(entry.ParentProcessID)`, and `syscall.UTF16ToString(entry.ExeFile[:])`), eliminating the flaky `powershell.exe Get-CimInstance Win32_Process` subprocess on Windows with zero `go.mod` changes.
+  * In `internal/app/liveproc_windows_test.go`, implement `listProcesses(ctx context.Context) ([]procEntry, error)` using standard library `syscall` (`if err := ctx.Err(); err != nil { return nil, err }`, `syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)`, `defer func() { _ = syscall.CloseHandle(snap) }()`, `var entry syscall.ProcessEntry32; entry.Size = uint32(unsafe.Sizeof(entry))`, `syscall.Process32First(snap, &entry)`, `syscall.Process32Next(snap, &entry)` terminating cleanly on `errors.Is(err, syscall.ERROR_NO_MORE_FILES)`, extracting `int(entry.ProcessID)`, `int(entry.ParentProcessID)`, and `syscall.UTF16ToString(entry.ExeFile[:])`), and query each candidate process's full command line via native Win32 APIs (`syscall.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION|PROCESS_VM_READ, false, entry.ProcessID)` + `ntdll` `NtQueryInformationProcess` (`ProcessBasicInformation` = 0) reading `PEB.ProcessParameters.CommandLine` via `kernel32` `ReadProcessMemory`, falling back to `syscall.UTF16ToString(entry.ExeFile[:])` only when the process has already exited or access is denied), eliminating the flaky `powershell.exe Get-CimInstance Win32_Process` subprocess on Windows with zero `go.mod` changes while preserving `newChildren`'s command-line needle matching (`strings.Contains(strings.ToLower(p.cmd), strings.ToLower(needle))`) after an intermediate launcher exits (e.g. a reparented `node.exe ...\copilot\index.js` child).
   * In `internal/app/liveproc_other_test.go`, retain the POSIX `ps -axo pid=,ppid=,args=` implementation of `listProcesses(ctx context.Context) ([]procEntry, error)` and move `parseProcessTable(s string) []procEntry` (without the obsolete `pipeSeparated bool` parameter) into `liveproc_other_test.go` so `golangci-lint` (`unused` and `unparam`) passes on both Windows and Linux.
-  * Keep shared `procEntry`, `descendants`, `pidSet`, `newChildren`, `executableName`, and `TestProcessTreeSeesAndForgetsAChild` in `internal/app/liveproc_test.go`.
+  * Keep shared `procEntry`, `descendants`, `pidSet`, `newChildren`, `executableName`, and `TestProcessTreeSeesAndForgetsAChild` in `internal/app/liveproc_test.go`, and add an explicit regression test in `internal/app/liveproc_test.go` that spawns a short-lived intermediate launcher process which spawns a grandchild whose executable name is not the needle (`os.Args[0]`) but whose command-line arguments contain a sentinel token (e.g. `-intercom-sentinel=copilot-orphan-check`), waits for the intermediate launcher to exit so the grandchild is orphaned (`ppid` no longer in the live tree under `os.Getpid()`), and asserts `listProcesses` + `newChildren(table, os.Getpid(), baseline, "copilot-orphan-check")` still detects the surviving orphaned grandchild via its command line before reaping it.
 * **Verification**:
-  * `GOTOOLCHAIN=go1.26.10 go test -race -count=10 ./internal/app -run TestProcessTreeSeesAndForgetsAChild` passes rapidly with zero subprocess flakiness.
+  * `GOTOOLCHAIN=go1.26.10 go test -race -count=10 ./internal/app -run TestProcessTree` passes rapidly with zero subprocess flakiness.
 
 #### Unit 2.5 (`071.005-T`): Harden `readInsideWorkspace` and snapshot pre-shutdown credentials in `internal/app/live_test.go` (`BDC0ADDF(e)`)
 
@@ -183,13 +183,13 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and k
   * `internal/app/tui_test.go`
 * **Changes needed**:
   * In `internal/app/ui.go`:
-    * Add `watchDone chan struct{}` to `localUI` (initialized in `startUI`).
+    * Add `watchDone chan struct{}` to `localUI`, leaving `ui.watchDone == nil` inside `startUI` until `assemble` / `watchUI` synchronously assigns `ui.watchDone = make(chan struct{})` right before spawning the UI watcher goroutine (so any `ui.stop()` cleanup invoked inside `startUI` before the watcher is registered sees `u.watchDone == nil` and never deadlocks).
     * Guard `(*localUI).failure()` with a non-blocking check on `<-u.done` (`select { case <-u.done: default: return nil }`) so `u.err` is never read unless `prog.Run()` has returned and closed `u.done` (preventing any data race if `stop()` times out after `Kill()`).
-    * In `startUI(startCtx context.Context, ...)`: check `if err := startCtx.Err(); err != nil { return nil, fmt.Errorf("terminal startup: %w", err) }` before launching `go prog.Run()`, include `case <-startCtx.Done(): ui.stop(); return nil, fmt.Errorf("terminal startup: %w", startCtx.Err())` in the `ready` handshake `select` (and re-check `startCtx.Err()` after `<-ready`), and pass `context.WithoutCancel(startCtx)` to `ui.feed.Start`.
-    * In `(*localUI).stop()`: when `<-u.done` closes in either the `Quit()` wait or the bounded `killTimer := time.NewTimer(uiStopBudget)` wait after `u.prog.Kill()`, also wait on `<-u.watchDone` (if `u.watchDone != nil`) before returning so the UI watcher goroutine in `assemble.go` is guaranteed to have finished calling `a.addErr` before `supervise()` reads `a.takeErrs()`. In the `<-killTimer.C` timeout arm (where `u.done` did not close), proceed directly to `u.feed.Close()` without waiting on `u.watchDone` or reading `u.err`.
+    * In `startUI(startCtx context.Context, ...)`: check `if err := startCtx.Err(); err != nil { return nil, fmt.Errorf("terminal startup: %w", err) }` before launching `go prog.Run()`, include `case <-startCtx.Done(): ui.stop(); return nil, fmt.Errorf("terminal startup: %w", startCtx.Err())` in the `ready` handshake `select` (and re-check `startCtx.Err()` after `<-ready`), and pass `context.WithoutCancel(startCtx)` to `ui.feed.Start` (calling `ui.stop()` on error).
+    * In `(*localUI).stop()`: when `<-u.done` closes in either the `Quit()` wait or the bounded `killTimer := time.NewTimer(uiStopBudget)` wait after `u.prog.Kill()`, wait on `<-u.watchDone` **only when `u.watchDone != nil`** before returning so startup cleanup in `startUI` before watcher registration returns immediately without blocking, while once `watchUI` is registered the UI watcher goroutine in `assemble.go` is guaranteed to have finished calling `a.addErr` before `supervise()` reads `a.takeErrs()`. In the `<-killTimer.C` timeout arm (where `u.done` did not close), proceed directly to `u.feed.Close()` without waiting on `u.watchDone` or reading `u.err`.
   * In `internal/app/assemble.go`:
-    * Pass `ctx` (`startCtx`) directly to `startUI`, and in the UI watcher goroutine add `defer close(ui.watchDone)` so `ui.watchDone` closes immediately after `a.addErr` / `a.Shutdown`.
-  * Add deterministic unit tests in `internal/app/tui_test.go` verifying: (1) a pre-cancelled `startCtx` causes `startUI` to fail promptly without hanging, (2) a TUI error occurring concurrently with `Shutdown` is always present once in `a.Err()`, and (3) `(*localUI).stop()` returns within `2*uiStopBudget` even if `u.done` stays open after `Kill()`.
+    * Pass `ctx` (`startCtx`) directly to `startUI`, synchronously assign `ui.watchDone = make(chan struct{})` immediately before launching the UI watcher goroutine, and in the UI watcher goroutine add `defer close(ui.watchDone)` so `ui.watchDone` closes immediately after `a.addErr` / `a.Shutdown`.
+  * Add deterministic unit tests in `internal/app/tui_test.go` verifying: (1) `startUI` startup cleanup returns promptly without deadlocking on a pre-cancelled `startCtx`, on cancellation during the ready handshake, and on `ui.feed.Start` failure (before `watchUI` is registered, when `u.watchDone == nil`), (2) a TUI error occurring concurrently with `Shutdown` (after `watchUI` is registered) is always present once in `a.Err()`, and (3) `(*localUI).stop()` returns within `2*uiStopBudget` even if `u.done` stays open after `Kill()`.
 * **Verification**:
   * `GOTOOLCHAIN=go1.26.10 go test -race -v ./internal/app -run "TestTUI|TestCleanTUI"` passes.
 
@@ -213,18 +213,20 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and k
 
 * **Domain**: `code` (`size: S`, `complexity: medium`)
 * **Posture**: `test-first`
-* **Files affected** (3 files):
+* **Files affected**:
   * `internal/app/app.go`
   * `internal/app/assemble.go`
   * `internal/app/review1_test.go`
+  * `internal/app/credentials_test.go` (1-line `RetainPlaintext: true` fixture opt-in in `newUIRig`)
+  * `internal/app/e2e_test.go` (1-line `RetainPlaintext: true` fixture opt-in in `newE2ERig`)
 * **Changes needed**:
-  * In `internal/app/app.go` (`TUIOptions`): add `RetainPlaintext bool` (`// RetainPlaintext keeps plaintext tokens in App.Credentials() after TUI delivery (tests only; never set in production).`), independent of `o.TUI.Output`. When `!o.TUI.Disabled && !o.TUI.RetainPlaintext`, immediately after `credentialsMsg` constructs the `tui.CredentialsMsg` for `startUI` or `tuiReissue`, zero the `Token` field on each stored entry in `a.creds` (`a.zeroPlaintextCredentials()` synchronized with `a.mintMu` and `a.mu`), retaining only `Role`, `Fingerprint`, and `ExpiresAt` in `a.creds`. In headless tests (`o.TUI.Disabled`) or TUI test rigs that set `RetainPlaintext: true`, `a.Credentials()` continues to serve as the in-process test seam.
+  * In `internal/app/app.go` (`TUIOptions`): add `RetainPlaintext bool` (`// RetainPlaintext keeps plaintext tokens in App.Credentials() after TUI delivery (tests only; never set in production).`), independent of `o.TUI.Output`. Update both `newUIRig` (`internal/app/credentials_test.go`) and `newE2ERig` (`internal/app/e2e_test.go`) in this unit to set `RetainPlaintext: true` on `o.TUI` so existing TUI-enabled tests that read `App.Credentials()` continue authenticating in `065-S`. When `!o.TUI.Disabled && !o.TUI.RetainPlaintext`, immediately after `credentialsMsg` constructs the `tui.CredentialsMsg` for `startUI` or `tuiReissue`, zero the `Token` field on each stored entry in `a.creds` (`a.zeroPlaintextCredentials()` synchronized with `a.mintMu` and `a.mu`), retaining only `Role`, `Fingerprint`, and `ExpiresAt` in `a.creds`.
   * In `internal/app/assemble.go` (`mint`, `Reissue`, `tuiReissue`, `credentialsMsg`, `teardown`):
     * In `mint()` (under `a.mintMu`): if `a.shuttingDown()` is true at entry, clear `a.creds` under `a.mu` and return `nil, apperr.New(apperr.KindUnavailable, "app: credentials revoked; shutting down")`. In the role loop, if `a.remote.Mint(role)` returns an error: when `i == 0` OR `a.shuttingDown()` OR `errors.Is(err, transport.ErrShuttingDown)`, clear `a.creds` if shutting down/revoked and return `nil, fmt.Errorf("mint %s credential: %w", roleName(role), err)` so `tuiReissue` returns an empty `tui.CredentialsMsg{}` and a dismissed TUI panel does not reopen on a total failure or mid-mint shutdown. Also clear `a.creds` in `teardown`.
     * In `a.credentialsMsg(issued)`: return `tui.CredentialsMsg{}` immediately when `len(issued) == 0`; skip any entry whose `iss.Token.Reveal() == ""` (an unreplaced role whose plaintext was already zeroed after initial delivery), returning `tui.CredentialsMsg{}` if no entry has a secret.
-  * Add unit tests in `internal/app/review1_test.go` verifying: (1) `tuiReissue` when role 0 fails returns an empty `CredentialsMsg{}` (leaving a dismissed TUI panel closed), (2) `Reissue` / `tuiReissue` after shutdown/revoke returns no credentials, and (3) with TUI enabled and `RetainPlaintext: false`, `Token.Reveal()` in `a.Credentials()` is zeroed after TUI delivery while fingerprints remain intact.
+  * Add unit tests in `internal/app/review1_test.go` verifying: (1) `tuiReissue` when role 0 fails returns an empty `CredentialsMsg{}` (leaving a dismissed TUI panel closed), (2) `Reissue` / `tuiReissue` after shutdown/revoke returns no credentials, and (3) with TUI enabled and default `RetainPlaintext: false`, `App.Credentials()` returns zeroed `Token` fields (`Token.Reveal() == ""`) after initial TUI delivery while fingerprints remain intact and authentication via the `CredentialStore` (`dialToken` using the token rendered to the TUI output) still works.
 * **Verification**:
-  * `GOTOOLCHAIN=go1.26.10 go test -race -v ./internal/app -run "TestPartial|TestTUIReissue|TestZeroPlaintext|TestReissue"` passes.
+  * `GOTOOLCHAIN=go1.26.10 go test -race -v ./internal/app -run "TestPartial|TestTUIReissue|TestZeroPlaintext|TestReissue"` passes, and `GOTOOLCHAIN=go1.26.10 go test -race ./internal/app/...` passes.
 
 #### Unit 3.4 (`072.004-T`): Add rejected-upgrade counter and `OnReject` callback to `internal/transport` (`FAE4134F(b)` part 1)
 
@@ -285,7 +287,7 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and k
 * **Changes needed**:
   * Extract `lateAgent` from `internal/app/assemble.go` into `internal/app/late_agent.go` and add `func (l *lateAgent) get() agent.Agent` used by both `Send` and `Abort`.
   * Extract `credentialRoles`, `mintAll`, `mint`, `Reissue`, `tuiReissue`, `credentialsMsg`, `zeroPlaintextCredentials`, `roleName`, and `Credentials` from `internal/app/assemble.go` into `internal/app/credentials.go`.
-  * Extract the inline TUI watcher goroutine in `assemble` into a named method `func (a *App) watchUI(ui *localUI)`.
+  * Extract the inline TUI watcher goroutine in `assemble` into a named method `func (a *App) watchUI(ui *localUI)` (which synchronously assigns `ui.watchDone = make(chan struct{})` before spawning the goroutine).
 * **Verification**:
   * `GOTOOLCHAIN=go1.26.10 go test -race ./internal/app/...` passes with zero behavior changes.
 
@@ -307,13 +309,12 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and k
 
 * **Domain**: `tests` (`size: S`, `complexity: low`)
 * **Posture**: `characterization-first`
-* **Files affected** (3 files):
+* **Files affected** (2 files):
   * `internal/app/helpers_test.go`
   * `internal/app/review1_test.go`
-  * `internal/app/credentials_test.go`
 * **Changes needed**:
   * In `internal/app/helpers_test.go`, extract `type agentKnobs struct { startErr error; startBlock, stopBlock bool; abortHook func(); stopHook func(context.Context) }` and embed `agentKnobs` in both `fakeAgent` and `factory` so `factory.build` copies `agentKnobs: f.agentKnobs` in one field without duplicating the five fields across both structs.
-  * In `internal/app/review1_test.go`, replace the hardcoded `const credBytes = 32` byte-count coupling in `partialRig` / `budgetRand` with a call-budgeted reader (`calls int`, where each `Read` call satisfies one `Mint` entropy read until `calls == 0`), decoupling the test from `transport.CredentialStore`'s internal byte length, and ensure `newUIRig` (`credentials_test.go`) sets `RetainPlaintext: true` where in-process token inspection is used alongside the TUI.
+  * In `internal/app/review1_test.go`, replace the hardcoded `const credBytes = 32` byte-count coupling in `partialRig` / `budgetRand` with a call-budgeted reader (`calls int`, where each `Read` call satisfies one `Mint` entropy read until `calls == 0`), decoupling the test from `transport.CredentialStore`'s internal byte length.
 * **Verification**:
   * `GOTOOLCHAIN=go1.26.10 go test -race ./internal/app/...` passes.
 
@@ -321,11 +322,10 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and k
 
 ### Shipment-Level DAG
 
-* `061-S` (shipped, `closure_status: READY`, `compaction_status: done`)
-  * `<-blocks-- 063-S` (Covering Feature `038-F`: `038.001-T -> 038.002-T`)
-    * `<-blocks-- 064-S` (Covering Feature `071-F`: `071.001-T -> 071.002-T -> 071.003-T -> 071.004-T -> 071.005-T -> 071.006-T`)
-      * `<-blocks-- 065-S` (Covering Feature `072-F`: `072.001-T -> 072.002-T -> 072.003-T -> 072.004-T -> 072.005-T -> 072.006-T`)
-        * `<-blocks-- 066-S` (Covering Feature `073-F`: `073.001-T -> 073.002-T -> 073.003-T`)
+* `063-S` (`labels: ["dag-root"]`, `predecessor_source: "declared_root"`, under explicit `2026-10-26` operator P-001 policy exception over `062-S` code baseline `6290151`; Covering Feature `038-F`: `038.001-T -> 038.002-T`)
+  * `<-blocks-- 064-S` (Covering Feature `071-F`: `071.001-T -> 071.002-T -> 071.003-T -> 071.004-T -> 071.005-T -> 071.006-T`)
+    * `<-blocks-- 065-S` (Covering Feature `072-F`: `072.001-T -> 072.002-T -> 072.003-T -> 072.004-T -> 072.005-T -> 072.006-T`)
+      * `<-blocks-- 066-S` (Covering Feature `073-F`: `073.001-T -> 073.002-T -> 073.003-T`)
 
 ### Intra-Shipment Task Dependencies
 
@@ -337,9 +337,9 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and k
 ## Decisions and Rationale
 
 1. **Four single-feature shipments (`063-S..066-S`)**: Required by Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and isolates behavioral changes (`064-S`, `065-S`) ahead of move-only file splits (`066-S`).
-2. **Sequencing `063-S` behind `061-S`**: `062-S` has `closure_status: READY_WITH_CONDITIONS` because two operator-owned live conditions (`live-sdk-test-pass` for shell/write kinds and `tool-approval-routing-live`) require an interactive operator session. Sequencing `063-S` behind `061-S` (`closure_status: READY`) satisfies `autoharness gate pipeline-topology --mode agent --shipment 063-S --phase pre_claim`.
+2. **Code baseline `062-S` (`6290151`) and explicit `2026-10-26` operator P-001 policy exception on `063-S`**: `063-S`..`066-S` functionally depend on code merged in `062-S` (`6290151`, `internal/app/workspace.go`), whose post-merge closure (`docs/closure/062-S-070-F-post-merge-closure.md`) has `compaction_status: done` and `closure_status: READY_WITH_CONDITIONS` with two open operator-owned live-environment conditions (`live-sdk-test-pass` and `tool-approval-routing-live`). Under `.github/policies/workflow-policies.md` P-001 ("unless the operator explicitly overrides P-001"), the operator explicitly invoked dark factory mode on `2026-10-26` strictly scoped to Option 1 (`BDC0ADDF`, `FAE4134F`, `AD8472DD`, `038-F` — the post-`062-S` remediation chain) after reviewing the state assessment that highlighted `062-S`'s open `READY_WITH_CONDITIONS` status. Therefore, `063-S` records this explicit operator P-001 policy exception and uses `labels: ["dag-root"]` (`predecessor_source: "declared_root"`) rather than a synthetic `061-S` edge, while preserving `062-S` (`6290151`) as the documented code baseline.
 3. **Keeping `cmd/intercom` TUI-only under ADR MVP-2 (`FAE4134F(a)`)**: Any CLI `--no-tui` flag that outputs bearer credentials to a pipe, log, or file violates ADR MVP-2 item 3 and the `writepath` gate; programmatic headless operation uses `app.Options{TUI: app.TUIOptions{Disabled: true}}`.
-4. **Native Windows `syscall.CreateToolhelp32Snapshot` in `liveproc_windows_test.go` (`BDC0ADDF(d)`)**: Uses the standard library `syscall` package on Windows to take an in-process kernel snapshot in `< 1ms`, eliminating PowerShell/WMI startup flakiness under load with zero `go.mod` changes.
+4. **Native Windows `syscall.CreateToolhelp32Snapshot` + command-line lookup in `liveproc_windows_test.go` (`BDC0ADDF(d)`)**: Uses the standard library `syscall` package on Windows (`CreateToolhelp32Snapshot` plus `OpenProcess` + `NtQueryInformationProcess` + `ReadProcessMemory` for `PEB.ProcessParameters.CommandLine`) to take an in-process snapshot in `< 1ms` while preserving `newChildren` command-line needle detection after an intermediate launcher exits, eliminating PowerShell/WMI startup flakiness under load with zero `go.mod` changes.
 
 ## Risks and Caveats
 
@@ -428,20 +428,20 @@ decision: PASS
 
 ### Findings and Applied Remediations
 
-1. **[P1 — Remediated] Unit 2.4 (`071.004-T`) Windows process-table helper dependency & `unused` linter**:
-   * *Finding*: `golang.org/x/sys` is `// indirect` in `go.mod:62`, and keeping `parseProcessTable` in `liveproc_test.go` when only `!windows` calls it fails `golangci-lint` (`unused` / `unparam`).
-   * *Remediation applied*: Specified standard library `syscall` (`CreateToolhelp32Snapshot`, `ProcessEntry32` with `entry.Size = uint32(unsafe.Sizeof(entry))`, `Process32First`, `Process32Next`, `CloseHandle`, `UTF16ToString`) in `liveproc_windows_test.go` (zero `go.mod` edits) and moved `parseProcessTable(s string)` into `liveproc_other_test.go`.
+1. **[P1 — Remediated] Unit 2.4 (`071.004-T`) Windows process-table helper dependency, `unused` linter, and orphan command-line detection**:
+   * *Finding*: `golang.org/x/sys` is `// indirect` in `go.mod:62`, keeping `parseProcessTable` in `liveproc_test.go` when only `!windows` calls it fails `golangci-lint` (`unused` / `unparam`), and relying solely on `ProcessEntry32.ExeFile` would miss an orphaned `node.exe ...\copilot\index.js` child after its launcher exits.
+   * *Remediation applied*: Specified standard library `syscall` (`CreateToolhelp32Snapshot`, `ProcessEntry32` with `entry.Size = uint32(unsafe.Sizeof(entry))`, `Process32First`, `Process32Next`, `CloseHandle`, `UTF16ToString`) plus native Win32 command-line lookup (`OpenProcess` + `NtQueryInformationProcess` PEB `ProcessParameters.CommandLine` via `ReadProcessMemory`, falling back to `ExeFile` only on exited/inaccessible processes) in `liveproc_windows_test.go` (zero `go.mod` edits), moved `parseProcessTable(s string)` into `liveproc_other_test.go`, and added an explicit orphaned-grandchild regression test in `liveproc_test.go`.
 2. **[P1 — Remediated] Toolchain pin (`GOTOOLCHAIN=go1.26.10`)**:
    * *Finding*: `go.mod:25` declares `toolchain go1.26.10`.
    * *Remediation applied*: Updated all verification commands and Constitution Check references to `GOTOOLCHAIN=go1.26.10`.
-3. **[P1 — Remediated] Unit 3.1 (`072.001-T`) `localUI.failure()` race & `watchUI` synchronization**:
-   * *Finding*: Bounding the post-`Kill()` wait in `(*localUI).stop()` means `stop()` can return while `prog.Run()` is still running; reading `u.err` without checking `<-u.done` causes a data race, and joining errors in `supervise` would touch `shutdown.go` (4th file) or duplicate errors.
-   * *Remediation applied*: Guarded `(*localUI).failure()` with a non-blocking `select { case <-u.done: default: return nil }`, added `watchDone chan struct{}` to `localUI` closed by the watcher goroutine after `a.addErr` and waited on inside `(*localUI).stop()` whenever `<-u.done` closes, checked `startCtx.Err()` before launching `prog.Run()` in `startUI`, and added the 3rd test scenario for the post-`Kill` timeout bound in `tui_test.go`.
+3. **[P1 — Remediated] Unit 3.1 (`072.001-T`) `localUI.failure()` race & `watchUI` synchronization (`watchDone` nil-guard before registration)**:
+   * *Finding*: Bounding the post-`Kill()` wait in `(*localUI).stop()` means `stop()` can return while `prog.Run()` is still running; reading `u.err` without checking `<-u.done` causes a data race, and initializing `watchDone` inside `startUI` would deadlock startup cleanup if `startUI` calls `ui.stop()` on ready-handshake cancellation or `ui.feed.Start` failure before `assemble` registers the watcher goroutine.
+   * *Remediation applied*: Guarded `(*localUI).failure()` with a non-blocking `select { case <-u.done: default: return nil }`, left `ui.watchDone == nil` in `startUI` until `assemble`/`watchUI` synchronously assigns `ui.watchDone = make(chan struct{})` right before spawning the watcher goroutine, waited on `<-u.watchDone` in `(*localUI).stop()` only when `u.watchDone != nil`, checked `startCtx.Err()` before launching `prog.Run()` in `startUI`, and required unit test coverage in `tui_test.go` for ready-handshake cancellation and `feed.Start` failure cleanup without deadlock as well as concurrent TUI failure join and bounded post-`Kill` timeout.
 4. **[P1 — Remediated] Unit 3.5 (`072.005-T`) `OnReject` race on `a.ui`, goroutine flood, and out-of-order `Total`**:
    * *Finding*: `remote.Serve()` starts before `a.ui = ui` is assigned in `assemble.go`, so reading `a.ui` in `OnReject` races under `-race`, per-request goroutines can flood/leak, and concurrent `ServeHTTP` calls can deliver `Total` out of order.
    * *Remediation applied*: Pre-allocated a capacity-1 coalescing channel `rejectCh` on `App` before `NewRemote` (written under `a.mu` keeping the highest `Total` without reading `a.ui`), drained by a single forwarder goroutine started after `startUI` and bounded by `<-ui.done` before `close(ui.watchDone)`, and guarded `Model.Update` with `if msg.Total >= m.rejectedUpgrades`.
 5. **[P2 — Remediated] Unit 2.5 (`071.005-T`), Unit 3.2 (`072.002-T`), Unit 3.3 (`072.003-T`), and Unit 4.2 (`073.002-T`)**:
-   * *Remediation applied*: Replaced `filepath.EvalSymlinks` in `readInsideWorkspace` with `pathsafe.NewRoot(filepath.Dir(p))` + `root.Resolve(rel)` and snapshotted `issued := a.Credentials()` before shutdown in `TestLiveCopilotEndToEnd`; bounded `a.hub.BeginShutdown` in `teardown` by `a.timeouts.Permissions` (default 5s); replaced implicit `o.TUI.Output == nil` detection with explicit `TUIOptions.RetainPlaintext` policy and guarded `mint()` against mid-mint `transport.ErrShuttingDown` / shutdown revocation; included `internal/app/review1_test.go` in Unit 4.2 (`073.002-T`) and specified nil-guards + `a.hub.Stop()` in `reap(rctx)` while preserving failed-start vs normal-shutdown step ordering.
+   * *Remediation applied*: Replaced `filepath.EvalSymlinks` in `readInsideWorkspace` with `pathsafe.NewRoot(filepath.Dir(p))` + `root.Resolve(rel)` and snapshotted `issued := a.Credentials()` before shutdown in `TestLiveCopilotEndToEnd`; bounded `a.hub.BeginShutdown` in `teardown` by `a.timeouts.Permissions` (default 5s); replaced implicit `o.TUI.Output == nil` detection with explicit `TUIOptions.RetainPlaintext` policy, moved both `newUIRig` (`internal/app/credentials_test.go`) and `newE2ERig` (`internal/app/e2e_test.go`) `RetainPlaintext: true` fixture updates into Unit 3.3 (`072.003-T`) alongside a dedicated test in `review1_test.go` for default `RetainPlaintext: false` zeroing while `CredentialStore` authentication still works, and guarded `mint()` against mid-mint `transport.ErrShuttingDown` / shutdown revocation; included `internal/app/review1_test.go` in Unit 4.2 (`073.002-T`) and specified nil-guards + `a.hub.Stop()` in `reap(rctx)` while preserving failed-start vs normal-shutdown step ordering.
 6. **[P3 — Remediated] Unit 2.6 (`071.006-T`) Width Isolation & Unit 3.6 (`072.006-T`) `runbook_test.go` guard**:
    * *Remediation applied*: Kept Unit 2.6 strictly markdown-only (`docs/config-reference.md` and `docs/runbooks/live-sdk-tests.md`), clarified `Handler.reject` `/ws` status scope (`400`, `401`, `403`, `503`), and noted the `cmd/intercom/runbook_test.go` invocation-line regex constraint in Unit 3.6.
 
