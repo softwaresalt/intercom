@@ -31,7 +31,7 @@ compaction_status: done
 
 ## Source artifact cleanup
 
-* No `source_stash_id` or `source_deliberation_id` in the custom fields of 071-F (only `harness_status`); nothing archived or skipped. Stash BDC0ADDF is the carrier entry for the 062-S follow-ups; it was not retired because 071-F does not record it as `source_stash_id` (Stage owns its disposition).
+* No `source_stash_id` or `source_deliberation_id` in the custom fields of 071-F (only `harness_status`); nothing archived or skipped. Stash BDC0ADDF is the carrier entry for the 062-S follow-ups; it was already archived by Stage at harvest (`archived_at` 2026-10-27T00:59Z), so Ship did not retire it (071-F does not record it as `source_stash_id`).
 
 ## Follow-ups (stash, capture-only)
 
