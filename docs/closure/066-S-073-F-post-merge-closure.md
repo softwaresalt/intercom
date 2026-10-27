@@ -14,14 +14,14 @@ closure_branch: post-merge/073-f-maintainability-refactors-of-internal-app
 close_path: cascade
 close_evidence: docs/closure/evidence/066-S-073-F-close-evidence.json
 closure_status: READY_WITH_CONDITIONS
-releasability: READY_WITH_CONDITIONS
+releasability: READY
 compaction_status: done
 conditions:
   - id: "p-002-harness-red-phase"
     description: "P-002 requires harness-architect to report Compilation PASS and Red Phase CONFIRMED (and the harness-ready label) for each task before implementation. The three 066-S tasks were zero-behavior-change refactors built characterization-first against the existing green suite, so no red phase exists and no harness-ready label was applied; this is a literal P-002 deviation that needs explicit operator disposition."
-    satisfied: false
-    disposition: "awaiting operator disposition"
-    evidence: "Baseline and per-task green runs of go test -race ./internal/app/... are recorded in docs/memory/compacted/2026-10-27-066-s-ship-compacted.md and the PR 198 body; characterization tests late_agent_test.go and reap_test.go were added. Code is already merged (65780da); the disposition is to accept the deviation or direct a follow-up through Stage."
+    satisfied: true
+    disposition: "accepted-with-conditions (plan-authorized characterization-first + executed mutation proofs)"
+    evidence: "Plan docs/plans/2026-10-26-intercom-go-mvp-post-062-s-follow-ups-and-root-resolve-plan.md (reviewed and merged in PR 190) authorizes Units 4.1-4.3 (073.001-T to 073.003-T) with Posture: characterization-first. Executed mutation-proof red-then-green runs (one unsound mutation per target, a failing go test, production or test file restored, go test -race ./internal/app/... green) are recorded in the Mutation-proof red-phase evidence section of this file, matching the 052-S and 063-S precedent. Baseline and per-task green runs are in docs/memory/compacted/2026-10-27-066-s-ship-compacted.md and the PR 198 body. The Orchestrator dispositioned the deviation autonomously under the operator's 2026-10-26 AFK dark-mode delegation (051-S, PR 155 precedent). The archived task records carry no harness-ready label; the operator may reopen if a retrospective label is wanted."
   - id: "tui-render"
     description: "Manual checkpoint required for release in the workspace profile (surface cli): the Bubble Tea TUI renders and accepts local key input without breaking terminal scrollback. This shipment is a move-only refactor of internal/app (the TUI watcher goroutine became a method and the shutdown steps became helpers), so the rendering code, key handling and TUI stop path are unchanged."
     satisfied: true
@@ -39,7 +39,7 @@ conditions:
 * Post-close verification: 066-S, 073-F and its three tasks are present in `.backlogit/archive/` (066-S `archived_status: shipped`); no archive deletions (P-007). Reconcile reports: `.backlogit/reconcile/066-S-pre-20261027T1457Z-queued.md`, `.backlogit/reconcile/066-S-pre-20261027T1540Z-done.md` and `.backlogit/reconcile/066-S-post-20261027T1545Z.md`; the shipment file lock was taken and released with its token.
 * Linked-deliberation disposition: empty set (`DISPOSITION_COMPLETE`); nothing archived by Ship.
 * Runtime verification: applicable (startup and teardown code in `internal/app` was restructured, with no change to flags, protocol or TUI rendering). Evidence, 2026-10-27 on Windows from merged main (65780da): `go build ./cmd/intercom` exited 0; `--help` lists the unchanged flags (`--config`, `--log-level`, `--port`, `--workspace`); started with `--config config.toml.example --port 0` and stdout redirected to a file, the binary logged `intercom starting` and refused to start with exit code 1 (`config: stdout is not a terminal: the local TUI shows the credentials once and will not draw them to a file or pipe; run intercom in an interactive terminal`), exactly the behavior documented in `docs/runbooks/intercom-operator-runbook.md`. No token or secret text appeared in the output. The interactive console path (TUI render, key input, quit) and the tunnel and WebSocket surfaces were not changed and were not re-run live; their evidence is `docs/closure/evidence/065-S-tui-render-live-evidence.md` and `docs/closure/evidence/062-S-live-verification-evidence.md`, and the shutdown ordering is covered by the race-enabled `internal/app` unit and end-to-end tests that passed locally and in CI.
-* Releasability: `READY_WITH_CONDITIONS`. The one unsatisfied condition is the P-002 deviation recorded in the frontmatter (`p-002-harness-red-phase`), which concerns process, not the shipped artifact: nothing blocks release. No behavior change for operators, no deployment, tag or publish step applies. The release-required `tui-render` checkpoint covers a surface this shipment did not change (see `conditions` in the frontmatter); the other manual checkpoints (`devtunnel-connect`, `tool-approval-routing`) cover surfaces it did not change either. Rollback is a revert of merge commit 65780da. Owner: repository maintainer.
+* Releasability: `READY`; closure status `READY_WITH_CONDITIONS`. The P-002 deviation (`p-002-harness-red-phase`) is satisfied through `accepted-with-conditions (plan-authorized characterization-first + executed mutation proofs)`: it concerned process, not the shipped artifact, and the executed mutation proofs below supply the red-phase evidence. Nothing blocks release. No behavior change for operators, no deployment, tag or publish step applies. The release-required `tui-render` checkpoint covers a surface this shipment did not change (see `conditions` in the frontmatter); the other manual checkpoints (`devtunnel-connect`, `tool-approval-routing`) cover surfaces it did not change either. Rollback is a revert of merge commit 65780da. Owner: repository maintainer.
 
 ## Source artifact cleanup
 
@@ -52,8 +52,29 @@ conditions:
 
 ## Degradations
 
-* Per-task telemetry and a separate per-task harness-architect skill invocation were not run. The refactors are zero-behavior-change and characterization-first: the existing `go test -race ./internal/app/...` suite was confirmed green before the first change and after each task, and two small characterization tests were added (`late_agent_test.go`, `reap_test.go`). No red phase exists for a pure refactor, so the `harness-ready` label was not applied by Ship (the tasks archived without it); the P-002 red-phase gate was therefore not satisfied in its literal form. The tasks were not halted at Step 4.1 as P-002 directs. This is recorded as the unsatisfied condition `p-002-harness-red-phase` and the closure is `READY_WITH_CONDITIONS` until the operator dispositions it.
+* Per-task telemetry and a separate per-task harness-architect skill invocation were not run. The refactors are zero-behavior-change and characterization-first: the existing `go test -race ./internal/app/...` suite was confirmed green before the first change and after each task, and two small characterization tests were added (`late_agent_test.go`, `reap_test.go`). No red phase exists for a pure refactor, so the `harness-ready` label was not applied by Ship (the tasks archived without it); the P-002 red-phase gate was therefore not satisfied in its literal form at build time. The tasks were not halted at Step 4.1 as P-002 directs. The deviation is recorded as the condition `p-002-harness-red-phase`, now dispositioned `accepted-with-conditions (plan-authorized characterization-first + executed mutation proofs)`: the reviewed plan (Units 4.1 to 4.3, `Posture: characterization-first`) authorized the posture, and the mutation proofs below were executed after the merge on 2026-10-27 from clean `main` (b573ea0) on branch `chore/066-s-closure-disposition`. The Orchestrator made this disposition autonomously under the operator's 2026-10-26 AFK dark-mode delegation, following the 051-S precedent (PR 155). The operator may reopen it if a retrospective `harness-ready` label on the archived task records is wanted.
 * Ship could not dispatch the `review` skill as a single invocation; the persona and Adversarial Review subagents were dispatched directly, and all reported they had no shell.
 * The committed `gatecheck.exe` is stale; the write-path self-test was run via `go run ./tools/gatecheck write-path --self-test --root .`.
 * The file-lock scripts needed an explicit `-WorkspaceRoot`, and `release_lock.ps1` takes `-Token`.
 * Compaction (P-020): done. See `docs/memory/compacted/2026-10-27-066-s-ship-compacted.md`.
+
+## Mutation-proof red-phase evidence
+
+Executed on 2026-10-27 from clean `main` (b573ea0) on `chore/066-s-closure-disposition`, using the same method as the 052-S and 063-S closures: introduce one unsound mutation into the target symbol, run the characterization test and observe it fail, restore the file with `git checkout --`, and confirm the working tree is clean. After the third restore, `git status` and `git diff --stat` for `internal/app/` were empty and `go test -race ./internal/app/... -count=1` passed (`ok`).
+
+* `073.001-T`, `internal/app/late_agent.go`, `(*lateAgent).get()`:
+  * Mutation: the method always returns `nil`, even after `bind`.
+  * Command: `go test ./internal/app -run TestLateAgent -count=1`.
+  * Result (red): `--- FAIL: TestLateAgentForwardsOnlyOnceBound` with `late_agent_test.go:30: get() did not return the bound agent`.
+  * Restore: `git checkout -- internal/app/late_agent.go`; the tree was clean.
+* `073.002-T`, `internal/app/shutdown.go`, `(*App).reap()`:
+  * Mutation: the leading `a.clearCreds()` call was removed.
+  * Command: `go test ./internal/app -run TestReap -count=1`.
+  * Result (red): `--- FAIL: TestReapOnAPartialAppIsNilSafeAndRevokesCredentials` with `reap_test.go:25: Credentials() = [{0 0 [REDACTED] fp ...}] after reap; want none`.
+  * Restore: `git checkout -- internal/app/shutdown.go`; the tree was clean.
+* `073.003-T`, `internal/app/review1_test.go`, `budgetRand.Read` (the call-budgeted entropy source that replaced the `credBytes` byte-count coupling; the shipped symbol is `budgetRand`, not `callBudgetReader`):
+  * Mutation: the `r.calls--` budget decrement was removed, so the budget is never exhausted.
+  * Command: `go test ./internal/app -run 'TestPartialReissue|TestTUIReissueFailure|TestReissueAfterRevocation' -count=1`.
+  * Result (red): `--- FAIL: TestPartialReissueReportsTheAuthoritativeLiveSet` with `review1_test.go:171: Reissue succeeded although the observer mint had no entropy`, and `--- FAIL: TestTUIReissueFailureCarriesTheLiveSet` with `review1_test.go:205: tuiReissue succeeded although the observer mint had no entropy`.
+  * Restore: `git checkout -- internal/app/review1_test.go`; the tree was clean.
+  * Two earlier attempts were not discriminating and are recorded for transparency: the `-run TestReissue` selector matches only `credentials_test.go` tests that do not use `budgetRand`, and a `r.calls -= 2` mutation still ended in the same partial-failure outcome. Both passed and were discarded.
