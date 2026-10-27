@@ -477,11 +477,10 @@ func TestE2EStreamAndPermissionReachBothSurfaces(t *testing.T) {
 
 // TestE2EFirstResponder covers design 5.4: the first resolution wins, the
 // loser's late action is refused (never double-resolving) and the agent sees
-// exactly one decision. The TUI's own late keypress cannot be raced
-// deterministically (the model drops a request the moment it sees the
-// resolution), so the TUI-as-loser case asserts the modal clears and a stray
-// approval key afterwards changes nothing; the remote-as-loser case is a real
-// late action refused with already_resolved.
+// exactly one decision. Losers are exercised deterministically: while the
+// decision is held (before permission.resolved is published) a late action
+// (a second remote connection, or the TUI arming and confirming its own
+// approval) is refused with already_resolved naming the winner.
 func TestE2EFirstResponder(t *testing.T) {
 	t.Run("remote wins, TUI loses", func(t *testing.T) {
 		r := newE2ERig(t, rigConfig{})
