@@ -505,6 +505,17 @@ func TestE2EFirstResponder(t *testing.T) {
 		if late.Winner != "remote-approver" {
 			t.Errorf("late action winner = %q; want remote-approver", late.Winner)
 		}
+		// The TUI is a loser too: while the decision is still held (before
+		// permission.resolved is published) it arms and confirms its own late
+		// approval, a real OpResolvePermission against the hub. The hub refuses
+		// it with already_resolved naming the winner, and the TUI drops the
+		// modal on that refusal, not on the (not yet published) resolution.
+		waitOutput(t, r.out, "y approve (then Enter to confirm)") // modal fully seen: approvable
+		r.press("y")
+		waitOutput(t, r.out, "APPROVE? press Enter to confirm")
+		r.press("\r")
+		waitOutput(t, r.out, "request already answered by remote-approver")
+
 		perm.release()
 		for name, s := range map[string]*surface{"first": first, "second": second} {
 			p := decode[hub.PermissionResolvedPayload](t, s.take(name+" resolved", isKind(hub.KindPermissionResolved)))
