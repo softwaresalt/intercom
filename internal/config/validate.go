@@ -14,7 +14,8 @@ import (
 
 // Validate performs one unconditional, fail-fast validation pass over c,
 // returning on the first violated rule. Rule order is fixed so a given
-// invalid config always yields the same error (requirement R8).
+// invalid config always yields the same error (requirement R8): rules 1-7,
+// then the [remote] group, then the [timeouts].approval_seconds bound.
 //
 // Canonicalized paths (the default workspace root, and each non-empty
 // [[workspace]].path) are computed into locals and committed to the
@@ -130,6 +131,13 @@ func (c *Config) Validate() (Report, error) {
 	// after the seven shipped rules, so their fixed order is untouched.
 	if err := validateRemote(c.Remote); err != nil {
 		return report, err
+	}
+
+	// Timeouts rule: [timeouts].approval_seconds is bounded above (zero stays
+	// valid). Runs after [remote] and before the deferred commit below so a
+	// failure never mutates the receiver.
+	if c.Timeouts.ApprovalSeconds > MaxApprovalTimeoutSeconds {
+		return report, apperr.Newf(apperr.KindConfig, "timeouts.approval_seconds must not exceed %d", MaxApprovalTimeoutSeconds)
 	}
 
 	// Deferred commit: every rule has passed.

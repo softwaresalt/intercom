@@ -69,6 +69,11 @@ type CopilotConfig struct {
 // [copilot].startup_timeout_seconds.
 const MaxCopilotStartupTimeoutSeconds = 3600
 
+// MaxApprovalTimeoutSeconds is the upper bound accepted for
+// [timeouts].approval_seconds (24 hours). Zero remains valid and keeps its
+// existing meaning.
+const MaxApprovalTimeoutSeconds = 86400
+
 // TimeoutConfig is the [timeouts] section.
 type TimeoutConfig struct {
 	ApprovalSeconds uint64 `toml:"approval_seconds"`
