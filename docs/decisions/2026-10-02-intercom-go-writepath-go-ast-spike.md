@@ -420,6 +420,16 @@ allowance. On the live tree the only allowance user,
   The receiver-tracking benefit does not justify that cost at zero production
   callers.
 
+> [!NOTE]
+> Historical point-in-time note (annotated 2026-10-26). The "zero production
+> callers" claim above (also stated earlier as zero `.Resolve(` call sites in
+> production code) was accurate as of this document's date, before shipment 062-S
+> (task 070.001-T, PR #185, merge commit
+> `6290151f08fcb300b2bd787c15ce28382242b233`, `internal/app/workspace.go`). That
+> shipment landed the first read-only production `Root.Resolve` caller, which fired
+> the 049.005-T tripwire and was reviewed in `internal/pathsafe/root.go` and
+> `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`).
+
 ## G-7 — Sizing against the 2-hour rule
 
 | Task | Size | Complexity | Files | Test scenarios | Basis |

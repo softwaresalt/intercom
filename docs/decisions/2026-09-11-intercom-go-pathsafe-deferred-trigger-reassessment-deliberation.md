@@ -172,6 +172,15 @@ So the accurate measurement is:
 - Additionally, no wired entrypoint reaches config validation today: both
   `cmd/intercom` and `cmd/intercom-ctl` return `errNotImplemented`.
 
+> [!NOTE]
+> Historical point-in-time note (annotated 2026-10-26). The "zero production
+> `Root.Resolve` callers" claim above was accurate as of this document's date,
+> before shipment 062-S (task 070.001-T, PR #185, merge commit
+> `6290151f08fcb300b2bd787c15ce28382242b233`, `internal/app/workspace.go`). That
+> shipment landed the first read-only production `Root.Resolve` caller, which fired
+> the 049.005-T tripwire and was reviewed in `internal/pathsafe/root.go` and
+> `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`).
+
 The trigger has **not** fired — but on the correct grounds (volume far below the
 documented threshold), not on the false grounds of zero reachability.
 

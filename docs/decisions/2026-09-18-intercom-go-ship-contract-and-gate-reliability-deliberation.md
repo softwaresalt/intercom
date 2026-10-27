@@ -76,6 +76,15 @@ than silently inherited, per the precedent set by the 2026-09-10 and 2026-09-11 
 | M-15 | The Copilot crash report needs containing | **STALE — ALREADY DONE.** The report lives at `.autoharness/staging/report.20260913.140024.22564.0.001.json` and is ignored via `.autoharness/.gitignore:3` (`staging/`). Containment is complete. |
 | M-16 | Repository allows squash/rebase merging | **ACCEPTED AS REPORTED** (measured 2026-09-17 on `softwaresalt/intercom`: `allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge` all `true`). Not re-measured here — re-measuring requires a repo-admin API read, and the entry's own evidence is recent and specific. |
 
+> [!NOTE]
+> Historical point-in-time note (annotated 2026-10-26). The M-8 claim that
+> `pathsafe.Root.Resolve` has zero production callers was accurate as of this
+> document's date, before shipment 062-S (task 070.001-T, PR #185, merge commit
+> `6290151f08fcb300b2bd787c15ce28382242b233`, `internal/app/workspace.go`). That
+> shipment landed the first read-only production `Root.Resolve` caller, which fired
+> the 049.005-T tripwire and was reviewed in `internal/pathsafe/root.go` and
+> `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`).
+
 **Two entries are materially stale (M-14, M-15).** Their physical work is already done. This does
 not make them no-ops: both entries explicitly ask Stage to *confirm the retention/layout policy*,
 which is the part that was never recorded. They are re-scoped accordingly (§4, S-10) rather than
@@ -264,6 +273,16 @@ Also stage the agent-adapter feature phase.
 | `9D45E62E` | DISCHARGED IN-CYCLE | Stage artifact authority; Ship forbidden (D-6) | done this session |
 | `1C6C3B46` | DISCHARGED IN-CYCLE | Stage artifact authority; Ship forbidden (D-6) | done this session |
 | `DB12DA37` | EXCLUDED | Already carried by blocked 026-F (D-13) | reconciled in place |
+
+> [!NOTE]
+> Historical point-in-time note (annotated 2026-10-26). The "zero `Resolve`
+> callers" and "zero production `Root.Resolve` callers" dispositions for
+> `BF5DE670` and `37FAB8C2` above were accurate as of this document's date,
+> before shipment 062-S (task 070.001-T, PR #185, merge commit
+> `6290151f08fcb300b2bd787c15ce28382242b233`, `internal/app/workspace.go`). That
+> shipment landed the first read-only production `Root.Resolve` caller, which fired
+> the 049.005-T tripwire and was reviewed in `internal/pathsafe/root.go` and
+> `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`).
 
 ## 7. P-021 C5 / C6 compliance
 
@@ -468,6 +487,15 @@ That compound-learning obligation is discharged this session (see §11.5).
 | `041-F` | `EF9352FB` | External credential console | operator action (no agent authority) |
 | `042-F` | `B6EF23CC` (settings) | GitHub repo administration | operator action **Q-A** |
 | `043-F` | `A92E3FA0` (phase C3) | Feature work ranks below reliability/refactor work | units 1–9 land, then its own deliberation |
+
+> [!NOTE]
+> Historical point-in-time note (annotated 2026-10-26). The `038-F` reason
+> "Zero production `Root.Resolve` callers" above was accurate as of this
+> document's date, before shipment 062-S (task 070.001-T, PR #185, merge commit
+> `6290151f08fcb300b2bd787c15ce28382242b233`, `internal/app/workspace.go`). That
+> shipment landed the first read-only production `Root.Resolve` caller, which fired
+> the 049.005-T tripwire and was reviewed in `internal/pathsafe/root.go` and
+> `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`).
 
 **Retained active in the stash (5):** `A92E3FA0` (tracker), `D8397D20`, `475E76D2`, `6B751D8B`
 (all trigger-unfired or deferred on value), `DB12DA37` (excluded — carried by blocked `026-F`;

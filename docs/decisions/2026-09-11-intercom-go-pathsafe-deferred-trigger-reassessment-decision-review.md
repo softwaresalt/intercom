@@ -84,6 +84,15 @@ library-agnostic and which three reviewers confirmed separately. A write that
 evades both `pathsafe` and the gate is an *ungated-write* problem, not a
 TOCTOU/hardlink-*mitigation* problem.
 
+> [!NOTE]
+> Historical point-in-time note (annotated 2026-10-26). The "zero production
+> `Root.Resolve` callers" claim above was accurate as of this document's date,
+> before shipment 062-S (task 070.001-T, PR #185, merge commit
+> `6290151f08fcb300b2bd787c15ce28382242b233`, `internal/app/workspace.go`). That
+> shipment landed the first read-only production `Root.Resolve` caller, which fired
+> the 049.005-T tripwire and was reviewed in `internal/pathsafe/root.go` and
+> `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`).
+
 **Not actioned this cycle: hardening the gate is not requested by any chartered
 entry, and freeze-scope is active — acting on it would be scope expansion, a
 declared stop condition.** Surfaced to the operator as the top candidate for the
@@ -145,6 +154,15 @@ Independently confirmed by at least one reviewer by direct measurement:
 - `lint` (102s) is structurally **not** on the CI critical path — `lint`,
   `expensive`/`test`, and `windows` all share `needs: changes` with no
   inter-dependency and run concurrently; `test (windows, advisory)` is 104s.
+
+> [!NOTE]
+> Historical point-in-time note (annotated 2026-10-26). The "zero production
+> `Root.Resolve` callers" claim above was accurate as of this document's date,
+> before shipment 062-S (task 070.001-T, PR #185, merge commit
+> `6290151f08fcb300b2bd787c15ce28382242b233`, `internal/app/workspace.go`). That
+> shipment landed the first read-only production `Root.Resolve` caller, which fired
+> the 049.005-T tripwire and was reviewed in `internal/pathsafe/root.go` and
+> `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`).
 
 ## 5. Cycle accounting
 

@@ -523,6 +523,15 @@ needs type/flow information. Neither has a live instance at `9b299c8`: zero
 aliased `os`/`io`/`syscall` imports in scope, and zero production `.Resolve(`
 callers.
 
+> [!NOTE]
+> Historical point-in-time note (annotated 2026-10-26). The "zero production
+> `.Resolve(` callers" claim above (at `9b299c8`) was accurate as of this
+> document's date, before shipment 062-S (task 070.001-T, PR #185, merge commit
+> `6290151f08fcb300b2bd787c15ce28382242b233`, `internal/app/workspace.go`). That
+> shipment landed the first read-only production `Root.Resolve` caller, which fired
+> the 049.005-T tripwire and was reviewed in `internal/pathsafe/root.go` and
+> `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`).
+
 **Accepted residual (made explicit).** Between 031-S ship and 039-S ship,
 aliased imports evade the gate and the first `Root.Resolve` caller lands
 unmonitored. These are recorded as **KNOWN OPEN** residuals in the gate's own
