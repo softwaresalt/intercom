@@ -106,6 +106,18 @@
 // action_unknown, agent_unavailable, shutting_down, credential_revoked,
 // credential_expired, generation_mismatch, rate_limited.
 //
+// already_resolved and request_unknown are the two refusals a losing responder
+// can see for resolve_permission, and they mark different lifecycle points.
+// already_resolved (winner names the winning actor) is returned when your
+// resolve_permission arrives while the winning decision is in hand-off,
+// awaiting the handler's acknowledgement (the hub's permDecided state, before
+// permission.resolved is published). request_unknown is returned once
+// permission.resolved or permission.aborted has been published and retired the
+// request, or when the request_id was never registered. A client that sees
+// request_unknown for a request it saw in permission.requested should expect
+// (or may already have received) the terminal permission.resolved or
+// permission.aborted frame.
+//
 // # Frames the client sends (text messages only, at most 16 KiB each)
 //
 // Exactly one JSON object with string values and only these keys, each at most
