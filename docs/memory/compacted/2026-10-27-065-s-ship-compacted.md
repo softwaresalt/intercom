@@ -4,6 +4,6 @@
 * Review: Correctness, Go, Security, Concurrency, Maintainability, Schema-CLI-Docs and Architecture personas plus Adversarial Review (3 of 3 reviewers); no P0/P1; one fix cycle (f43cdfa) re-reviewed. Copilot round 1 raised three threads (two fixed, one deferred and documented); P-018 SATISFIED at 17471b7 before and immediately before merge; CI all green.
 * Decisions: library-generated handshake refusals, interval rate limiting and metadata-only credential entries stay out of scope (P-021 C1) and are captured; the runbook path named by the invocation (`operator.md`) is `intercom-operator-runbook.md` in the repository; cascade close ran on the Orchestrator-relayed closure-specific approval.
 * Deferred scope (stash, P-021 C2): 7BFA4182, 6617141A, 5E4834CF, 864FDF7A, AE317BD3, 86BE6345, 24CE7E1D, 7CAD99B8, AEF57AF1, D953F24D, 21F9D21A.
-* Closure: cascade close exited 0 with postcondition pass; evidence `docs/closure/evidence/065-S-072-F-close-evidence.json`.
+* Closure: cascade close exited 0 with postcondition pass; evidence `docs/closure/evidence/065-S-072-F-close-evidence.json`; closure status `READY_WITH_CONDITIONS` because the release-required `tui-render` manual checkpoint has no operator evidence (Copilot review of PR 196).
 * Next: closure PR through CI and the Copilot loop, then 066-S in a separate invocation.
 * Original: docs/archive/memory/2026-10-27-065-s-ship-memory.md.
