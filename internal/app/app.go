@@ -53,6 +53,10 @@ type TUIOptions struct {
 	// IsTerminal reports whether a file is a terminal; nil uses the real
 	// check. Tests inject it to exercise the fail-closed refusal.
 	IsTerminal func(*os.File) bool
+	// RetainPlaintext keeps the credential plaintext readable through
+	// [App.Credentials] after the TUI has been given it. It is a test seam;
+	// by default the plaintext is zeroed once delivered to the TUI.
+	RetainPlaintext bool
 }
 
 // Options configures [Start].

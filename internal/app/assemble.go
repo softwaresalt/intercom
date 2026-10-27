@@ -117,6 +117,15 @@ type App struct {
 	mu     sync.Mutex
 	mintMu sync.Mutex         // serializes mint/re-issue so two cannot interleave their role order
 	creds  []transport.Issued // live credentials, for LOCAL display only
+	// credsCleared is sticky: once set (shutdown, failed start) no credential
+	// is ever published into creds again. Guarded by mu.
+	credsCleared bool
+	// zeroAfterTUI zeroes the plaintext in creds once the TUI has been given
+	// it. Set before the TUI starts and never written afterwards.
+	zeroAfterTUI bool
+	// afterMint is a test hook called after each successful remote.Mint and
+	// before the credential is published; nil in production.
+	afterMint func(hub.Role)
 	// runErrs are failures during the run (TUI, listener) joined into err.
 	runErrs []error
 
@@ -298,7 +307,12 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 		// gives the feed a context that outlives startup; ui.stop releases it.
 		// The one display of the credentials: the local TUI only. They are given
 		// to the model at construction so no later message can race Ctrl+R.
-		ui, err := startUI(ctx, h, o.TUI, a.credentialsMsg(a.Credentials()), a.tuiReissue)
+		creds := a.credentialsMsg(a.Credentials())
+		a.zeroAfterTUI = !o.TUI.RetainPlaintext
+		if a.zeroAfterTUI {
+			a.zeroPlaintext()
+		}
+		ui, err := startUI(ctx, h, o.TUI, creds, a.tuiReissue)
 		if err != nil {
 			return fmt.Errorf("start tui: %w", err)
 		}
@@ -344,6 +358,9 @@ var credentialRoles = [...]hub.Role{hub.RoleApprover, hub.RoleObserver}
 func (a *App) mint() ([]transport.Issued, error) {
 	a.mintMu.Lock()
 	defer a.mintMu.Unlock()
+	if a.shuttingDown() {
+		return nil, a.revokedForShutdown(nil)
+	}
 	next := a.Credentials() // under mintMu: the only writer of creds
 	if len(next) != len(credentialRoles) {
 		next = make([]transport.Issued, len(credentialRoles))
@@ -351,22 +368,79 @@ func (a *App) mint() ([]transport.Issued, error) {
 	for i, role := range credentialRoles {
 		iss, err := a.remote.Mint(role)
 		if err != nil {
-			return next, fmt.Errorf("mint %s credential: %w", roleName(role), err)
+			if errors.Is(err, transport.ErrShuttingDown) || a.shuttingDown() {
+				clear(next)
+				return nil, a.revokedForShutdown(err)
+			}
+			err = fmt.Errorf("mint %s credential: %w", roleName(role), err)
+			if i == 0 {
+				return nil, err // nothing was replaced: there is no set to show
+			}
+			return next, err
 		}
 		a.log.Info("credential issued", "role", roleName(role), "fingerprint", iss.Fingerprint, "expires_at", iss.ExpiresAt)
 		next[i] = iss
+		if a.afterMint != nil {
+			a.afterMint(role)
+		}
 		a.mu.Lock()
+		if a.credsCleared || a.shuttingDown() {
+			// Shutdown revoked (and cleared) the credentials while this mint was
+			// in flight: never republish them.
+			a.credsCleared = true
+			a.creds = nil
+			a.mu.Unlock()
+			clear(next)
+			return nil, a.revokedForShutdown(nil)
+		}
 		a.creds = append([]transport.Issued(nil), next...)
 		a.mu.Unlock()
 	}
 	return next, nil
 }
 
+// revokedForShutdown clears the credentials and builds the error a mint
+// returns once shutdown revoked them; cause, when non-nil, is the mint failure.
+func (a *App) revokedForShutdown(cause error) error {
+	a.clearCreds()
+	err := errors.Join(transport.ErrCredentialRevoked, transport.ErrShuttingDown)
+	if cause != nil {
+		err = errors.Join(err, cause)
+	}
+	return err
+}
+
+// clearCreds drops the live credentials and makes that terminal: no later mint
+// can publish into creds again. It takes only mu, so it is safe to call with
+// or without mintMu held.
+func (a *App) clearCreds() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.credsCleared = true
+	for i := range a.creds {
+		a.creds[i].Token = transport.Token{}
+	}
+	a.creds = nil
+}
+
+// zeroPlaintext drops the plaintext from the live credentials once the local
+// TUI has been given it, keeping role, fingerprint and expiry.
+func (a *App) zeroPlaintext() {
+	a.mintMu.Lock()
+	defer a.mintMu.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for i := range a.creds {
+		a.creds[i].Token = transport.Token{}
+	}
+}
+
 // Reissue mints a new credential for every role and revokes the previous ones
 // (re-issue; ADR MVP-2). Sockets authenticated by a revoked credential are
 // closed by the transport. The plaintext is for the local TUI only. On a
 // failure part-way it returns the authoritative live set together with the
-// error (some roles may already have been replaced).
+// error (some roles may already have been replaced); when nothing was replaced
+// or shutdown revoked the credentials it returns no set.
 func (a *App) Reissue(context.Context) ([]transport.Issued, error) {
 	live, err := a.mint()
 	if err != nil {
@@ -379,23 +453,32 @@ func (a *App) Reissue(context.Context) ([]transport.Issued, error) {
 // tuiReissue is the TUI's re-issue key handler.
 func (a *App) tuiReissue(ctx context.Context) (tui.CredentialsMsg, error) {
 	live, err := a.Reissue(ctx)
-	if err != nil {
-		// A partial failure may already have revoked some displayed credentials:
-		// hand the panel the authoritative live set with the error.
-		return a.credentialsMsg(live), err
+	if len(live) == 0 {
+		return tui.CredentialsMsg{}, err
 	}
-	return a.credentialsMsg(live), nil
+	// On a partial failure some displayed credentials may already be revoked:
+	// hand the panel the authoritative live set with the error.
+	msg := a.credentialsMsg(live)
+	if a.zeroAfterTUI {
+		a.zeroPlaintext()
+	}
+	return msg, err
 }
 
 // credentialsMsg is the one place the plaintext leaves the minted records: it
 // builds the local TUI's credential panel, which is delivered by
-// tea.Program.Send and nowhere else.
+// tea.Program.Send and nowhere else. Entries without plaintext (already
+// delivered and zeroed) are skipped.
 func (a *App) credentialsMsg(issued []transport.Issued) tui.CredentialsMsg {
 	msg := tui.CredentialsMsg{URL: a.WSURL(), Credentials: make([]tui.Credential, 0, len(issued))}
 	for _, iss := range issued {
+		secret := iss.Token.Reveal()
+		if secret == "" {
+			continue
+		}
 		msg.Credentials = append(msg.Credentials, tui.Credential{
 			Role:        roleName(iss.Role),
-			Secret:      iss.Token.Reveal(),
+			Secret:      secret,
 			Fingerprint: iss.Fingerprint,
 			ExpiresAt:   iss.ExpiresAt,
 		})
@@ -449,6 +532,7 @@ func (a *App) Credentials() []transport.Issued {
 // resolves to UserNotAvailable at once instead of waiting on the agent stop.
 // The ordered design §3.1 shutdown of a running process is [App.Shutdown].
 func (a *App) teardown(ctx context.Context) error {
+	a.clearCreds()
 	var errs []error
 	if a.hub != nil {
 		permBudget := a.timeouts.Permissions

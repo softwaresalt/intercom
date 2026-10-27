@@ -115,7 +115,8 @@ func (a *App) shuttingDown() bool {
 // cannot stop the hub before step 0 has failed the pending permissions.
 func (a *App) supervise() {
 	defer a.finish()
-	defer a.hurry() // release the shutdown context
+	defer a.clearCreds() // before finish closes done, whatever path returns
+	defer a.hurry()      // release the shutdown context
 
 	<-a.shutReq
 	a.log.Info("shutdown started", "reason", a.shutReason)
