@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/softwaresalt/intercom-go/internal/hub"
@@ -16,14 +17,28 @@ import (
 // reaps the connection goroutines and the HTTP server).
 const remoteShutdownBudget = 10 * time.Second
 
+// shutdownState groups the App's shutdown bookkeeping: req is closed once by
+// the first trigger (signal, TUI quit, Shutdown call) and supervise then runs
+// the §3.1 sequence; ctx bounds the whole sequence and is cancelled (hurried)
+// by a second signal.
+type shutdownState struct {
+	req      chan struct{}
+	once     sync.Once
+	reason   string          // written before req closes
+	ctx      context.Context //nolint:containedctx // process-lifetime shutdown budget, cancelled by hurry
+	hurry    context.CancelFunc
+	timeouts hub.ShutdownTimeouts
+	err      error // aggregated shutdown errors; written before done closes
+}
+
 // Shutdown requests the ordered shutdown of design §3.1. It is the single
 // trigger behind a SIGINT/SIGTERM, a quit in the local TUI, and callers (the
 // end-to-end test). It never blocks and is idempotent: only the first call
 // (and its reason) counts. Wait on [App.Done] for completion.
 func (a *App) Shutdown(reason string) {
-	a.shutOnce.Do(func() {
-		a.shutReason = reason
-		close(a.shutReq)
+	a.shut.once.Do(func() {
+		a.shut.reason = reason
+		close(a.shut.req)
 	})
 }
 
@@ -34,7 +49,7 @@ func (a *App) Shutdown(reason string) {
 func (a *App) Err() error {
 	select {
 	case <-a.done:
-		return a.err
+		return a.shut.err
 	default:
 		return nil
 	}
@@ -54,7 +69,7 @@ func (a *App) onServeExit(err error) {
 }
 
 // addErr records a failure to be joined into [App.Err]. Record it before the
-// Shutdown call it accompanies: the shutdown sequence reads it after shutReq
+// Shutdown call it accompanies: the shutdown sequence reads it after shut.req
 // closes.
 func (a *App) addErr(err error) {
 	a.mu.Lock()
@@ -89,7 +104,7 @@ func (a *App) watchSignals(sig <-chan os.Signal, cancelStart context.CancelFunc)
 			}
 			first = false
 			a.log.Warn("signal received during shutdown; hurrying it", "signal", s.String())
-			a.hurry()
+			a.shut.hurry()
 		case <-a.done:
 			return
 		}
@@ -99,7 +114,7 @@ func (a *App) watchSignals(sig <-chan os.Signal, cancelStart context.CancelFunc)
 // shuttingDown reports whether a shutdown has been requested.
 func (a *App) shuttingDown() bool {
 	select {
-	case <-a.shutReq:
+	case <-a.shut.req:
 		return true
 	default:
 		return false
@@ -116,18 +131,18 @@ func (a *App) shuttingDown() bool {
 func (a *App) supervise() {
 	defer a.finish()
 	defer a.clearCreds() // before finish closes done, whatever path returns
-	defer a.hurry()      // release the shutdown context
+	defer a.shut.hurry() // release the shutdown context
 
-	<-a.shutReq
-	a.log.Info("shutdown started", "reason", a.shutReason)
+	<-a.shut.req
+	a.log.Info("shutdown started", "reason", a.shut.reason)
 
 	var errs []error
 	sd, err := hub.NewShutdown(hub.ShutdownConfig{
 		Hub:      a.hub,
 		Agent:    a.agent,
 		Gate:     a.remote, // step 0: revoke credentials, close the listener
-		Reason:   a.shutReason,
-		Timeouts: a.timeouts,
+		Reason:   a.shut.reason,
+		Timeouts: a.shut.timeouts,
 		Logger:   a.log,
 	})
 	if err != nil {
@@ -138,10 +153,10 @@ func (a *App) supervise() {
 		tctx, cancel := context.WithTimeout(context.Background(), teardownBudget)
 		errs = append(errs, a.teardown(tctx))
 		cancel()
-		a.err = errors.Join(append(a.takeErrs(), errs...)...)
+		a.shut.err = errors.Join(append(a.takeErrs(), errs...)...)
 		return
 	}
-	sd.Start(a.shutCtx)
+	sd.Start(a.shut.ctx)
 	<-sd.Done() // steps 0-6; the hub is stopped
 	if e := sd.Err(); e != nil {
 		errs = append(errs, e) // each step failure was already logged by the executor
@@ -149,24 +164,75 @@ func (a *App) supervise() {
 
 	// Everything the hub could not know about: the HTTP server and its
 	// connection goroutines, then the (already stopped) hub's run goroutine,
-	// the accept loop and the local UI.
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(a.shutCtx), remoteShutdownBudget)
-	if e := a.remote.Shutdown(rctx); e != nil {
-		errs = append(errs, fmt.Errorf("remote shutdown: %w", e))
-		a.log.Error("remote shutdown failed", "error", e)
+	// the accept loop and the local UI. A TUI that could not be stopped is
+	// part of reap's error, so it lands in a.shut.err ahead of close(a.done).
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(a.shut.ctx), remoteShutdownBudget)
+	if e := a.reap(rctx); e != nil {
+		errs = append(errs, e)
 	}
 	cancel()
-	a.hubCancel()
-	<-a.hubRunDone
-	<-a.serveDone
-	if a.ui != nil {
-		// Recorded before takeErrs so a TUI that could not be stopped lands in
-		// a.err ahead of close(a.done).
-		if e := a.ui.stop(); e != nil {
-			a.addErr(e)
-			a.log.Error("local tui stop failed", "error", e)
-		}
+	a.shut.err = errors.Join(append(a.takeErrs(), errs...)...) // run failures (TUI, listener) first
+	a.log.Info("shutdown complete", "ok", a.shut.err == nil)
+}
+
+// reap releases everything the hub's shutdown executor does not know about,
+// once the agent is stopped: it drops the credentials (sticky, see
+// clearCreds), shuts the remote transport down within rctx, stops and awaits
+// the hub's run goroutine and the accept loop, and finally stops the local TUI.
+// Every component is nil-guarded so it is safe on a partially assembled App.
+// It returns the joined failures (remote shutdown, TUI stop) for the caller to
+// record. The failed-start [App.teardown] cannot call it as one unit because it
+// stops the UI and the listener before the agent; it composes the same steps.
+func (a *App) reap(rctx context.Context) error {
+	a.clearCreds()
+	var errs []error
+	if err := a.stopRemote(rctx); err != nil {
+		errs = append(errs, err)
 	}
-	a.err = errors.Join(append(a.takeErrs(), errs...)...) // run failures (TUI, listener) first
-	a.log.Info("shutdown complete", "ok", a.err == nil)
+	a.awaitHub()
+	if err := a.stopUI(); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+// stopRemote shuts the remote transport down within ctx; nil when there is no
+// remote.
+func (a *App) stopRemote(ctx context.Context) error {
+	if a.remote == nil {
+		return nil
+	}
+	if err := a.remote.Shutdown(ctx); err != nil {
+		a.log.Error("remote shutdown failed", "error", err)
+		return fmt.Errorf("remote shutdown: %w", err)
+	}
+	return nil
+}
+
+// awaitHub stops the hub (idempotent), cancels its run context and waits for
+// its run goroutine and the listener's accept loop to finish. The accept loop
+// only returns once the remote transport has been shut down, so callers must
+// run stopRemote first (reap and teardown both do).
+func (a *App) awaitHub() {
+	if a.hub != nil {
+		a.hub.Stop()
+		a.hubCancel()
+		<-a.hubRunDone
+	}
+	if a.serveDone != nil {
+		<-a.serveDone
+	}
+}
+
+// stopUI stops the local TUI and returns its stop failure; nil when there is
+// no TUI.
+func (a *App) stopUI() error {
+	if a.ui == nil {
+		return nil
+	}
+	if err := a.ui.stop(); err != nil {
+		a.log.Error("local tui stop failed", "error", err)
+		return err
+	}
+	return nil
 }
