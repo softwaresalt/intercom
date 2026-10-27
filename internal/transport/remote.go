@@ -30,6 +30,10 @@ type RemoteOptions struct {
 	Rand io.Reader
 	// Logger receives transport diagnostics (default discard).
 	Logger *slog.Logger
+	// OnReject is forwarded to [Config.OnReject]: it observes each
+	// pre-upgrade rejection (status, fixed reason code, running total). It
+	// must not block or panic.
+	OnReject func(status int, reason string, total uint64)
 }
 
 // Remote is the composed remote surface: credential store, upgrade handler
@@ -66,6 +70,7 @@ func NewRemote(o RemoteOptions) (*Remote, error) {
 		AllowedHosts:   o.Remote.AllowedHosts,
 		Now:            o.Now,
 		Logger:         o.Logger,
+		OnReject:       o.OnReject,
 	})
 	if err != nil {
 		return nil, err
@@ -92,6 +97,9 @@ func (r *Remote) Addr() net.Addr { return r.server.Addr() }
 // Serve accepts connections until the listener is closed; it then returns
 // [net/http.ErrServerClosed].
 func (r *Remote) Serve() error { return r.server.Serve() }
+
+// RejectedUpgrades returns how many requests were refused before upgrade.
+func (r *Remote) RejectedUpgrades() uint64 { return r.handler.RejectedUpgrades() }
 
 // Mint issues a credential for role, revoking that role's previous one.
 func (r *Remote) Mint(role hub.Role) (Issued, error) { return r.creds.Mint(role) }

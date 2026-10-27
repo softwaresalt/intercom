@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +27,12 @@ type remoteRig struct {
 
 func newRemoteRig(t *testing.T, rc config.RemoteConfig) *remoteRig {
 	t.Helper()
+	return newRemoteRigWith(t, rc, nil)
+}
+
+// newRemoteRigWith is newRemoteRig with a hook to adjust the RemoteOptions.
+func newRemoteRigWith(t *testing.T, rc config.RemoteConfig, mutate func(*RemoteOptions)) *remoteRig {
+	t.Helper()
 	h, err := hub.New(hub.Config{SessionID: "sess"})
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +41,11 @@ func newRemoteRig(t *testing.T, rc config.RemoteConfig) *remoteRig {
 	go func() { defer close(runDone); _ = h.Run(context.Background()) }()
 	clock := newFakeClock()
 	logs := &captureHandler{}
-	r, err := NewRemote(RemoteOptions{Hub: h, Remote: rc, Port: 0, Now: clock.Now, Logger: slog.New(logs)})
+	opts := RemoteOptions{Hub: h, Remote: rc, Port: 0, Now: clock.Now, Logger: slog.New(logs)}
+	if mutate != nil {
+		mutate(&opts)
+	}
+	r, err := NewRemote(opts)
 	if err != nil {
 		h.Stop()
 		<-runDone
@@ -174,5 +186,133 @@ func TestRemoteShutdownDrainsLiveSessions(t *testing.T) {
 	// Drain pairing: Shutdown waited for the hijacked session goroutines.
 	if n := rr.remote.handler.ActiveSessions(); n != 0 {
 		t.Fatalf("%d sessions still running after Shutdown (Drain not paired)", n)
+	}
+}
+
+type rejection struct {
+	status int
+	reason string
+	total  uint64
+}
+
+type rejectLog struct {
+	mu   sync.Mutex
+	list []rejection
+}
+
+func (l *rejectLog) record(status int, reason string, total uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.list = append(l.list, rejection{status, reason, total})
+}
+
+func (l *rejectLog) snapshot() []rejection {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]rejection(nil), l.list...)
+}
+
+func TestRemoteCountsRejectedUpgradesAndInvokesOnReject(t *testing.T) {
+	const badToken = "not-a-real-credential-value"
+	rec := &rejectLog{}
+	rc := defaultRemote()
+	rr := newRemoteRigWith(t, rc, func(o *RemoteOptions) { o.OnReject = rec.record })
+
+	if got := rr.remote.RejectedUpgrades(); got != 0 {
+		t.Fatalf("RejectedUpgrades before any request = %d; want 0", got)
+	}
+
+	dial := func(hdr http.Header) int {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c, resp, err := websocket.Dial(ctx, rr.url(), &websocket.DialOptions{HTTPHeader: hdr})
+		if c != nil {
+			_ = c.CloseNow()
+		}
+		if err == nil {
+			t.Fatal("rejected dial was upgraded")
+		}
+		if resp == nil {
+			t.Fatalf("no HTTP response: %v", err)
+		}
+		return resp.StatusCode
+	}
+
+	if got := dial(http.Header{"Authorization": {"Bearer " + badToken}}); got != http.StatusUnauthorized {
+		t.Fatalf("bad credential status = %d; want 401", got)
+	}
+	if got := rr.remote.RejectedUpgrades(); got != 1 {
+		t.Fatalf("RejectedUpgrades after 401 = %d; want 1", got)
+	}
+	if got := dial(http.Header{"Authorization": {"Bearer " + badToken}, "Origin": {"https://evil.example.test"}}); got != http.StatusForbidden {
+		t.Fatalf("foreign origin status = %d; want 403", got)
+	}
+	if got := rr.remote.RejectedUpgrades(); got != 2 {
+		t.Fatalf("RejectedUpgrades after 403 = %d; want 2", got)
+	}
+	if got := rr.remote.handler.RejectedUpgrades(); got != 2 {
+		t.Fatalf("Handler.RejectedUpgrades = %d; want 2 (same counter as Remote)", got)
+	}
+
+	want := []rejection{
+		{http.StatusUnauthorized, rejectCredential, 1},
+		{http.StatusForbidden, rejectOrigin, 2},
+	}
+	got := rec.snapshot()
+	if len(got) != len(want) {
+		t.Fatalf("OnReject calls = %+v; want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("OnReject call %d = %+v; want %+v", i, got[i], want[i])
+		}
+		if strings.Contains(got[i].reason, badToken) {
+			t.Errorf("OnReject reason %q carries the presented credential", got[i].reason)
+		}
+	}
+}
+
+func TestRemoteRejectedUpgradesCountsWithoutOnReject(t *testing.T) {
+	rr := newRemoteRig(t, defaultRemote())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, err := websocket.Dial(ctx, rr.url(), nil)
+	if err == nil {
+		t.Fatal("unauthenticated dial was upgraded")
+	}
+	if got := rr.remote.RejectedUpgrades(); got != 1 {
+		t.Fatalf("RejectedUpgrades = %d; want 1 with no OnReject configured", got)
+	}
+}
+
+func TestRemoteOnRejectTotalsAreMonotonicUnderConcurrency(t *testing.T) {
+	const n = 20
+	rec := &rejectLog{}
+	rr := newRemoteRigWith(t, defaultRemote(), func(o *RemoteOptions) { o.OnReject = rec.record })
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if c, _, err := websocket.Dial(ctx, rr.url(), nil); err == nil {
+				_ = c.CloseNow()
+			}
+		}()
+	}
+	wg.Wait()
+	if got := rr.remote.RejectedUpgrades(); got != n {
+		t.Fatalf("RejectedUpgrades = %d; want %d", got, n)
+	}
+	seen := make(map[uint64]bool, n)
+	for _, r := range rec.snapshot() {
+		if r.total < 1 || r.total > n || seen[r.total] {
+			t.Fatalf("OnReject total %d out of range or duplicated", r.total)
+		}
+		seen[r.total] = true
+	}
+	if len(seen) != n {
+		t.Fatalf("OnReject saw %d distinct totals; want %d", len(seen), n)
 	}
 }

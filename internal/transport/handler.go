@@ -80,6 +80,11 @@ type Config struct {
 	// Logger receives transport diagnostics. The transport never logs
 	// headers, URLs or request dumps. Default: discard.
 	Logger *slog.Logger
+	// OnReject, when non-nil, is called for every pre-upgrade rejection with
+	// the HTTP status, a fixed non-secret reason code and the running total of
+	// rejections. It runs on the request goroutine, possibly concurrently, so
+	// it must not block or panic and must not retain the request.
+	OnReject func(status int, reason string, total uint64)
 }
 
 // Handler is the WebSocket upgrade handler: it authenticates BEFORE the
@@ -112,6 +117,7 @@ type Handler struct {
 	maxViolations int
 	sessions      atomic.Int64
 	pings         atomic.Int64
+	rejected      atomic.Uint64
 }
 
 // NewHandler validates cfg and returns a Handler.
@@ -178,6 +184,9 @@ func NewHandler(cfg Config) (*Handler, error) {
 	return h, nil
 }
 
+// RejectedUpgrades returns how many requests were refused before upgrade.
+func (h *Handler) RejectedUpgrades() uint64 { return h.rejected.Load() }
+
 // SetBoundAddr records the listener's port so the loopback Host names
 // (127.0.0.1, [::1], localhost) are accepted for that port only. Until it is
 // called only allowed_hosts match.
@@ -242,6 +251,10 @@ const (
 // keep-alive connection.
 func (h *Handler) reject(w http.ResponseWriter, status int, reason string) {
 	h.log.Warn("transport: upgrade rejected", "status", status, "reason", reason)
+	total := h.rejected.Add(1)
+	if h.cfg.OnReject != nil {
+		h.cfg.OnReject(status, reason, total)
+	}
 	w.Header().Set("Connection", "close")
 	if status == http.StatusUnauthorized {
 		w.Header().Set("WWW-Authenticate", "Bearer")
