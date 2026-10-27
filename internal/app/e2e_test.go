@@ -522,7 +522,10 @@ func TestE2EFirstResponder(t *testing.T) {
 				t.Errorf("%s: resolved = %+v; want remote-approver/allow_once", name, p)
 			}
 		}
-		waitOutput(t, r.out, "by remote-approver") // the TUI's modal cleared with the winner named
+		// Only the TUI's resolved-path notice (applyPermissionResolved) says
+		// "permission <decision> by <actor>", so this proves permission.resolved
+		// itself reached the TUI, unlike the earlier already-answered notice.
+		waitOutput(t, r.out, "permission allow_once by remote-approver")
 
 		// After the resolution is published the request is gone: still refused.
 		wantReply(t, second.resolve(id, false), false, hub.ReasonRequestUnknown)

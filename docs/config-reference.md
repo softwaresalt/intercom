@@ -165,6 +165,9 @@ orders are unchanged), so a failure never mutates the receiver.
 |---|---|
 | `approval_seconds` at most 86400 (`0` stays valid and selects the hub's 2-minute default) | `timeouts.approval_seconds must not exceed 86400` |
 
+A config that sets `approval_seconds` above 86400 and loaded before this rule
+existed now fails validation at load time; lower the value to 86400 or less.
+
 Rule 5 has one additional non-fatal advisory: a bare name that is not
 currently resolvable on `PATH` produces `copilot.cli_path '{name}' was not
 resolvable via PATH` in `Report.Warnings`, but loading still succeeds.

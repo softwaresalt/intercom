@@ -16,10 +16,13 @@ package app
 //     lets newChildren's needle rule find a child whose launcher already
 //     exited (a reparented node.exe ...\copilot\index.js), whose executable
 //     name alone never contains the needle.
-//  3. Only when the process already exited, access is denied, or the target's
-//     layout cannot be read (a process of different bitness than this test
-//     binary, or a failed/implausible read) does the entry fall back to the
-//     executable name.
+//  3. Only when the process already exited, access is denied (including
+//     protected processes), or the read fails or yields an implausible
+//     value does the entry fall back to the executable name. Bitness: a
+//     32-bit test binary reading a 64-bit target falls back (the 64-bit
+//     addresses do not fit). A 64-bit test binary reading a WOW64 target
+//     reads the native 64-bit PEB, which is not that target's 32-bit PEB
+//     and may hold a different command line; this is not decoded here.
 //
 // The PEB offsets are those of the CURRENT architecture (this test binary's
 // pointer size); see commandLineOffsets.
@@ -91,7 +94,7 @@ func listProcesses(ctx context.Context) ([]procEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("process snapshot: %w", err)
 	}
-	defer func() { _ = syscall.CloseHandle(snap) }()
+	defer func() { _ = syscall.CloseHandle(snap) }() // best effort: nothing useful to do if closing a read-only snapshot fails
 
 	var entry syscall.ProcessEntry32
 	entry.Size = uint32(unsafe.Sizeof(entry))
@@ -115,8 +118,8 @@ func listProcesses(ctx context.Context) ([]procEntry, error) {
 }
 
 // processCommandLine reads pid's full command line from its PEB. ok is false
-// when the process is gone, access is denied, the target's PEB layout is not
-// this binary's (different bitness), or the data fails validation.
+// when the process is gone, access is denied, the PEB read fails (for example
+// a 32-bit binary reading a 64-bit target), or the data fails validation.
 func processCommandLine(pid uint32) (cmd string, ok bool) {
 	if pid == 0 { // System Idle Process has no PEB
 		return "", false
@@ -125,10 +128,11 @@ func processCommandLine(pid uint32) (cmd string, ok bool) {
 	if err != nil {
 		return "", false
 	}
-	defer func() { _ = syscall.CloseHandle(h) }()
+	defer func() { _ = syscall.CloseHandle(h) }() // best effort: a failed close of a query handle is not actionable
 
 	var pbi processBasicInformation
 	var retLen uint32
+	// The Call errno is meaningless for ntdll; the NTSTATUS in r1 is authoritative.
 	status, _, _ := procNtQueryInformationProcess.Call(
 		uintptr(h), processBasicInformationClass,
 		uintptr(unsafe.Pointer(&pbi)), unsafe.Sizeof(pbi), uintptr(unsafe.Pointer(&retLen)))
@@ -160,6 +164,8 @@ func processCommandLine(pid uint32) (cmd string, ok bool) {
 // readProcessMemory copies exactly size bytes at addr in process h into dst.
 func readProcessMemory(h syscall.Handle, addr uintptr, dst unsafe.Pointer, size uintptr) bool {
 	var n uintptr
+	// The Call errno is discarded: success is r1 != 0 and the byte count n,
+	// which is checked against size.
 	r, _, _ := procReadProcessMemory.Call(uintptr(h), addr, uintptr(dst), size, uintptr(unsafe.Pointer(&n)))
 	return r != 0 && n == size
 }

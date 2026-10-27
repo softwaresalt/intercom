@@ -3,16 +3,16 @@ package app
 // Process-table helpers for the live-SDK test's "no stranded CLI child"
 // assertion (070.004-T), and their own always-on test.
 //
-// Method (portable, no SDK import and no adapter hook needed): the Copilot SDK
-// starts the CLI with exec.Command, so the CLI (and anything it spawns) is a
-// descendant of the intercom process, which is the test process here. The
-// test snapshots the OS process table (Windows: native Toolhelp32 snapshot
-// plus a PEB command-line lookup; Linux/macOS: ps -axo pid=,ppid=,args=)
-// before Start and again
-// after shutdown, and requires that no process that was not in the baseline
-// is still a descendant of the test process. A CLI shim whose parent already
-// exited is caught by a second, name-based rule: a new process whose command
-// line contains the needle (default "copilot", overridable with
+// Method (portable, no SDK import and no adapter hook needed): the Copilot
+// SDK starts the CLI with exec.Command, so the CLI (and anything it spawns)
+// is a descendant of the intercom process, which is the test process here.
+// The test snapshots the OS process table (Windows: native Toolhelp32
+// snapshot plus a PEB command-line lookup; Linux/macOS:
+// ps -axo pid=,ppid=,args=) before Start and again after shutdown, and
+// requires that no process that was not in the baseline is still a
+// descendant of the test process. A CLI shim whose parent already exited is
+// caught by a second, name-based rule: a new process whose command line
+// contains the needle (default "copilot", overridable with
 // INTERCOM_LIVE_CLI_PROCESS). Only pid and executable name are ever logged,
 // never full command lines.
 
@@ -212,7 +212,7 @@ func TestProcessOrphanHelper(t *testing.T) {
 // alone would make the live test's "no stranded CLI child" check vacuous for
 // a reparented node.exe ...\copilot\index.js style child.
 func TestProcessTreeFindsOrphanedGrandchildByCommandLine(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*waitFor) // launcher + poll deadline below
+	ctx, cancel := context.WithTimeout(context.Background(), waitFor) // launcher run only
 	defer cancel()
 	before, err := listProcesses(ctx)
 	if err != nil {
@@ -237,18 +237,30 @@ func TestProcessTreeFindsOrphanedGrandchildByCommandLine(t *testing.T) {
 		t.Fatalf("launcher did not report a grandchild pid; output: %q", out)
 	}
 	t.Cleanup(func() {
-		if p, err := os.FindProcess(gcPID); err == nil {
-			_ = p.Kill()
-			_, _ = p.Wait() // only succeeds where the OS allows waiting on a non-child
+		p, err := os.FindProcess(gcPID)
+		if err != nil {
+			t.Logf("cleanup: find orphan pid %d: %v", gcPID, err)
+			return
 		}
+		if err := p.Kill(); err != nil {
+			t.Logf("cleanup: kill orphan pid %d: %v", gcPID, err)
+			return
+		}
+		_, _ = p.Wait() // best effort: only succeeds where the OS allows waiting on a non-child
 	})
 
+	// A fresh context: the launcher run above must not eat the polling budget.
+	// It outlives the loop deadline so a timeout is reported by the Fatalf below.
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), 2*waitFor)
+	defer pollCancel()
 	deadline := time.Now().Add(waitFor)
 	for {
-		table, err := listProcesses(ctx)
+		table, err := listProcesses(pollCtx)
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Assumes the test binary is not PID 1 or a subreaper: otherwise the
+		// orphan is reparented to this process and stays a descendant.
 		if desc := descendants(table, os.Getpid()); desc[gcPID] {
 			t.Fatalf("grandchild (pid %d) is still a descendant of the test process; it is not orphaned", gcPID)
 		}

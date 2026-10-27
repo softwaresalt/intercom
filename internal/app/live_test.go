@@ -76,7 +76,7 @@ func liveSDKTestsAllowed(raw string) bool {
 const maxReadSummaryRunes = 2048
 
 // readInsideWorkspace reports whether the read permission's summary (the raw
-// requested path, absolute or relative to ws) names an existing regular file
+// requested path, absolute or relative to ws) names an existing non-directory
 // that lies inside ws after symlinks are resolved. It fails closed: anything
 // it cannot prove inside, including every summary that the adapter may have
 // altered or that could mean something else to the SDK runtime, is denied.
@@ -132,14 +132,34 @@ func rejectSummary(p string) bool {
 			return true
 		}
 	}
-	if strings.HasPrefix(strings.ToLower(p), "file:") || strings.HasPrefix(p, `\\.\`) {
-		return true
-	}
-	return runtime.GOOS != "windows" && strings.HasPrefix(p, `\\?\`)
+	return strings.HasPrefix(strings.ToLower(p), "file:") || isDeviceOrExtendedForm(p)
 }
 
-// isUnsafeSummaryRune matches NUL and every rune sanitizeBound replaces with
-// U+FFFD (control and format runes), plus U+FFFD itself.
+// isDeviceOrExtendedForm reports whether p starts with a device (`.`) or
+// extended (`?`) namespace prefix: two separators, '.' or '?', then a
+// separator, where each separator may be '/' or '\'. The device form is denied
+// on every platform. The extended form is denied on non-Windows always, and on
+// Windows unless it is exactly the backslash spelling `\\?\`, which
+// normalizeWindowsExtended handles; the forward-slash and mixed spellings are
+// never normalized, so they are rejected outright.
+func isDeviceOrExtendedForm(p string) bool {
+	if len(p) < 4 || !isSummarySep(p[0]) || !isSummarySep(p[1]) || !isSummarySep(p[3]) {
+		return false
+	}
+	switch p[2] {
+	case '.':
+		return true
+	case '?':
+		return runtime.GOOS != "windows" || p[:4] != `\\?\`
+	}
+	return false
+}
+
+func isSummarySep(b byte) bool { return b == '/' || b == '\\' }
+
+// isUnsafeSummaryRune matches NUL, U+FFFD itself and every control or format
+// rune (the runes sanitizeBound replaces with U+FFFD), including \n and \t,
+// which sanitizeBound keeps: this check is stricter than sanitizeBound.
 func isUnsafeSummaryRune(r rune) bool {
 	return r == utf8.RuneError || unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
 }
@@ -313,12 +333,31 @@ func TestLiveReadApprovalIsConfinedToWorkspace(t *testing.T) {
 		assertRead(t, fx.ws, `\\?\`, false)
 	})
 
+	// The forward-slash and mixed spellings of the device and extended
+	// prefixes are never normalized, so they are denied on every platform
+	// (including Windows, where only the backslash `\\?\` form is honoured).
+	t.Run("forward-slash device and extended prefix", func(t *testing.T) {
+		fx := newReadFixture(t)
+		inside := filepath.Join(fx.ws, "notes.txt")
+		assertAllDenied(t, fx,
+			`//./C:/notes.txt`,
+			`//?/C:/notes.txt`,
+			`\\?/C:\notes.txt`,
+			`/\?\C:\notes.txt`,
+			`//./`+filepath.ToSlash(inside),
+			`//?/`+filepath.ToSlash(inside),
+			`\\./`+inside,
+			`//.\`+inside,
+			`//?/UNC/outside/share/secret.txt`,
+		)
+	})
+
 	t.Run("long contained path", func(t *testing.T) {
-		for _, runes := range []int{600, 2048} {
+		for _, runes := range []int{600, maxReadSummaryRunes} {
 			fx := newReadFixture(t)
 			long := longNestedFile(t, fx.ws, runes)
-			if n := utf8.RuneCountInString(long); n < 512 || n > 2048 {
-				t.Fatalf("fixture has %d runes; want 512..2048", n)
+			if n := utf8.RuneCountInString(long); n < 512 || n > maxReadSummaryRunes {
+				t.Fatalf("fixture has %d runes; want 512..%d", n, maxReadSummaryRunes)
 			}
 			assertRead(t, fx.ws, long, true)
 			rel, err := filepath.Rel(fx.ws, long)
@@ -412,8 +451,8 @@ func TestLiveReadApprovalIsConfinedToWorkspace(t *testing.T) {
 			"notes\u202e.txt",
 			"notes\u200b.txt",
 			"notes.txt\u2026",
-			strings.Repeat("a", 2049),
-			strings.Repeat("a", 2048)+"\u2026",
+			strings.Repeat("a", maxReadSummaryRunes+1),
+			strings.Repeat("a", maxReadSummaryRunes)+"\u2026",
 		)
 	})
 
@@ -570,6 +609,12 @@ func TestLiveCopilotEndToEnd(t *testing.T) {
 	issued := a.Credentials()
 	if len(issued) == 0 {
 		t.Fatal("no credentials were issued before shutdown, so the log-leak check would be vacuous")
+	}
+	for _, c := range issued {
+		// strings.Contains(logs, "") is always true, so an empty token must fail loudly.
+		if c.Token.Reveal() == "" {
+			t.Fatal("an issued credential has an empty token, so the log-leak check would be meaningless")
+		}
 	}
 	sig <- os.Interrupt
 	select {

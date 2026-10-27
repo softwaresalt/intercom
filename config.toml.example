@@ -29,7 +29,7 @@ startup_timeout_seconds = 30   # deadline for the agent adapter's Client.Start
 review = "review the changes and report findings"
 
 [timeouts]
-approval_seconds = 3600
+approval_seconds = 3600   # 0..86400; 0 = hub default (2 min)
 prompt_seconds = 1800
 wait_seconds = 0
 
