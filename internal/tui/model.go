@@ -77,6 +77,16 @@ func newStyles(r *lipgloss.Renderer) styles {
 	}
 }
 
+// SecurityNoticeMsg reports the running count of refused WebSocket upgrades
+// and the latest refusal. Reason is a fixed non-secret code; it is sanitized
+// again when rendered. A message with a lower Total than one already applied
+// is stale and ignored.
+type SecurityNoticeMsg struct {
+	Status int
+	Reason string
+	Total  uint64
+}
+
 // Model is the TUI state. It is a value type: Update returns the next state.
 type Model struct {
 	ingress Ingress
@@ -97,6 +107,10 @@ type Model struct {
 	disconnected error
 	notice       string
 
+	// Rejected WebSocket upgrades reported by the transport (SecurityNoticeMsg).
+	rejectedUpgrades uint64
+	lastRejectStatus int
+	lastRejectReason string
 	// Permission modal state.
 	pending   []permission
 	inflight  map[string]bool // request ids whose decision Cmd was issued
@@ -179,6 +193,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.showCredentials(msg.Live)
 		}
 		m.notice = "re-issue failed: " + SanitizeLine(msg.Err.Error())
+		return m, nil
+	case SecurityNoticeMsg:
+		// Notices are coalesced and may arrive out of order: never go back.
+		if msg.Total >= m.rejectedUpgrades {
+			m.rejectedUpgrades = msg.Total
+			m.lastRejectStatus = msg.Status
+			m.lastRejectReason = msg.Reason
+		}
 		return m, nil
 	case tea.KeyMsg:
 		return m.onKey(msg)
@@ -608,6 +630,10 @@ func (m Model) statusLine() string {
 	}
 	if m.resync {
 		parts = append(parts, "resync: re-hydrating from the hub")
+	}
+	if m.rejectedUpgrades > 0 {
+		parts = append(parts, fmt.Sprintf("rejected upgrades: %d (last: %d %s)",
+			m.rejectedUpgrades, m.lastRejectStatus, SanitizeLine(m.lastRejectReason)))
 	}
 	if m.notice != "" {
 		parts = append(parts, m.notice)

@@ -117,6 +117,9 @@ type App struct {
 	mu     sync.Mutex
 	mintMu sync.Mutex         // serializes mint/re-issue so two cannot interleave their role order
 	creds  []transport.Issued // live credentials, for LOCAL display only
+	// rejectCh is a capacity-1 latest-only mailbox for rejected-upgrade
+	// notices; producers write it under mu, the pump is the one reader.
+	rejectCh chan tui.SecurityNoticeMsg
 	// credsCleared is sticky: once set (shutdown, failed start) no credential
 	// is ever published into creds again. Guarded by mu.
 	credsCleared bool
@@ -198,6 +201,7 @@ func Start(ctx context.Context, o Options) (*App, error) {
 	a := &App{
 		log: log, cfg: cfg, workspace: workspace, timeouts: o.Timeouts,
 		done: make(chan struct{}), shutReq: make(chan struct{}),
+		rejectCh: make(chan tui.SecurityNoticeMsg, 1),
 	}
 	// The shutdown context is deliberately NOT derived from ctx or from any
 	// signal: a SIGINT must trigger the ordered sequence, not cancel it (and
@@ -256,12 +260,13 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 	}()
 
 	remote, err := transport.NewRemote(transport.RemoteOptions{
-		Hub:    h,
-		Remote: cfg.Remote,
-		Port:   port,
-		Now:    o.Now,
-		Rand:   o.CredentialRand,
-		Logger: a.log,
+		Hub:      h,
+		Remote:   cfg.Remote,
+		Port:     port,
+		Now:      o.Now,
+		Rand:     o.CredentialRand,
+		Logger:   a.log,
+		OnReject: a.onReject,
 	})
 	if err != nil {
 		return err
@@ -320,9 +325,15 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 		// Registered before the watcher starts, so a stop that waits on it can
 		// never miss the runtime error it records.
 		ui.watchDone = make(chan struct{})
+		pumpDone := make(chan struct{})
+		go func() {
+			defer close(pumpDone)
+			a.pumpRejects(ui)
+		}()
 		go func() {
 			defer close(ui.watchDone)
 			<-ui.done
+			<-pumpDone
 			if err := ui.failure(); err != nil {
 				a.log.Error("tui exited with error", "error", err)
 				a.addErr(fmt.Errorf("tui: %w", err))
@@ -335,6 +346,39 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 
 	a.log.Info("intercom ready", "addr", a.remote.Addr().String(), "workspace", a.workspace)
 	return nil
+}
+
+// onReject is the transport's rejected-upgrade observer. It runs on request
+// goroutines, so it only stores the latest notice in the capacity-1 mailbox:
+// it never blocks, never reads a.ui (the TUI may not exist yet, or any more)
+// and never spawns work per request. Producers hold mu, so after dropping a
+// stale notice the send cannot find the mailbox full.
+func (a *App) onReject(status int, reason string, total uint64) {
+	msg := tui.SecurityNoticeMsg{Status: status, Reason: reason, Total: total}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	select {
+	case <-a.rejectCh:
+	default:
+	}
+	select {
+	case a.rejectCh <- msg:
+	default:
+	}
+}
+
+// pumpRejects forwards the latest rejection notice to the local TUI from a
+// single goroutine until the program has exited. Send returns once the program
+// took the message or ended, so the loop is bounded by ui.done.
+func (a *App) pumpRejects(ui *localUI) {
+	for {
+		select {
+		case msg := <-a.rejectCh:
+			ui.prog.Send(msg)
+		case <-ui.done:
+			return
+		}
+	}
 }
 
 // mintAll issues the approver and observer credentials. Only the role, the
