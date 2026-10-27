@@ -61,8 +61,8 @@ func (a *App) mint() ([]transport.Issued, error) {
 			// Shutdown revoked (and cleared) the credentials while this mint was
 			// in flight: never republish them.
 			a.credsCleared = true
-			for i := range a.creds {
-				a.creds[i].Token = transport.Token{}
+			for j := range a.creds {
+				a.creds[j].Token = transport.Token{}
 			}
 			a.creds = nil
 			a.mu.Unlock()

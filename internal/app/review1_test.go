@@ -143,8 +143,9 @@ func partialRig(t *testing.T) (*App, []transport.Issued) {
 	t.Helper()
 	f := newFactory()
 	o, _ := baseOptions(t, f)
-	// two credentials at start, then one more: the re-issue's observer fails.
-	o.CredentialRand = &budgetRand{calls: 3}
+	// one entropy read per mint: every role at start, then one more (the
+	// re-issue's approver) so the re-issue's observer fails.
+	o.CredentialRand = &budgetRand{calls: len(credentialRoles) + 1}
 	a := startApp(t, o)
 	return a, a.Credentials()
 }

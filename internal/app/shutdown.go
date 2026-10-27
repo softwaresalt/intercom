@@ -69,7 +69,7 @@ func (a *App) onServeExit(err error) {
 }
 
 // addErr records a failure to be joined into [App.Err]. Record it before the
-// Shutdown call it accompanies: the shutdown sequence reads it after shutReq
+// Shutdown call it accompanies: the shutdown sequence reads it after shut.req
 // closes.
 func (a *App) addErr(err error) {
 	a.mu.Lock()
@@ -165,7 +165,7 @@ func (a *App) supervise() {
 	// Everything the hub could not know about: the HTTP server and its
 	// connection goroutines, then the (already stopped) hub's run goroutine,
 	// the accept loop and the local UI. A TUI that could not be stopped is
-	// part of reap's error, so it lands in a.err ahead of close(a.done).
+	// part of reap's error, so it lands in a.shut.err ahead of close(a.done).
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(a.shut.ctx), remoteShutdownBudget)
 	if e := a.reap(rctx); e != nil {
 		errs = append(errs, e)
@@ -210,7 +210,9 @@ func (a *App) stopRemote(ctx context.Context) error {
 }
 
 // awaitHub stops the hub (idempotent), cancels its run context and waits for
-// its run goroutine and the listener's accept loop to finish.
+// its run goroutine and the listener's accept loop to finish. The accept loop
+// only returns once the remote transport has been shut down, so callers must
+// run stopRemote first (reap and teardown both do).
 func (a *App) awaitHub() {
 	if a.hub != nil {
 		a.hub.Stop()
