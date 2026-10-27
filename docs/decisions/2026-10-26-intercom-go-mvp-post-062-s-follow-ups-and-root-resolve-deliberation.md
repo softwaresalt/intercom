@@ -1,0 +1,158 @@
+---
+title: "MVP Post-062-S Follow-ups and Root.Resolve Black-Box Verification Deliberation"
+description: "Deliberation on Capability Set 1: unblocking 038-F (black-box Root.Resolve verification) and resolving 062-S deferred scope expansions BDC0ADDF, FAE4134F, and AD8472DD."
+topic: "MVP Post-062-S Follow-ups and Root.Resolve"
+depth: "deep"
+decision_status: "decided"
+promoted_to: "plan"
+linked_artifacts:
+  - "docs/plans/2026-10-26-intercom-go-mvp-post-062-s-follow-ups-and-root-resolve-plan.md"
+  - ".backlogit/queue/038-F.md"
+tags:
+  - "pathsafe"
+  - "internal-app"
+  - "process-lifecycle"
+  - "tui"
+  - "config"
+  - "mvp-closure"
+---
+
+## Problem Frame
+
+Shipment `062-S` (covering feature `070-F`, PR #185, merge commit `6290151f08fcb300b2bd787c15ce28382242b233`) wired the `intercom` composition root (`internal/app`) and CLI entrypoint (`cmd/intercom`), completing the initial MVP delivery chain. Its merge had two immediate consequences for the backlog:
+
+1. **Trigger fired for blocked feature `038-F` (sourced from archived stash `37FAB8C2`)**: `internal/app/workspace.go` (`070.001-T`) introduced the first production caller of `pathsafe.Root.Resolve`, resolving `--workspace` subdirectories below an authorized root (`default_workspace_root` or `[[workspace]].path`). Both upstream dependencies of `038-F` (`034-F` and `049-F`) are archived (`done`), and the `049.005-T` tripwire fired during `062-S` and was reviewed in `internal/pathsafe/root.go` and `tools/gatecheck/internal/writepath/writepath.go` (`reviewedResolveCallers`). Feature `038-F` ("Black-box verify `Root.Resolve` once a live caller exists") is now performable and ready to unblock from `blocked` to `queued`.
+2. **Three `062-S` deferred-scope-expansion stash entries (`BDC0ADDF`, `FAE4134F`, `AD8472DD`)**: Pre-PR multi-persona and adversarial review of `062-S` captured three deferred scope expansions under P-021 C2:
+   * **`BDC0ADDF`** (`medium` / `task`): Verification-surface and contract follow-ups `(a)` through `(g)`.
+   * **`FAE4134F`** (`medium` / `task`): Process-lifecycle and TUI observability hardening follow-ups `(a)` through `(i)`.
+   * **`AD8472DD`** (`medium` / `task`): Move-only maintainability refactors of `internal/app` and its test helpers.
+
+Under P-021 C6, every entry carrying the `DEFERRED SCOPE EXPANSION` marker must pass through deliberation before planning and harvest. Furthermore, Ship Step 6.1(a1) `S2` enforces `n == 1` covering feature per shipment (`A1_MULTIPLE_FEATURE_MEMBERS` halts if `n > 1`), so this deliberation also determines the covering-feature and shipment boundary architecture for the batch.
+
+## P-021 C5/C6 Triage Audit: Unconditional Duplicate Scan and Late-Identifier Reconciliation
+
+### 1. Unconditional Duplicate Scan (Trigger A)
+
+An unconditional pairwise scan was executed across all 131 active stash entries in `.backlogit/stash.jsonl`, all archived stash entries in `.backlogit/archive/stash.jsonl`, and all queued/blocked items in `.backlogit/queue/`:
+
+* **`BDC0ADDF`**: **CLEAN DUPLICATE SCAN**. No other active or archived stash entry duplicates items `(a)`–`(g)`. Item `(g)` (historical zero-caller notes for `pathsafe.Root.Resolve` in dated decision records) is adjacent to `038-F` / `37FAB8C2` and archived `1C6C3B46`, and is grouped directly with `038-F` as a documentation task (`038.002-T`).
+* **`FAE4134F`**: **CLEAN DUPLICATE SCAN**. Nearest neighbor `550437DB` concerns internal hub-side shutdown context mechanics, whereas `FAE4134F` covers `cmd/intercom` and `internal/app` startup/teardown/re-issue/observability seams.
+* **`AD8472DD`**: **CLEAN DUPLICATE SCAN**. No other stash entry covers the `internal/app` file split (`assemble.go` -> `credentials.go` + `late_agent.go`), `shutdownState` grouping, `reap()` extraction, or `helpers_test.go` / `review1_test.go` test-helper deduplication.
+* **`038-F` / `37FAB8C2`**: **CLEAN DUPLICATE SCAN**. Originated from archived stash `37FAB8C2` (which carried `DISCOVERY-STATUS: LOOKUP-UNAVAILABLE` at capture time in `013-S`). Nearest neighbor `BF5DE670` (`039-F`) tracks TOCTOU/hardlink mitigation gated on the arrival of a destructive filesystem write primitive, whereas `038-F` tracks black-box verification of `pathsafe.Root.Resolve` through its live read-only caller (`internal/app/workspace.go`).
+
+### 2. Late-Identifier Reconciliation (Trigger B)
+
+| Entry | Originally Captured Source Refs | Reconciled Source Refs & Retrieval Source | Disposition |
+|---|---|---|---|
+| `BDC0ADDF` | `tasks 070.001-T, 070.003-T, 070.004-T, 070.005-T, feature 070-F, shipment 062-S, local review. PR: N/A, thread: N/A` | `PR: #185 (merge commit 6290151f08fcb300b2bd787c15ce28382242b233)` recovered from `docs/closure/062-S-070-F-post-merge-closure.md`; `thread: N/A (pre-PR local review)` stands as a truthful terminal record. | Reconciled in place via `backlogit stash edit BDC0ADDF` |
+| `FAE4134F` | `tasks 070.001-T/070.002-T/070.006-T, feature 070-F, shipment 062-S, local review cycle 1 + delta (all P2/P3). PR: N/A, thread: N/A (pre-PR)` | `PR: #185 (merge commit 6290151f08fcb300b2bd787c15ce28382242b233)` recovered from `docs/closure/062-S-070-F-post-merge-closure.md`; `thread: N/A (pre-PR local review)` stands as a truthful terminal record. | Reconciled in place via `backlogit stash edit FAE4134F` |
+| `AD8472DD` | `tasks 070.001-T/070.002-T, feature 070-F, shipment 062-S, local review (Maintainability P2/P3). PR: N/A, thread: N/A` | `PR: #185 (merge commit 6290151f08fcb300b2bd787c15ce28382242b233)` recovered from `docs/closure/062-S-070-F-post-merge-closure.md`; `thread: N/A (pre-PR local review)` stands as a truthful terminal record. | Reconciled in place via `backlogit stash edit AD8472DD` |
+| `038-F` (`37FAB8C2`) | `feature 014-F, shipment 013-S, PR #40 (SHA 17daffb5614f2f8ed797d7647aeadcc1dc29b1d2), review-thread N/A` | All concrete identifiers already present; `review-thread: N/A` stands as a truthful terminal record from `013-S` runtime verification. | Idempotent no-op |
+
+## Research Findings
+
+### Compound Learnings Consulted
+
+* `docs/compound/2026-10-20-process-wiring-credential-panel-and-approval-disarm.md`: Documents the `062-S` TUI/hub wiring invariants: single-choke-point approval disarm in `onKey`, initial credentials passed at `tui.New` construction, signal-independent hub context cancelled only at step 6, and the Windows `Win32_Process` PowerShell snapshot flakiness under load (`BDC0ADDF(d)`).
+* `docs/compound/2026-10-20-tui-permission-modal-safety-and-linux-test-clock.md`: Documents `syncModal` synchronization on `already_resolved` and `request_unknown` and pinning both `Clock` and `Now` in deterministic tests.
+* `docs/compound/2026-10-20-backlogit-cli-pitfalls-and-permission-outcome-lessons.md`: Documents atomic `PermissionOutcome` (`Deliver` vs `Revoke`) and `Agent.Stop` orphan-risk handling.
+* `docs/compound/2026-10-20-devtunnel-edge-token-and-tui-only-credential-harness.md`: Documents the 2026-10-20 live verification of Dev Tunnel `--allow-anonymous false` and `Authorization` header pass-through (`BDC0ADDF(f)`).
+* `docs/compound/2026-09-08-verify-go-stdlib-internals-claims-against-goroot-source.md` & `2026-09-08-adversarial-review-empirical-verification-and-scope-check.md`: Documents Windows junction canonicalization (`GetFinalPathNameByHandleW`) vs `filepath.EvalSymlinks` in `internal/pathsafe`.
+
+### Codebase Inspection Findings
+
+1. **`038-F` and `tools/gatecheck/internal/writepath`**:
+   * `internal/app/workspace.go` (`resolveWorkspace`) is the single production caller of `pathsafe.Root.Resolve`, pinned in `reviewedResolveCallers` (`tools/gatecheck/internal/writepath/writepath.go:130`) with `calls: 1`.
+   * `shouldScan` (`writepath.go:240`) excludes all `*_test.go` files (`if strings.HasSuffix(relPath, "_test.go") { return false }`).
+   * Exercising `app.Start` from an external test package (`package app_test` in `internal/app/workspace_blackbox_test.go`) with `--workspace` pointing to subdirectories, mapped `[[workspace]].path` subdirectories, symlinks/junctions escaping the root, `..` traversal, prefix-sibling directories, and non-directories provides a true black-box integration verification of `pathsafe.Root.Resolve` through its live production caller without adding any second production `Root.Resolve` call site.
+2. **`BDC0ADDF(a..g)`**:
+   * **(a) `request_unknown` vs `already_resolved`**: `internal/hub/permission.go` returns `ReasonAlreadyResolved` (with `Winner`) when a second action arrives while the winning decision is in hand-off (`permDecided`, before the adapter handler acknowledges and `permission.resolved` is published). Once `permission.resolved` or `permission.aborted` is published, `retirePerm` removes the entry from `permRegistry` (keeping registry memory bounded at `MaxPendingPermissions`), so any subsequent action receives `ReasonRequestUnknown`. This contract is already pinned by `internal/app/e2e_test.go:356`. The gap is purely in `internal/transport/wsclient/client.go` package docs (and `internal/hub/doc.go`), which list `already_resolved` and `request_unknown` without stating their lifecycle boundary.
+   * **(b) Deterministic TUI-loser first-responder test seam**: In `internal/app/e2e_test.go` (`TestE2EFirstResponder`, `"remote wins, TUI loses"`), `perm := r.askHeld(...)` already holds the adapter handler's acknowledgement (`perm.gate`) after the remote approver wins the CAS! While `perm.gate` is held, `permission.resolved` has not been published yet, so the TUI modal still holds the pending request. Pressing `y` and `\r` on the TUI during that held window deterministically drives a real late TUI `OpResolvePermission` action into the hub, which refuses it with `ReasonAlreadyResolved` (`Winner: "remote-approver"`), causing the TUI to drop the pending request and render `"request already answered by remote-approver"` before `perm.release()` is even called.
+   * **(c) `[timeouts].approval_seconds` upper bound in config validation**: `internal/config` currently validates `[copilot].startup_timeout_seconds <= 3600` (`MaxCopilotStartupTimeoutSeconds`) and `[remote].token_lifetime_seconds` in `60..86400` (`MaxRemoteTokenLifetimeSeconds`), but has no upper-bound validation on `[timeouts].approval_seconds`. Adding `MaxApprovalTimeoutSeconds = 86400` (24 hours, matching `MaxRemoteTokenLifetimeSeconds`; `0` remains valid and selects the hub's 2-minute default) in `internal/config` after `validateRemote` preserves the 7-rule order while rejecting excessive values at config load time.
+   * **(d) Native Windows process-tree snapshot in `internal/app/liveproc_test.go`**: `listProcesses` currently shells out to `powershell.exe -Command "Get-CimInstance Win32_Process ..."`, which is slow and flaked once under load on Windows with exit status 1. Standard library `syscall` on Windows provides `syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)`, `syscall.Process32First`, `syscall.Process32Next`, `syscall.CloseHandle`, and `syscall.UTF16ToString` (`syscall.ProcessEntry32` carries `ProcessID`, `ParentProcessID`, and `ExeFile`), which snapshots the Windows process table in-process in sub-millisecond time with zero child-process spawning and zero `go.mod` changes.
+   * **(e) & (f) `readInsideWorkspace` payload confirmation and live evidence**: In `internal/agent/copilot/permission.go:108`, `*rpc.PermissionRequestRead` maps `r.Path` directly to `PermissionRequest.Summary` (via `sanitizeBound`). On 2026-10-20 (`docs/closure/evidence/062-S-live-verification-evidence.md`), `TestLiveCopilotEndToEnd` ran against real Copilot CLI 1.0.100 and passed, and the Dev Tunnel `--allow-anonymous false` and `Authorization` header pass-through checks were executed and verified. However, `readInsideWorkspace` in `internal/app/live_test.go` uses raw `filepath.EvalSymlinks` instead of `pathsafe.NewRoot` / `Root.Resolve` (which properly normalizes Windows `\\?\` extended-length prefixes and directory junctions) and does not strip surrounding quotes or `file://` URI prefixes if a model/CLI emits them. Hardening `readInsideWorkspace` to normalize via `pathsafe.NewRoot` (canonicalizing an absolute candidate's parent directory via `pathsafe.NewRoot(filepath.Dir(p))` and resolving via `root.Resolve(rel)`) and testing realistic SDK `PermissionRequestRead.Path` shapes deterministically closes `(e)`, while `(f)` is closed by recording and cross-referencing the 2026-10-20 live verification evidence.
+3. **`FAE4134F(a..i)`**:
+   * **(a) `--no-tui` / headless credential-delivery decision**: ADR MVP-2 (section "Decision: credential model (MVP-D3)", item 3) mandates that bearer credentials are shown **only on the local TUI, once per mint or re-issue**, and **never written to a log, an envelope, a diagnostic dump, `config.toml`, the process command line, or disk**. In addition, the `writepath` gate prohibits filesystem write primitives (`os.WriteFile`, `os.Create`, `os.OpenFile`) in `cmd/**` and `internal/**`. Consequently, adding a `--no-tui` flag to `cmd/intercom` that prints bearer tokens to non-TTY stdout/stderr or writes them to a file would directly violate ADR MVP-2 and the `writepath` gate. In-process headless operation is already supported programmatically via `app.Options{TUI: app.TUIOptions{Disabled: true}}`. We therefore decide to keep `cmd/intercom` TUI-only (interactive terminal required) for the MVP and document this decision in the operator runbook; non-interactive service mode is deferred to the post-MVP identity-provider authentication upgrade (ADR MVP-2 option b).
+   * **(b) Surfacing auth/reject security events in the TUI**: When the TUI is active and stderr is a terminal, `cmd/intercom` routes structured logs to `io.Discard` to protect the alternate screen. Adding an atomic rejected-upgrade counter and optional `OnReject` hook on `transport.Handler` / `transport.Remote` allows `internal/app` to forward a `tui.SecurityNoticeMsg` (via a pre-allocated capacity-1 coalescing channel drained by a single goroutine bounded by `<-ui.done`) to the local TUI whenever a `/ws` WebSocket upgrade is rejected in `Handler.reject` (`400`, `401`, `403`, `503`), surfacing the rejected count and last status/reason on the TUI status line.
+   * **(c) Bounded wait after `u.prog.Kill()` in `localUI.stop()`**: In `internal/app/ui.go:139-140`, after `uiStopBudget` expires and `u.prog.Kill()` is called, `<-u.done` blocks without a timeout. Adding a second `uiStopBudget` timer around `<-u.done` after `Kill()` prevents a wedged terminal I/O call from hanging shutdown indefinitely, while guarding `(*localUI).failure()` behind a non-blocking check on `<-u.done` so `u.err` is never read while `prog.Run()` is still running.
+   * **(d) Failed-start `teardown` step-0 permission fail**: In `internal/app/assemble.go:335`, if `assemble` fails after the agent has started and raised a permission ask, `teardown` calls `a.agent.Stop(ctx)` without first calling `a.hub.BeginShutdown`, leaving the permission handler parked until the 15s teardown budget expires. Calling `a.hub.BeginShutdown` (bounded by `a.timeouts.Permissions`, default 5s) before `a.agent.Stop(ctx)` in `teardown` immediately resolves any pending permission to `UserNotAvailable`.
+   * **(e) & (g) Plaintext credential lifetime in `App.creds` and `tuiReissue` failure/revoke semantics**:
+     * In `mint()`, if the very first role (`i == 0`, `RoleApprover`) fails to mint, or if shutdown/revocation (`a.shuttingDown()` or `errors.Is(err, transport.ErrShuttingDown)`) occurs at any point during `mint()`, `mint()` must return `nil, err` (and clear `a.creds` on shutdown/revocation) so `tuiReissue` returns an empty `tui.CredentialsMsg{}` and a dismissed panel stays closed.
+     * When credentials are revoked at shutdown (`RevokeCredentials` / `BeginShutdown` / `teardown`) or when `a.shuttingDown()` is true, `a.creds` is cleared and `Reissue` refuses with an error so a re-issue after revoke never returns a revoked credential set.
+     * Add an explicit `RetainPlaintext bool` test-only option on `app.TUIOptions` (independent of `o.TUI.Output`). Whenever the TUI is enabled (`!o.TUI.Disabled`) and `!o.TUI.RetainPlaintext` (the default for all production runs), `App` zeroes the plaintext `Token` fields in `a.creds` under `a.mintMu` and `a.mu` immediately after constructing `tui.CredentialsMsg` (keeping only role, fingerprint, and expiry metadata in `a.creds`, and omitting entries with empty `Token.Reveal()` in `credentialsMsg` on partial re-issue), while headless tests (`o.TUI.Disabled`) and TUI rigs that opt in (`o.TUI.RetainPlaintext: true`) retain `a.Credentials()` as the in-process test seam.
+   * **(f) Unconditional `cancelStart()` on first signal during startup and `startUI` ready-handshake context**: In `internal/app/shutdown.go:79`, `watchSignals` only calls `cancelStart()` when `first && !a.shuttingDown()`, so if `a.Shutdown()` was triggered just before a signal arrives during startup, `cancelStart()` is skipped. Calling `cancelStart()` unconditionally on every signal in `watchSignals`, and checking `startCtx.Err()` at entry to `startUI` as well as selecting on `<-startCtx.Done()` in `startUI`'s ready handshake, ensures startup cannot hang in `startUI` when cancelled.
+   * **(h) Joining late TUI errors into `App.Err()`**: In `internal/app/assemble.go:225` and `shutdown.go:142`, `supervise()` calls `a.ui.stop()` and immediately calls `a.takeErrs()`, racing the UI watcher goroutine that waits on `<-ui.done` and calls `a.addErr(fmt.Errorf("tui: %w", err))`. Adding a `watchDone chan struct{}` to `localUI` closed by the watcher goroutine after `a.addErr` and waited on by `localUI.stop()` whenever `<-u.done` closes guarantees any TUI failure is recorded before `supervise()` calls `a.takeErrs()`.
+   * **(i) Startup warning for accepted-but-unconsumed config keys**: In `internal/app`, comparing the loaded `cfg` against `config.Default()` for the unconsumed schema fields (`max_concurrent_sessions`, `retention_days`, `operator_detail_level`, `database.path`, `timeouts.prompt_seconds`, `timeouts.wait_seconds`, `stall.*`, and `commands.*`) and logging `log.Warn("config has accepted-but-unconsumed keys", "keys", keys)` when any non-default value is configured alerts operators at startup without breaking `internal/config`'s `Report.Warnings` contract.
+4. **`AD8472DD` (`internal/app` move-only maintainability refactors)**:
+   * Splitting `assemble.go` into `credentials.go` (credential minting, re-issue, `Credentials()`, `credentialsMsg`) and `late_agent.go` (`lateAgent` with a `get() agent.Agent` helper), extracting `a.watchUI`, grouping shutdown fields on `App` into `shutdownState`, extracting a shared `reap()` helper for `teardown` and `supervise`, embedding shared `agentKnobs` in `factory` and `fakeAgent` in `helpers_test.go`, and replacing `credBytes = 32` in `review1_test.go` with a call-count-budgeted `io.Reader` cleanly resolves all maintainability findings without mutating `internal/hub`'s immutable `Config.Agent` contract.
+
+## Options Evaluated
+
+### Option A: Four Single-Feature Shipments Chained Sequentially (`063-S -> 064-S -> 065-S -> 066-S`)
+
+Decompose the scope into 4 cohesive, single-feature shipments (`n == 1` covering feature per shipment):
+
+1. **Shipment `063-S` (Feature `038-F`, sequenced behind `061-S`)**: Unblock `038-F` (`blocked -> queued`), add black-box integration verification of `pathsafe.Root.Resolve` via `app.Start` in `package app_test` (`038.001-T`), and annotate the dated zero-caller decision records per `BDC0ADDF(g)` (`038.002-T`).
+2. **Shipment `064-S` (Feature `071-F`, blocked by `063-S`)**: Verification-surface and contract follow-ups (`BDC0ADDF(a..f)`): `wsclient`/`hub` doc clarification (`071.001-T`), deterministic TUI-loser late-approve test in `e2e_test.go` (`071.002-T`), `[timeouts].approval_seconds` upper bound in `internal/config` + `docs/config-reference.md` (`071.003-T`), native Windows `CreateToolhelp32Snapshot` process-table helper in `liveproc_test.go` (`071.004-T`), and `pathsafe`-backed `readInsideWorkspace` normalization + live-verification runbook cross-reference (`071.005-T`).
+3. **Shipment `065-S` (Feature `072-F`, blocked by `064-S`)**: Process-lifecycle and TUI observability hardening (`FAE4134F(a..i)`): startup signal/TUI ready-handshake cancellation, bounded post-`Kill` wait in `ui.stop`, step-0 `BeginShutdown` in failed-start `teardown`, and `watchUI` error synchronization (`072.001-T`); credential plaintext zeroing after terminal TUI delivery, `tuiReissue` non-reopening on role-0 failure, and post-revoke re-issue refusal (`072.002-T`); TUI status-line surfacing of rejected WebSocket upgrades (`072.003-T`); startup warning for accepted-but-unconsumed config keys and runbook documentation of the headless/TUI-only credential decision (`072.004-T`).
+4. **Shipment `066-S` (Feature `073-F`, blocked by `065-S`)**: Move-only maintainability refactors of `internal/app` (`AD8472DD`): split `assemble.go` into `credentials.go` and `late_agent.go` with `lateAgent.get()` and `App.watchUI` (`073.001-T`); group shutdown fields into `shutdownState` and extract shared `reap()` helper (`073.002-T`); deduplicate `factory`/`fakeAgent` knobs in `helpers_test.go` and decouple `partialRig` from `credBytes` in `review1_test.go` (`073.003-T`).
+
+* **Pros**:
+  * Strictly satisfies Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment).
+  * Keeps behavioral fixes (`064-S`, `065-S`) completely separate from move-only file splits (`066-S`), preventing noisy diffs and merge conflicts.
+  * Every task touches `<= 3` files, `<= 5` functions, and a single skill domain within the 2-hour rule.
+* **Cons**:
+  * Requires 4 sequential shipment lifecycles in Ship.
+
+### Option B: Two Consolidated Shipments (`063-S` for `038-F` + `064-S` Combining `BDC0ADDF`, `FAE4134F`, and `AD8472DD`)
+
+* **Pros**:
+  * Fewer total shipments (2 instead of 4).
+* **Cons**:
+  * Bundling 12+ tasks across `internal/config`, `internal/hub`, `internal/transport`, `internal/tui`, `internal/app`, and `docs/` into one 12-task shipment (`064-S`) creates a large PR blast radius and mixes behavioral bug fixes with move-only file splits in `internal/app`.
+
+## Trade-off Comparison
+
+| Criterion | Option A (4 Chained Shipments: `063-S..066-S`) | Option B (2 Shipments: `063-S..064-S`) |
+|---|---|---|
+| Ship `S2` (`n == 1` feature/shipment) compliance | Full (`038-F`, `071-F`, `072-F`, `073-F`) | Full (`038-F`, `071-F`) |
+| Behavioral vs move-only isolation | Cleanly isolated (`064-S`/`065-S` vs `066-S`) | Mixed in one shipment |
+| PR blast radius & reviewability | Small (2–5 tasks per shipment) | High (12 tasks in `064-S`) |
+| Alignment with 2-hour rule & Width Isolation | High | Moderate |
+
+## Decision
+
+We select **Option A: Four Single-Feature Shipments Chained Sequentially (`063-S -> 064-S -> 065-S -> 066-S`)**, with the following specific technical decisions:
+
+1. **D-1 (`038-F` & `BDC0ADDF(g)` in `063-S`)**: Unblock `038-F` to `queued`. Note that `062-S` (PR #185, commit `6290151`) is already merged into `main` so its code prerequisite (`internal/app/workspace.go`) is present in the tree; sequence `063-S`'s backlogit `blocks` edge behind `061-S` (whose closure is `READY` and `compaction_status: done`, avoiding `062-S`'s operator-owned live-condition gate in `pipeline-topology`, since those live Copilot CLI shell/write conditions are independent of `pathsafe.Root.Resolve` workspace-flag containment). Verify `pathsafe.Root.Resolve` black-box through `app.Start` in `package app_test` (`internal/app/workspace_blackbox_test.go`), and add historical point-in-time annotations to the dated decision records that stated zero production `Root.Resolve` callers prior to `062-S`.
+2. **D-2 (`BDC0ADDF(a..f)` in `064-S` / `071-F`)**:
+   * Clarify `already_resolved` (during `permDecided` hand-off) vs `request_unknown` (after `permission.resolved`/`permission.aborted` retires the entry) in `internal/transport/wsclient/client.go` and `internal/hub/doc.go`.
+   * Drive a deterministic late TUI approve action while `perm.gate` is held in `TestE2EFirstResponder` (`internal/app/e2e_test.go`).
+   * Enforce `MaxApprovalTimeoutSeconds = 86400` in `internal/config` validation and document it in `docs/config-reference.md`.
+   * Replace the PowerShell `Win32_Process` subprocess in `internal/app/liveproc_test.go` with standard library `syscall` (`CreateToolhelp32Snapshot` / `Process32First` / `Process32Next`) in platform-split test helpers (`liveproc_windows_test.go` and `liveproc_other_test.go`, moving `parseProcessTable` to `liveproc_other_test.go`).
+   * Harden `readInsideWorkspace` in `internal/app/live_test.go` using `pathsafe.NewRoot` / `Root.Resolve` (handling `\\?\` prefixes, quotes, and junctions without `filepath.EvalSymlinks`) and record the 2026-10-20 live verification dispositions for `(f)` in `docs/runbooks/live-sdk-tests.md`.
+3. **D-3 (`FAE4134F(a..i)` in `065-S` / `072-F`)**:
+   * **Headless decision (`(a)`)**: Keep `cmd/intercom` TUI-only (interactive terminal required) in compliance with ADR MVP-2 item 3 (never log or write bearer tokens to disk/pipes) and the `writepath` gate; document `app.Options{TUI: app.TUIOptions{Disabled: true}}` as the in-process headless seam and defer non-TTY service auth to post-MVP identity-provider tokens (ADR MVP-2 option b).
+   * **Lifecycle hardening (`(c, d, f, h)`)**: Bound the post-`Kill()` wait in `localUI.stop()` (guarding `localUI.failure()` with `<-u.done`), call `a.hub.BeginShutdown` (bounded by `a.timeouts.Permissions`) before `a.agent.Stop(ctx)` in `teardown()`, call `cancelStart()` unconditionally on any signal in `watchSignals` while checking `startCtx.Err()` and selecting on `<-startCtx.Done()` in `startUI`'s ready handshake, and synchronize `watchUI` error recording via `u.watchDone` inside `localUI.stop()` before `supervise()` calls `a.takeErrs()`.
+   * **Credential hygiene (`(e, g)`)**: Return `nil, err` from `mint()` when role 0 fails or when shutdown/revocation (`a.shuttingDown()` or `transport.ErrShuttingDown`) is observed so `tuiReissue` returns an empty `CredentialsMsg{}` and does not reopen a dismissed panel; clear `a.creds` and refuse `Reissue` after shutdown/revocation; zero plaintext tokens in `a.creds` after TUI delivery whenever `!o.TUI.Disabled && !o.TUI.RetainPlaintext` (an explicit policy independent of `o.TUI.Output`).
+   * **TUI security & config observability (`(b, i)`)**: Surface rejected `/ws` WebSocket upgrade counts and last status/reason in the TUI status line via `transport.RemoteOptions.OnReject` -> coalesced `tui.SecurityNoticeMsg` (guarded by `msg.Total >= m.rejectedUpgrades`), and log a deterministic startup warning in `app.Start` when accepted-but-unconsumed config keys differ from `config.Default()`.
+4. **D-4 (`AD8472DD` in `066-S` / `073-F`)**: Keep `lateAgent` package-private in `internal/app/late_agent.go` with a `get()` helper (preserving `hub.Config.Agent` immutability rather than adding `hub.SetAgent`), extract `internal/app/credentials.go` and `App.watchUI`, group shutdown fields into `shutdownState` with a shared `reap()` helper, and deduplicate `factory`/`fakeAgent` knobs via embedded `agentKnobs` in `helpers_test.go` while replacing `credBytes = 32` in `review1_test.go` with a call-budgeted reader.
+
+## Rejected Alternatives
+
+* **Option B (Two Consolidated Shipments)**: Rejected because combining behavioral fixes in `internal/app` with move-only file splits (`assemble.go` -> `credentials.go` + `late_agent.go`) in a single 12-task shipment degrades reviewability and increases merge risk.
+* **Adding `--no-tui` to `cmd/intercom` that writes credentials to stdout/stderr or a file**: Rejected because writing bearer credentials to a pipe, log, or disk file violates ADR MVP-2 item 3 ("shown only on the local TUI... never written to a log... or disk") and writing a file from `cmd/**` or `internal/**` violates the `writepath` gate.
+* **Adding `hub.SetAgent` to replace `lateAgent`**: Rejected because `hub.Config.Agent` is currently immutable after `hub.New`, so keeping the atomic pointer forwarder inside `internal/app/late_agent.go` with a `get()` helper avoids widening `internal/hub`'s public mutation surface.
+
+## Unresolved Questions
+
+None. All 4 scoped items have concrete, deterministic designs verified against the codebase.
+
+## Risks and Mitigations
+
+* **Risk**: Adding a production `pathsafe.Root.Resolve` call site outside `internal/app/workspace.go` would trip the `writepath` gate (`reviewedResolveCallers`).
+  * **Mitigation**: `038.001-T` exercises `pathsafe.Root.Resolve` in `internal/app/workspace_blackbox_test.go` (`package app_test`) by calling `app.Start` (which invokes the existing reviewed caller in `internal/app/workspace.go`), and `writepath` also exempts `*_test.go` files.
+* **Risk**: Zeroing `App.creds` unconditionally after TUI delivery could break existing pipe-driven TUI tests (`credentials_test.go`, `e2e_test.go`) that call `a.Credentials()` after dismissing the TUI credential panel.
+  * **Mitigation**: Use an explicit test-only option `TUIOptions.RetainPlaintext` (independent of `o.TUI.Output`): zero plaintext tokens in `a.creds` whenever `!o.TUI.Disabled && !o.TUI.RetainPlaintext` and unconditionally on shutdown/revocation, while `o.TUI.Disabled` (headless tests) and `o.TUI.RetainPlaintext: true` (`newE2ERig` / `newUIRig`) preserve `a.Credentials()` as the in-process test seam.
+* **Risk**: `autoharness gate pipeline-topology --mode agent --shipment 063-S --phase pre_claim` would report `PREDECESSOR_CLOSURE_INCOMPLETE` if `063-S` has a `blocks` edge to `062-S` (whose closure is `READY_WITH_CONDITIONS` pending operator-present live shell/write permission checks).
+  * **Mitigation**: Sequence `063-S` behind `061-S` (`backlogit dep add 063-S 061-S --type blocks`), whose closure artifact has `closure_status: READY` and `compaction_status: done`, and verify with `autoharness gate pipeline-topology` in Step 5.5.
