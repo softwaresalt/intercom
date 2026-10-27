@@ -475,12 +475,12 @@ func TestSignalDuringStartupAbortsStartAndReapsTheAgent(t *testing.T) {
 // still cancel the startup context, and hurries the shutdown.
 func TestSignalDuringShutdownStillCancelsStartup(t *testing.T) {
 	a := &App{
-		log:     newTestLogger(&logBuf{}),
-		done:    make(chan struct{}),
-		shutReq: make(chan struct{}),
+		log:  newTestLogger(&logBuf{}),
+		done: make(chan struct{}),
+		shut: shutdownState{req: make(chan struct{})},
 	}
 	hurried := make(chan struct{}, 4)
-	a.hurry = func() { hurried <- struct{}{} }
+	a.shut.hurry = func() { hurried <- struct{}{} }
 	a.Shutdown("tui quit") // shutdown already in progress
 
 	cancelled := make(chan struct{}, 4)

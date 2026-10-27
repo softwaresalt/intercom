@@ -280,10 +280,8 @@ func TestServeFailureTriggersShutdownAndIsReported(t *testing.T) {
 
 	a.onServeExit(nil)
 	a.onServeExit(http.ErrServerClosed) // orderly close: not a failure
-	select {
-	case <-a.shutReq:
+	if a.shuttingDown() {
 		t.Fatal("an orderly listener close triggered a shutdown")
-	default:
 	}
 
 	boom := errors.New("accept failed")

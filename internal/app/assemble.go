@@ -109,16 +109,8 @@ type App struct {
 	done     chan struct{}
 	doneOnce sync.Once
 
-	// Shutdown: shutReq is closed once by the first trigger (signal, TUI quit,
-	// Shutdown call); supervise then runs the §3.1 sequence. shutCtx bounds
-	// the whole sequence and is cancelled (hurried) by a second signal.
-	shutReq    chan struct{}
-	shutOnce   sync.Once
-	shutReason string          // written before shutReq closes
-	shutCtx    context.Context //nolint:containedctx // process-lifetime shutdown budget, cancelled by hurry
-	hurry      context.CancelFunc
-	timeouts   hub.ShutdownTimeouts
-	err        error // aggregated shutdown errors; written before done closes
+	// shut is the shutdown state: see shutdownState.
+	shut shutdownState
 }
 
 // Start assembles and starts the process; it returns once the process is
@@ -173,14 +165,15 @@ func Start(ctx context.Context, o Options) (*App, error) {
 	}
 
 	a := &App{
-		log: log, cfg: cfg, workspace: workspace, timeouts: o.Timeouts,
-		done: make(chan struct{}), shutReq: make(chan struct{}),
+		log: log, cfg: cfg, workspace: workspace,
+		shut:     shutdownState{timeouts: o.Timeouts, req: make(chan struct{})},
+		done:     make(chan struct{}),
 		rejectCh: make(chan tui.SecurityNoticeMsg, 1),
 	}
 	// The shutdown context is deliberately NOT derived from ctx or from any
 	// signal: a SIGINT must trigger the ordered sequence, not cancel it (and
 	// the hub runs on a context nothing cancels before step 6).
-	a.shutCtx, a.hurry = context.WithCancel(context.Background())
+	a.shut.ctx, a.shut.hurry = context.WithCancel(context.Background())
 
 	// ctx (and a signal) bound startup only.
 	startCtx, cancelStart := context.WithCancel(ctx)
@@ -195,7 +188,7 @@ func Start(ctx context.Context, o Options) (*App, error) {
 			log.Error("teardown after failed start", "error", terr)
 			err = errors.Join(err, fmt.Errorf("teardown after failed start: %w", terr))
 		}
-		a.hurry()
+		a.shut.hurry()
 		a.finish()
 		return nil, err
 	}
@@ -401,7 +394,7 @@ func (a *App) teardown(ctx context.Context) error {
 	a.clearCreds()
 	var errs []error
 	if a.hub != nil {
-		permBudget := a.timeouts.Permissions
+		permBudget := a.shut.timeouts.Permissions
 		if permBudget <= 0 {
 			permBudget = defaultTeardownPermissions
 		}
@@ -411,28 +404,20 @@ func (a *App) teardown(ctx context.Context) error {
 		}
 		cancel()
 	}
-	if a.ui != nil {
-		if err := a.ui.stop(); err != nil {
-			errs = append(errs, err)
-		}
+	// The UI and the listener go before the agent here (unlike a running
+	// shutdown, where the agent is already gone), so teardown cannot call reap
+	// as one unit: it runs the same steps reap is built from, in its own order.
+	if err := a.stopUI(); err != nil {
+		errs = append(errs, err)
 	}
-	if a.remote != nil {
-		if err := a.remote.Shutdown(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("remote shutdown: %w", err))
-		}
+	if err := a.stopRemote(ctx); err != nil {
+		errs = append(errs, err)
 	}
 	if a.agent != nil {
 		if err := a.agent.Stop(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("agent stop: %w", err))
 		}
 	}
-	if a.hub != nil {
-		a.hub.Stop()
-		<-a.hubRunDone
-		a.hubCancel()
-	}
-	if a.serveDone != nil {
-		<-a.serveDone
-	}
+	a.awaitHub()
 	return errors.Join(errs...)
 }
