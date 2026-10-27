@@ -158,7 +158,12 @@ func (a *App) supervise() {
 	<-a.hubRunDone
 	<-a.serveDone
 	if a.ui != nil {
-		a.ui.stop()
+		// Recorded before takeErrs so a TUI that could not be stopped lands in
+		// a.err ahead of close(a.done).
+		if e := a.ui.stop(); e != nil {
+			a.addErr(e)
+			a.log.Error("local tui stop failed", "error", e)
+		}
 	}
 	a.err = errors.Join(append(a.takeErrs(), errs...)...) // run failures (TUI, listener) first
 	a.log.Info("shutdown complete", "ok", a.err == nil)

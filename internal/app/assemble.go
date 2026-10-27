@@ -257,17 +257,20 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 	}
 
 	if !o.TUI.Disabled {
-		// The UI outlives Start: Start's ctx bounds startup only, so the feed
-		// (whose lifetime is its Start ctx) gets a context that is not cancelled
-		// with it; ui.stop releases it.
+		// startUI honours the startup ctx (a cancelled start fails it) and itself
+		// gives the feed a context that outlives startup; ui.stop releases it.
 		// The one display of the credentials: the local TUI only. They are given
 		// to the model at construction so no later message can race Ctrl+R.
-		ui, err := startUI(context.WithoutCancel(ctx), h, o.TUI, a.credentialsMsg(a.Credentials()), a.tuiReissue)
+		ui, err := startUI(ctx, h, o.TUI, a.credentialsMsg(a.Credentials()), a.tuiReissue)
 		if err != nil {
 			return fmt.Errorf("start tui: %w", err)
 		}
 		a.ui = ui
+		// Registered before the watcher starts, so a stop that waits on it can
+		// never miss the runtime error it records.
+		ui.watchDone = make(chan struct{})
 		go func() {
+			defer close(ui.watchDone)
 			<-ui.done
 			if err := ui.failure(); err != nil {
 				a.log.Error("tui exited with error", "error", err)
@@ -410,7 +413,9 @@ func (a *App) Credentials() []transport.Issued {
 func (a *App) teardown(ctx context.Context) error {
 	var errs []error
 	if a.ui != nil {
-		a.ui.stop()
+		if err := a.ui.stop(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if a.remote != nil {
 		if err := a.remote.Shutdown(ctx); err != nil {
