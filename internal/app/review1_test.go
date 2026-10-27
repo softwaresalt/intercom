@@ -98,36 +98,53 @@ func TestInjectedTUIOutputNeedsNoTerminal(t *testing.T) {
 	startApp(t, o)
 }
 
-// budgetRand is an entropy source that fails once its byte budget is spent.
+// budgetRand is an entropy source that satisfies a fixed number of Read calls
+// and then fails. Each Mint takes exactly one entropy read, so calls counts
+// mints; the test is thereby independent of the credential's byte length. It
+// fills every read with a rising byte sequence and records each one, so a test
+// can derive the credential a given mint produced via token.
 type budgetRand struct {
-	mu     sync.Mutex
-	budget int
-	next   byte
+	mu    sync.Mutex
+	calls int
+	next  byte
+	reads [][]byte
 }
 
 func (r *budgetRand) Read(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.budget <= 0 {
+	if r.calls <= 0 {
 		return 0, errors.New("entropy exhausted")
 	}
-	n := min(len(p), r.budget)
-	for i := 0; i < n; i++ {
+	r.calls--
+	got := make([]byte, len(p))
+	for i := range p {
 		r.next++
 		p[i] = r.next
+		got[i] = r.next
 	}
-	r.budget -= n
-	return n, nil
+	r.reads = append(r.reads, got)
+	return len(p), nil
 }
 
-const credBytes = 32
+// token is the credential that mint n (0-based) produced: the encoding of the
+// n-th entropy read.
+func (r *budgetRand) token(t *testing.T, n int) string {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if n >= len(r.reads) {
+		t.Fatalf("entropy read %d never happened (%d reads)", n, len(r.reads))
+	}
+	return base64.RawURLEncoding.EncodeToString(r.reads[n])
+}
 
 func partialRig(t *testing.T) (*App, []transport.Issued) {
 	t.Helper()
 	f := newFactory()
 	o, _ := baseOptions(t, f)
 	// two credentials at start, then one more: the re-issue's observer fails.
-	o.CredentialRand = &budgetRand{budget: 3 * credBytes}
+	o.CredentialRand = &budgetRand{calls: 3}
 	a := startApp(t, o)
 	return a, a.Credentials()
 }
@@ -296,17 +313,6 @@ func TestServeFailureTriggersShutdownAndIsReported(t *testing.T) {
 	}
 }
 
-// seqToken is the credential a budgetRand yields for entropy bytes
-// [from, from+credBytes): the rand counts up from 1, so mint n (0-based) is
-// built from bytes n*credBytes+1 .. (n+1)*credBytes.
-func seqToken(n int) string {
-	raw := make([]byte, credBytes)
-	for i := range raw {
-		raw[i] = byte(n*credBytes + i + 1)
-	}
-	return base64.RawURLEncoding.EncodeToString(raw)
-}
-
 func assertNoPlaintext(t *testing.T, a *App) {
 	t.Helper()
 	for i, c := range a.Credentials() {
@@ -322,7 +328,7 @@ func assertNoPlaintext(t *testing.T, a *App) {
 func TestTUIReissueRoleZeroFailureReturnsEmptyMessage(t *testing.T) {
 	f := newFactory()
 	o, _ := baseOptions(t, f)
-	o.CredentialRand = &budgetRand{budget: 2 * credBytes} // start-up only
+	o.CredentialRand = &budgetRand{calls: 2} // start-up only
 	a := startApp(t, o)
 
 	msg, err := a.tuiReissue(context.Background())
@@ -372,14 +378,15 @@ func TestReissueAfterRevocationReturnsNoCredentials(t *testing.T) {
 func TestTUIDeliveryZeroesRetainedPlaintext(t *testing.T) {
 	f := newFactory()
 	o, _ := baseOptions(t, f)
-	o.CredentialRand = &budgetRand{budget: 4 * credBytes}
+	rnd := &budgetRand{calls: 4}
+	o.CredentialRand = rnd
 	in, inW := io.Pipe()
 	out := &syncBuf{}
 	t.Cleanup(func() { _ = inW.Close(); _ = in.Close() })
 	o.TUI = TUIOptions{Input: in, Output: out, Width: 100, Height: 30}
 	a := startApp(t, o)
 
-	approver, observer := seqToken(0), seqToken(1)
+	approver, observer := rnd.token(t, 0), rnd.token(t, 1)
 	waitOutput(t, out, approver) // the TUI was given the plaintext
 	waitOutput(t, out, observer)
 

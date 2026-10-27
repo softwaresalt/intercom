@@ -52,11 +52,10 @@ func (r *recorder) waitEvent(t *testing.T, e string) {
 	t.Fatalf("event %q never recorded; got %v", e, r.snapshot())
 }
 
-// fakeAgent is an injected agent.Agent: no CLI child, every call recorded.
-type fakeAgent struct {
-	rec  *recorder
-	deps AgentDeps
-
+// agentKnobs are the fault-injection settings shared by factory (which sets
+// them) and fakeAgent (which honours them), so build copies them in one
+// assignment.
+type agentKnobs struct {
 	startErr error
 	// startBlock makes Start wait for its context (a slow agent start).
 	startBlock bool
@@ -67,6 +66,14 @@ type fakeAgent struct {
 	stopBlock bool
 	// stopErr is returned by Stop (a failing stop).
 	stopErr error
+}
+
+// fakeAgent is an injected agent.Agent: no CLI child, every call recorded.
+type fakeAgent struct {
+	rec  *recorder
+	deps AgentDeps
+
+	agentKnobs
 
 	mu     sync.Mutex
 	starts int
@@ -131,17 +138,12 @@ func (f *fakeAgent) emit(ev agent.Event) { f.deps.Ingress <- ev }
 
 // factory records how many times it was invoked and hands out one fakeAgent.
 type factory struct {
-	mu         sync.Mutex
-	calls      int
-	agent      *fakeAgent
-	rec        *recorder
-	startErr   error
-	buildErr   error
-	startBlock bool
-	stopBlock  bool
-	stopErr    error
-	abortHook  func()
-	stopHook   func(context.Context)
+	mu       sync.Mutex
+	calls    int
+	agent    *fakeAgent
+	rec      *recorder
+	buildErr error
+	agentKnobs
 }
 
 func newFactory() *factory { return &factory{rec: &recorder{}} }
@@ -153,7 +155,7 @@ func (f *factory) build(d AgentDeps) (agent.Agent, error) {
 	if f.buildErr != nil {
 		return nil, f.buildErr
 	}
-	f.agent = &fakeAgent{rec: f.rec, deps: d, startErr: f.startErr, startBlock: f.startBlock, stopBlock: f.stopBlock, stopErr: f.stopErr, abortHook: f.abortHook, stopHook: f.stopHook}
+	f.agent = &fakeAgent{rec: f.rec, deps: d, agentKnobs: f.agentKnobs}
 	return f.agent, nil
 }
 
