@@ -14,7 +14,7 @@ closure_branch: post-merge/071-f-verification-surface-follow-ups
 close_path: cascade
 close_evidence: docs/closure/evidence/064-S-071-F-close-evidence.json
 closure_status: READY
-compaction_status: pending
+compaction_status: done
 ---
 
 # 064-S / 071-F post-merge closure
@@ -43,4 +43,4 @@ compaction_status: pending
 * Per-task telemetry and a separate per-task harness-architect skill invocation were not run; delegated engineers followed the skill's red-phase protocol per task and applied the `harness-ready` label after red-then-green evidence.
 * The committed `gatecheck.exe` is stale; the write-path self-test was run via `go run ./tools/gatecheck`.
 * The file-lock scripts needed an explicit `-WorkspaceRoot`, and `release_lock.ps1` takes `-Token`.
-* Compaction (P-020): pending at the time this artifact was first committed; finalized in the compaction step.
+* Compaction (P-020): done. See `docs/memory/compacted/2026-10-26-064-s-ship-compacted.md`.
