@@ -92,6 +92,39 @@ func TestRunbookDocumentsEveryRemoteKey(t *testing.T) {
 	}
 }
 
+// TestRunbookDocumentsLifecycleAndObservability pins the operator-visible
+// behaviour of the TUI lifecycle, headless credential decision, rejected-upgrade
+// notice and unconsumed-config warning.
+func TestRunbookDocumentsLifecycleAndObservability(t *testing.T) {
+	doc := runbook(t)
+	for _, want := range []string{
+		"TUIOptions{Disabled: true}",
+		"programmatic headless",
+		"identity-provider",
+		"rejected upgrades: N (last: STATUS REASON)",
+		"config has accepted-but-unconsumed keys",
+		"zeroed",
+		"3 s",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("the runbook no longer says %q", want)
+		}
+	}
+
+	// Keys unconsumedKeys (internal/app/assemble.go) can report.
+	for _, key := range []string{
+		"max_concurrent_sessions", "retention_days", "operator_detail_level",
+		"database.path", "timeouts.prompt_seconds", "timeouts.wait_seconds",
+		"stall.enabled", "stall.inactivity_threshold_seconds",
+		"stall.escalation_threshold_seconds", "stall.max_retries",
+		"stall.default_nudge_message", "commands",
+	} {
+		if !strings.Contains(doc, "`"+key+"`") {
+			t.Errorf("the runbook does not list the unconsumed config key %q", key)
+		}
+	}
+}
+
 // TestRunbookStatesCredentialHandling pins the statements the acceptance
 // criteria require: shown once on the local TUI, never in config or logs, and
 // the accepted subprotocol logging residual.
