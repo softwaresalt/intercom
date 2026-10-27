@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,6 +33,38 @@ const (
 // (config.MaxApprovalTimeoutSeconds); this one-year clamp is defence in depth
 // for programmatic configs that bypass Validate.
 const maxApproval = 365 * 24 * time.Hour
+
+// defaultTeardownPermissions is the budget for failing parked permission asks
+// in a forced teardown when [hub.ShutdownTimeouts].Permissions is unset; it
+// matches the hub's own default for step 0.
+const defaultTeardownPermissions = 5 * time.Second
+
+// unconsumedKeys lists, sorted, the config keys that are accepted and
+// validated but not yet consumed by any component and that differ from
+// [config.Default]. Only key names are returned, never values.
+func unconsumedKeys(cfg *config.Config) []string {
+	def := config.Default()
+	var keys []string
+	add := func(differs bool, name string) {
+		if differs {
+			keys = append(keys, name)
+		}
+	}
+	add(cfg.MaxConcurrentSessions != def.MaxConcurrentSessions, "max_concurrent_sessions")
+	add(cfg.RetentionDays != def.RetentionDays, "retention_days")
+	add(cfg.OperatorDetailLevel != def.OperatorDetailLevel, "operator_detail_level")
+	add(cfg.Database != def.Database, "database.path")
+	add(cfg.Timeouts.PromptSeconds != def.Timeouts.PromptSeconds, "timeouts.prompt_seconds")
+	add(cfg.Timeouts.WaitSeconds != def.Timeouts.WaitSeconds, "timeouts.wait_seconds")
+	add(cfg.Stall.Enabled != def.Stall.Enabled, "stall.enabled")
+	add(cfg.Stall.InactivityThresholdSeconds != def.Stall.InactivityThresholdSeconds, "stall.inactivity_threshold_seconds")
+	add(cfg.Stall.EscalationThresholdSeconds != def.Stall.EscalationThresholdSeconds, "stall.escalation_threshold_seconds")
+	add(cfg.Stall.MaxRetries != def.Stall.MaxRetries, "stall.max_retries")
+	add(cfg.Stall.DefaultNudgeMessage != def.Stall.DefaultNudgeMessage, "stall.default_nudge_message")
+	add(!maps.Equal(cfg.Commands, def.Commands), "commands")
+	slices.Sort(keys)
+	return keys
+}
 
 // approvalTimeout maps [timeouts].approval_seconds to the hub's permission
 // deadline; 0 selects the hub default.
@@ -139,6 +173,9 @@ func Start(ctx context.Context, o Options) (*App, error) {
 	}
 	if len(report.UnknownKeys) > 0 {
 		log.Warn("config has unknown keys", "keys", report.UnknownKeys)
+	}
+	if keys := unconsumedKeys(cfg); len(keys) > 0 {
+		log.Warn("config has accepted-but-unconsumed keys", "keys", keys)
 	}
 	workspace, err := resolveWorkspace(cfg, o.Workspace)
 	if err != nil {
@@ -408,10 +445,22 @@ func (a *App) Credentials() []transport.Issued {
 // teardown is the forced unwind used only when startup fails: it stops
 // whatever was started, in an order that keeps the hub alive until the agent
 // is gone (SDK teardown produces events and unblocks handlers that need a live
-// hub). The ordered design §3.1 shutdown of a running process is
-// [App.Shutdown].
+// hub). The hub's step 0 runs first, bounded, so a parked permission ask
+// resolves to UserNotAvailable at once instead of waiting on the agent stop.
+// The ordered design §3.1 shutdown of a running process is [App.Shutdown].
 func (a *App) teardown(ctx context.Context) error {
 	var errs []error
+	if a.hub != nil {
+		permBudget := a.timeouts.Permissions
+		if permBudget <= 0 {
+			permBudget = defaultTeardownPermissions
+		}
+		pctx, cancel := context.WithTimeout(ctx, permBudget)
+		if err := a.hub.BeginShutdown(pctx); err != nil {
+			errs = append(errs, fmt.Errorf("fail pending permissions: %w", err))
+		}
+		cancel()
+	}
 	if a.ui != nil {
 		if err := a.ui.stop(); err != nil {
 			errs = append(errs, err)
