@@ -40,7 +40,7 @@ covering every key in this reference.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `timeouts.approval_seconds` | integer | `3600` | How long a permission request waits for an operator answer before the hub resolves it `UserNotAvailable`. Consumed by the process wiring (`internal/app`); `0` selects the hub's built-in default (2 minutes); values above one year are clamped. |
+| `timeouts.approval_seconds` | integer | `3600` | How long a permission request waits for an operator answer before the hub resolves it `UserNotAvailable`. Consumed by the process wiring (`internal/app`); `0` selects the hub's built-in default (2 minutes). Must be between `0` and `86400` (24 hours, `MaxApprovalTimeoutSeconds`) inclusive; a larger value fails config load with `timeouts.approval_seconds must not exceed 86400`. |
 | `timeouts.prompt_seconds` | integer | `1800` | Accepted, not yet consumed by the MVP process. |
 | `timeouts.wait_seconds` | integer | `0` | `0` means "no timeout". Accepted, not yet consumed by the MVP process. |
 
@@ -155,6 +155,15 @@ hosts, max connections. Messages never echo entry values.
 | each `allowed_hosts` entry is a canonical host[:port], unique | `remote.allowed_hosts[{i}] {reason}` |
 | `max_connections` at least 1 | `remote.max_connections must be at least 1`; `remote.max_connections must not exceed 1024` |
 | no credential-shaped key under `[remote]` (checked by `Decode`, before `Validate`, because it needs the raw key set) | `remote.{key} is a credential-shaped key; credentials must never be stored in config.toml (remove it from [remote])` |
+
+### `[timeouts]` rule
+
+A final rule runs inside `Validate()` after the `[remote]` group (the earlier
+orders are unchanged), so a failure never mutates the receiver.
+
+| Rule | Message |
+|---|---|
+| `approval_seconds` at most 86400 (`0` stays valid and selects the hub's 2-minute default) | `timeouts.approval_seconds must not exceed 86400` |
 
 Rule 5 has one additional non-fatal advisory: a bare name that is not
 currently resolvable on `PATH` produces `copilot.cli_path '{name}' was not

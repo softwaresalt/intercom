@@ -67,8 +67,9 @@ approval of destructive requests is off. **Never put a credential in
 
 Related keys that matter to operators: `http_port` (default 3000),
 `copilot.cli_path` (see the PATH residual below), `copilot.startup_timeout_seconds`
-(default 30) and `timeouts.approval_seconds` (default 3600: how long a
-permission request waits before the hub resolves it "user not available").
+(default 30) and `timeouts.approval_seconds` (default 3600, at most 86400:
+how long a permission request waits before the hub resolves it "user not
+available").
 Full reference: [`docs/config-reference.md`](../config-reference.md).
 
 ## 4. Credentials
