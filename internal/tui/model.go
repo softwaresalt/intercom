@@ -78,9 +78,9 @@ func newStyles(r *lipgloss.Renderer) styles {
 }
 
 // SecurityNoticeMsg reports the running count of refused WebSocket upgrades
-// and the latest refusal. Reason is a fixed non-secret code; it is sanitized
-// again when rendered. A message with a lower Total than one already applied
-// is stale and ignored.
+// and a refusal. Reason is a fixed non-secret code; it is sanitized again when
+// rendered. A message with a lower Total than one already applied is stale and
+// ignored. The app's mailbox keeps the notice with the highest Total.
 type SecurityNoticeMsg struct {
 	Status int
 	Reason string

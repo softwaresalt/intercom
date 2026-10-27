@@ -82,8 +82,9 @@ type Config struct {
 	Logger *slog.Logger
 	// OnReject, when non-nil, is called for every pre-upgrade rejection with
 	// the HTTP status, a fixed non-secret reason code and the running total of
-	// rejections. It runs on the request goroutine, possibly concurrently, so
-	// it must not block or panic and must not retain the request.
+	// rejections. The reason strings are a stable contract: the TUI notice and
+	// the operator runbook use them. It runs on the request goroutine,
+	// possibly concurrently, so it must not block or panic.
 	OnReject func(status int, reason string, total uint64)
 }
 
@@ -184,7 +185,9 @@ func NewHandler(cfg Config) (*Handler, error) {
 	return h, nil
 }
 
-// RejectedUpgrades returns how many requests were refused before upgrade.
+// RejectedUpgrades returns how many requests the handler refused before
+// upgrade. It counts handler-level upgrade refusals only: it does not include
+// over-cap 503s from the connection limiter or 404s for a wrong path.
 func (h *Handler) RejectedUpgrades() uint64 { return h.rejected.Load() }
 
 // SetBoundAddr records the listener's port so the loopback Host names

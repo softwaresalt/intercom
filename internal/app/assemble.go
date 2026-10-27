@@ -117,8 +117,8 @@ type App struct {
 	mu     sync.Mutex
 	mintMu sync.Mutex         // serializes mint/re-issue so two cannot interleave their role order
 	creds  []transport.Issued // live credentials, for LOCAL display only
-	// rejectCh is a capacity-1 latest-only mailbox for rejected-upgrade
-	// notices; producers write it under mu, the pump is the one reader.
+	// rejectCh is a capacity-1 mailbox for rejected-upgrade notices that keeps
+	// the highest Total; producers write it under mu, the pump is the one reader.
 	rejectCh chan tui.SecurityNoticeMsg
 	// credsCleared is sticky: once set (shutdown, failed start) no credential
 	// is ever published into creds again. Guarded by mu.
@@ -351,14 +351,19 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 // onReject is the transport's rejected-upgrade observer. It runs on request
 // goroutines, so it only stores the latest notice in the capacity-1 mailbox:
 // it never blocks, never reads a.ui (the TUI may not exist yet, or any more)
-// and never spawns work per request. Producers hold mu, so after dropping a
-// stale notice the send cannot find the mailbox full.
+// and never spawns work per request. The mailbox keeps the notice with the
+// highest Total, because notices from concurrent request goroutines can arrive
+// out of order. Producers hold mu, so after draining the slot the send cannot
+// find the mailbox full.
 func (a *App) onReject(status int, reason string, total uint64) {
 	msg := tui.SecurityNoticeMsg{Status: status, Reason: reason, Total: total}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	select {
-	case <-a.rejectCh:
+	case pending := <-a.rejectCh:
+		if pending.Total > msg.Total {
+			msg = pending
+		}
 	default:
 	}
 	select {
@@ -432,6 +437,9 @@ func (a *App) mint() ([]transport.Issued, error) {
 			// Shutdown revoked (and cleared) the credentials while this mint was
 			// in flight: never republish them.
 			a.credsCleared = true
+			for i := range a.creds {
+				a.creds[i].Token = transport.Token{}
+			}
 			a.creds = nil
 			a.mu.Unlock()
 			clear(next)
@@ -455,8 +463,9 @@ func (a *App) revokedForShutdown(cause error) error {
 }
 
 // clearCreds drops the live credentials and makes that terminal: no later mint
-// can publish into creds again. It takes only mu, so it is safe to call with
-// or without mintMu held.
+// can publish into creds again. Zeroing drops the process's own reference to
+// the plaintext; Go strings are immutable, so this is not a memory scrub. It
+// takes only mu, so it is safe to call with or without mintMu held.
 func (a *App) clearCreds() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -467,8 +476,10 @@ func (a *App) clearCreds() {
 	a.creds = nil
 }
 
-// zeroPlaintext drops the plaintext from the live credentials once the local
-// TUI has been given it, keeping role, fingerprint and expiry.
+// zeroPlaintext drops the process's own reference to the plaintext in the live
+// credentials once the local TUI has been given it, keeping role, fingerprint
+// and expiry. Go strings are immutable, so this is not a memory scrub; the TUI
+// model's copy is dropped when the operator dismisses the panel.
 func (a *App) zeroPlaintext() {
 	a.mintMu.Lock()
 	defer a.mintMu.Unlock()
@@ -494,7 +505,10 @@ func (a *App) Reissue(context.Context) ([]transport.Issued, error) {
 	return live, nil
 }
 
-// tuiReissue is the TUI's re-issue key handler.
+// tuiReissue is the TUI's re-issue key handler. When zeroAfterTUI is set it
+// drops the process's own reference to the new plaintext once the message is
+// built (not a memory scrub: Go strings are immutable); the TUI model's copy is
+// dropped when the operator dismisses the panel.
 func (a *App) tuiReissue(ctx context.Context) (tui.CredentialsMsg, error) {
 	live, err := a.Reissue(ctx)
 	if len(live) == 0 {

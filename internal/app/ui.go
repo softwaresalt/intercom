@@ -151,6 +151,10 @@ func startUI(startCtx context.Context, h *hub.Hub, o TUIOptions, creds tui.Crede
 		_ = ui.stop()
 		return nil, err
 	}
+	if err := startCtx.Err(); err != nil { // cancelled while the feed was starting
+		_ = ui.stop()
+		return nil, err
+	}
 	return ui, nil
 }
 
@@ -158,9 +162,10 @@ func startUI(startCtx context.Context, h *hub.Hub, o TUIOptions, creds tui.Crede
 // releases the hub connection. It is idempotent and always returns the same
 // result: non-nil when the program did not leave even after being killed.
 //
-// Quit is dispatched asynchronously because Bubble Tea's Quit blocks in Send
-// until the event loop takes the message; Kill cancels the program's context,
-// which also releases a parked Quit.
+// Quit and Kill are dispatched asynchronously because Bubble Tea's Quit blocks
+// in Send until the event loop takes the message and Kill may block too; the
+// wait after each is bounded by its budget regardless. Kill cancels the
+// program's context, which also releases a parked Quit.
 func (u *localUI) stop() error {
 	u.stopOnce.Do(func() {
 		u.stopping.Store(true)
@@ -181,7 +186,7 @@ func (u *localUI) stop() error {
 
 		go quit()
 		if !waitClosed(u.done, stopBudget) {
-			kill()
+			go kill()
 			if !waitClosed(u.done, killWait) {
 				u.stopErr = fmt.Errorf("local tui: the program did not exit within %s of Quit and %s of Kill", stopBudget, killWait)
 				u.feed.Close()

@@ -103,10 +103,24 @@ func TestRunbookDocumentsLifecycleAndObservability(t *testing.T) {
 		"identity-provider",
 		"rejected upgrades: N (last: STATUS REASON)",
 		"config has accepted-but-unconsumed keys",
-		"zeroed",
 		"3 s",
 	} {
 		if !strings.Contains(doc, want) {
+			t.Errorf("the runbook no longer says %q", want)
+		}
+	}
+
+	// Sentences that wrap across lines are matched with whitespace collapsed.
+	flat := strings.Join(strings.Fields(doc), " ")
+	for _, want := range []string{
+		"The process drops its own stored reference to the plaintext when it hands the credentials to the TUI, and again on re-issue, revoke and shutdown",
+		"the TUI model copy of the plaintext is dropped when you dismiss it",
+		"The counter covers handler-level upgrade refusals only",
+		"It does not count over-cap 503s from the connection limiter (`max_connections`) or 404s for a wrong path",
+		"check `[remote].max_connections`",
+		"Fatal startup and exit errors go to stderr, so to the log file when stderr is redirected",
+	} {
+		if !strings.Contains(flat, want) {
 			t.Errorf("the runbook no longer says %q", want)
 		}
 	}

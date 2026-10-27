@@ -295,6 +295,19 @@ func TestStopStalledBeforeQuitEscalatesToKill(t *testing.T) {
 	}
 }
 
+func TestStopWithBlockingKillIsStillBounded(t *testing.T) {
+	done := make(chan struct{}) // never closed: the wedged program does not leave
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) }) // frees the intentionally blocked kill
+	u := fakeUI(done, func() { <-release }, func() { <-release })
+
+	var err error
+	within(t, testStopBudget+testKillWait+testSlack, "stop with a kill that blocks", func() { err = u.stop() })
+	if err == nil {
+		t.Fatal("stop of a wedged TUI with a blocking kill returned nil")
+	}
+}
+
 func TestStopWedgedTUIIsBoundedAndReportsAnError(t *testing.T) {
 	done := make(chan struct{}) // never closed: Kill does not release it
 	var killed atomic.Bool

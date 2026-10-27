@@ -55,7 +55,8 @@ type TUIOptions struct {
 	IsTerminal func(*os.File) bool
 	// RetainPlaintext keeps the credential plaintext readable through
 	// [App.Credentials] after the TUI has been given it. It is a test seam;
-	// by default the plaintext is zeroed once delivered to the TUI.
+	// by default the process drops its own reference to the plaintext once it
+	// is delivered to the TUI (not a memory scrub: Go strings are immutable).
 	RetainPlaintext bool
 }
 

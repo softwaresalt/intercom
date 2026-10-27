@@ -93,10 +93,10 @@ role (`approver` and `observer`).
 
 * They are **shown once, on the local TUI only**, in a panel with the WebSocket
   URL, each role, a short fingerprint and the expiry. Copy them then. Press
-  **Esc** to dismiss the panel; the plaintext is dropped from the UI. Once the
-  TUI has received the credentials, the process's own copy of the plaintext is
-  zeroed as well, and it is zeroed again when credentials are revoked or the
-  process shuts down. Only the fingerprint and expiry stay in memory.
+  **Esc** to dismiss the panel; the TUI model copy of the plaintext is dropped
+  when you dismiss it. The process drops its own stored reference to the
+  plaintext when it hands the credentials to the TUI, and again on re-issue,
+  revoke and shutdown. Only the fingerprint and expiry stay stored.
 * **Ctrl+R** re-issues: new credentials are minted and shown, the old ones are
   revoked immediately and sockets that authenticated with them are closed. This
   is also the renewal path (ADR MVP-2): a credential cannot be extended, so
@@ -243,9 +243,10 @@ intercom --workspace /path/to/workspace --config config.toml 2> intercom.log
 intercom --workspace C:\src\my-workspace --config config.toml 2> intercom.log
 ```
 
-Fatal startup and exit errors are still printed to the terminal after the TUI
-has closed. Raise detail with `--log-level debug`. Logs never contain
-credentials, only roles, fingerprints and expiry times.
+Fatal startup and exit errors go to stderr, so to the log file when stderr is
+redirected, and are still printed to the terminal after the TUI has closed
+when stderr is a terminal. Raise detail with `--log-level debug`. Logs never
+contain credentials, only roles, fingerprints and expiry times.
 
 ### Rejected upgrades on the status line
 
@@ -259,9 +260,13 @@ rejected upgrades: N (last: STATUS REASON)
 
 `N` is the running count of rejected upgrades since start and `STATUS REASON` is
 the HTTP status and reason of the most recent one (400, 401, 403 or 503, see the
-troubleshooting table in section 9). Updates are coalesced, so a burst of
-rejections shows the latest count, not one line per request. Nothing is shown
-until the first rejection. The line never carries a credential.
+troubleshooting table in section 9). The counter covers handler-level upgrade
+refusals only: 400 bad request, 401 credential, 403 host or origin, and the 503
+for a draining process or a hub refusal. It does not count over-cap 503s from
+the connection limiter (`max_connections`) or 404s for a wrong path. Updates are
+coalesced, so a burst of rejections shows the latest count, not one line per
+request. Nothing is shown until the first rejection. The line never carries a
+credential.
 
 ### Unconsumed config keys
 
@@ -323,7 +328,7 @@ problem, look for a stray `copilot` process.
 | `bind` error | The port is in use: pick another with `--port`. |
 | Remote client gets 401 | Missing, wrong, expired or re-issued credential; ask for the current one. |
 | Remote client gets 403 | `Host` not allowed (add the tunnel host to `allowed_hosts`) or browser `Origin` not in `allowed_origins`. |
-| Remote client gets 503 | Over `max_connections`, or the process is shutting down. |
+| Remote client gets 503 | Over `max_connections`, or the process is shutting down. If the status line shows no rejections, check `[remote].max_connections`: over-cap 503s are not counted there (section 7). |
 | Approve is refused remotely | `destructive_remote_refused`: approve on the local TUI, or set `remote_approve_destructive = true` knowingly. |
 | No logs appear | The TUI is enabled and stderr is a terminal, so logs are discarded; redirect stderr to keep them (section 7). |
 | Exits at start: "stdout is not a terminal" | `intercom` was run with stdout redirected or without a terminal; run it in an interactive terminal (section 2, headless and service use). |

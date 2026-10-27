@@ -37,6 +37,23 @@ func TestOnRejectBeforeUICoalescesLatestWithoutBlocking(t *testing.T) {
 	}
 }
 
+func TestOnRejectKeepsHighestTotalWhenNoticesArriveOutOfOrder(t *testing.T) {
+	a := newRejectApp()
+	a.onReject(403, "host_not_allowed", 6)
+	a.onReject(401, "credential_rejected", 5)
+	select {
+	case msg := <-a.rejectCh:
+		if msg.Total != 6 || msg.Status != 403 || msg.Reason != "host_not_allowed" {
+			t.Fatalf("mailbox holds %+v; want the notice with the highest total (6)", msg)
+		}
+	default:
+		t.Fatal("no notice was retained")
+	}
+	if len(a.rejectCh) != 0 {
+		t.Fatal("mailbox held a second notice")
+	}
+}
+
 func TestOnRejectIsSafeConcurrently(t *testing.T) {
 	a := newRejectApp()
 	var wg sync.WaitGroup

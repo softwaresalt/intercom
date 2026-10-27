@@ -98,7 +98,9 @@ func (r *Remote) Addr() net.Addr { return r.server.Addr() }
 // [net/http.ErrServerClosed].
 func (r *Remote) Serve() error { return r.server.Serve() }
 
-// RejectedUpgrades returns how many requests were refused before upgrade.
+// RejectedUpgrades returns how many requests the handler refused before
+// upgrade. It counts handler-level upgrade refusals only: it does not include
+// over-cap 503s from the connection limiter or 404s for a wrong path.
 func (r *Remote) RejectedUpgrades() uint64 { return r.handler.RejectedUpgrades() }
 
 // Mint issues a credential for role, revoking that role's previous one.
