@@ -38,7 +38,7 @@ func newUIRig(t *testing.T) *uiRig {
 	out := &syncBuf{}
 	logs := &logBuf{}
 	t.Cleanup(func() { _ = inW.Close(); _ = in.Close() })
-	o.TUI = TUIOptions{Input: in, Output: out, Width: 100, Height: 30}
+	o.TUI = TUIOptions{Input: in, Output: out, Width: 100, Height: 30, RetainPlaintext: true}
 	o.Logger = newTestLogger(logs)
 	a := startApp(t, o)
 	return &uiRig{app: a, fac: f, out: out, keys: inW, logs: logs}

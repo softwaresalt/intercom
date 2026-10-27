@@ -193,7 +193,7 @@ func newE2ERig(t *testing.T, rc rigConfig) *e2eRig {
 		in, inW := io.Pipe()
 		t.Cleanup(func() { _ = inW.Close(); _ = in.Close() }) // registered before startApp: runs after its shutdown
 		r.keys = inW
-		o.TUI = TUIOptions{Input: in, Output: r.out, Width: 100, Height: 30}
+		o.TUI = TUIOptions{Input: in, Output: r.out, Width: 100, Height: 30, RetainPlaintext: true}
 	}
 	r.app = startApp(t, o)
 	if !rc.noTUI {

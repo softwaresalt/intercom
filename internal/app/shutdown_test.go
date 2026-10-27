@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
+	"github.com/softwaresalt/intercom-go/internal/config"
 	"github.com/softwaresalt/intercom-go/internal/hub"
 )
 
@@ -466,4 +468,228 @@ func TestSignalDuringStartupAbortsStartAndReapsTheAgent(t *testing.T) {
 		_ = c.Close()
 		t.Error("listener still open after an aborted start")
 	}
+}
+
+// TestSignalDuringShutdownStillCancelsStartup: a signal that arrives once a
+// shutdown is already requested (for example a TUI quit mid-startup) must
+// still cancel the startup context, and hurries the shutdown.
+func TestSignalDuringShutdownStillCancelsStartup(t *testing.T) {
+	a := &App{
+		log:     newTestLogger(&logBuf{}),
+		done:    make(chan struct{}),
+		shutReq: make(chan struct{}),
+	}
+	hurried := make(chan struct{}, 4)
+	a.hurry = func() { hurried <- struct{}{} }
+	a.Shutdown("tui quit") // shutdown already in progress
+
+	cancelled := make(chan struct{}, 4)
+	sig := make(chan os.Signal, 2)
+	watcherDone := make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		a.watchSignals(sig, func() { cancelled <- struct{}{} })
+	}()
+	sig <- os.Interrupt
+
+	select {
+	case <-cancelled:
+	case <-time.After(waitFor):
+		t.Fatal("a signal during shutdown did not cancel the startup context")
+	}
+	select {
+	case <-hurried:
+	case <-time.After(waitFor):
+		t.Fatal("a signal during shutdown did not hurry it")
+	}
+	close(a.done)
+	select {
+	case <-watcherDone:
+	case <-time.After(waitFor):
+		t.Fatal("watchSignals did not return once the process was done")
+	}
+}
+
+// TestTeardownFailsParkedPermissionBeforeAgentStop: the forced unwind must not
+// leave a parked permission ask waiting for the hub's stop; teardown runs the
+// hub's step 0 first, so the handler gets UserNotAvailable before the agent
+// is stopped. A remote client is connected so the ask stays parked (with no
+// surface attached the hub would fail it on its own).
+func TestTeardownFailsParkedPermissionBeforeAgentStop(t *testing.T) {
+	f := newFactory()
+	o, _ := baseOptions(t, f)
+	var cur atomic.Pointer[App]
+	var pr probes
+	f.stopHook = func(context.Context) { pr.set("stop", takeProbe(cur.Load())) }
+	a, err := Start(context.Background(), o)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	cur.Store(a)
+	t.Cleanup(func() {
+		a.Shutdown("test cleanup") // the supervisor still runs its sequence over the stopped hub
+		select {
+		case <-a.Done():
+		case <-time.After(waitFor):
+			t.Error("the app did not finish after the test teardown")
+		}
+	})
+
+	client := dialApp(t, a, hub.RoleApprover)
+	sawRequested := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), waitFor)
+		defer cancel()
+		for {
+			m, err := client.Next(ctx)
+			if err != nil {
+				return
+			}
+			if m.Envelope != nil && m.Envelope.Kind == hub.KindPermissionRequested {
+				once.Do(func() { close(sawRequested) })
+			}
+		}
+	}()
+	ask := newPermAsk()
+	decided := make(chan agent.PermissionDecision, 1)
+	go ask.serve(f.rec, decided)
+	f.fake().deps.Asks <- ask.ask
+	select {
+	case <-sawRequested:
+	case <-time.After(waitFor):
+		t.Fatal("the remote client never saw the permission request")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), teardownBudget)
+	defer cancel()
+	if err := a.teardown(ctx); err != nil {
+		t.Fatalf("teardown: %v", err)
+	}
+	select {
+	case d := <-decided:
+		if d.Kind != agent.DecisionUnavailable {
+			t.Errorf("parked permission resolved to %v; want UserNotAvailable", d.Kind)
+		}
+	case <-time.After(waitFor):
+		t.Fatal("the parked permission was never resolved")
+	}
+	want := []string{"agent.start", "permission.unavailable", "agent.stop"}
+	if got := f.rec.snapshot(); !equalStrings(got, want) {
+		t.Fatalf("teardown order = %v; want %v (the permission must fail before the agent stops)", got, want)
+	}
+	if p, ok := pr.get("stop"); !ok || !p.shuttingDown || !p.hubRunning {
+		t.Errorf("at agent stop: %+v (taken=%v); want the hub already in shutdown (step 0) and still running", p, ok)
+	}
+}
+
+// TestTeardownToleratesNothingStarted: a teardown with no hub, remote or
+// agent (a failure before any of them exist) is a no-op, not a nil deref.
+func TestTeardownToleratesNothingStarted(t *testing.T) {
+	a := &App{log: newTestLogger(&logBuf{})}
+	if err := a.teardown(context.Background()); err != nil {
+		t.Fatalf("teardown of an empty App = %v; want nil", err)
+	}
+}
+
+func TestUnconsumedKeys(t *testing.T) {
+	if got := unconsumedKeys(config.Default()); len(got) != 0 {
+		t.Fatalf("defaults reported %v; want none", got)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*config.Config)
+		want   string
+	}{
+		{"max_concurrent_sessions", func(c *config.Config) { c.MaxConcurrentSessions = 9 }, "max_concurrent_sessions"},
+		{"retention_days", func(c *config.Config) { c.RetentionDays = 1 }, "retention_days"},
+		{"operator_detail_level", func(c *config.Config) { c.OperatorDetailLevel = config.DetailMinimal }, "operator_detail_level"},
+		{"database.path", func(c *config.Config) { c.Database.Path = "other.db" }, "database.path"},
+		{"timeouts.prompt_seconds", func(c *config.Config) { c.Timeouts.PromptSeconds = 1 }, "timeouts.prompt_seconds"},
+		{"timeouts.wait_seconds", func(c *config.Config) { c.Timeouts.WaitSeconds = 1 }, "timeouts.wait_seconds"},
+		{"stall.enabled", func(c *config.Config) { c.Stall.Enabled = false }, "stall.enabled"},
+		{"stall.inactivity_threshold_seconds", func(c *config.Config) { c.Stall.InactivityThresholdSeconds = 1 }, "stall.inactivity_threshold_seconds"},
+		{"stall.escalation_threshold_seconds", func(c *config.Config) { c.Stall.EscalationThresholdSeconds = 1 }, "stall.escalation_threshold_seconds"},
+		{"stall.max_retries", func(c *config.Config) { c.Stall.MaxRetries = 1 }, "stall.max_retries"},
+		{"stall.default_nudge_message", func(c *config.Config) { c.Stall.DefaultNudgeMessage = "x" }, "stall.default_nudge_message"},
+		{"commands", func(c *config.Config) { c.Commands = map[string]string{"a": "b"} }, "commands"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			tc.mutate(c)
+			if got := unconsumedKeys(c); !equalStrings(got, []string{tc.want}) {
+				t.Fatalf("unconsumedKeys = %v; want [%s]", got, tc.want)
+			}
+		})
+	}
+	t.Run("empty commands map is the default", func(t *testing.T) {
+		c := config.Default()
+		c.Commands = map[string]string{}
+		if got := unconsumedKeys(c); len(got) != 0 {
+			t.Fatalf("empty commands reported %v; want none", got)
+		}
+	})
+	t.Run("several keys are reported in a deterministic order", func(t *testing.T) {
+		c := config.Default()
+		c.Commands = map[string]string{"a": "b"}
+		c.RetentionDays = 1
+		c.MaxConcurrentSessions = 9
+		want := []string{"commands", "max_concurrent_sessions", "retention_days"}
+		for range 5 {
+			if got := unconsumedKeys(c); !equalStrings(got, want) {
+				t.Fatalf("unconsumedKeys = %v; want %v", got, want)
+			}
+		}
+	})
+}
+
+// unconsumedWarning returns the keys attribute of the "accepted-but-unconsumed"
+// Warn in the JSON log, and how many such records there are.
+func unconsumedWarning(t *testing.T, logs string) (keys []string, n int) {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(logs), "\n") {
+		var rec struct {
+			Level string   `json:"level"`
+			Msg   string   `json:"msg"`
+			Keys  []string `json:"keys"`
+		}
+		if json.Unmarshal([]byte(line), &rec) != nil || rec.Msg != "config has accepted-but-unconsumed keys" {
+			continue
+		}
+		if rec.Level != "WARN" {
+			t.Errorf("unconsumed-keys record level = %s; want WARN", rec.Level)
+		}
+		keys, n = rec.Keys, n+1
+	}
+	return keys, n
+}
+
+func TestStartWarnsOnlyWhenAnUnconsumedKeyDiffersFromDefault(t *testing.T) {
+	t.Run("defaults do not warn", func(t *testing.T) {
+		f := newFactory()
+		o, _ := baseOptions(t, f)
+		logs := &logBuf{}
+		o.Logger = newTestLogger(logs)
+		startApp(t, o)
+		if keys, n := unconsumedWarning(t, logs.String()); n != 0 {
+			t.Fatalf("warned about %v for a default config", keys)
+		}
+	})
+	t.Run("a changed key warns once with the key names", func(t *testing.T) {
+		f := newFactory()
+		o, ws := baseOptions(t, f)
+		o.ConfigPath = writeConfig(t, ws, "retention_days = 7\nmax_concurrent_sessions = 5", "[stall]\nmax_retries = 9\n\n[commands]\nbuild = 'go build'")
+		logs := &logBuf{}
+		o.Logger = newTestLogger(logs)
+		startApp(t, o)
+		keys, n := unconsumedWarning(t, logs.String())
+		if n != 1 {
+			t.Fatalf("got %d unconsumed-keys warnings; want exactly 1", n)
+		}
+		want := []string{"commands", "max_concurrent_sessions", "retention_days", "stall.max_retries"}
+		if !equalStrings(keys, want) {
+			t.Fatalf("keys = %v; want %v", keys, want)
+		}
+	})
 }

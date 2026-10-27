@@ -217,6 +217,27 @@ func TestAgentStartFailureTearsEverythingDown(t *testing.T) {
 	}
 }
 
+func TestFailedStartSurfacesTeardownError(t *testing.T) {
+	f := newFactory()
+	f.startErr = errors.New("cli did not start")
+	f.stopErr = errors.New("cli would not stop")
+	o, _ := baseOptions(t, f)
+
+	ctx, cancel := context.WithTimeout(context.Background(), waitFor)
+	defer cancel()
+	a, err := Start(ctx, o)
+	if err == nil {
+		stopApp(t, a)
+		t.Fatal("Start succeeded though the agent failed to start")
+	}
+	if !errors.Is(err, f.startErr) {
+		t.Errorf("error %v does not wrap the assembly failure", err)
+	}
+	if !errors.Is(err, f.stopErr) {
+		t.Errorf("error %v does not carry the teardown failure", err)
+	}
+}
+
 func TestLogsCarryNoCredentialMaterial(t *testing.T) {
 	f := newFactory()
 	o, _ := baseOptions(t, f)

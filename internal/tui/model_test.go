@@ -306,3 +306,67 @@ func TestTranscriptTextIsSanitized(t *testing.T) {
 		t.Fatalf("hidden characters should be shown as markers:\n%s", v)
 	}
 }
+
+func statusOf(m Model) string { return normalize(m.statusLine()) }
+
+func TestStatusLineHasNoRejectedUpgradesInitially(t *testing.T) {
+	m := newModel(t, &fakeIngress{}, 120, 12)
+	if s := statusOf(m); strings.Contains(s, "rejected upgrades") {
+		t.Fatalf("status shows a rejection counter before any notice: %q", s)
+	}
+}
+
+func TestSecurityNoticeRendersCountAndLastReason(t *testing.T) {
+	m := newModel(t, &fakeIngress{}, 120, 12)
+	m, cmd := step(m, SecurityNoticeMsg{Status: 401, Reason: "credential_rejected", Total: 3})
+	if cmd != nil {
+		t.Fatalf("a notice must not produce a Cmd")
+	}
+	want := "rejected upgrades: 3 (last: 401 credential_rejected)"
+	if s := statusOf(m); !strings.Contains(s, want) {
+		t.Fatalf("status = %q; want it to contain %q", s, want)
+	}
+	if v := view(m); !strings.Contains(v, want) {
+		t.Fatalf("view lacks the notice:\n%s", v)
+	}
+}
+
+func TestSecurityNoticeOutOfOrderTotalIsIgnored(t *testing.T) {
+	m := newModel(t, &fakeIngress{}, 120, 12)
+	m, _ = step(m, SecurityNoticeMsg{Status: 403, Reason: "host_not_allowed", Total: 5})
+	m, _ = step(m, SecurityNoticeMsg{Status: 401, Reason: "credential_rejected", Total: 2})
+	if s := statusOf(m); !strings.Contains(s, "rejected upgrades: 5 (last: 403 host_not_allowed)") {
+		t.Fatalf("stale notice replaced a newer one: %q", s)
+	}
+	m, _ = step(m, SecurityNoticeMsg{Status: 400, Reason: "not_an_upgrade", Total: 5})
+	if s := statusOf(m); !strings.Contains(s, "rejected upgrades: 5 (last: 400 not_an_upgrade)") {
+		t.Fatalf("an equal Total must be applied: %q", s)
+	}
+}
+
+func TestSecurityNoticeZeroTotalIsNotRendered(t *testing.T) {
+	m := newModel(t, &fakeIngress{}, 120, 12)
+	m, _ = step(m, SecurityNoticeMsg{Status: 400, Reason: "x", Total: 0})
+	if s := statusOf(m); strings.Contains(s, "rejected upgrades") {
+		t.Fatalf("zero total rendered: %q", s)
+	}
+}
+
+func TestSecurityNoticeReasonIsSanitized(t *testing.T) {
+	m := newModel(t, &fakeIngress{}, 200, 12)
+	m, _ = step(m, SecurityNoticeMsg{Status: 401, Reason: "bad\x1b\x07 \u202ereason\u009b\nline", Total: 1})
+	for _, s := range []string{m.statusLine(), m.View()} {
+		for _, bad := range []string{"\x1b[", "\x07", "\u202e", "\u009b"} {
+			if strings.Contains(s, bad) {
+				t.Fatalf("notice leaks %q: %q", bad, s)
+			}
+		}
+	}
+	s := statusOf(m)
+	if strings.Contains(s, "\n") {
+		t.Fatalf("status line is not a single line: %q", s)
+	}
+	if !strings.Contains(s, "rejected upgrades: 1 (last: 401 bad<U+001B><U+0007>") || !strings.Contains(s, "<U+202E>") {
+		t.Fatalf("hidden characters should be shown as markers: %q", s)
+	}
+}

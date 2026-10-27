@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -294,5 +295,201 @@ func TestServeFailureTriggersShutdownAndIsReported(t *testing.T) {
 	}
 	if err := a.Err(); !errors.Is(err, boom) {
 		t.Fatalf("Err() = %v; want it to wrap the listener failure", err)
+	}
+}
+
+// seqToken is the credential a budgetRand yields for entropy bytes
+// [from, from+credBytes): the rand counts up from 1, so mint n (0-based) is
+// built from bytes n*credBytes+1 .. (n+1)*credBytes.
+func seqToken(n int) string {
+	raw := make([]byte, credBytes)
+	for i := range raw {
+		raw[i] = byte(n*credBytes + i + 1)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func assertNoPlaintext(t *testing.T, a *App) {
+	t.Helper()
+	for i, c := range a.Credentials() {
+		if c.Token.Reveal() != "" {
+			t.Errorf("Credentials()[%d] still holds plaintext", i)
+		}
+	}
+}
+
+// TestTUIReissueRoleZeroFailureReturnsEmptyMessage: when the first role's
+// mint fails nothing was replaced and nothing is shown; the handler returns an
+// empty message so a dismissed panel stays closed.
+func TestTUIReissueRoleZeroFailureReturnsEmptyMessage(t *testing.T) {
+	f := newFactory()
+	o, _ := baseOptions(t, f)
+	o.CredentialRand = &budgetRand{budget: 2 * credBytes} // start-up only
+	a := startApp(t, o)
+
+	msg, err := a.tuiReissue(context.Background())
+	if err == nil {
+		t.Fatal("tuiReissue succeeded although the approver mint had no entropy")
+	}
+	if msg.URL != "" || len(msg.Credentials) != 0 {
+		t.Fatalf("message = %+v; want an empty CredentialsMsg", msg)
+	}
+	live, err := a.Reissue(context.Background())
+	if err == nil || len(live) != 0 {
+		t.Fatalf("Reissue = %d credentials, %v; want none and an error", len(live), err)
+	}
+}
+
+// TestReissueAfterRevocationReturnsNoCredentials: once shutdown revoked the
+// credentials a re-issue yields nothing, reports the revocation, and the
+// TUI handler returns an empty message.
+func TestReissueAfterRevocationReturnsNoCredentials(t *testing.T) {
+	f := newFactory()
+	o, _ := baseOptions(t, f)
+	a := startApp(t, o)
+	a.Shutdown("test")
+	select {
+	case <-a.Done():
+	case <-time.After(waitFor):
+		t.Fatal("no shutdown")
+	}
+
+	live, err := a.Reissue(context.Background())
+	if len(live) != 0 {
+		t.Fatalf("Reissue after revocation returned %d credentials; want none", len(live))
+	}
+	if !errors.Is(err, transport.ErrCredentialRevoked) || !errors.Is(err, transport.ErrShuttingDown) {
+		t.Fatalf("Reissue error = %v; want ErrCredentialRevoked joined with ErrShuttingDown", err)
+	}
+	msg, err := a.tuiReissue(context.Background())
+	if err == nil || msg.URL != "" || len(msg.Credentials) != 0 {
+		t.Fatalf("tuiReissue = %+v, %v; want an empty message and an error", msg, err)
+	}
+	assertNoPlaintext(t, a)
+}
+
+// TestTUIDeliveryZeroesRetainedPlaintext: by default the plaintext is zeroed
+// in App.Credentials() once the TUI has been given it, while the credentials
+// still authenticate and keep their public metadata.
+func TestTUIDeliveryZeroesRetainedPlaintext(t *testing.T) {
+	f := newFactory()
+	o, _ := baseOptions(t, f)
+	o.CredentialRand = &budgetRand{budget: 4 * credBytes}
+	in, inW := io.Pipe()
+	out := &syncBuf{}
+	t.Cleanup(func() { _ = inW.Close(); _ = in.Close() })
+	o.TUI = TUIOptions{Input: in, Output: out, Width: 100, Height: 30}
+	a := startApp(t, o)
+
+	approver, observer := seqToken(0), seqToken(1)
+	waitOutput(t, out, approver) // the TUI was given the plaintext
+	waitOutput(t, out, observer)
+
+	creds := a.Credentials()
+	if len(creds) != 2 {
+		t.Fatalf("Credentials() = %d entries; want 2", len(creds))
+	}
+	for i, c := range creds {
+		if c.Token.Reveal() != "" {
+			t.Errorf("Credentials()[%d] retains plaintext after TUI delivery", i)
+		}
+		if c.Fingerprint == "" || c.ExpiresAt.IsZero() {
+			t.Errorf("Credentials()[%d] lost its public metadata: %+v", i, c)
+		}
+	}
+	if creds[0].Role != hub.RoleApprover || creds[1].Role != hub.RoleObserver {
+		t.Errorf("roles = %v, %v; want approver, observer", creds[0].Role, creds[1].Role)
+	}
+	for _, tok := range []string{approver, observer} {
+		if err := dialToken(a, tok); err != nil {
+			t.Errorf("the zeroed-in-process credential no longer authenticates: %v", err)
+		}
+	}
+}
+
+// TestShutdownClearsCredentials: a normal shutdown leaves no plaintext in
+// App.Credentials(), whether the TUI is disabled or retains plaintext, and
+// without any Reissue call.
+func TestShutdownClearsCredentials(t *testing.T) {
+	cases := map[string]func(t *testing.T) *App{
+		"tui disabled": func(t *testing.T) *App {
+			f := newFactory()
+			o, _ := baseOptions(t, f)
+			return startApp(t, o)
+		},
+		"tui retains plaintext": func(t *testing.T) *App { return newUIRig(t).app },
+	}
+	for name, start := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := start(t)
+			if tokens(a)[0] == "" {
+				t.Fatal("precondition: plaintext should be retained before shutdown")
+			}
+			a.Shutdown("test")
+			select {
+			case <-a.Done():
+			case <-time.After(waitFor):
+				t.Fatal("no shutdown")
+			}
+			assertNoPlaintext(t, a)
+			if n := len(a.Credentials()); n != 0 {
+				t.Errorf("Credentials() has %d entries after shutdown; want none", n)
+			}
+		})
+	}
+}
+
+// TestReissuePausedAfterMintCannotRepublishAfterShutdown: a Reissue that
+// paused after its final successful mint and resumes once shutdown revoked
+// and cleared the credentials must refuse to publish them.
+func TestReissuePausedAfterMintCannotRepublishAfterShutdown(t *testing.T) {
+	f := newFactory()
+	o, _ := baseOptions(t, f)
+	a := startApp(t, o)
+
+	reached, resume := make(chan struct{}), make(chan struct{})
+	a.afterMint = func(role hub.Role) {
+		if role == hub.RoleObserver { // the final mint of the re-issue
+			close(reached)
+			<-resume
+		}
+	}
+	type result struct {
+		live []transport.Issued
+		err  error
+	}
+	res := make(chan result, 1)
+	go func() {
+		live, err := a.Reissue(context.Background())
+		res <- result{live, err}
+	}()
+	select {
+	case <-reached:
+	case <-time.After(waitFor):
+		t.Fatal("the re-issue never reached its final mint")
+	}
+
+	a.Shutdown("test")
+	select {
+	case <-a.Done():
+	case <-time.After(waitFor):
+		t.Fatal("shutdown did not complete while a re-issue was paused")
+	}
+	close(resume)
+
+	select {
+	case r := <-res:
+		if !errors.Is(r.err, transport.ErrCredentialRevoked) {
+			t.Fatalf("Reissue error = %v; want ErrCredentialRevoked", r.err)
+		}
+		if len(r.live) != 0 {
+			t.Errorf("Reissue returned %d credentials after revocation", len(r.live))
+		}
+	case <-time.After(waitFor):
+		t.Fatal("Reissue never returned")
+	}
+	assertNoPlaintext(t, a)
+	if n := len(a.Credentials()); n != 0 {
+		t.Errorf("Credentials() has %d entries; the revoked set was republished", n)
 	}
 }

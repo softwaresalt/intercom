@@ -68,21 +68,22 @@ func (a *App) takeErrs() []error {
 	return append([]error(nil), a.runErrs...)
 }
 
-// watchSignals turns interrupt/terminate notifications into shutdown. The
-// first one cancels a startup in progress and requests the ordered shutdown;
-// if a shutdown is already in progress (for example the operator quit the
-// TUI) it hurries it at once instead. Each later one hurries it (cancels the shutdown context, which makes the
-// agent stop escalate to a force stop) without ever skipping a step. It
-// returns when the process is done.
+// watchSignals turns interrupt/terminate notifications into shutdown. Every
+// signal cancels a startup still in progress (even when a shutdown is already
+// under way, e.g. the operator quit the TUI mid-startup). The first one also
+// requests the ordered shutdown; if a shutdown is already in progress it
+// hurries it at once instead. Each later one hurries it (cancels the shutdown
+// context, which makes the agent stop escalate to a force stop) without ever
+// skipping a step. It returns when the process is done.
 func (a *App) watchSignals(sig <-chan os.Signal, cancelStart context.CancelFunc) {
 	first := true
 	for {
 		select {
 		case s := <-sig:
+			cancelStart()
 			if first && !a.shuttingDown() {
 				first = false
 				a.log.Info("signal received; shutting down", "signal", s.String())
-				cancelStart()
 				a.Shutdown("signal: " + s.String())
 				continue
 			}
@@ -114,7 +115,8 @@ func (a *App) shuttingDown() bool {
 // cannot stop the hub before step 0 has failed the pending permissions.
 func (a *App) supervise() {
 	defer a.finish()
-	defer a.hurry() // release the shutdown context
+	defer a.clearCreds() // before finish closes done, whatever path returns
+	defer a.hurry()      // release the shutdown context
 
 	<-a.shutReq
 	a.log.Info("shutdown started", "reason", a.shutReason)
@@ -158,7 +160,12 @@ func (a *App) supervise() {
 	<-a.hubRunDone
 	<-a.serveDone
 	if a.ui != nil {
-		a.ui.stop()
+		// Recorded before takeErrs so a TUI that could not be stopped lands in
+		// a.err ahead of close(a.done).
+		if e := a.ui.stop(); e != nil {
+			a.addErr(e)
+			a.log.Error("local tui stop failed", "error", e)
+		}
 	}
 	a.err = errors.Join(append(a.takeErrs(), errs...)...) // run failures (TUI, listener) first
 	a.log.Info("shutdown complete", "ok", a.err == nil)
