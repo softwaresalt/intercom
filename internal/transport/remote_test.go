@@ -285,10 +285,15 @@ func TestRemoteRejectedUpgradesCountsWithoutOnReject(t *testing.T) {
 	}
 }
 
-func TestRemoteOnRejectTotalsAreMonotonicUnderConcurrency(t *testing.T) {
+// TestRemoteOnRejectTotalsAreUniqueUnderConcurrency drives n simultaneous bad
+// upgrades. The connection cap is raised to n so none is refused by the
+// pre-auth limiter (which does not count as a handler-level rejection).
+func TestRemoteOnRejectTotalsAreUniqueUnderConcurrency(t *testing.T) {
 	const n = 20
 	rec := &rejectLog{}
-	rr := newRemoteRigWith(t, defaultRemote(), func(o *RemoteOptions) { o.OnReject = rec.record })
+	rc := defaultRemote()
+	rc.MaxConnections = n
+	rr := newRemoteRigWith(t, rc, func(o *RemoteOptions) { o.OnReject = rec.record })
 	var wg sync.WaitGroup
 	for range n {
 		wg.Add(1)
