@@ -18,12 +18,24 @@ import (
 	"github.com/softwaresalt/intercom-go/internal/pathsafe"
 )
 
-// This file black-boxes the containment control pathsafe.Root.Resolve through
-// its only production caller. It never calls Resolve itself: the sole driver
-// is the exported app.Start, whose internal resolveWorkspace is the call site
-// under test (038.001-T). Files named *_test.go are outside the write-path
-// gate's scan, so ordinary fixture setup (os.MkdirAll, os.WriteFile,
-// os.Symlink) is permitted here.
+// This file black-boxes workspace resolution containment through the exported
+// app.Start (038.001-T); it never calls pathsafe.Root.Resolve itself.
+//
+//   - Accepted nested paths exercise the Root.Resolve call inside
+//     resolveWorkspace (internal/app/workspace.go), the sole production call
+//     site, and verify the canonical path is delivered to the agent.
+//   - Refusals verify resolveWorkspace's overall fail-closed contract at the
+//     app.Start boundary: pathsafe.NewRoot canonicalization plus the
+//     filepath.Rel containment check. resolveWorkspace refuses these before
+//     reaching Root.Resolve, so the refusal cases are not claimed to exercise
+//     Resolve itself.
+//
+// Expected canonical values come from pathsafe.NewRoot, the same canonicalizer
+// production uses, chosen for portability across platforms (Windows 8.3 short
+// names, macOS /var -> /private/var).
+//
+// Files named *_test.go are outside the write-path gate's scan, so ordinary
+// fixture setup (os.MkdirAll, os.WriteFile, os.Symlink) is permitted here.
 
 // blackBoxWait bounds every wait; it expires only on a failing run.
 const blackBoxWait = 20 * time.Second
@@ -154,7 +166,8 @@ func requireRefused(t *testing.T, a *app.App, rec *depsRecorder, err error) {
 }
 
 // symlinkOrSkip creates link -> target. Only the enumerated Windows privilege
-// failure skips; any other failure on Windows fails the test, mirroring
+// failure (ERROR_PRIVILEGE_NOT_HELD, 1314, on runtime.GOOS == "windows")
+// skips; every other failure on every platform fails the test, mirroring
 // internal/pathsafe's requireSymlinkOrFailClosed (011.010-T).
 func symlinkOrSkip(t *testing.T, target, link string) {
 	t.Helper()
@@ -162,28 +175,32 @@ func symlinkOrSkip(t *testing.T, target, link string) {
 	if err == nil {
 		return
 	}
-	if runtime.GOOS != "windows" {
-		t.Skipf("skipping: symlinks unavailable: %v", err)
-	}
-	if errors.Is(err, errPrivilegeNotHeld) {
+	if runtime.GOOS == "windows" && errors.Is(err, errPrivilegeNotHeld) {
 		t.Skipf("skipping: ERROR_PRIVILEGE_NOT_HELD -- enable Developer Mode or run elevated: %v", err)
 	}
-	t.Fatalf("symlink fixture failed for a reason other than the privilege case: %v", err)
+	t.Fatalf("symlink fixture failed for a reason other than the Windows privilege case: %v", err)
 }
 
-// TestStartBlackBoxWorkspaceResolveContainment verifies a nested directory
-// under default_workspace_root reaches the agent in canonical form.
+// TestStartBlackBoxWorkspaceResolveContainment verifies, through app.Start,
+// that accepted nested directories under default_workspace_root exercise the
+// Root.Resolve call in resolveWorkspace and reach the agent in canonical form.
 func TestStartBlackBoxWorkspaceResolveContainment(t *testing.T) {
 	root := t.TempDir()
 	nested := filepath.Join(root, "proj", "inner")
 	mkdirAll(t, nested)
+
+	// The detour flag is built by concatenation, not filepath.Join, because
+	// Join would clean the ".." away. NewRoot's Abs lexically cleans it, but
+	// the literal ".." segment must remain in the input handed to app.Start.
+	sep := string(filepath.Separator)
+	detour := root + sep + "proj" + sep + ".." + sep + "proj" + sep + "inner"
 
 	cases := []struct {
 		name      string
 		workspace string
 	}{
 		{"nested directory", nested},
-		{"nested directory with an in-root dot-dot detour", root + string(filepath.Separator) + filepath.Join("proj", "..", "proj", "inner")},
+		{"nested directory with an in-root dot-dot detour", detour},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -196,9 +213,13 @@ func TestStartBlackBoxWorkspaceResolveContainment(t *testing.T) {
 	}
 }
 
-// TestStartBlackBoxWorkspaceMappedRootAndRefusals verifies a nested directory
-// under a [[workspace]].path mapping is accepted, and that each escape shape
-// fails closed under both the default root and the mapped root.
+// TestStartBlackBoxWorkspaceMappedRootAndRefusals verifies, through app.Start,
+// that a nested directory under a [[workspace]].path mapping is accepted (and
+// so exercises the Root.Resolve call in resolveWorkspace), and that each escape
+// shape fails closed under both the default root and the mapped root. The
+// refusals check resolveWorkspace's overall contract (NewRoot canonicalization
+// plus the containment check); they are refused before Root.Resolve is reached
+// and are not claimed to exercise it.
 func TestStartBlackBoxWorkspaceMappedRootAndRefusals(t *testing.T) {
 	defaultRoot, mappedRoot := t.TempDir(), t.TempDir()
 	mapped := []string{mappedRoot}
@@ -237,8 +258,9 @@ func TestStartBlackBoxWorkspaceMappedRootAndRefusals(t *testing.T) {
 			}},
 			{"prefix-sibling directory", func(t *testing.T) string {
 				sib := base.dir + "-evil"
+				// A sibling of a t.TempDir() directory lives inside the test's
+				// temp parent, which the testing package removes on cleanup.
 				mkdirAll(t, sib)
-				t.Cleanup(func() { _ = os.RemoveAll(sib) })
 				return sib
 			}},
 			{"nonexistent child", func(t *testing.T) string {
