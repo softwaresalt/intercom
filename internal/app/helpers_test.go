@@ -65,6 +65,8 @@ type fakeAgent struct {
 	stopHook  func(context.Context)
 	// stopBlock makes Stop wait for its context (a stuck stop).
 	stopBlock bool
+	// stopErr is returned by Stop (a failing stop).
+	stopErr error
 
 	mu     sync.Mutex
 	starts int
@@ -114,7 +116,7 @@ func (f *fakeAgent) Stop(ctx context.Context) error {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	return nil
+	return f.stopErr
 }
 
 func (f *fakeAgent) counts() (starts, stops int) {
@@ -137,6 +139,7 @@ type factory struct {
 	buildErr   error
 	startBlock bool
 	stopBlock  bool
+	stopErr    error
 	abortHook  func()
 	stopHook   func(context.Context)
 }
@@ -150,7 +153,7 @@ func (f *factory) build(d AgentDeps) (agent.Agent, error) {
 	if f.buildErr != nil {
 		return nil, f.buildErr
 	}
-	f.agent = &fakeAgent{rec: f.rec, deps: d, startErr: f.startErr, startBlock: f.startBlock, stopBlock: f.stopBlock, abortHook: f.abortHook, stopHook: f.stopHook}
+	f.agent = &fakeAgent{rec: f.rec, deps: d, startErr: f.startErr, startBlock: f.startBlock, stopBlock: f.stopBlock, stopErr: f.stopErr, abortHook: f.abortHook, stopHook: f.stopHook}
 	return f.agent, nil
 }
 

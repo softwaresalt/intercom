@@ -219,6 +219,7 @@ func Start(ctx context.Context, o Options) (*App, error) {
 		defer cancel()
 		if terr := a.teardown(tctx); terr != nil {
 			log.Error("teardown after failed start", "error", terr)
+			err = errors.Join(err, fmt.Errorf("teardown after failed start: %w", terr))
 		}
 		a.hurry()
 		a.finish()
