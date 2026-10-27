@@ -477,11 +477,10 @@ func TestE2EStreamAndPermissionReachBothSurfaces(t *testing.T) {
 
 // TestE2EFirstResponder covers design 5.4: the first resolution wins, the
 // loser's late action is refused (never double-resolving) and the agent sees
-// exactly one decision. The TUI's own late keypress cannot be raced
-// deterministically (the model drops a request the moment it sees the
-// resolution), so the TUI-as-loser case asserts the modal clears and a stray
-// approval key afterwards changes nothing; the remote-as-loser case is a real
-// late action refused with already_resolved.
+// exactly one decision. Losers are exercised deterministically: while the
+// decision is held (before permission.resolved is published) a late action
+// (a second remote connection, or the TUI arming and confirming its own
+// approval) is refused with already_resolved naming the winner.
 func TestE2EFirstResponder(t *testing.T) {
 	t.Run("remote wins, TUI loses", func(t *testing.T) {
 		r := newE2ERig(t, rigConfig{})
@@ -505,6 +504,17 @@ func TestE2EFirstResponder(t *testing.T) {
 		if late.Winner != "remote-approver" {
 			t.Errorf("late action winner = %q; want remote-approver", late.Winner)
 		}
+		// The TUI is a loser too: while the decision is still held (before
+		// permission.resolved is published) it arms and confirms its own late
+		// approval, a real OpResolvePermission against the hub. The hub refuses
+		// it with already_resolved naming the winner, and the TUI drops the
+		// modal on that refusal, not on the (not yet published) resolution.
+		waitOutput(t, r.out, "y approve (then Enter to confirm)") // modal fully seen: approvable
+		r.press("y")
+		waitOutput(t, r.out, "APPROVE? press Enter to confirm")
+		r.press("\r")
+		waitOutput(t, r.out, "request already answered by remote-approver")
+
 		perm.release()
 		for name, s := range map[string]*surface{"first": first, "second": second} {
 			p := decode[hub.PermissionResolvedPayload](t, s.take(name+" resolved", isKind(hub.KindPermissionResolved)))
@@ -512,7 +522,10 @@ func TestE2EFirstResponder(t *testing.T) {
 				t.Errorf("%s: resolved = %+v; want remote-approver/allow_once", name, p)
 			}
 		}
-		waitOutput(t, r.out, "by remote-approver") // the TUI's modal cleared with the winner named
+		// Only the TUI's resolved-path notice (applyPermissionResolved) says
+		// "permission <decision> by <actor>", so this proves permission.resolved
+		// itself reached the TUI, unlike the earlier already-answered notice.
+		waitOutput(t, r.out, "permission allow_once by remote-approver")
 
 		// After the resolution is published the request is gone: still refused.
 		wantReply(t, second.resolve(id, false), false, hub.ReasonRequestUnknown)

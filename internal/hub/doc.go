@@ -35,6 +35,18 @@
 // (no remote surface and no TUI) pending requests resolve to UserNotAvailable
 // at once.
 //
+// A refused resolve_permission names one of two distinct lifecycle states. An
+// entry the winner has decided stays registered, in the permDecided state,
+// while the decision is in hand-off awaiting the handler's acknowledgement and
+// before permission.resolved is published. A losing responder whose
+// resolve_permission arrives in that window gets already_resolved, with Winner
+// naming the winning actor. Once permission.resolved or permission.aborted has
+// been published, the entry is retired from the registry, so a later
+// resolve_permission for that request_id gets request_unknown, as does one for
+// a request_id that was never registered. already_resolved therefore means "you
+// lost the race to a decision still in flight", and request_unknown means "no
+// such request is open".
+//
 // # Operator actions
 //
 // Prompt-send and turn-abort enter through [Client.Do], pass the same role

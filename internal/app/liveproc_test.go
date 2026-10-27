@@ -3,26 +3,26 @@ package app
 // Process-table helpers for the live-SDK test's "no stranded CLI child"
 // assertion (070.004-T), and their own always-on test.
 //
-// Method (portable, no SDK import and no adapter hook needed): the Copilot SDK
-// starts the CLI with exec.Command, so the CLI (and anything it spawns) is a
-// descendant of the intercom process, which is the test process here. The
-// test snapshots the OS process table (Windows: Win32_Process through
-// PowerShell; Linux/macOS: ps -axo pid=,ppid=,args=) before Start and again
-// after shutdown, and requires that no process that was not in the baseline
-// is still a descendant of the test process. A CLI shim whose parent already
-// exited is caught by a second, name-based rule: a new process whose command
-// line contains the needle (default "copilot", overridable with
+// Method (portable, no SDK import and no adapter hook needed): the Copilot
+// SDK starts the CLI with exec.Command, so the CLI (and anything it spawns)
+// is a descendant of the intercom process, which is the test process here.
+// The test snapshots the OS process table (Windows: native Toolhelp32
+// snapshot plus a PEB command-line lookup; Linux/macOS:
+// ps -axo pid=,ppid=,args=) before Start and again after shutdown, and
+// requires that no process that was not in the baseline is still a
+// descendant of the test process. A CLI shim whose parent already exited is
+// caught by a second, name-based rule: a new process whose command line
+// contains the needle (default "copilot", overridable with
 // INTERCOM_LIVE_CLI_PROCESS). Only pid and executable name are ever logged,
 // never full command lines.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,73 +34,8 @@ type procEntry struct {
 	cmd       string
 }
 
-// listProcesses returns the process table, minus the listing process itself
-// and anything it spawned.
-func listProcesses(ctx context.Context) ([]procEntry, error) {
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", //nolint:gosec // constant arguments
-			`Get-CimInstance Win32_Process | ForEach-Object { '{0}|{1}|{2}' -f $_.ProcessId, $_.ParentProcessId, $_.CommandLine }`)
-	} else {
-		cmd = exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,args=") //nolint:gosec // constant arguments
-	}
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start process listing: %w", err)
-	}
-	lister := cmd.Process.Pid
-	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("process listing: %w", err)
-	}
-	table := parseProcessTable(out.String(), runtime.GOOS == "windows")
-	own := descendants(table, lister)
-	own[lister] = true
-	kept := table[:0:0]
-	for _, p := range table {
-		if !own[p.pid] {
-			kept = append(kept, p)
-		}
-	}
-	return kept, nil
-}
-
-func parseProcessTable(s string, pipeSeparated bool) []procEntry {
-	var out []procEntry
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		var pidS, ppidS, rest string
-		if pipeSeparated {
-			parts := strings.SplitN(line, "|", 3)
-			if len(parts) < 2 {
-				continue
-			}
-			pidS, ppidS = parts[0], parts[1]
-			if len(parts) == 3 {
-				rest = parts[2]
-			}
-		} else {
-			var ok bool
-			pidS, rest, ok = strings.Cut(line, " ")
-			if !ok {
-				continue
-			}
-			rest = strings.TrimSpace(rest)
-			ppidS, rest, _ = strings.Cut(rest, " ")
-			rest = strings.TrimSpace(rest)
-		}
-		pid, err1 := strconv.Atoi(strings.TrimSpace(pidS))
-		ppid, err2 := strconv.Atoi(strings.TrimSpace(ppidS))
-		if err1 != nil || err2 != nil {
-			continue
-		}
-		out = append(out, procEntry{pid: pid, ppid: ppid, cmd: rest})
-	}
-	return out
-}
+// listProcesses(ctx) ([]procEntry, error) is platform-specific; see
+// liveproc_windows_test.go and liveproc_other_test.go.
 
 // descendants is every process whose parent chain reaches root (root excluded).
 func descendants(table []procEntry, root int) map[int]bool {
@@ -230,6 +165,117 @@ func TestProcessTreeSeesAndForgetsAChild(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("the exited child (pid %d) is still listed", child.Process.Pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// ---- regression: a reparented child is found by command line alone ----
+
+const (
+	procOrphanEnv      = "INTERCOM_PROC_ORPHAN"
+	orphanSentinel     = "copilot-orphan-check"
+	orphanPIDPrefix    = "orphan-pid="
+	orphanMaxLifetime  = 2 * time.Minute // self-limit so a leaked grandchild cannot linger
+	orphanHelperTestRE = "-test.run=^TestProcessOrphanHelper$"
+)
+
+// TestProcessOrphanHelper plays both roles of the orphan regression test,
+// chosen by procOrphanEnv; without the env var it is a no-op.
+//
+//   - "launcher": starts the grandchild detached (nil stdio, never waited on),
+//     prints its pid, and exits at once, orphaning it.
+//   - "grandchild": its executable is the test binary (not the sentinel), but
+//     its arguments carry the sentinel; it idles until killed or self-limits.
+func TestProcessOrphanHelper(t *testing.T) {
+	switch os.Getenv(procOrphanEnv) {
+	case "launcher":
+		gc := exec.Command(os.Args[0], orphanHelperTestRE, "--", "-intercom-sentinel="+orphanSentinel) //nolint:gosec // re-executes the test binary
+		gc.Env = append(os.Environ(), procOrphanEnv+"=grandchild")
+		if err := gc.Start(); err != nil {
+			t.Fatalf("start grandchild: %v", err)
+		}
+		// Stdout is the test's pipe: the pid line is the only thing it needs.
+		_, _ = os.Stdout.WriteString(orphanPIDPrefix + strconv.Itoa(gc.Process.Pid) + "\n")
+		_ = gc.Process.Release()
+	case "grandchild":
+		time.Sleep(orphanMaxLifetime)
+	default:
+		t.Skip("helper process for TestProcessTreeFindsOrphanedGrandchildByCommandLine")
+	}
+}
+
+// TestProcessTreeFindsOrphanedGrandchildByCommandLine proves the needle rule
+// finds a surviving process whose parent already exited (so it is no longer a
+// descendant of the test process) and whose executable name is not the needle:
+// only the full command line carries it. A table that lists executable names
+// alone would make the live test's "no stranded CLI child" check vacuous for
+// a reparented node.exe ...\copilot\index.js style child.
+func TestProcessTreeFindsOrphanedGrandchildByCommandLine(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), waitFor) // launcher run only
+	defer cancel()
+	before, err := listProcesses(ctx)
+	if err != nil {
+		t.Skipf("cannot list processes on this platform: %v", err)
+	}
+	baseline := pidSet(before)
+
+	launcher := exec.CommandContext(ctx, os.Args[0], orphanHelperTestRE) //nolint:gosec // re-executes the test binary
+	launcher.Env = append(os.Environ(), procOrphanEnv+"=launcher")
+	out, err := launcher.Output() // returns once the launcher has exited
+	if err != nil {
+		t.Fatalf("launcher: %v\n%s", err, out)
+	}
+	gcPID := 0
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	for sc.Scan() {
+		if v, ok := strings.CutPrefix(sc.Text(), orphanPIDPrefix); ok {
+			gcPID, _ = strconv.Atoi(strings.TrimSpace(v))
+		}
+	}
+	if gcPID <= 0 {
+		t.Fatalf("launcher did not report a grandchild pid; output: %q", out)
+	}
+	t.Cleanup(func() {
+		p, err := os.FindProcess(gcPID)
+		if err != nil {
+			t.Logf("cleanup: find orphan pid %d: %v", gcPID, err)
+			return
+		}
+		if err := p.Kill(); err != nil {
+			t.Logf("cleanup: kill orphan pid %d: %v", gcPID, err)
+			return
+		}
+		_, _ = p.Wait() // best effort: only succeeds where the OS allows waiting on a non-child
+	})
+
+	// A fresh context: the launcher run above must not eat the polling budget.
+	// It outlives the loop deadline so a timeout is reported by the Fatalf below.
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), 2*waitFor)
+	defer pollCancel()
+	deadline := time.Now().Add(waitFor)
+	for {
+		table, err := listProcesses(pollCtx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Assumes the test binary is not PID 1 or a subreaper: otherwise the
+		// orphan is reparented to this process and stays a descendant.
+		if desc := descendants(table, os.Getpid()); desc[gcPID] {
+			t.Fatalf("grandchild (pid %d) is still a descendant of the test process; it is not orphaned", gcPID)
+		}
+		if _, byDescent := newChildren(table, os.Getpid(), baseline, "")[gcPID]; byDescent {
+			t.Fatalf("grandchild (pid %d) was found without the needle; the regression would be vacuous", gcPID)
+		}
+		found, ok := newChildren(table, os.Getpid(), baseline, orphanSentinel)[gcPID]
+		if ok {
+			if strings.Contains(strings.ToLower(found), orphanSentinel) {
+				t.Fatalf("grandchild executable name %q contains the needle; it must be matched by arguments", found)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("orphaned grandchild (pid %d) was not found by its command-line needle %q", gcPID, orphanSentinel)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

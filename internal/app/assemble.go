@@ -27,7 +27,9 @@ const (
 )
 
 // maxApproval caps [timeouts].approval_seconds so the seconds-to-Duration
-// conversion cannot overflow (the config schema has no upper bound).
+// conversion cannot overflow. config Validate already bounds the value
+// (config.MaxApprovalTimeoutSeconds); this one-year clamp is defence in depth
+// for programmatic configs that bypass Validate.
 const maxApproval = 365 * 24 * time.Hour
 
 // approvalTimeout maps [timeouts].approval_seconds to the hub's permission

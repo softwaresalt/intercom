@@ -38,12 +38,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/internal/hub"
+	"github.com/softwaresalt/intercom-go/internal/pathsafe"
 	"github.com/softwaresalt/intercom-go/internal/transport/wsclient"
 )
 
@@ -65,58 +69,413 @@ func liveSDKTestsAllowed(raw string) bool {
 	return err == nil && v
 }
 
-// readInsideWorkspace reports whether the read permission's summary (the
-// requested path, absolute or relative to ws) names an existing location that
-// lies inside ws after symlinks are resolved. Anything else, including an
-// empty or unresolvable summary, is not confirmed inside, so it is denied.
+// maxReadSummaryRunes mirrors the adapter's maxSummaryRunes bound in
+// internal/agent/copilot/permission.go: sanitizeBound copies at most this many
+// runes and appends "…" when the original was longer, so a longer summary or
+// one ending in the marker is a lossy copy of the path the SDK will open.
+const maxReadSummaryRunes = 2048
+
+// readInsideWorkspace reports whether the read permission's summary (the raw
+// requested path, absolute or relative to ws) names an existing non-directory
+// that lies inside ws after symlinks are resolved. It fails closed: anything
+// it cannot prove inside, including every summary that the adapter may have
+// altered or that could mean something else to the SDK runtime, is denied.
+//
+// The summary is never normalized (no trimming, quote or file: stripping, or
+// lexical cleaning of ".." before symlink resolution), because the path
+// validated must be exactly the literal path the runtime opens.
 func readInsideWorkspace(ws, summary string) bool {
-	summary = strings.TrimSpace(summary)
-	if summary == "" || strings.ContainsRune(summary, 0) {
-		return false
-	}
-	root, err := filepath.EvalSymlinks(ws)
-	if err != nil {
+	if rejectSummary(summary) {
 		return false
 	}
 	p := summary
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(root, p)
+	if runtime.GOOS == "windows" {
+		var ok bool
+		if p, ok = normalizeWindowsExtended(p); !ok {
+			return false
+		}
 	}
-	real, err := filepath.EvalSymlinks(p)
+	root, err := pathsafe.NewRoot(ws)
 	if err != nil {
 		return false
 	}
-	rel, err := filepath.Rel(root, real)
+	rel := p
+	if filepath.IsAbs(p) {
+		if rel, err = relativeToRoot(root, p); err != nil {
+			return false
+		}
+	}
+	resolved, err := root.Resolve(rel)
 	if err != nil {
 		return false
 	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	info, err := os.Stat(resolved)
+	return err == nil && !info.IsDir()
+}
+
+// rejectSummary reports whether p must be denied before any path resolution:
+// it is empty, padded, lossy, truncated, a file: URL, names a device
+// namespace or a non-Windows extended prefix, or has a literal ".." segment.
+func rejectSummary(p string) bool {
+	if p == "" || strings.TrimSpace(p) != p || !utf8.ValidString(p) {
+		return true
+	}
+	if utf8.RuneCountInString(p) > maxReadSummaryRunes || strings.HasSuffix(p, "…") {
+		return true
+	}
+	if strings.IndexFunc(p, isUnsafeSummaryRune) >= 0 {
+		return true
+	}
+	// Split the RAW path before any Clean/Dir/Rel/Resolve can fold it away.
+	for _, seg := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg == ".." {
+			return true
+		}
+	}
+	return strings.HasPrefix(strings.ToLower(p), "file:") || isDeviceOrExtendedForm(p)
+}
+
+// isDeviceOrExtendedForm reports whether p starts with a device (`.`) or
+// extended (`?`) namespace prefix: two separators, '.' or '?', then a
+// separator, where each separator may be '/' or '\'. The device form is denied
+// on every platform. The extended form is denied on non-Windows always, and on
+// Windows unless it is exactly the backslash spelling `\\?\`, which
+// normalizeWindowsExtended handles; the forward-slash and mixed spellings are
+// never normalized, so they are rejected outright.
+func isDeviceOrExtendedForm(p string) bool {
+	if len(p) < 4 || !isSummarySep(p[0]) || !isSummarySep(p[1]) || !isSummarySep(p[3]) {
+		return false
+	}
+	switch p[2] {
+	case '.':
+		return true
+	case '?':
+		return runtime.GOOS != "windows" || p[:4] != `\\?\`
+	}
+	return false
+}
+
+func isSummarySep(b byte) bool { return b == '/' || b == '\\' }
+
+// isUnsafeSummaryRune matches NUL, U+FFFD itself and every control or format
+// rune (the runes sanitizeBound replaces with U+FFFD), including \n and \t,
+// which sanitizeBound keeps: this check is stricter than sanitizeBound.
+func isUnsafeSummaryRune(r rune) bool {
+	return r == utf8.RuneError || unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
+}
+
+// normalizeWindowsExtended rewrites a Windows extended-length path to its
+// ordinary form (matching pathsafe.stripUNCPrefix): `\\?\UNC\h\s` becomes
+// `\\h\s` (checked first) and `\\?\C:\...` becomes `C:\...`. Any other
+// `\\?\` form is rejected. Paths without the prefix are returned unchanged.
+// Call it only when runtime.GOOS == "windows".
+func normalizeWindowsExtended(p string) (string, bool) {
+	if !strings.HasPrefix(p, `\\?\`) {
+		return p, true
+	}
+	if len(p) >= 8 && strings.EqualFold(p[4:8], `UNC\`) {
+		return `\\` + p[8:], true
+	}
+	rest := p[4:]
+	if len(rest) >= 3 && rest[1] == ':' && rest[2] == '\\' && isASCIILetter(rest[0]) {
+		return rest, true
+	}
+	return "", false
+}
+
+func isASCIILetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+// relativeToRoot expresses the absolute path p relative to root, canonicalizing
+// its parent directory (so a symlinked parent is judged by its real location)
+// while leaving the final component for root.Resolve to check.
+func relativeToRoot(root pathsafe.Root, p string) (string, error) {
+	dirRoot, err := pathsafe.NewRoot(filepath.Dir(p))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Rel(root.Path(), filepath.Join(dirRoot.Path(), filepath.Base(p)))
+}
+
+// readFixture is a temp workspace holding notes.txt plus a sibling directory
+// outside it holding secret.txt, notes.txt and the sub directory.
+type readFixture struct {
+	ws, outside string
+}
+
+func newReadFixture(t *testing.T) readFixture {
+	t.Helper()
+	fx := readFixture{ws: t.TempDir(), outside: t.TempDir()}
+	writeTestFile(t, filepath.Join(fx.ws, "notes.txt"))
+	writeTestFile(t, filepath.Join(fx.outside, "secret.txt"))
+	writeTestFile(t, filepath.Join(fx.outside, "notes.txt"))
+	if err := os.Mkdir(filepath.Join(fx.outside, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fx
+}
+
+func writeTestFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// symlinkOrSkip creates link -> target, skipping only the calling subtest
+// when the host does not permit symlinks (Windows without the privilege).
+func symlinkOrSkip(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink creation is not permitted on this host: %v", err)
+		}
+		t.Fatalf("symlink %q -> %q: %v", link, target, err)
+	}
+}
+
+func assertRead(t *testing.T, ws, summary string, want bool) {
+	t.Helper()
+	if got := readInsideWorkspace(ws, summary); got != want {
+		t.Errorf("readInsideWorkspace(%.80q) = %v; want %v", summary, got, want)
+	}
+}
+
+// assertAllDenied checks the plain contained path still resolves (so the
+// denials below are not vacuous) and every summary is denied.
+func assertAllDenied(t *testing.T, fx readFixture, summaries ...string) {
+	t.Helper()
+	assertRead(t, fx.ws, "notes.txt", true)
+	assertRead(t, fx.ws, filepath.Join(fx.ws, "notes.txt"), true)
+	for _, s := range summaries {
+		assertRead(t, fx.ws, s, false)
+	}
+}
+
+// longNestedFile creates a file whose absolute path has exactly runes runes
+// (nested 100-rune directories, then a final file name) and returns it.
+func longNestedFile(t *testing.T, ws string, runes int) string {
+	t.Helper()
+	cur := ws
+	for {
+		remaining := runes - utf8.RuneCountInString(cur) - 1 // minus the separator
+		if remaining <= 200 {
+			cur = filepath.Join(cur, strings.Repeat("f", remaining))
+			break
+		}
+		cur = filepath.Join(cur, strings.Repeat("d", 100))
+	}
+	if n := utf8.RuneCountInString(cur); n != runes {
+		t.Fatalf("built a %d-rune path; want %d", n, runes)
+	}
+	if err := os.MkdirAll(filepath.Dir(cur), 0o700); err != nil {
+		t.Skipf("host cannot create a %d-rune nested path (long path support): %v", runes, err)
+	}
+	if err := os.WriteFile(cur, []byte("x"), 0o600); err != nil {
+		t.Skipf("host cannot create a %d-rune nested file (long path support): %v", runes, err)
+	}
+	return cur
 }
 
 func TestLiveReadApprovalIsConfinedToWorkspace(t *testing.T) {
-	ws := t.TempDir()
-	inside := filepath.Join(ws, "notes.txt")
-	if err := os.WriteFile(inside, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	outside := filepath.Join(t.TempDir(), "secret.txt")
-	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for summary, want := range map[string]bool{
-		inside:                                   true,
-		"notes.txt":                              true,
-		outside:                                  false,
-		"../" + filepath.Base(outside):           false,
-		"":                                       false,
-		"missing.txt":                            false,
-		filepath.Join(ws, "..", "..", "x"):       false,
-		"notes.txt\x00" + filepath.Base(outside): false,
-	} {
-		if got := readInsideWorkspace(ws, summary); got != want {
-			t.Errorf("readInsideWorkspace(%q) = %v; want %v", summary, got, want)
+	t.Run("basics", func(t *testing.T) {
+		fx := newReadFixture(t)
+		outside := filepath.Join(fx.outside, "secret.txt")
+		if err := os.Mkdir(filepath.Join(fx.ws, "dir"), 0o700); err != nil {
+			t.Fatal(err)
 		}
-	}
+		for summary, want := range map[string]bool{
+			filepath.Join(fx.ws, "notes.txt"): true,
+			"notes.txt":                       true,
+			"./notes.txt":                     true,
+			outside:                           false,
+			"../" + filepath.Base(fx.outside) + "/secret.txt": false,
+			"":                                       false,
+			"missing.txt":                            false,
+			"dir":                                    false,
+			fx.ws:                                    false,
+			filepath.Join(fx.ws, "..", "..", "x"):    false,
+			"notes.txt\x00" + filepath.Base(outside): false,
+			"   ":                                    false,
+		} {
+			assertRead(t, fx.ws, summary, want)
+		}
+	})
+
+	t.Run("symlink escapes", func(t *testing.T) {
+		fx := newReadFixture(t)
+		symlinkOrSkip(t, fx.outside, filepath.Join(fx.ws, "outdir"))
+		symlinkOrSkip(t, filepath.Join(fx.outside, "secret.txt"), filepath.Join(fx.ws, "leak.txt"))
+		assertAllDenied(t, fx,
+			"outdir/secret.txt",
+			filepath.Join(fx.ws, "outdir", "secret.txt"),
+			"leak.txt",
+			filepath.Join(fx.ws, "leak.txt"),
+		)
+	})
+
+	t.Run("extended prefix", func(t *testing.T) {
+		fx := newReadFixture(t)
+		inside := filepath.Join(fx.ws, "notes.txt")
+		// A drive-letter extended path is honoured only on Windows; every other
+		// extended or device form is denied everywhere.
+		assertRead(t, fx.ws, `\\?\`+inside, runtime.GOOS == "windows")
+		assertRead(t, fx.ws, `\\?\`+filepath.Join(fx.outside, "secret.txt"), false)
+		assertRead(t, fx.ws, `\\.\`+inside, false)
+		assertRead(t, fx.ws, `\\.\C:\notes.txt`, false)
+		assertRead(t, fx.ws, `\\?\Volume{00000000-0000-0000-0000-000000000000}\notes.txt`, false)
+		assertRead(t, fx.ws, `\\?\GLOBALROOT\notes.txt`, false)
+		assertRead(t, fx.ws, `\\?\UNC\`, false)
+		assertRead(t, fx.ws, `\\?\`, false)
+	})
+
+	// The forward-slash and mixed spellings of the device and extended
+	// prefixes are never normalized, so they are denied on every platform
+	// (including Windows, where only the backslash `\\?\` form is honoured).
+	t.Run("forward-slash device and extended prefix", func(t *testing.T) {
+		fx := newReadFixture(t)
+		inside := filepath.Join(fx.ws, "notes.txt")
+		assertAllDenied(t, fx,
+			`//./C:/notes.txt`,
+			`//?/C:/notes.txt`,
+			`\\?/C:\notes.txt`,
+			`/\?\C:\notes.txt`,
+			`//./`+filepath.ToSlash(inside),
+			`//?/`+filepath.ToSlash(inside),
+			`\\./`+inside,
+			`//.\`+inside,
+			`//?/UNC/outside/share/secret.txt`,
+		)
+	})
+
+	t.Run("long contained path", func(t *testing.T) {
+		for _, runes := range []int{600, maxReadSummaryRunes} {
+			fx := newReadFixture(t)
+			long := longNestedFile(t, fx.ws, runes)
+			if n := utf8.RuneCountInString(long); n < 512 || n > maxReadSummaryRunes {
+				t.Fatalf("fixture has %d runes; want 512..%d", n, maxReadSummaryRunes)
+			}
+			assertRead(t, fx.ws, long, true)
+			rel, err := filepath.Rel(fx.ws, long)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertRead(t, fx.ws, rel, true)
+		}
+	})
+
+	// (a) \\?\UNC\outside\share\secret.txt must not collapse onto the local
+	// <ws>/UNC/outside/share/secret.txt lookalike.
+	t.Run("a external UNC vs local collision", func(t *testing.T) {
+		fx := newReadFixture(t)
+		local := filepath.Join(fx.ws, "UNC", "outside", "share", "secret.txt")
+		writeTestFile(t, local)
+		assertRead(t, fx.ws, local, true)
+		assertAllDenied(t, fx, `\\?\UNC\outside\share\secret.txt`, `\\?\unc\outside\share\secret.txt`)
+	})
+
+	// (b) file: URLs fail closed, never rewritten to a local path.
+	t.Run("b file URL vs local collision", func(t *testing.T) {
+		fx := newReadFixture(t)
+		writeTestFile(t, filepath.Join(fx.ws, "outside", "share", "secret.txt"))
+		assertRead(t, fx.ws, "outside/share/secret.txt", true)
+		assertAllDenied(t, fx,
+			"file://outside/share/secret.txt",
+			"file:///outside/share/secret.txt",
+			"FILE://outside/share/secret.txt",
+			"file:notes.txt",
+			"file:///"+filepath.ToSlash(filepath.Join(fx.ws, "notes.txt")),
+		)
+	})
+
+	// (c) literal quotes are preserved, never stripped to the notes.txt lookalike.
+	t.Run("c quoted path vs local collision", func(t *testing.T) {
+		fx := newReadFixture(t)
+		assertAllDenied(t, fx, `'notes.txt'`, `"notes.txt"`)
+		// Control: a quoted literal that really is a contained file is read as such.
+		writeTestFile(t, filepath.Join(fx.ws, "'quoted.txt'"))
+		assertRead(t, fx.ws, `'quoted.txt'`, true)
+		assertRead(t, fx.ws, `quoted.txt`, false)
+	})
+	t.Run("c quoted symlink to outside", func(t *testing.T) {
+		fx := newReadFixture(t)
+		symlinkOrSkip(t, filepath.Join(fx.outside, "secret.txt"), filepath.Join(fx.ws, `'notes.txt'`))
+		if runtime.GOOS != "windows" { // '"' is not a legal Windows file name character
+			symlinkOrSkip(t, filepath.Join(fx.outside, "secret.txt"), filepath.Join(fx.ws, `"notes.txt"`))
+		}
+		assertAllDenied(t, fx, `'notes.txt'`, `"notes.txt"`)
+	})
+
+	// (d) leading or trailing whitespace is never trimmed onto notes.txt.
+	t.Run("d whitespace vs local collision", func(t *testing.T) {
+		fx := newReadFixture(t)
+		assertAllDenied(t, fx, " notes.txt ", "notes.txt ", " notes.txt", "\tnotes.txt", "notes.txt\n",
+			" "+filepath.Join(fx.ws, "notes.txt"), filepath.Join(fx.ws, "notes.txt")+" ")
+	})
+	t.Run("d whitespace symlink to outside", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows strips trailing spaces from file names, so the outside-pointing padded link cannot exist")
+		}
+		fx := newReadFixture(t)
+		symlinkOrSkip(t, filepath.Join(fx.outside, "secret.txt"), filepath.Join(fx.ws, " notes.txt "))
+		assertAllDenied(t, fx, " notes.txt ")
+	})
+
+	// (e) a literal ".." after a symlink is never cleaned away lexically.
+	t.Run("e dot-dot symlink collision", func(t *testing.T) {
+		fx := newReadFixture(t)
+		symlinkOrSkip(t, filepath.Join(fx.outside, "sub"), filepath.Join(fx.ws, "link"))
+		assertAllDenied(t, fx,
+			"link/../notes.txt",
+			filepath.Join(fx.ws, "link")+"/../notes.txt",
+			`link\..\notes.txt`,
+			filepath.Join(fx.ws, "link")+`\..\notes.txt`,
+			"./../notes.txt",
+		)
+	})
+
+	// (f) sanitizeBound output (U+FFFD, control, truncation) is lossy and denied.
+	t.Run("f sanitizeBound lossy and truncated", func(t *testing.T) {
+		fx := newReadFixture(t)
+		writeTestFile(t, filepath.Join(fx.ws, "notes\uFFFD.txt"))
+		assertAllDenied(t, fx,
+			"notes\uFFFD.txt",
+			filepath.Join(fx.ws, "notes\uFFFD.txt"),
+			"notes\xff.txt",
+			"notes\x1b.txt",
+			"notes\n.txt",
+			"notes\u202e.txt",
+			"notes\u200b.txt",
+			"notes.txt\u2026",
+			strings.Repeat("a", maxReadSummaryRunes+1),
+			strings.Repeat("a", maxReadSummaryRunes)+"\u2026",
+		)
+	})
+
+	// (g) on POSIX \\?\C:\notes.txt is an ordinary file name, never rewritten
+	// to the <ws>/C:\notes.txt lookalike.
+	t.Run("g POSIX extended prefix collision", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip(`<ws>/C:\notes.txt cannot exist on Windows; \\?\C:\ is covered by "extended prefix"`)
+		}
+		fx := newReadFixture(t)
+		writeTestFile(t, filepath.Join(fx.ws, `C:\notes.txt`))
+		assertRead(t, fx.ws, `C:\notes.txt`, true)
+		assertAllDenied(t, fx, `\\?\C:\notes.txt`)
+	})
+	t.Run("g POSIX extended prefix symlink to outside", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip(`\\?\ file names cannot exist on Windows`)
+		}
+		fx := newReadFixture(t)
+		writeTestFile(t, filepath.Join(fx.ws, `C:\notes.txt`))
+		symlinkOrSkip(t, filepath.Join(fx.outside, "secret.txt"), filepath.Join(fx.ws, `\\?\C:\notes.txt`))
+		assertAllDenied(t, fx, `\\?\C:\notes.txt`)
+	})
 }
 
 func TestLiveOptInSemantics(t *testing.T) {
@@ -245,6 +604,18 @@ func TestLiveCopilotEndToEnd(t *testing.T) {
 	approver.waitFor(t, "agent.idle", func(m wsclient.Message) bool { return m.Envelope != nil && m.Envelope.Kind == hub.KindAgentIdle })
 
 	// Step 7: shut down like an operator pressing Ctrl+C, then prove no CLI child is left.
+	// Snapshot the credentials first: shutdown may clear the app's own copy, which
+	// would turn the log-leak loop below into a vacuous zero-iteration check.
+	issued := a.Credentials()
+	if len(issued) == 0 {
+		t.Fatal("no credentials were issued before shutdown, so the log-leak check would be vacuous")
+	}
+	for _, c := range issued {
+		// strings.Contains(logs, "") is always true, so an empty token must fail loudly.
+		if c.Token.Reveal() == "" {
+			t.Fatal("an issued credential has an empty token, so the log-leak check would be meaningless")
+		}
+	}
 	sig <- os.Interrupt
 	select {
 	case <-a.Done():
@@ -266,7 +637,7 @@ func TestLiveCopilotEndToEnd(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 	}
 
-	for _, c := range a.Credentials() {
+	for _, c := range issued {
 		if strings.Contains(logs.String(), c.Token.Reveal()) {
 			t.Fatal("a credential appears in the logs")
 		}
