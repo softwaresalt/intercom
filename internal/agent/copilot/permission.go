@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -136,13 +137,79 @@ type permissionBridge struct {
 	// "never" (a nil channel blocks forever in select).
 	stop <-chan struct{}
 	log  *slog.Logger
+
+	// Turn scope: asks are stamped with the turn that issued them, and an
+	// abort cancels the turn's parked asks through turnStop. mu guards the
+	// fields below.
+	mu          sync.Mutex
+	turnID      string
+	turnGen     uint64
+	turnAborted bool
+	turnStop    chan struct{}
 }
 
 func newPermissionBridge(asks chan<- agent.PermissionAsk, hubDone <-chan struct{}, log *slog.Logger) *permissionBridge {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &permissionBridge{asks: asks, hubDone: hubDone, log: log}
+	return &permissionBridge{asks: asks, hubDone: hubDone, log: log, turnStop: make(chan struct{})}
+}
+
+// setTurn records the start of a turn and returns its id (generated when id is
+// empty). The first turn start after an abort replaces the cancelled
+// generation with a fresh open one.
+func (b *permissionBridge) setTurn(id string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.turnGen++
+	if id == "" {
+		id = fmt.Sprintf("turn-%d", b.turnGen)
+	}
+	b.turnID = id
+	if b.turnAborted || b.turnStop == nil {
+		b.turnStop = make(chan struct{})
+		b.turnAborted = false
+	}
+	return b.turnID
+}
+
+// abortTurn cancels the current turn's asks and returns the turn's id. The
+// cancelled, identifiable generation is retained (turnID kept, turnStop left
+// closed) until the next setTurn, so a callback that reaches currentTurn()
+// after the abort still sees a closed turnStop and is refused.
+func (b *permissionBridge) abortTurn() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.turnID == "" {
+		b.turnGen++
+		b.turnID = fmt.Sprintf("aborted-turn-%d", b.turnGen)
+	}
+	if !b.turnAborted {
+		b.turnAborted = true
+		if b.turnStop == nil {
+			b.turnStop = make(chan struct{})
+		}
+		close(b.turnStop)
+	}
+	return b.turnID
+}
+
+// clearTurn ends a turn that was not aborted; an aborted generation is kept
+// until the next turn starts.
+func (b *permissionBridge) clearTurn() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.turnAborted {
+		b.turnID = ""
+	}
+}
+
+// currentTurn returns the current turn id and the channel closed when it is
+// aborted.
+func (b *permissionBridge) currentTurn() (string, <-chan struct{}) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.turnID, b.turnStop
 }
 
 // handler returns the SDK handler value for SessionConfig.OnPermissionRequest.
@@ -159,11 +226,14 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 	unavailable := func() (rpc.PermissionDecision, error) {
 		return &rpc.PermissionDecisionUserNotAvailable{}, nil
 	}
+	turnID, turnStop := b.currentTurn()
 	gone := func() bool {
 		select {
 		case <-b.hubDone:
 			return true
 		case <-b.stop:
+			return true
+		case <-turnStop:
 			return true
 		default:
 			return false
@@ -174,6 +244,7 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 	}
 
 	domain := toDomainRequest(req, inv)
+	domain.TurnID = turnID
 	if domain.Truncated {
 		// An operator cannot approve text they cannot see.
 		return toSDKDecision(agent.PermissionDecision{
@@ -203,19 +274,24 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 		return unavailable()
 	case <-b.stop:
 		return unavailable()
+	case <-turnStop:
+		return unavailable()
 	}
 	select {
 	case d := <-reply:
 		if d.Kind == agent.DecisionAllowOnce && gone() {
-			// Never deliver an approval after shutdown began. Only an allow is
-			// downgraded: a deny or a hub-issued UserNotAvailable is already
-			// safe and is returned (and recorded) unchanged.
+			// Never deliver an approval after shutdown began or the turn was
+			// aborted. Only an allow is downgraded: a deny or a hub-issued
+			// UserNotAvailable is already safe and is returned (and recorded)
+			// unchanged.
 			d = notAvailable
 		}
 		return deliver(d)
 	case <-b.hubDone:
 		return deliver(notAvailable)
 	case <-b.stop:
+		return deliver(notAvailable)
+	case <-turnStop:
 		return deliver(notAvailable)
 	}
 }
