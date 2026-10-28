@@ -432,7 +432,8 @@ func (a *Adapter) onEvent(ev copilotsdk.SessionEvent) {
 		} else {
 			a.bridge.clearTurn()
 		}
-	} // Deliver without blocking whenever ingress has room, even during
+	}
+	// Deliver without blocking whenever ingress has room, even during
 	// shutdown, so an event is only abandoned when it genuinely cannot be
 	// delivered.
 	select {
