@@ -3,6 +3,10 @@ package hub
 import (
 	"context"
 	"strings"
+	"time"
+
+	"github.com/softwaresalt/intercom-go/internal/agent"
+	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
 // Operator-initiated agent calls (067.005-T). The hub step authorizes the
@@ -11,6 +15,17 @@ import (
 // from the hub (design §4.1: Send and Abort can block for their whole
 // deadline, and a blocked hub stops draining ingress). Prompts and aborts have
 // separate lanes so an abort is never queued behind a slow prompt-send.
+
+// ErrCodeOperatorActionFailed is the error envelope code published when an
+// operator-initiated agent call (prompt send, turn abort) fails.
+const ErrCodeOperatorActionFailed = "operator_action_failed"
+
+// Fixed, sanitized client-facing messages for a failed operator action: the
+// underlying error (which may carry adapter or credential text) is only logged.
+const (
+	msgPromptSendFailed = "operator prompt send failed"
+	msgTurnAbortFailed  = "operator turn abort failed"
+)
 
 // routeToAgent is the hub step for OpPrompt and OpAbortTurn.
 func (h *Hub) routeToAgent(r *actionReq) ActionResult {
@@ -57,7 +72,9 @@ func (h *Hub) runOperatorLanes(ctx context.Context) {
 	if h.cfg.Agent == nil {
 		return
 	}
+	h.lanesWG.Add(2)
 	go func() {
+		defer h.lanesWG.Done()
 		for {
 			select {
 			case <-ctx.Done():
@@ -66,16 +83,16 @@ func (h *Hub) runOperatorLanes(ctx context.Context) {
 				if invoked := h.callAgent(ctx, "prompt", func(c context.Context) error { return h.cfg.Agent.Send(c, text) }); !invoked {
 					// Agent.Send was never invoked (the lanes were cancelled
 					// first), so this prompt provably started no turn: let the
-					// hub give back the count it took when it accepted it.
-					select {
-					case h.promptFailed <- struct{}{}:
-					case <-h.done:
-					}
+					// hub give back the count it took when it accepted it. The
+					// send never races ctx.Done(): the report must not be lost
+					// to the very cancellation that caused it.
+					trySend(h.promptFailed, struct{}{})
 				}
 			}
 		}
 	}()
 	go func() {
+		defer h.lanesWG.Done()
 		for {
 			select {
 			case <-ctx.Done():
@@ -85,6 +102,64 @@ func (h *Hub) runOperatorLanes(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// defaultLaneJoinBudget bounds how long Run waits for the lane workers to
+// observe cancellation before it gives up on them.
+const defaultLaneJoinBudget = 100 * time.Millisecond
+
+// waitLanes joins the lane workers after their context was cancelled, bounded:
+// a worker stuck in an agent call that ignores its context must not keep
+// Stop, Done or the shutdown executor from finishing. On a timeout the worker
+// is left to finish on its own and the join reports
+// agent.ErrCleanupIncomplete.
+func (h *Hub) waitLanes() error {
+	budget := defaultLaneJoinBudget
+	if h.cfg.OperatorActionTimeout > 0 {
+		budget = min(h.cfg.OperatorActionTimeout, budget)
+	}
+	done := make(chan struct{})
+	go func() { // ends when the workers do; they always observe cancellation or finish their call
+		h.lanesWG.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case <-done:
+		for { // nothing publishes after Run: drop what late failures queued
+			select {
+			case <-h.actionFailed:
+			case <-h.opErrs:
+			default:
+				return nil
+			}
+		}
+	case <-timer.C:
+		h.cfg.Logger.Error("hub: operator lane worker ignored cancellation", "err", agent.ErrCleanupIncomplete)
+		return apperr.Wrap(apperr.KindIO, agent.ErrCleanupIncomplete) // no KindInternal exists; KindIO is the lifecycle kind
+	}
+}
+
+// opErr is the cause of a failed operator call.
+type opErr struct {
+	action string
+	err    error
+}
+
+// handleActionFailed folds and publishes a sanitized error for a failed
+// operator call. It does not retract h.promptsPending: a Send that was invoked
+// and failed is delivery-uncertain (see routeToAgent).
+func (h *Hub) handleActionFailed(action string) {
+	if h.closing {
+		return
+	}
+	msg := msgTurnAbortFailed
+	if action == "prompt" {
+		msg = msgPromptSendFailed
+	}
+	h.fold.ApplyError(ErrCodeOperatorActionFailed, msg)
+	h.publish(KindError, ErrorPayload{Code: ErrCodeOperatorActionFailed, Message: msg})
 }
 
 // stopLanes is shutdown step 0 for the operator lanes, on the hub goroutine:
@@ -145,6 +220,12 @@ func (h *Hub) callAgent(ctx context.Context, action string, call func(context.Co
 	defer cancel()
 	if err := call(callCtx); err != nil {
 		h.cfg.Logger.Warn("hub: operator action failed", "action", action, "err", err)
+		if ctx.Err() == nil { // a cancelled call is shutdown, not a fault to report
+			// Non-blocking: a late-returning stalled call must never block
+			// on a hub whose Run has already exited.
+			trySend(h.actionFailed, action)
+			trySend(h.opErrs, opErr{action: action, err: err})
+		}
 	}
 	return true
 }

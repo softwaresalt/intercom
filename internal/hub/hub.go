@@ -225,6 +225,13 @@ type Hub struct {
 	// cancelled). A Send that was invoked and failed is NOT reported: it may
 	// have started a turn, so it cannot be correlated and stays counted.
 	promptFailed chan struct{}
+	// lanesWG tracks the two operator lane workers so Run can join them
+	// (bounded, see waitLanes). actionFailed carries the action name and opErrs
+	// the cause of a failed operator call; both are filled non-blocking by the
+	// lanes and consumed by Run.
+	lanesWG      sync.WaitGroup
+	actionFailed chan string
+	opErrs       chan opErr
 	// ctl carries the shutdown executor's hub-control messages (067.006-T).
 	ctl chan *ctlReq
 	// closing is set by shutdown step 0: admission is closed. announced
@@ -398,6 +405,8 @@ func New(cfg Config) (*Hub, error) {
 		promptQ:        make(chan string, operatorPromptQueue),
 		abortQ:         make(chan struct{}, 1),
 		promptFailed:   make(chan struct{}, operatorPromptQueue+1),
+		actionFailed:   make(chan string, operatorPromptQueue+2),
+		opErrs:         make(chan opErr, operatorPromptQueue+2),
 		ctl:            make(chan *ctlReq, ctlQueue),
 		agentIdle:      true,
 		perm:           newPermRegistry(cfg.MaxPendingPermissions),
@@ -521,7 +530,9 @@ func (h *Hub) Stop() {
 // canonical state. It returns after ctx is cancelled or Stop is called,
 // having broadcast a server.shutdown envelope and closed every registered
 // client's Done channel (pumps should drain Frames() once Done is closed to
-// pick up the shutdown frame).
+// pick up the shutdown frame). On exit it cancels the operator lanes and joins
+// them for a bounded time; a worker that ignores cancellation makes Run return
+// an error matching agent.ErrCleanupIncomplete (Done still closes).
 //
 // ctx must be signal-independent: do not pass a context cancelled by SIGINT or
 // SIGTERM. A signal-cancelled ctx would stop the hub before the [Shutdown]
@@ -564,11 +575,13 @@ func (h *Hub) Run(ctx context.Context) error {
 		}
 		select {
 		case <-ctx.Done():
+			opsCancel()
 			h.shutdown("context cancelled")
-			return nil
+			return h.waitLanes()
 		case <-h.stopCh:
+			opsCancel()
 			h.shutdown("stopped")
-			return nil
+			return h.waitLanes()
 		case ev := <-h.ingress:
 			h.handleEvent(ev)
 		case reason := <-h.degraded:
@@ -588,6 +601,12 @@ func (h *Hub) Run(ctx context.Context) error {
 			h.onHandlerReturned(id)
 		case <-h.promptFailed:
 			h.retractPrompts(1)
+		case action := <-h.actionFailed:
+			h.handleActionFailed(action)
+		case oe := <-h.opErrs:
+			// The cause is logged where the call failed; it is never sent to
+			// clients. Recorded here so the channel cannot back up.
+			h.cfg.Logger.Debug("hub: operator action error recorded", "action", oe.action, "err", oe.err)
 		case <-h.permC:
 			h.permC, h.permStop, h.permArmed = nil, nil, time.Time{}
 			h.expirePermissions()

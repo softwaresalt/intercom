@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -135,6 +136,108 @@ func TestAbortedIdleThenNextTurnAskBeforeTurnStartIsAccepted(t *testing.T) {
 }
 
 func contains(f Frame, s string) bool { return strings.Contains(string(f.Bytes()), s) }
+
+// ---- 074.005: lane join and operator action failure envelopes ----
+
+// stuckAgent's Send ignores its context and blocks until release is closed.
+type stuckAgent struct {
+	release chan struct{}
+	entered chan struct{}
+}
+
+func (a *stuckAgent) Send(context.Context, string) error {
+	a.entered <- struct{}{}
+	<-a.release
+	return nil
+}
+func (a *stuckAgent) Abort(context.Context) error { return nil }
+
+func TestHubRunJoinsOperatorLaneWorkersAndPublishesActionFailureError(t *testing.T) {
+	ag := &stuckAgent{release: make(chan struct{}), entered: make(chan struct{}, 1)}
+	t.Cleanup(func() { close(ag.release) }) // lets the stalled worker finish after the test
+	h, err := New(Config{SessionID: "sess", Agent: ag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runErr := make(chan error, 1)
+	go func() { runErr <- h.Run(context.Background()) }()
+	tui := connectRole(t, h, ClientTUI, 0)
+	if res := do(t, tui, prompt("wedge")); !res.Accepted {
+		t.Fatalf("prompt = %+v", res)
+	}
+	select {
+	case <-ag.entered:
+	case <-time.After(testWait):
+		t.Fatal("Send never entered")
+	}
+
+	start := time.Now()
+	stopped := make(chan struct{})
+	go func() { h.Stop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Stop did not return within the bounded lane-join budget")
+	}
+	select {
+	case <-h.Done():
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Done never closed")
+	}
+	select {
+	case err := <-runErr:
+		if !errors.Is(err, agent.ErrCleanupIncomplete) {
+			t.Fatalf("Run = %v, want an error matching agent.ErrCleanupIncomplete", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Run never returned")
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("took %v to finish", d)
+	}
+}
+
+// failAgent fails every operator call with an error carrying text that must
+// never reach a client.
+type failAgent struct{}
+
+var errSecret = errors.New("dial tcp: token sk-live-SECRET rejected")
+
+func (failAgent) Send(context.Context, string) error { return errSecret }
+func (failAgent) Abort(context.Context) error        { return errSecret }
+
+func TestOperatorSendAndAbortFailuresPublishSanitizedErrorEnvelope(t *testing.T) {
+	h := startHub(t, Config{Agent: failAgent{}})
+	tui := connectRole(t, h, ClientTUI, 64)
+	if res := do(t, tui, prompt("go")); !res.Accepted {
+		t.Fatalf("prompt = %+v", res)
+	}
+	if res := do(t, tui, OperatorAction{Type: OpAbortTurn}); !res.Accepted {
+		t.Fatalf("abort = %+v", res)
+	}
+	want := map[string]bool{msgPromptSendFailed: false, msgTurnAbortFailed: false}
+	for n := 0; n < len(want); {
+		f := recvKind(t, tui, KindError)
+		body := string(f.Bytes())
+		if strings.Contains(body, "SECRET") || strings.Contains(body, "dial tcp") {
+			t.Fatalf("error envelope leaks the cause: %s", body)
+		}
+		var env Envelope
+		var p ErrorPayload
+		if err := json.Unmarshal(f.Bytes(), &env); err != nil || json.Unmarshal(env.Payload, &p) != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if p.Code != ErrCodeOperatorActionFailed {
+			t.Fatalf("code = %q, want %q", p.Code, ErrCodeOperatorActionFailed)
+		}
+		seen, known := want[p.Message]
+		if !known || seen {
+			t.Fatalf("unexpected or repeated message %q", p.Message)
+		}
+		want[p.Message] = true
+		n++
+	}
+}
 
 // ---- review cycle 2 N3: lanes context and agentIdle bookkeeping ----
 
