@@ -39,18 +39,18 @@ consumed_stash_ids:
    * `074.001-T` (`size: S`, `complexity: low`, `code`): Harden `Fold` delta cap re-marshalling and `tool.ended` name/truncation parity (`2C74C5FC(d, e)`).
    * `074.002-T` (`size: S`, `complexity: low`, `code`, blocked by `074.001-T`): Harden `Hub.publish` stub fold-error deduplication, unbuildable-stub `markAllStale`, and remote `rehydrate` drain (`2C74C5FC(a, c, f)`).
    * `074.003-T` (`size: S`, `complexity: medium`, `code`, blocked by `074.002-T`): Join operator lane workers in `Hub.Run`, publish `KindError` (`operator_action_failed`) on async operator failures, and settle/resolve permissions on aborted `agent.idle` (`550437DB`).
-   * `074.004-T` (`size: S`, `complexity: low`, `code`, blocked by `074.003-T`): Make `Adapter.recheckForce` non-blocking after failed `Start` and validate `ShutdownConfig.AdapterStopTimeout` (`8769C9A0`, `550437DB`).
+   * `074.004-T` (`size: S`, `complexity: low`, `code`, blocked by `074.003-T`): Make `Adapter.recheckForce` non-blocking after failed `Start`, export `(*Adapter).StopTimeout()`, and validate `ShutdownConfig.AdapterStopTimeout` (`8769C9A0`, `550437DB`).
 2. **Shipment `068-S`** (Covering Feature `075-F`: *"Shutdown broadcast/drain fidelity and in-place hub Client.Rehydrate (4AFE4DA4, AEF57AF1, 1DCB6108)"*, blocked by `067-S`):
-   * `075.001-T` (`size: S`, `complexity: low`, `code`): Sweep closed clients at connect intake, deliver `server.shutdown` to stale clients, and add `Client` write-ack tracking (`4AFE4DA4(a, b, d)`, `2C74C5FC(b)`, `AEF57AF1(a)`).
-   * `075.002-T` (`size: S`, `complexity: medium`, `code`, blocked by `075.001-T`): Honor pending connects in `reapEmptyBroadcastSet`, check `Client.Drained` in `drainAndCloseClients`, and add in-place `Client.Rehydrate` (`4AFE4DA4(b, c)`, `AEF57AF1(a)`, `1DCB6108` hub half).
-   * `075.003-T` (`size: S`, `complexity: low`, `code`, blocked by `075.002-T`): Wire `EnableWriteAck`/`AckWrite` in `transport.session.writePump` and `AdapterStopTimeout` in `internal/app/shutdown.go` (`4AFE4DA4(b)`, `AEF57AF1(a)`, `8769C9A0(c)`).
+   * `075.001-T` (`size: S`, `complexity: low`, `code`): Sweep closed clients at intake, honor pending connects on reap, and deliver terminal `server.shutdown` to stale clients while suppressing subsequent stale hydration (`4AFE4DA4(a, b, c, d)`, `2C74C5FC(b)`, `AEF57AF1(a)`).
+   * `075.002-T` (`size: S`, `complexity: medium`, `code`, blocked by `075.001-T`): Add `Client` write-ack `Drained` tracking in `drainAndCloseClients` and in-place `Client.Rehydrate` (`4AFE4DA4(b)`, `AEF57AF1(a)`, `1DCB6108` hub half).
+   * `075.003-T` (`size: S`, `complexity: low`, `code`, blocked by `075.002-T`): Wire `EnableWriteAck`/`AckWrite` in `transport.session.writePump` and unconditional `AdapterStopTimeout` in `internal/app/shutdown.go` (`4AFE4DA4(b)`, `AEF57AF1(a)`, `8769C9A0(c)`).
    * `075.004-T` (`size: S`, `complexity: low`, `code`, blocked by `075.003-T`): Propagate `ctx` in `App.Reissue`/`tuiReissue` and drain `remote` concurrently in `shutdownScenario` (`AEF57AF1(b, c)`).
 3. **Shipment `069-S`** (Covering Feature `076-F`: *"Resilient TUI reconnect, sanitization, modal anti-spoofing, and viewport hardening (1DCB6108, E9223340)"*, blocked by `068-S`):
    * `076.001-T` (`size: S`, `complexity: medium`, `code`): Use in-place `Conn.Rehydrate` in `tui.Feed` with bounded redial retry and dropped-TUI recovery (`1DCB6108` TUI half, `E9223340(c)` feed half).
    * `076.002-T` (`size: S`, `complexity: low`, `code`, blocked by `076.001-T`): Sanitize non-`Cf` invisible blank runes and add `isBlankSummary` (`E9223340(d)` sanitize half).
    * `076.003-T` (`size: S`, `complexity: low`, `code`, blocked by `076.002-T`): Enforce `isBlankSummary` deny-only in `newPermission` and wrap-aware 2-space summary indentation (`E9223340(d, e)`).
-   * `076.004-T` (`size: S`, `complexity: low`, `code`, blocked by `076.003-T`): Add pure-Elm `ApprovalDelay`, disarm armed approval on resync/hydrate, and trigger `Rehydrate` on stuck `resync` (`E9223340(c, f)`).
-   * `076.005-T` (`size: S`, `complexity: low`, `code`, blocked by `076.004-T`): Add live transcript entry cap, per-entry wrap cache, display-width prompt truncation, and mouse wheel scrolling (`E9223340(b, g)`).
+   * `076.004-T` (`size: S`, `complexity: low`, `code`, blocked by `076.003-T`): Add modal-generation `ApprovalDelay`, disarm armed approval on resync/hydrate, and trigger `Rehydrate` on stuck `resync` (`E9223340(c, f)`).
+   * `076.005-T` (`size: S`, `complexity: low`, `code`, blocked by `076.004-T`): Add live transcript entry cap, delta-invalidated wrap cache, display-width prompt truncation, and mouse wheel initialization/scrolling (`E9223340(b, g)`).
 
 ## Consumed Stash Archival & Deferred Scope
 
