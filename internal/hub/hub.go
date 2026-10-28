@@ -737,7 +737,6 @@ func (h *Hub) abortTurn(eventTurnID string) {
 	if h.activeTurnID == turnID {
 		h.activeTurnID = ""
 	}
-	h.drainAbortedTurnAsks(turnID)
 	for _, e := range slices.Clone(h.perm.order) {
 		if !askBelongsToTurn(e.ask, turnID) {
 			continue
@@ -749,6 +748,9 @@ func (h *Hub) abortTurn(eventTurnID string) {
 			h.decide(e, ActorHub, agent.PermissionDecision{Kind: agent.DecisionUnavailable}, permReasonTurnAborted)
 		}
 	}
+	// Drain after settling so a buffered next-turn ask can use the registry
+	// capacity freed by retiring the aborted turn's entries.
+	h.drainAbortedTurnAsks(turnID)
 }
 
 // askBelongsToTurn reports whether ask is attributable to turnID; an ask

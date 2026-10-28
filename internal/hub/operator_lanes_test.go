@@ -137,6 +137,34 @@ func TestAbortedIdleThenNextTurnAskBeforeTurnStartIsAccepted(t *testing.T) {
 
 func contains(f Frame, s string) bool { return strings.Contains(string(f.Bytes()), s) }
 
+func TestAbortedIdleDrainUsesCapacityFreedByAbortedTurnSettlement(t *testing.T) {
+	h := idleHub(t, Config{MaxPendingPermissions: 1})
+	c := newClient(1, ClientTUI, 128)
+	h.register(c)
+	h.handleEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: "t1"})
+	t1 := turnAsk("t1")
+	h.intakeAsk(t1.ask)
+	if h.perm.len() != 1 {
+		t.Fatalf("setup: %d registered", h.perm.len())
+	}
+	h.decide(h.perm.order[0], ActorLocalTUI, allowOnce, "")
+	<-t1.reply
+
+	// The next turn's ask is buffered while the registry is full.
+	next := turnAsk("t2")
+	h.asks <- next.ask
+	h.handleEvent(agent.Event{Kind: agent.KindIdle, TurnID: "t1", Aborted: true})
+
+	select {
+	case d := <-next.reply:
+		t.Fatalf("next-turn ask answered %v; it must register once t1 is retired", d.Kind)
+	default:
+	}
+	if h.perm.len() != 1 || h.perm.order[0].ask.Request.TurnID != "t2" {
+		t.Fatalf("registry = %d entries, want only the t2 ask", h.perm.len())
+	}
+}
+
 // ---- 074.005: lane join and operator action failure envelopes ----
 
 // stuckAgent's Send ignores its context and blocks until release is closed.
