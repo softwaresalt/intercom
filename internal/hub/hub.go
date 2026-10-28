@@ -241,7 +241,10 @@ type Hub struct {
 	// promptsPending counts accepted prompts that have neither provably
 	// missed Agent.Send, been dropped, nor yet had a turn.start folded for them: each turn.start
 	// consumes one (never below zero). While it is positive an idle event does
-	// not make the session idle, because a further turn is still to come.
+	// not make the session idle, because a further turn is still to come. It is
+	// hub-goroutine-owned and only ever incremented on an accepted prompt;
+	// a failed operator action does not retract it (the count self-corrects on
+	// the next turn.start or provable miss).
 	agentIdle      bool
 	turnRunning    bool
 	promptsPending int
@@ -265,14 +268,17 @@ type Hub struct {
 	ringPos     int // index of the next write
 	ringBytes   int // total encoded bytes of the retained frames
 	fold        *Fold
-	clients     map[uint64]*Client
-	tui         *Client
-	nextID      uint64
-	st          Stats
-	pending     []*connectReq  // connect requests waiting for hydration budget
-	staleQ      []*Client      // clients awaiting a forced re-hydrate
-	wake        chan time.Time // closed; selecting on it forces another iteration
-	perm        *permRegistry  // pending permission requests (arbitration state, not fold state)
+	// buildFrame constructs envelopes; it is newFrame except in tests that
+	// need to force a build failure.
+	buildFrame func(gen string, seq uint64, ts time.Time, kind Kind, sessionID string, payload any) (Frame, error)
+	clients    map[uint64]*Client
+	tui        *Client
+	nextID     uint64
+	st         Stats
+	pending    []*connectReq  // connect requests waiting for hydration budget
+	staleQ     []*Client      // clients awaiting a forced re-hydrate
+	wake       chan time.Time // closed; selecting on it forces another iteration
+	perm       *permRegistry  // pending permission requests (arbitration state, not fold state)
 	// hub-owned permission timer state: one wake-up armed for the earliest
 	// registry deadline.
 	permC     <-chan time.Time
@@ -392,6 +398,7 @@ func New(cfg Config) (*Hub, error) {
 		stopCh:         make(chan struct{}),
 		done:           make(chan struct{}),
 		fold:           fold,
+		buildFrame:     newFrame,
 		ring:           make([]Frame, cfg.ReplayRing),
 		clients:        make(map[uint64]*Client),
 		wake:           wake,
@@ -508,6 +515,12 @@ func (h *Hub) Stop() {
 // having broadcast a server.shutdown envelope and closed every registered
 // client's Done channel (pumps should drain Frames() once Done is closed to
 // pick up the shutdown frame).
+//
+// ctx must be signal-independent: do not pass a context cancelled by SIGINT or
+// SIGTERM. A signal-cancelled ctx would stop the hub before the [Shutdown]
+// executor has run its ordered steps (permissions, gate, agent stop, drain);
+// the executor stops the hub itself at its final step. Cancel ctx only for an
+// unconditional teardown.
 func (h *Hub) Run(ctx context.Context) error {
 	h.mu.Lock()
 	if h.started {
@@ -680,7 +693,7 @@ func (h *Hub) handleEvent(ev agent.Event) {
 // (no seq is consumed then).
 func (h *Hub) publish(kind Kind, payload any) (uint64, bool) {
 	seq := h.seq + 1
-	f, err := newFrame(h.gen, seq, h.cfg.Clock(), kind, h.cfg.SessionID, payload)
+	f, err := h.buildFrame(h.gen, seq, h.cfg.Clock(), kind, h.cfg.SessionID, payload)
 	stub := false
 	switch {
 	case err != nil:
@@ -691,16 +704,23 @@ func (h *Hub) publish(kind Kind, payload any) (uint64, bool) {
 		stub = true
 	}
 	if stub {
-		f, err = newFrame(h.gen, seq, h.cfg.Clock(), KindError, h.cfg.SessionID,
+		f, err = h.buildFrame(h.gen, seq, h.cfg.Clock(), KindError, h.cfg.SessionID,
 			ErrorPayload{Code: ErrCodeFrameTooLarge, Message: msgFrameTooBig})
 		if err != nil {
 			h.cfg.Logger.Error("hub: build error stub failed", "err", err)
+			// The folded state moved but no frame carries it: refuse replay
+			// across the attempted seq (so a pre-failure head cursor
+			// full-hydrates) and force live clients to re-hydrate.
+			h.degradedSeq = seq
+			h.markAllStale()
 			return 0, false
 		}
 	}
 	h.seq = seq
 	if stub {
-		h.fold.ApplyError(ErrCodeFrameTooLarge, msgFrameTooBig)
+		if kind != KindError { // a KindError caller already folded its own entry
+			h.fold.ApplyError(ErrCodeFrameTooLarge, msgFrameTooBig)
+		}
 		h.degradedSeq = seq
 		h.markAllStale() // before broadcast: the hydrate supersedes the lost content
 	}
@@ -1103,8 +1123,8 @@ func (h *Hub) hydratePayload() []byte {
 }
 
 // rehydrate serves a stale client a fresh snapshot, reporting success. A
-// full TUI buffer is drained oldest-first (everything queued is superseded by
-// the snapshot); a full remote buffer drops the remote (§5.5).
+// full buffer (TUI or remote) is drained oldest-first: everything queued is
+// superseded by the snapshot, so the client is re-hydrated rather than dropped.
 func (h *Hub) rehydrate(c *Client) bool {
 	f, ok := h.hydrateFrame()
 	if !ok {
@@ -1114,10 +1134,6 @@ func (h *Hub) rehydrate(c *Client) bool {
 		c.stale = false
 		h.st.Rehydrations++
 		return true
-	}
-	if c.kind != ClientTUI {
-		h.overflow(c.id, c)
-		return false
 	}
 drain:
 	for {

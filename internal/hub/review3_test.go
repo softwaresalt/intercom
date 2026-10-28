@@ -330,6 +330,162 @@ func TestNewFrameFailurePublishesBoundedStubNotSilentDrop(t *testing.T) {
 	assertStubBoundary(t, h, c, 1)
 }
 
+// ---- 074.002: stub fold dedup, unbuildable stub, rehydrate drain, shutdown coupling ----
+
+func TestPublishStubDoesNotDuplicateFoldErrorForKindError(t *testing.T) {
+	h := idleHub(t, Config{MaxFrameBytes: 512})
+	c := newClient(1, ClientRemote, 8)
+	h.register(c)
+	msg := strings.Repeat("x", 2000)
+	h.fold.ApplyError("boom", msg) // the caller folds a KindError before publishing it
+	if _, ok := h.publish(KindError, ErrorPayload{Code: "boom", Message: msg}); !ok {
+		t.Fatal("publish failed")
+	}
+	if n := h.fold.Len(); n != 1 {
+		t.Fatalf("fold has %d entries, want 1 (stub must not add a duplicate error)", n)
+	}
+}
+
+func TestPublishUnbuildableStubStillMarksClientsStale(t *testing.T) {
+	h := idleHub(t, Config{})
+	c := newClient(1, ClientRemote, 8)
+	h.register(c)
+	if _, ok := h.publish(KindAgentIdle, IdlePayload{}); !ok {
+		t.Fatal("setup publish failed")
+	}
+	preFailureSeq := h.seq
+	pos := &Position{Gen: h.Gen(), Seq: preFailureSeq}
+	c.stale, h.staleQ = false, nil
+	for len(c.send) > 0 {
+		<-c.send
+	}
+
+	h.fold.Apply(msgEvent("folded", "folded-update")) // folded before publish, as handleEvent does
+	real := h.buildFrame
+	h.buildFrame = func(string, uint64, time.Time, Kind, string, any) (Frame, error) {
+		return Frame{}, errors.New("forced build failure")
+	}
+	if seq, ok := h.publish(KindAgentMessage, MessagePayload{}); ok || seq != 0 {
+		t.Fatalf("publish = (%d, %v), want (0, false)", seq, ok)
+	}
+	if h.seq != preFailureSeq {
+		t.Fatalf("seq consumed: %d", h.seq)
+	}
+	if h.degradedSeq != preFailureSeq+1 {
+		t.Fatalf("degradedSeq = %d, want %d", h.degradedSeq, preFailureSeq+1)
+	}
+	if !c.stale || len(h.staleQ) != 1 {
+		t.Fatalf("client stale=%v staleQ=%d, want forced re-hydrate", c.stale, len(h.staleQ))
+	}
+
+	assertHydrates := func(when string) {
+		t.Helper()
+		if h.replayable(pos, 8) {
+			t.Fatalf("%s: pre-failure head cursor still replays", when)
+		}
+		req := &connectReq{opts: ConnectOptions{Kind: ClientRemote, Buffer: 8, Resume: pos}, reply: make(chan connectResp, 1)}
+		h.completeConnect(req, h.replayable(pos, 8))
+		resp := <-req.reply
+		if resp.err != nil {
+			t.Fatalf("%s: connect: %v", when, resp.err)
+		}
+		f := <-resp.client.Frames()
+		if f.Kind() != KindSessionHydrate || !strings.Contains(string(f.Bytes()), "folded-update") {
+			t.Fatalf("%s: first frame = %s %s, want hydrate carrying the folded update", when, f.Kind(), f.Bytes())
+		}
+	}
+	assertHydrates("immediately")
+
+	h.buildFrame = real
+	if _, ok := h.publish(KindAgentIdle, IdlePayload{}); !ok || h.seq <= preFailureSeq {
+		t.Fatalf("later publish failed, seq=%d", h.seq)
+	}
+	assertHydrates("after later event")
+}
+
+func TestRehydrateDrainsFullStaleRemoteBufferInsteadOfDropping(t *testing.T) {
+	h := idleHub(t, Config{})
+	c := newClient(1, ClientRemote, 2)
+	h.register(c)
+	for i := 0; i < cap(c.send); i++ {
+		if _, ok := h.publish(KindAgentIdle, IdlePayload{}); !ok {
+			t.Fatal("publish failed")
+		}
+	}
+	if len(c.send) != cap(c.send) {
+		t.Fatalf("setup: send has %d of %d", len(c.send), cap(c.send))
+	}
+	c.stale = true
+	if !h.rehydrate(c) {
+		t.Fatal("rehydrate failed for a full remote buffer")
+	}
+	if c.isClosed() || h.clients[c.id] != c {
+		t.Fatal("remote client was dropped instead of re-hydrated")
+	}
+	if len(c.send) != 1 {
+		t.Fatalf("send has %d frames, want only the fresh hydrate", len(c.send))
+	}
+	if f := <-c.send; f.Kind() != KindSessionHydrate {
+		t.Fatalf("frame = %s, want session.hydrate", f.Kind())
+	}
+	if c.stale {
+		t.Fatal("client still stale")
+	}
+}
+
+type stopTimeoutAgent struct {
+	*fakeShutdownAgent
+	d time.Duration
+}
+
+func (a stopTimeoutAgent) StopTimeout() time.Duration { return a.d }
+
+func TestNewShutdownValidatesAdapterStopTimeoutCoupling(t *testing.T) {
+	h := startHub(t, Config{})
+	rec := &recorder{h: h}
+	base := &fakeShutdownAgent{rec: rec}
+	gate := &fakeGate{rec: rec, h: h}
+	mk := func(ag agent.Agent, ast, force time.Duration) (*Shutdown, error) {
+		return NewShutdown(ShutdownConfig{Hub: h, Agent: ag, Gate: gate, AdapterStopTimeout: ast,
+			Timeouts: ShutdownTimeouts{Force: force}})
+	}
+	wantConfig := func(name string, err error) {
+		t.Helper()
+		var ae *apperr.Error
+		if !errors.As(err, &ae) || ae.Kind() != apperr.KindConfig {
+			t.Errorf("%s: err = %v, want KindConfig", name, err)
+		}
+	}
+
+	s, err := mk(stopTimeoutAgent{base, 10 * time.Second}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.cfg.AdapterStopTimeout != 10*time.Second || s.cfg.Timeouts.Force != 12*time.Second {
+		t.Errorf("auto-populate: adapter=%v force=%v, want 10s/12s", s.cfg.AdapterStopTimeout, s.cfg.Timeouts.Force)
+	}
+	s, err = mk(base, 3*time.Second, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.cfg.Timeouts.Force != DefaultShutdownForce {
+		t.Errorf("force = %v, want default %v", s.cfg.Timeouts.Force, DefaultShutdownForce)
+	}
+	s, err = mk(base, 0, 0)
+	if err != nil || s.cfg.Timeouts.Force != DefaultShutdownForce {
+		t.Errorf("no adapter timeout: err=%v force=%v", err, s.cfg.Timeouts.Force)
+	}
+	_, err = mk(base, -time.Second, 0)
+	wantConfig("negative", err)
+	_, err = mk(base, 3*time.Second, time.Second)
+	wantConfig("force below adapter stop timeout", err)
+	_, err = mk(stopTimeoutAgent{base, 9 * time.Second}, 0, 5*time.Second)
+	wantConfig("force below auto-populated adapter stop timeout", err)
+	if _, err = mk(base, 3*time.Second, 3*time.Second); err != nil {
+		t.Errorf("force == adapter stop timeout must be accepted: %v", err)
+	}
+}
+
 // ---- 5 + 7: cursor contract ----
 
 func TestCursorDiscardsLiveFramesAfterGapUntilHydrate(t *testing.T) {
