@@ -24,9 +24,9 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and m
 | Source Requirement | Stash Origin | Target Shipment & Feature | Implementation Unit(s) |
 |---|---|---|---|
 | Early-return in `Fold.applyDelta` when already truncated at cap and `add == ""`; backfill `Tool` name and propagate truncation flag in both `Fold.applyToolEnded` (`internal/hub/fold.go`) and live `tui.Model.applyToolEnded` (`internal/tui/model.go`) with live-versus-hydrated regression test | `2C74C5FC(d, e)` | `067-S` / `074-F` | Unit 1.1 (`074.001-T`) |
-| Avoid duplicate fold error entry on `Hub.publish` stub path when `kind == KindError`; call `markAllStale` if even the error stub fails; drain full remote buffer on `Hub.rehydrate` instead of dropping | `2C74C5FC(a, c, f)` | `067-S` / `074-F` | Unit 1.2 (`074.002-T`) |
+| Avoid duplicate fold error entry on `Hub.publish` stub path when `kind == KindError`; call `markAllStale` if even the error stub fails; drain full remote buffer on `Hub.rehydrate` instead of dropping; validate `ShutdownConfig.AdapterStopTimeout` coupling and document `Hub.Run` ctx, `Shutdown.Done`, and `promptsPending` contracts | `2C74C5FC(a, c, f)`, `8769C9A0` | `067-S` / `074-F` | Unit 1.2 (`074.002-T`) |
 | Settle/resolve pending permissions (`turn_aborted`) on aborted `agent.idle` and reject late aborted-turn asks via turn-scoped ask identity (`PermissionRequest.TurnID`, `activeTurnID`, `abortedTurnIDs`, `intakeAsk`, `drainAbortedTurnAsks`) while preserving next-turn asks dequeued before `KindTurnStart` (`ask-before-next-turn-start`) | `550437DB` | `067-S` / `074-F` | Unit 1.3 (`074.003-T`) |
-| Make `Adapter.recheckForce` non-blocking after failed `Start`; stamp turn-scoped `TurnID` on `Adapter` permission asks and `KindIdle` events; export `(*Adapter).StopTimeout()` and validate `ShutdownConfig.AdapterStopTimeout` coupling (migrating `TestShutdownThatCannotConfirmForceStopReportsOrphanRisk`); document `Hub.Run` ctx, `Shutdown.Done`, and `promptsPending` contracts | `8769C9A0`, `550437DB` | `067-S` / `074-F` | Unit 1.4 (`074.004-T`) |
+| Make `Adapter.recheckForce` non-blocking after failed `Start`; export `(*Adapter).StopTimeout()`; stamp turn-scoped `TurnID` and cancel in-flight/un-tagged aborted-turn asks via `turnStop` in `permissionBridge.handle` (`internal/agent/copilot/permission.go`) and `Adapter.onEvent`/`Abort` (`internal/agent/copilot/adapter.go`); migrate `TestShutdownThatCannotConfirmForceStopReportsOrphanRisk` and add registered-callback turn-abort regression test in `internal/agent/copilot/shutdown_hub_test.go` | `8769C9A0`, `550437DB` | `067-S` / `074-F` | Unit 1.4 (`074.004-T`) |
 | Join operator lane workers in `Hub.Run` before `Done()` closes; fold and publish sanitized `KindError` (`operator_action_failed`) on non-shutdown async operator `Send`/`Abort` failure | `550437DB` | `067-S` / `074-F` | Unit 1.5 (`074.005-T`) |
 | Sweep closed clients at `Hub.intake` start; honor pending connects in `reapEmptyBroadcastSet` (with post-`serviceHydrations` reap and `membershipWake` on abandoned `Connect`); deliver terminal `server.shutdown` to stale/full-buffer clients while suppressing subsequent stale hydration; add `Client` `inflight`/`terminal` frame helpers (`sendFrame`, `drainOneFrame`, `drainAllFrames`) | `4AFE4DA4(a, b, c, d)`, `2C74C5FC(b)`, `AEF57AF1(a)` | `068-S` / `075-F` | Unit 2.1 (`075.001-T`) |
 | Add `Client` write-ack completion (`EnableWriteAck`, `AckWrite`, `Drained`) and check `c.Drained()` in `drainAndCloseClients`; add in-place `(*hub.Client).Rehydrate(ctx)` and hub control handler `(*Hub).rehydrateClient` (`ctlRehydrate`) | `4AFE4DA4(b)`, `AEF57AF1(a)`, `1DCB6108` (hub half) | `068-S` / `075-F` | Unit 2.2 (`075.002-T`) |
@@ -76,24 +76,27 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and m
 * **Verification**:
   * `GOTOOLCHAIN=go1.26.10 go test -race -v ./internal/hub/... ./internal/tui -run "TestFoldDeltaAtCap|TestToolEndedBackfillsNameAndPropagatesTruncationLiveAndHydrated|TestGolden"`
 
-#### Unit 1.2 (`074.002-T`): Harden `Hub.publish` stub fold-error deduplication, unbuildable-stub `markAllStale`, and stale remote buffer drain on `rehydrate` (`2C74C5FC(a, c, f)`)
+#### Unit 1.2 (`074.002-T`): Harden `Hub.publish` stub fold-error deduplication, unbuildable-stub `markAllStale`, stale remote buffer drain on `rehydrate`, and `ShutdownConfig.AdapterStopTimeout` validation (`2C74C5FC(a, c, f)`, `8769C9A0`)
 
 * **Domain**: `code` (`size: S`, `complexity: low`)
 * **Posture**: `test-first`
-* **Files affected** (2 files):
+* **Files affected** (3 files):
   * `internal/hub/hub.go`
+  * `internal/hub/shutdown.go`
   * `internal/hub/review3_test.go`
 * **Changes needed**:
   * In `(*Hub).publish` (`internal/hub/hub.go:671-686`):
     * When `stub` is true and building the `ErrCodeFrameTooLarge` stub itself returns `err != nil`, set `h.degradedSeq = h.seq` and call `h.markAllStale()` before returning `0, false` so registered clients are forced to re-hydrate when `h.fold` was already mutated by the caller prior to `publish`.
     * When `stub` is true and the stub frame is built, guard `h.fold.ApplyError(ErrCodeFrameTooLarge, msgFrameTooBig)` with `if kind != KindError` so callers publishing `KindError` (which already called `h.fold.ApplyError`) do not produce a duplicate second error entry in `h.fold`.
   * In `(*Hub).rehydrate` (`internal/hub/hub.go:1089-1114`): remove the `if c.kind != ClientTUI { h.overflow(c.id, c); return false }` branch so that when `trySend(c.send, f)` finds `c.send` full on any stale client (`ClientTUI` or `ClientRemote`), `rehydrate` drains the superseded frames from `c.send` and enqueues the fresh `session.hydrate` snapshot `f` without dropping the remote client.
+  * In `internal/hub/shutdown.go`: add `AdapterStopTimeout time.Duration` to `ShutdownConfig`. In `NewShutdown`: when `cfg.AdapterStopTimeout == 0`, auto-populate it from `if st, ok := cfg.Agent.(interface{ StopTimeout() time.Duration }); ok { cfg.AdapterStopTimeout = st.StopTimeout() }`; reject `cfg.AdapterStopTimeout < 0` or `(cfg.AdapterStopTimeout > 0 && cfg.Timeouts.Force > 0 && cfg.Timeouts.Force < cfg.AdapterStopTimeout)` with an `apperr.KindConfig` error; when `cfg.AdapterStopTimeout > 0 && cfg.Timeouts.Force == 0`, set `cfg.Timeouts.Force = max(DefaultShutdownForce, cfg.AdapterStopTimeout+2*time.Second)` before `withDefaults()`. Document the `Hub.Run` signal-independent context, `Shutdown.Done`, and `promptsPending` contracts.
   * Add unit tests in `internal/hub/review3_test.go`:
     1. `TestPublishStubDoesNotDuplicateFoldErrorForKindError`: configure a hub where a `KindError` payload exceeds `MaxFrameBytes` (or triggers the stub path after `h.fold.ApplyError`) and assert `h.fold.Len() == 1` rather than `2`.
     2. `TestPublishUnbuildableStubStillMarksClientsStale`: force `encodeFrame` to fail on the stub path (e.g., via a test-only invalid payload / hook or unencodable state) after mutating `h.fold` and assert `c.stale == true` and `len(h.staleQ) == 1`.
     3. `TestRehydrateDrainsFullStaleRemoteBufferInsteadOfDropping`: connect a `ClientRemote` with `Buffer: 2`, fill its buffer with 1 live frame plus the `SignalDegraded` error frame (`len(c.send) == 2`), run `serviceHydrations`, and assert the remote client is NOT dropped (`!c.isClosed()`, `DroppedClients == 0`) and its buffer now holds the fresh `KindSessionHydrate` frame.
+    4. `TestNewShutdownValidatesAdapterStopTimeoutCoupling`: using a small fake `Agent` implementing `StopTimeout() time.Duration`, verify `NewShutdown` rejects `Force < AdapterStopTimeout` (both when `AdapterStopTimeout` is set explicitly and when auto-populated from `cfg.Agent.(interface{ StopTimeout() time.Duration })`, e.g., `300ms` `Force` against a `1s` `StopTimeout` agent) and scales default `Force` to `max(DefaultShutdownForce, AdapterStopTimeout+2*time.Second)` when `Force == 0`, while preserving short `Force` budgets for in-process fakes with `StopTimeout() == 0`.
 * **Verification**:
-  * `GOTOOLCHAIN=go1.26.10 go test -race -v ./internal/hub -run "TestPublishStub|TestPublishUnbuildable|TestRehydrateDrainsFullStaleRemote"`
+  * `GOTOOLCHAIN=go1.26.10 go test -race -v ./internal/hub -run "TestPublishStub|TestPublishUnbuildable|TestRehydrateDrainsFullStaleRemote|TestNewShutdownValidatesAdapterStopTimeoutCoupling"`
 
 #### Unit 1.3 (`074.003-T`): Settle permissions on aborted `agent.idle` with turn-scoped ask identity and preserve next-turn asks before `KindTurnStart` (`550437DB`)
 
@@ -114,30 +117,44 @@ To satisfy Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) and m
 * **Verification**:
   * `GOTOOLCHAIN=go1.26.10 go test -race -v ./internal/hub -run "TestAbortedIdleEvent|TestFailedPromptSend|TestLateSendFailure"`
 
-#### Unit 1.4 (`074.004-T`): Make `Adapter.recheckForce` non-blocking, stamp turn-scoped `TurnID` in `Adapter`, and validate `ShutdownConfig.AdapterStopTimeout` coupling (`8769C9A0`, `550437DB`)
+#### Unit 1.4 (`074.004-T`): Make `Adapter.recheckForce` non-blocking, export `(*Adapter).StopTimeout()`, and wire turn-scoped `TurnID` stamping and `turnStop` cancellation in `permissionBridge` and `Adapter` (`8769C9A0`, `550437DB`)
 
 * **Domain**: `code` (`size: S`, `complexity: low`)
 * **Posture**: `test-first`
 * **Files affected** (3 files):
   * `internal/agent/copilot/adapter.go`
-  * `internal/hub/shutdown.go`
+  * `internal/agent/copilot/permission.go`
   * `internal/agent/copilot/shutdown_hub_test.go`
 * **Changes needed**:
-  * In `internal/agent/copilot/adapter.go`: export `const DefaultStopTimeout = 5 * time.Second` (keeping `const defaultStopTimeout = DefaultStopTimeout`), add `func (a *Adapter) StopTimeout() time.Duration { return a.cfg.StopTimeout }` so callers can query the adapter's effective `ForceStop` timeout budget independently of `ShutdownTimeouts.Force`, and track `turnID string` under `a.mu` across `KindTurnStart` / `KindTurnEnd` / `KindIdle` in `(*Adapter).onEvent` (stamping `e.TurnID` on `KindIdle` when empty and stamping `ask.Request.TurnID` in `(*Adapter).onPermissionRequest`). In `(*Adapter).recheckForce()` (`adapter.go:676-685`), replace `return a.forceStop()` with a non-blocking check on `a.forceDone`:
-    ```go
-    select {
-    case <-a.forceDone:
-        a.mu.Lock()
-        a.forceUnconfirmed = false
-        a.mu.Unlock()
-        return nil
-    default:
-        return fmt.Errorf("agent: %w: ForceStop did not return within %v", agent.ErrCleanupIncomplete, a.cfg.StopTimeout)
-    }
-    ```
-    so `Stop` after a failed `Start` with a wedged `ForceStop` does not wait a second `StopTimeout`.
-  * In `internal/hub/shutdown.go`: add `AdapterStopTimeout time.Duration` to `ShutdownConfig`. In `NewShutdown`: when `cfg.AdapterStopTimeout == 0`, populate it from `if st, ok := cfg.Agent.(interface{ StopTimeout() time.Duration }); ok { cfg.AdapterStopTimeout = st.StopTimeout() }`; reject `cfg.AdapterStopTimeout < 0` or `(cfg.AdapterStopTimeout > 0 && cfg.Timeouts.Force > 0 && cfg.Timeouts.Force < cfg.AdapterStopTimeout)` with an `apperr.KindConfig` error; when `cfg.AdapterStopTimeout > 0 && cfg.Timeouts.Force == 0`, set `cfg.Timeouts.Force = max(DefaultShutdownForce, cfg.AdapterStopTimeout+2*time.Second)` before `withDefaults()`. Document the `Hub.Run` signal-independent context requirement, `Shutdown.Done` lifecycle, and `promptsPending` 1-to-1 `turn.start` / bounded `WaitIdle` behavior in `internal/hub/shutdown.go`.
-  * In `internal/agent/copilot/shutdown_hub_test.go`: migrate `TestShutdownThatCannotConfirmForceStopReportsOrphanRisk` (`shutdown_hub_test.go:298`) by setting `r.h.ad.cfg.StopTimeout = 200 * time.Millisecond` before `r.newShutdown` (so its explicit `c.Timeouts.Force = 300 * time.Millisecond` satisfies `Force >= StopTimeout` under the new `NewShutdown` validation while still exercising orphan-risk reporting on a wedged `ForceStop`), add `TestStopAfterFailedStartRecheckForceIsNonBlocking` asserting that `h.ad.Stop(context.Background())` after a failed `Start` (with `StopTimeout = 200ms`) returns `agent.ErrCleanupIncomplete` in `< 50ms` (proving `recheckForce` did not re-wait `StopTimeout`), and add `TestNewShutdownValidatesAdapterStopTimeoutCoupling` verifying `hub.NewShutdown` rejects `Force < AdapterStopTimeout` (both when `AdapterStopTimeout` is set explicitly and when derived from `(*copilot.Adapter).StopTimeout()` with an explicit `300ms` `Force` against a `1s` `StopTimeout` adapter) and scales default `Force` when `AdapterStopTimeout > DefaultShutdownForce`, while preserving short `Force` budgets for in-process test fakes whose `StopTimeout` is `0`.
+  * In `internal/agent/copilot/permission.go` (`permissionBridge`):
+    * Add `mu sync.Mutex`, `turnID string`, and `turnStop chan struct{}` (initialized to `make(chan struct{})` in `newPermissionBridge`) on `permissionBridge`:
+      * `func (b *permissionBridge) setTurn(id string)`: under `b.mu`, sets `b.turnID = id` and, if `b.turnStop == nil`, initializes `b.turnStop = make(chan struct{})`.
+      * `func (b *permissionBridge) abortTurn() string`: under `b.mu`, captures `prev := b.turnID`, clears `b.turnID = ""`, closes `b.turnStop` (if non-nil), and replaces `b.turnStop = make(chan struct{})` so any in-flight `b.handle` from the aborted turn is cancelled immediately (`defer close(resolved)` closes `ask.Resolved`) while the next turn gets a fresh open `turnStop` channel.
+      * `func (b *permissionBridge) currentTurn() (string, <-chan struct{})`: under `b.mu`, returns `(b.turnID, b.turnStop)`.
+    * In `(*permissionBridge).handle(req, inv)`:
+      * Capture `turnID, turnStop := b.currentTurn()` before constructing `ask`, and set `domain.TurnID = turnID` on `domain`.
+      * Select on `<-turnStop` alongside `<-b.hubDone` and `<-b.stop` both when sending `b.asks <- ask` (returning `unavailable()`, which closes `ask.Resolved` via `defer close(resolved)`) and when waiting on `<-reply` (returning `deliver(notAvailable)` if `<-turnStop` closed, or downgrading `DecisionAllowOnce` to `notAvailable` if `turnStop` is closed).
+      * This `turnStop` + `domain.TurnID` design closes every race gap: (a) when `KindTurnStart` was seen before `b.handle`, `domain.TurnID` carries the non-empty `TurnID` AND `turnStop` is bound to that turn; (b) even if `b.handle` was invoked before `KindTurnStart` arrived (`domain.TurnID == ""`), `b.abortTurn()` closes `turnStop`, which causes `b.handle` to return `UserNotAvailable` and close `ask.Resolved` so `Hub.handleAsk` discards the ask via `case <-ask.Resolved:`; and (c) `b.abortTurn()` replaces `b.turnStop = make(chan struct{})` so the subsequent turn gets a fresh open `turnStop` channel.
+  * In `internal/agent/copilot/adapter.go`:
+    * Export `const DefaultStopTimeout = 5 * time.Second` (keeping `const defaultStopTimeout = DefaultStopTimeout`) and add `func (a *Adapter) StopTimeout() time.Duration { return a.cfg.StopTimeout }` so callers (`hub.NewShutdown` and `internal/app/shutdown.go`) can query the adapter's effective `ForceStop` timeout budget independently of `ShutdownTimeouts.Force`.
+    * In `(*Adapter).onEvent`: before sending `e` to `a.cfg.Ingress`, if `e.Kind == agent.KindTurnStart`, call `a.bridge.setTurn(e.TurnID)`; if `e.Kind == agent.KindIdle`, when `e.Aborted` is true call `abortedID := a.bridge.abortTurn()` and if `e.TurnID == ""` set `e.TurnID = abortedID`, otherwise (`!e.Aborted`) call `a.bridge.setTurn("")`. Also in `(*Adapter).Abort(ctx)`, call `a.bridge.abortTurn()` when `sess.Abort(ctx)` is invoked.
+    * In `(*Adapter).recheckForce()` (`adapter.go:676-685`), replace `return a.forceStop()` with a non-blocking check on `a.forceDone`:
+      ```go
+      select {
+      case <-a.forceDone:
+          a.mu.Lock()
+          a.forceUnconfirmed = false
+          a.mu.Unlock()
+          return nil
+      default:
+          return fmt.Errorf("agent: %w: ForceStop did not return within %v", agent.ErrCleanupIncomplete, a.cfg.StopTimeout)
+      }
+      ```
+      so `Stop` after a failed `Start` with a wedged `ForceStop` does not wait a second `StopTimeout`.
+  * In `internal/agent/copilot/shutdown_hub_test.go`:
+    * Migrate `TestShutdownThatCannotConfirmForceStopReportsOrphanRisk` (`shutdown_hub_test.go:298`) by setting `r.h.ad.cfg.StopTimeout = 200 * time.Millisecond` before `r.newShutdown` (so its explicit `c.Timeouts.Force = 300 * time.Millisecond` satisfies `Force >= StopTimeout` under `NewShutdown` validation from `074.002-T` while still exercising orphan-risk reporting on a wedged `ForceStop`).
+    * Add `TestStopAfterFailedStartRecheckForceIsNonBlocking` asserting that `h.ad.Stop(context.Background())` after a failed `Start` (with `StopTimeout = 200ms`) returns `agent.ErrCleanupIncomplete` in `< 50ms` (proving `recheckForce` did not re-wait `StopTimeout`).
+    * Add `TestPermissionBridgeStampsTurnIDAndCancelsLateAbortedTurnAskThroughRegisteredCallback` driving the adapter's registered SDK `OnPermissionRequest` callback (`a.bridge.handler()`) and `OnEvent` callback (`a.onEvent`) through a real `hub.Hub`, verifying: (i) `OnPermissionRequest` stamps `Request.TurnID` from the active turn (`AssistantTurnStartData{TurnID: "turn-1"}`), (ii) an aborted turn (`SessionIdleData{Aborted: &true}`) rejects a late `OnPermissionRequest` from `"turn-1"` (and cancels an un-tagged ask via `turnStop` / `ask.Resolved`), and (iii) a subsequent turn's `OnPermissionRequest` (`"turn-2"`) succeeds even if `OnPermissionRequest` runs before `OnEvent(AssistantTurnStartData{TurnID: "turn-2"})` is dequeued by the hub.
 * **Verification**:
   * `GOTOOLCHAIN=go1.26.10 go test -race -v ./internal/agent/copilot/... ./internal/hub/...`
 
@@ -453,4 +470,7 @@ decision: PASS
 7. **[PR #201 Copilot Round 3 Review — Remediated] Units 1.1, 1.3, 1.4, 1.5, & 3.5 (`074.001-T`, `074.003-T`..`074.005-T`, `076.005-T`)**:
    * *Findings*: (1) `074.001-T` (`067-S`) updated `Fold.applyToolEnded` to backfill `Tool` name and propagate `Truncated` for hydrated tool entries while deferring the matching live `tui.Model.applyToolEnded` update (`internal/tui/model.go:516-518`) to `076.005-T` (`069-S`), creating a live-vs-hydrated divergence between `067-S` and `069-S`; and (2) an unscoped `turnAborted` boolean latch in `074.003-T` cleared only on `KindTurnStart` can reject a valid next-turn permission ask if `Hub.Run` dequeues that ask from `h.asks` before dequeuing the next turn's `KindTurnStart` from `h.ingress` (`internal/agent/agent.go:143-145` permits cross-channel reordering).
    * *Remediation applied*: (1) Scheduled the `internal/tui/model.go` `applyToolEnded` `Tool` name backfill and `Truncated` propagation and a live-versus-hydrated regression test (`TestToolEndedBackfillsNameAndPropagatesTruncationLiveAndHydrated` in `internal/tui/model_test.go`) directly in `074.001-T` (`067-S`, 3 files: `internal/hub/fold.go`, `internal/tui/model.go`, `internal/tui/model_test.go`), leaving `076.005-T` (`069-S`) responsible for the `wrapped`/`wrapWidth` cache invalidation in `applyToolEnded`; and (2) replaced the unscoped `turnAborted` boolean latch with turn-scoped ask identity (`TurnID string` on `agent.PermissionRequest` in `internal/agent/agent.go`, stamped in `copilot.Adapter` in `074.004-T`, and `activeTurnID` / `abortedTurnIDs` on `Hub` in `internal/hub/hub.go` in `074.003-T`) while splitting operator-lane worker joining and `operator_action_failed` error publication into `074.005-T` (`067-S`) so every task stays strictly `<= 3` files, and added the `ask-before-next-turn-start` regression case alongside the `idle-before-ask` regression case in `TestAbortedIdleEventSettlesDecidedResolvesPendingAndRejectsLateAsks`.
+8. **[PR #201 Copilot Round 4 Review — Remediated] Units 1.2 & 1.4 (`074.002-T`, `074.004-T`)**:
+   * *Finding*: `Adapter.Start` registers `a.bridge.handler()` (`(*permissionBridge).handle` in `internal/agent/copilot/permission.go`) rather than a `(*Adapter).onPermissionRequest` method on `Adapter`, so `permission.go` must be in `074.004-T`'s scope to stamp `domain.TurnID` and cancel in-flight / un-tagged asks via per-turn `turnStop` on turn abort.
+   * *Remediation applied*: Moved `ShutdownConfig.AdapterStopTimeout` (`internal/hub/shutdown.go`) and `TestNewShutdownValidatesAdapterStopTimeoutCoupling` into `074.002-T` (Plan Unit 1.2, 3 files: `internal/hub/hub.go`, `internal/hub/shutdown.go`, `internal/hub/review3_test.go`), and updated `074.004-T` (Plan Unit 1.4, 3 files: `internal/agent/copilot/adapter.go`, `internal/agent/copilot/permission.go`, `internal/agent/copilot/shutdown_hub_test.go`) to wire `permissionBridge` (`mu`, `turnID`, `turnStop`, `setTurn`, `abortTurn`, `currentTurn`, and `handle` stamping `domain.TurnID` and selecting on `<-turnStop`), `(*Adapter).onEvent` / `(*Adapter).Abort(ctx)` calling `a.bridge.setTurn` / `a.bridge.abortTurn()`, and `TestPermissionBridgeStampsTurnIDAndCancelsLateAbortedTurnAskThroughRegisteredCallback` in `internal/agent/copilot/shutdown_hub_test.go`.
 
