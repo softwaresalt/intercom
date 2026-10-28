@@ -370,3 +370,48 @@ func TestSecurityNoticeReasonIsSanitized(t *testing.T) {
 		t.Fatalf("hidden characters should be shown as markers: %q", s)
 	}
 }
+
+func TestFoldDeltaAtCapDoesNotRemarshalWhenAlreadyTruncated(t *testing.T) {
+	f, err := hub.NewFold(hub.Limits{MaxEntryTextBytes: 1024, MaxBytes: 16 << 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Apply(delta("m", strings.Repeat("a", 1024)))
+	f.Apply(delta("m", "overflow")) // clipped: entry becomes truncated
+	ev := delta("m", "more")
+	allocs := testing.AllocsPerRun(50, func() { f.Apply(ev) })
+	// One allocation remains: the independent copy of the message id. A
+	// re-marshal of the entry would add several more.
+	if allocs > 1 {
+		t.Fatalf("delta at cap on an already-truncated entry allocated %v times; want <= 1 (no re-marshal)", allocs)
+	}
+}
+
+func TestToolEndedBackfillsNameAndPropagatesTruncationLiveAndHydrated(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	live := newModel(t, &fakeIngress{}, 60, 12)
+	long := strings.Repeat("n", 200)
+	r.send(
+		agent.Event{Kind: agent.KindToolStarted, ToolCallID: "c1"},
+		agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c1", ToolName: "grep", Success: true},
+		agent.Event{Kind: agent.KindToolStarted, ToolCallID: "c2", ToolName: "x"},
+		agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c2", ToolName: long, Success: true},
+	)
+	live = r.feedFrames(live, 5)
+	r.c.Close()
+	r.c = r.connect()
+	hydrated := newModel(t, &fakeIngress{}, 60, 12)
+	hydrated, _ = step(hydrated, FrameMsg{Frame: r.frame()})
+	if len(live.entries) != 2 || len(hydrated.entries) != 2 {
+		t.Fatalf("entries live=%d hydrated=%d, want 2", len(live.entries), len(hydrated.entries))
+	}
+	if live.entries[0].Tool != "grep" || !live.entries[1].Truncated {
+		t.Fatalf("live entries wrong: %+v", live.entries)
+	}
+	for i := range live.entries {
+		l, h := live.entries[i], hydrated.entries[i]
+		if l.Tool != h.Tool || l.Truncated != h.Truncated {
+			t.Fatalf("entry %d live/hydrated mismatch: live=%+v hydrated=%+v", i, l, h)
+		}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -224,6 +225,13 @@ type Hub struct {
 	// cancelled). A Send that was invoked and failed is NOT reported: it may
 	// have started a turn, so it cannot be correlated and stays counted.
 	promptFailed chan struct{}
+	// lanesWG tracks the two operator lane workers so Run can join them
+	// (bounded, see waitLanes). actionFailed carries the action name and opErrs
+	// the cause of a failed operator call; both are filled non-blocking by the
+	// lanes and consumed by Run.
+	lanesWG      sync.WaitGroup
+	actionFailed chan string
+	opErrs       chan opErr
 	// ctl carries the shutdown executor's hub-control messages (067.006-T).
 	ctl chan *ctlReq
 	// closing is set by shutdown step 0: admission is closed. announced
@@ -241,10 +249,18 @@ type Hub struct {
 	// promptsPending counts accepted prompts that have neither provably
 	// missed Agent.Send, been dropped, nor yet had a turn.start folded for them: each turn.start
 	// consumes one (never below zero). While it is positive an idle event does
-	// not make the session idle, because a further turn is still to come.
+	// not make the session idle, because a further turn is still to come. It is
+	// hub-goroutine-owned and only ever incremented on an accepted prompt;
+	// a failed operator action does not retract it (the count self-corrects on
+	// the next turn.start or provable miss).
 	agentIdle      bool
 	turnRunning    bool
 	promptsPending int
+	// activeTurnID is the turn of the latest turn.start; abortedTurnIDs are
+	// the turns whose abort-idle was observed, so a late ask of such a turn
+	// is rejected (see intakeAsk).
+	activeTurnID   string
+	abortedTurnIDs map[string]struct{}
 	idleWaiters    []*ctlReq
 
 	stopCh   chan struct{}
@@ -265,14 +281,17 @@ type Hub struct {
 	ringPos     int // index of the next write
 	ringBytes   int // total encoded bytes of the retained frames
 	fold        *Fold
-	clients     map[uint64]*Client
-	tui         *Client
-	nextID      uint64
-	st          Stats
-	pending     []*connectReq  // connect requests waiting for hydration budget
-	staleQ      []*Client      // clients awaiting a forced re-hydrate
-	wake        chan time.Time // closed; selecting on it forces another iteration
-	perm        *permRegistry  // pending permission requests (arbitration state, not fold state)
+	// buildFrame constructs envelopes; it is newFrame except in tests that
+	// need to force a build failure.
+	buildFrame func(gen string, seq uint64, ts time.Time, kind Kind, sessionID string, payload any) (Frame, error)
+	clients    map[uint64]*Client
+	tui        *Client
+	nextID     uint64
+	st         Stats
+	pending    []*connectReq  // connect requests waiting for hydration budget
+	staleQ     []*Client      // clients awaiting a forced re-hydrate
+	wake       chan time.Time // closed; selecting on it forces another iteration
+	perm       *permRegistry  // pending permission requests (arbitration state, not fold state)
 	// hub-owned permission timer state: one wake-up armed for the earliest
 	// registry deadline.
 	permC     <-chan time.Time
@@ -386,14 +405,18 @@ func New(cfg Config) (*Hub, error) {
 		promptQ:        make(chan string, operatorPromptQueue),
 		abortQ:         make(chan struct{}, 1),
 		promptFailed:   make(chan struct{}, operatorPromptQueue+1),
+		actionFailed:   make(chan string, operatorPromptQueue+2),
+		opErrs:         make(chan opErr, operatorPromptQueue+2),
 		ctl:            make(chan *ctlReq, ctlQueue),
 		agentIdle:      true,
 		perm:           newPermRegistry(cfg.MaxPendingPermissions),
 		stopCh:         make(chan struct{}),
 		done:           make(chan struct{}),
 		fold:           fold,
+		buildFrame:     newFrame,
 		ring:           make([]Frame, cfg.ReplayRing),
 		clients:        make(map[uint64]*Client),
+		abortedTurnIDs: make(map[string]struct{}),
 		wake:           wake,
 	}, nil
 }
@@ -507,7 +530,15 @@ func (h *Hub) Stop() {
 // canonical state. It returns after ctx is cancelled or Stop is called,
 // having broadcast a server.shutdown envelope and closed every registered
 // client's Done channel (pumps should drain Frames() once Done is closed to
-// pick up the shutdown frame).
+// pick up the shutdown frame). On exit it cancels the operator lanes and joins
+// them for a bounded time; a worker that ignores cancellation makes Run return
+// an error matching agent.ErrCleanupIncomplete (Done still closes).
+//
+// ctx must be signal-independent: do not pass a context cancelled by SIGINT or
+// SIGTERM. A signal-cancelled ctx would stop the hub before the [Shutdown]
+// executor has run its ordered steps (permissions, gate, agent stop, drain);
+// the executor stops the hub itself at its final step. Cancel ctx only for an
+// unconditional teardown.
 func (h *Hub) Run(ctx context.Context) error {
 	h.mu.Lock()
 	if h.started {
@@ -544,11 +575,13 @@ func (h *Hub) Run(ctx context.Context) error {
 		}
 		select {
 		case <-ctx.Done():
+			opsCancel()
 			h.shutdown("context cancelled")
-			return nil
+			return h.waitLanes()
 		case <-h.stopCh:
+			opsCancel()
 			h.shutdown("stopped")
-			return nil
+			return h.waitLanes()
 		case ev := <-h.ingress:
 			h.handleEvent(ev)
 		case reason := <-h.degraded:
@@ -556,7 +589,7 @@ func (h *Hub) Run(ctx context.Context) error {
 		case req := <-h.connects:
 			h.intake(req)
 		case ask := <-h.asks:
-			h.handleAsk(ask)
+			h.intakeAsk(ask)
 		case act := <-h.actions:
 			h.handleAction(act)
 		case req := <-h.ctl:
@@ -568,6 +601,12 @@ func (h *Hub) Run(ctx context.Context) error {
 			h.onHandlerReturned(id)
 		case <-h.promptFailed:
 			h.retractPrompts(1)
+		case action := <-h.actionFailed:
+			h.handleActionFailed(action)
+		case oe := <-h.opErrs:
+			// The cause is logged where the call failed; it is never sent to
+			// clients. Recorded here so the channel cannot back up.
+			h.cfg.Logger.Debug("hub: operator action error recorded", "action", oe.action, "err", oe.err)
 		case <-h.permC:
 			h.permC, h.permStop, h.permArmed = nil, nil, time.Time{}
 			h.expirePermissions()
@@ -652,6 +691,8 @@ func (h *Hub) handleEvent(ev agent.Event) {
 		// A turn started: it consumes one accepted prompt (a turn.start with
 		// none pending, e.g. an agent-initiated turn, leaves the count at 0).
 		h.promptsPending = max(h.promptsPending-1, 0)
+		h.activeTurnID = ev.TurnID
+		delete(h.abortedTurnIDs, ev.TurnID) // a reused id is a new turn
 	case agent.KindIdle:
 		// Idle only when no accepted prompt is still waiting for its turn.
 		h.turnRunning = false
@@ -669,6 +710,81 @@ func (h *Hub) handleEvent(ev agent.Event) {
 		}
 	}
 	h.publish(kind, payload)
+	if ev.Kind == agent.KindIdle && ev.Aborted {
+		h.abortTurn(ev.TurnID)
+	}
+}
+
+// maxAbortedTurnIDs bounds the remembered aborted turns; past it the set is
+// reset (a late ask of a turn aborted that long ago is not a realistic race).
+const maxAbortedTurnIDs = 256
+
+// abortTurn handles a turn's abort-idle: it remembers the turn so a late ask
+// of it is refused (the ask channel is not ordered against the event
+// channel), answers asks already buffered for it, settles decided
+// requests and resolves pending ones of that turn to UserNotAvailable.
+func (h *Hub) abortTurn(eventTurnID string) {
+	turnID := eventTurnID
+	if turnID == "" {
+		turnID = h.activeTurnID
+	}
+	if turnID != "" {
+		if len(h.abortedTurnIDs) >= maxAbortedTurnIDs {
+			clear(h.abortedTurnIDs)
+		}
+		h.abortedTurnIDs[turnID] = struct{}{}
+	}
+	if h.activeTurnID == turnID {
+		h.activeTurnID = ""
+	}
+	for _, e := range slices.Clone(h.perm.order) {
+		if !askBelongsToTurn(e.ask, turnID) {
+			continue
+		}
+		switch e.state {
+		case permDecided:
+			h.settleDecided(e, permReasonTurnAborted)
+		case permPending:
+			h.decide(e, ActorHub, agent.PermissionDecision{Kind: agent.DecisionUnavailable}, permReasonTurnAborted)
+		}
+	}
+	// Drain after settling so a buffered next-turn ask can use the registry
+	// capacity freed by retiring the aborted turn's entries.
+	h.drainAbortedTurnAsks(turnID)
+}
+
+// askBelongsToTurn reports whether ask is attributable to turnID; an ask
+// carrying no turn id is attributed to whatever turn was aborted.
+func askBelongsToTurn(ask agent.PermissionAsk, turnID string) bool {
+	return ask.Request.TurnID == "" || ask.Request.TurnID == turnID
+}
+
+// drainAbortedTurnAsks answers the asks already buffered in h.asks that belong
+// to the aborted turn with UserNotAvailable, and passes the others (asks of a
+// later turn) through intakeAsk.
+func (h *Hub) drainAbortedTurnAsks(abortedTurnID string) {
+	var keep []agent.PermissionAsk
+	for drained := false; !drained; {
+		select {
+		case ask := <-h.asks:
+			if askBelongsToTurn(ask, abortedTurnID) {
+				answerUnavailable(ask)
+			} else {
+				keep = append(keep, ask)
+			}
+		default:
+			drained = true
+		}
+	}
+	for _, ask := range keep {
+		h.intakeAsk(ask)
+	}
+}
+
+func answerUnavailable(ask agent.PermissionAsk) {
+	if ask.Reply != nil {
+		trySend(ask.Reply, agent.PermissionDecision{Kind: agent.DecisionUnavailable})
+	}
 }
 
 // publish is THE single step that assigns seq and enqueues to all clients
@@ -680,7 +796,7 @@ func (h *Hub) handleEvent(ev agent.Event) {
 // (no seq is consumed then).
 func (h *Hub) publish(kind Kind, payload any) (uint64, bool) {
 	seq := h.seq + 1
-	f, err := newFrame(h.gen, seq, h.cfg.Clock(), kind, h.cfg.SessionID, payload)
+	f, err := h.buildFrame(h.gen, seq, h.cfg.Clock(), kind, h.cfg.SessionID, payload)
 	stub := false
 	switch {
 	case err != nil:
@@ -691,16 +807,23 @@ func (h *Hub) publish(kind Kind, payload any) (uint64, bool) {
 		stub = true
 	}
 	if stub {
-		f, err = newFrame(h.gen, seq, h.cfg.Clock(), KindError, h.cfg.SessionID,
+		f, err = h.buildFrame(h.gen, seq, h.cfg.Clock(), KindError, h.cfg.SessionID,
 			ErrorPayload{Code: ErrCodeFrameTooLarge, Message: msgFrameTooBig})
 		if err != nil {
 			h.cfg.Logger.Error("hub: build error stub failed", "err", err)
+			// The folded state moved but no frame carries it: refuse replay
+			// across the attempted seq (so a pre-failure head cursor
+			// full-hydrates) and force live clients to re-hydrate.
+			h.degradedSeq = seq
+			h.markAllStale()
 			return 0, false
 		}
 	}
 	h.seq = seq
 	if stub {
-		h.fold.ApplyError(ErrCodeFrameTooLarge, msgFrameTooBig)
+		if kind != KindError { // a KindError caller already folded its own entry
+			h.fold.ApplyError(ErrCodeFrameTooLarge, msgFrameTooBig)
+		}
 		h.degradedSeq = seq
 		h.markAllStale() // before broadcast: the hydrate supersedes the lost content
 	}
@@ -1103,8 +1226,8 @@ func (h *Hub) hydratePayload() []byte {
 }
 
 // rehydrate serves a stale client a fresh snapshot, reporting success. A
-// full TUI buffer is drained oldest-first (everything queued is superseded by
-// the snapshot); a full remote buffer drops the remote (§5.5).
+// full buffer (TUI or remote) is drained oldest-first: everything queued is
+// superseded by the snapshot, so the client is re-hydrated rather than dropped.
 func (h *Hub) rehydrate(c *Client) bool {
 	f, ok := h.hydrateFrame()
 	if !ok {
@@ -1114,10 +1237,6 @@ func (h *Hub) rehydrate(c *Client) bool {
 		c.stale = false
 		h.st.Rehydrations++
 		return true
-	}
-	if c.kind != ClientTUI {
-		h.overflow(c.id, c)
-		return false
 	}
 drain:
 	for {

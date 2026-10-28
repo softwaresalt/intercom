@@ -36,8 +36,10 @@ const (
 	// by the C2 proving spike (ADR MVP-D10). A lower version fails Start.
 	ValidatedCLIVersion = "1.0.84-1"
 
-	defaultStopTimeout = 5 * time.Second
-	defaultOpTimeout   = 30 * time.Second
+	// DefaultStopTimeout is the default Config.StopTimeout.
+	DefaultStopTimeout = 5 * time.Second
+
+	defaultOpTimeout = 30 * time.Second
 )
 
 // Config configures an Adapter.
@@ -169,7 +171,7 @@ func newAdapter(cfg Config, c sdkClient) *Adapter {
 		cfg.Logger = slog.Default()
 	}
 	if cfg.StopTimeout <= 0 {
-		cfg.StopTimeout = defaultStopTimeout
+		cfg.StopTimeout = DefaultStopTimeout
 	}
 	if cfg.DefaultOpTimeout <= 0 {
 		cfg.DefaultOpTimeout = defaultOpTimeout
@@ -419,6 +421,18 @@ func (a *Adapter) onEvent(ev copilotsdk.SessionEvent) {
 	defer a.latch.exit()
 
 	e := normalize(ev, a.log)
+	switch e.Kind {
+	case agent.KindTurnStart:
+		e.TurnID = a.bridge.setTurn(e.TurnID)
+	case agent.KindIdle:
+		if e.Aborted {
+			if id := a.bridge.abortTurn(); e.TurnID == "" {
+				e.TurnID = id
+			}
+		} else {
+			a.bridge.clearTurn()
+		}
+	}
 	// Deliver without blocking whenever ingress has room, even during
 	// shutdown, so an event is only abandoned when it genuinely cannot be
 	// delivered.
@@ -494,6 +508,9 @@ func (a *Adapter) Abort(ctx context.Context) error {
 	}
 	ctx, cancel := a.opContext(ctx)
 	defer cancel()
+	// Cancel the turn's parked permission asks as the abort is issued, so a
+	// handler never outlives the turn it belongs to.
+	a.bridge.abortTurn()
 	if err := sess.Abort(ctx); err != nil {
 		return fmt.Errorf("agent: abort turn: %w", err)
 	}
@@ -676,8 +693,22 @@ func (a *Adapter) recheckForce() error {
 	if !unconfirmed {
 		return nil
 	}
-	return a.forceStop()
+	// Non-blocking: the earlier cleanup already waited out StopTimeout.
+	select {
+	case <-a.forceDone:
+		a.mu.Lock()
+		a.forceUnconfirmed = false
+		a.mu.Unlock()
+		return nil
+	default:
+		return fmt.Errorf("agent: %w: ForceStop has still not returned", agent.ErrCleanupIncomplete)
+	}
 }
+
+// StopTimeout reports the adapter's bound on callback quiescing and on the
+// wait for the SDK's ForceStop. The hub's shutdown executor reads it to keep
+// its own Force budget above it.
+func (a *Adapter) StopTimeout() time.Duration { return a.cfg.StopTimeout }
 
 var errStepTimeout = errors.New("timed out")
 

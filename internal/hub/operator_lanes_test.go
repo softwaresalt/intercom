@@ -2,11 +2,270 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/softwaresalt/intercom-go/internal/agent"
 )
+
+// ---- 074.003: aborted-turn permission asks ----
+
+// drainFrames returns every frame currently queued to c without blocking.
+func drainFrames(c *Client) []Frame {
+	var out []Frame
+	for {
+		select {
+		case f := <-c.send:
+			out = append(out, f)
+		default:
+			return out
+		}
+	}
+}
+
+func turnAsk(turnID string) *testAsk {
+	a := newTestAsk(agent.PermissionKindShell, "cmd")
+	a.ask.Request.TurnID = turnID
+	return a
+}
+
+func replyKind(t *testing.T, a *testAsk) agent.DecisionKind {
+	t.Helper()
+	select {
+	case d := <-a.reply:
+		return d.Kind
+	default:
+		t.Fatal("ask was not answered")
+		return 0
+	}
+}
+
+func TestAbortedIdleEventSettlesDecidedResolvesPendingAndRejectsLateAsks(t *testing.T) {
+	h := idleHub(t, Config{})
+	c := newClient(1, ClientTUI, 128)
+	h.register(c)
+	h.handleEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: "t1"})
+
+	// (a) one decided-but-unacknowledged and one pending ask of the turn.
+	decided, pending := turnAsk("t1"), turnAsk("t1")
+	h.intakeAsk(decided.ask)
+	h.intakeAsk(pending.ask)
+	if h.perm.len() != 2 {
+		t.Fatalf("setup: %d registered", h.perm.len())
+	}
+	h.decide(h.perm.order[0], ActorLocalTUI, allowOnce, "")
+	<-decided.reply // the allow sits in the handler's reply buffer; the handler has not delivered
+
+	// (b) asks buffered in h.asks: one of the aborted turn, one of the next.
+	buffered, next := turnAsk("t1"), turnAsk("t2")
+	h.asks <- buffered.ask
+	h.asks <- next.ask
+
+	h.handleEvent(agent.Event{Kind: agent.KindIdle, TurnID: "t1", Aborted: true})
+
+	if _, ok := decided.outcome.Delivered(); ok {
+		t.Fatal("decided ask delivered after abort")
+	}
+	if replyKind(t, pending) != agent.DecisionUnavailable {
+		t.Fatal("pending ask of the aborted turn must resolve to unavailable")
+	}
+	if e := h.perm.order[0]; e.ask.Request.TurnID != "t1" || e.state != permDecided || e.reason != permReasonTurnAborted {
+		t.Fatalf("pending entry = %+v, want decided with %s", e, permReasonTurnAborted)
+	}
+	if replyKind(t, buffered) != agent.DecisionUnavailable {
+		t.Fatal("buffered ask of the aborted turn must be answered unavailable")
+	}
+	if len(h.asks) != 0 {
+		t.Fatalf("%d asks left in the buffer", len(h.asks))
+	}
+	// The next turn's buffered ask was passed through intake: registered.
+	if h.perm.len() != 2 { // pending (awaiting ack) + next
+		t.Fatalf("registry has %d entries, want 2", h.perm.len())
+	}
+	var sawAborted, sawRequested bool
+	for _, f := range drainFrames(c) {
+		switch f.Kind() {
+		case KindPermissionAborted:
+			sawAborted = sawAborted || contains(f, permReasonTurnAborted)
+		case KindPermissionRequested:
+			sawRequested = true
+		}
+	}
+	if !sawAborted || !sawRequested {
+		t.Fatalf("aborted=%v requested=%v, want both broadcast", sawAborted, sawRequested)
+	}
+
+	// (c) idle-before-ask: a late ask carrying the aborted turn's id.
+	before := h.perm.len()
+	late := turnAsk("t1")
+	h.intakeAsk(late.ask)
+	if replyKind(t, late) != agent.DecisionUnavailable || h.perm.len() != before {
+		t.Fatalf("late aborted-turn ask registered (len %d, was %d)", h.perm.len(), before)
+	}
+}
+
+func TestAbortedIdleThenNextTurnAskBeforeTurnStartIsAccepted(t *testing.T) {
+	h := idleHub(t, Config{})
+	c := newClient(1, ClientTUI, 128)
+	h.register(c)
+	h.handleEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: "t1"})
+	h.handleEvent(agent.Event{Kind: agent.KindIdle, TurnID: "t1", Aborted: true})
+	drainFrames(c)
+
+	// (d) the next turn's ask is dequeued before its TurnStart.
+	a := turnAsk("t2")
+	h.intakeAsk(a.ask)
+	if h.perm.len() != 1 {
+		t.Fatalf("next-turn ask not registered (len %d)", h.perm.len())
+	}
+	var requested bool
+	for _, f := range drainFrames(c) {
+		requested = requested || f.Kind() == KindPermissionRequested
+	}
+	if !requested {
+		t.Fatal("next-turn ask did not broadcast permission.requested")
+	}
+	h.handleEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: "t2"})
+	if h.activeTurnID != "t2" {
+		t.Fatalf("activeTurnID = %q", h.activeTurnID)
+	}
+}
+
+func contains(f Frame, s string) bool { return strings.Contains(string(f.Bytes()), s) }
+
+func TestAbortedIdleDrainUsesCapacityFreedByAbortedTurnSettlement(t *testing.T) {
+	h := idleHub(t, Config{MaxPendingPermissions: 1})
+	c := newClient(1, ClientTUI, 128)
+	h.register(c)
+	h.handleEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: "t1"})
+	t1 := turnAsk("t1")
+	h.intakeAsk(t1.ask)
+	if h.perm.len() != 1 {
+		t.Fatalf("setup: %d registered", h.perm.len())
+	}
+	h.decide(h.perm.order[0], ActorLocalTUI, allowOnce, "")
+	<-t1.reply
+
+	// The next turn's ask is buffered while the registry is full.
+	next := turnAsk("t2")
+	h.asks <- next.ask
+	h.handleEvent(agent.Event{Kind: agent.KindIdle, TurnID: "t1", Aborted: true})
+
+	select {
+	case d := <-next.reply:
+		t.Fatalf("next-turn ask answered %v; it must register once t1 is retired", d.Kind)
+	default:
+	}
+	if h.perm.len() != 1 || h.perm.order[0].ask.Request.TurnID != "t2" {
+		t.Fatalf("registry = %d entries, want only the t2 ask", h.perm.len())
+	}
+}
+
+// ---- 074.005: lane join and operator action failure envelopes ----
+
+// stuckAgent's Send ignores its context and blocks until release is closed.
+type stuckAgent struct {
+	release chan struct{}
+	entered chan struct{}
+}
+
+func (a *stuckAgent) Send(context.Context, string) error {
+	a.entered <- struct{}{}
+	<-a.release
+	return nil
+}
+func (a *stuckAgent) Abort(context.Context) error { return nil }
+
+func TestHubRunJoinsOperatorLaneWorkersAndPublishesActionFailureError(t *testing.T) {
+	ag := &stuckAgent{release: make(chan struct{}), entered: make(chan struct{}, 1)}
+	t.Cleanup(func() { close(ag.release) }) // lets the stalled worker finish after the test
+	h, err := New(Config{SessionID: "sess", Agent: ag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runErr := make(chan error, 1)
+	go func() { runErr <- h.Run(context.Background()) }()
+	tui := connectRole(t, h, ClientTUI, 0)
+	if res := do(t, tui, prompt("wedge")); !res.Accepted {
+		t.Fatalf("prompt = %+v", res)
+	}
+	select {
+	case <-ag.entered:
+	case <-time.After(testWait):
+		t.Fatal("Send never entered")
+	}
+
+	start := time.Now()
+	stopped := make(chan struct{})
+	go func() { h.Stop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Stop did not return within the bounded lane-join budget")
+	}
+	select {
+	case <-h.Done():
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Done never closed")
+	}
+	select {
+	case err := <-runErr:
+		if !errors.Is(err, agent.ErrCleanupIncomplete) {
+			t.Fatalf("Run = %v, want an error matching agent.ErrCleanupIncomplete", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Run never returned")
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("took %v to finish", d)
+	}
+}
+
+// failAgent fails every operator call with an error carrying text that must
+// never reach a client.
+type failAgent struct{}
+
+var errSecret = errors.New("dial tcp: token sk-live-SECRET rejected")
+
+func (failAgent) Send(context.Context, string) error { return errSecret }
+func (failAgent) Abort(context.Context) error        { return errSecret }
+
+func TestOperatorSendAndAbortFailuresPublishSanitizedErrorEnvelope(t *testing.T) {
+	h := startHub(t, Config{Agent: failAgent{}})
+	tui := connectRole(t, h, ClientTUI, 64)
+	if res := do(t, tui, prompt("go")); !res.Accepted {
+		t.Fatalf("prompt = %+v", res)
+	}
+	if res := do(t, tui, OperatorAction{Type: OpAbortTurn}); !res.Accepted {
+		t.Fatalf("abort = %+v", res)
+	}
+	want := map[string]bool{msgPromptSendFailed: false, msgTurnAbortFailed: false}
+	for n := 0; n < len(want); {
+		f := recvKind(t, tui, KindError)
+		body := string(f.Bytes())
+		if strings.Contains(body, "SECRET") || strings.Contains(body, "dial tcp") {
+			t.Fatalf("error envelope leaks the cause: %s", body)
+		}
+		var env Envelope
+		var p ErrorPayload
+		if err := json.Unmarshal(f.Bytes(), &env); err != nil || json.Unmarshal(env.Payload, &p) != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if p.Code != ErrCodeOperatorActionFailed {
+			t.Fatalf("code = %q, want %q", p.Code, ErrCodeOperatorActionFailed)
+		}
+		seen, known := want[p.Message]
+		if !known || seen {
+			t.Fatalf("unexpected or repeated message %q", p.Message)
+		}
+		want[p.Message] = true
+		n++
+	}
+}
 
 // ---- review cycle 2 N3: lanes context and agentIdle bookkeeping ----
 

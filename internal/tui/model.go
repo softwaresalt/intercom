@@ -515,6 +515,10 @@ func (m Model) applyToolEnded(raw []byte) Model {
 	m.entries = append([]entry(nil), m.entries...)
 	if i := m.find(kindTool, id, statusRunning); i >= 0 {
 		m.entries[i].Status = status
+		if m.entries[i].Tool == "" && name != "" {
+			m.entries[i].Tool = name
+		}
+		m.entries[i].Truncated = m.entries[i].Truncated || p.Truncated
 		return m
 	}
 	m.entries = append(m.entries, entry{Kind: kindTool, ID: id, Tool: name, Status: status, Truncated: p.Truncated})

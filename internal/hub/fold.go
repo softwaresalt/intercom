@@ -189,7 +189,7 @@ func (f *Fold) applyDelta(ev agent.Event) {
 		if clipped {
 			f.anyTrunc = true
 		}
-		if add == "" && !clipped {
+		if add == "" && (cur.Truncated || !clipped) {
 			return
 		}
 		cur.Text += add // fresh allocation of at most MaxEntryTextBytes
@@ -224,13 +224,17 @@ func (f *Fold) applyToolEnded(ev agent.Event) {
 	if ev.Success {
 		status = statusSucceeded
 	}
+	name, t2 := f.identFlag(ev.ToolName)
 	if i := f.find("tool", id, statusRunning); i >= 0 {
 		cur := f.items[i].e
 		cur.Status = status
+		if cur.Tool == "" && name != "" {
+			cur.Tool = name
+		}
+		cur.Truncated = cur.Truncated || t1 || t2
 		f.replace(i, cur)
 		return
 	}
-	name, t2 := f.identFlag(ev.ToolName)
 	f.push(entry{Kind: "tool", ID: id, Tool: name, Status: status, Truncated: t1 || t2})
 }
 

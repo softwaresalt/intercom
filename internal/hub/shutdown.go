@@ -103,6 +103,12 @@ type ShutdownConfig struct {
 	Hub   *Hub
 	Agent agent.Agent
 	Gate  Gate
+	// AdapterStopTimeout is the adapter's own ForceStop wait. Zero adopts the
+	// agent's StopTimeout() when it has one. It must not exceed
+	// Timeouts.Force, and Force defaults to
+	// max(DefaultShutdownForce, AdapterStopTimeout+2s) when AdapterStopTimeout
+	// is set, so the hub never abandons a stop the adapter is still waiting out.
+	AdapterStopTimeout time.Duration
 	// Reason is carried in server.shutdown (default "shutdown").
 	Reason   string
 	Timeouts ShutdownTimeouts
@@ -132,6 +138,23 @@ func NewShutdown(cfg ShutdownConfig) (*Shutdown, error) {
 		return nil, apperr.New(apperr.KindConfig, "hub: shutdown needs a gate")
 	case !cfg.Timeouts.valid():
 		return nil, apperr.New(apperr.KindConfig, "hub: shutdown timeouts must not be negative")
+	case cfg.AdapterStopTimeout < 0:
+		return nil, apperr.New(apperr.KindConfig, "hub: shutdown AdapterStopTimeout must not be negative")
+	}
+	if cfg.AdapterStopTimeout == 0 {
+		if st, ok := cfg.Agent.(interface{ StopTimeout() time.Duration }); ok {
+			cfg.AdapterStopTimeout = st.StopTimeout()
+		}
+	}
+	if cfg.AdapterStopTimeout < 0 {
+		return nil, apperr.New(apperr.KindConfig, "hub: agent StopTimeout must not be negative")
+	}
+	if cfg.AdapterStopTimeout > 0 && cfg.Timeouts.Force > 0 && cfg.Timeouts.Force < cfg.AdapterStopTimeout {
+		return nil, apperr.Newf(apperr.KindConfig,
+			"hub: shutdown Force %s must be at least the adapter stop timeout %s", cfg.Timeouts.Force, cfg.AdapterStopTimeout)
+	}
+	if cfg.AdapterStopTimeout > 0 && cfg.Timeouts.Force == 0 {
+		cfg.Timeouts.Force = max(DefaultShutdownForce, cfg.AdapterStopTimeout+2*time.Second)
 	}
 	if cfg.Reason == "" {
 		cfg.Reason = "shutdown"
@@ -151,7 +174,10 @@ func (s *Shutdown) Start(ctx context.Context) {
 	s.once.Do(func() { go s.run(ctx) })
 }
 
-// Done is closed when the sequence has finished, the hub being stopped.
+// Done is closed when the sequence has finished, the hub being stopped. It is
+// closed exactly once, after the final hub stop and the error aggregation, so
+// Err is safe to read after receiving from it. Callers must wait on Done (not
+// on signal cancellation) before exiting the process.
 func (s *Shutdown) Done() <-chan struct{} { return s.done }
 
 // Err reports the aggregated step errors; valid after Done. Every error is

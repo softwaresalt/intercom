@@ -301,9 +301,13 @@ func TestShutdownThatCannotConfirmForceStopReportsOrphanRisk(t *testing.T) {
 	c.stopBlock = make(chan struct{})
 	c.forceBlock = make(chan struct{}) // ForceStop never returns
 	t.Cleanup(func() { close(c.stopBlock); close(c.forceBlock) })
+	// Force (300ms) must not undercut the adapter's own ForceStop wait, so the
+	// adapter bound is lowered below it: the hub then gives up on a wedged
+	// ForceStop and reports the orphan risk.
+	r.h.ad.cfg.StopTimeout = 200 * time.Millisecond
 	s := r.newShutdown(t, func(c *hub.ShutdownConfig) {
 		c.Timeouts.Stop = 100 * time.Millisecond
-		c.Timeouts.Force = 300 * time.Millisecond // hub gives up before the adapter's own 1s ForceStop bound
+		c.Timeouts.Force = 300 * time.Millisecond
 	})
 	s.Start(context.Background())
 	waitDone(t, s)
@@ -353,9 +357,182 @@ func TestForceStopOutlastingTheAdapterBoundReportsOrphanRiskNotAnOrdinaryError(t
 // wait (its StopTimeout), or the hub would give up on a stop the adapter is
 // still waiting out.
 func TestDefaultForceBudgetOutlastsTheAdapterDefaultStopTimeout(t *testing.T) {
-	if hub.DefaultShutdownForce < defaultStopTimeout+time.Second {
-		t.Fatalf("hub default Force %v must exceed the adapter's default StopTimeout %v by a margin", hub.DefaultShutdownForce, defaultStopTimeout)
+	if hub.DefaultShutdownForce < DefaultStopTimeout+time.Second {
+		t.Fatalf("hub default Force %v must exceed the adapter's default StopTimeout %v by a margin", hub.DefaultShutdownForce, DefaultStopTimeout)
 	}
+}
+
+// ---- 074.004: bounded recheck and turn-scoped permission asks ----
+
+// A Stop after a failed Start whose ForceStop is still wedged must report
+// ErrCleanupIncomplete at once: the wedge was already waited out, so the
+// recheck is a non-blocking look, not another StopTimeout-long wait.
+func TestStopAfterFailedStartRecheckForceIsNonBlocking(t *testing.T) {
+	h := newHarness(t, func(c *Config, f *fakeClient) {
+		c.StopTimeout = 200 * time.Millisecond
+		f.forceBlock = make(chan struct{})
+		f.status = &copilotsdk.GetStatusResponse{Version: "1.0.0", ProtocolVersion: 3}
+	})
+	defer close(h.client.forceBlock)
+	if _, err := h.ad.Start(context.Background()); !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Start error = %v, want ErrCleanupIncomplete", err)
+	}
+	start := time.Now()
+	err := h.ad.Stop(context.Background())
+	if !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Stop = %v, want ErrCleanupIncomplete", err)
+	}
+	if d := time.Since(start); d >= 50*time.Millisecond {
+		t.Fatalf("Stop took %v; the force recheck must not wait again", d)
+	}
+}
+
+// turnRig is a real hub and the real adapter, with the ask channel proxied so
+// the test sees the TurnID each ask carries on its way to the hub.
+type turnRig struct {
+	hub   *hub.Hub
+	h     *harness
+	mu    sync.Mutex
+	asked []string
+}
+
+func newTurnRig(t *testing.T) *turnRig {
+	t.Helper()
+	hb, err := hub.New(hub.Config{SessionID: "sess-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &turnRig{hub: hb}
+	proxy := make(chan agent.PermissionAsk, 8)
+	r.h = newHarness(t, func(c *Config, _ *fakeClient) {
+		c.Ingress = hb.Ingress()
+		c.Asks = proxy
+		c.HubDone = hb.Done()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- hb.Run(ctx) }()
+	fwdDone := make(chan struct{})
+	go func() {
+		defer close(fwdDone)
+		for {
+			select {
+			case ask := <-proxy:
+				r.mu.Lock()
+				r.asked = append(r.asked, ask.Request.TurnID)
+				r.mu.Unlock()
+				select {
+				case hb.Asks() <- ask:
+				case <-hb.Done():
+					return
+				}
+			case <-hb.Done():
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-runDone:
+		case <-time.After(intWait):
+			t.Error("hub Run did not return")
+		}
+		<-fwdDone
+	})
+	if _, err := r.h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// An attached surface keeps asks pending (an empty broadcast set resolves
+	// them at once).
+	if _, err := hb.Connect(context.Background(), hub.ConnectOptions{Kind: hub.ClientTUI, Buffer: 128}); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func (r *turnRig) emit(ev rpc.SessionEventData) {
+	r.h.client.session.emit(copilotsdk.SessionEvent{Data: ev})
+}
+
+func (r *turnRig) askCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.asked)
+}
+
+func (r *turnRig) lastTurnID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.asked) == 0 {
+		return ""
+	}
+	return r.asked[len(r.asked)-1]
+}
+
+// callHandler invokes the registered SDK permission callback on its own
+// goroutine and returns the channel carrying its decision.
+func (r *turnRig) callHandler() <-chan rpc.PermissionDecision {
+	res := make(chan rpc.PermissionDecision, 1)
+	handler := r.h.client.createCfg.OnPermissionRequest
+	go func() {
+		d, _ := handler(&rpc.PermissionRequestShell{FullCommandText: "ls"}, copilotsdk.PermissionInvocation{})
+		res <- d
+	}()
+	return res
+}
+
+func awaitUnavailable(t *testing.T, what string, res <-chan rpc.PermissionDecision) {
+	t.Helper()
+	select {
+	case d := <-res:
+		if d.Kind() != rpc.PermissionDecisionKindUserNotAvailable {
+			t.Fatalf("%s: decision = %q, want user-not-available", what, d.Kind())
+		}
+	case <-time.After(intWait):
+		t.Fatalf("%s: the handler never returned", what)
+	}
+}
+
+func TestPermissionBridgeStampsTurnIDAndCancelsLateAbortedTurnAskThroughRegisteredCallback(t *testing.T) {
+	t.Run("abort after turn start", func(t *testing.T) {
+		r := newTurnRig(t)
+		r.emit(&rpc.AssistantTurnStartData{TurnID: "t1"})
+		inflight := r.callHandler()
+		eventually(t, "the ask to reach the hub", func() bool { return r.askCount() == 1 })
+		if got := r.lastTurnID(); got != "t1" {
+			t.Fatalf("ask TurnID = %q, want the active turn t1", got)
+		}
+		r.emit(idleAborted())
+		awaitUnavailable(t, "in-flight ask of the aborted turn", inflight)
+
+		late := r.callHandler() // a callback reaching currentTurn() after the abort
+		awaitUnavailable(t, "late ask of the aborted turn", late)
+		if n := r.askCount(); n != 1 {
+			t.Fatalf("%d asks reached the hub; the late aborted-turn ask must not be enqueued", n)
+		}
+
+		// The next turn's ask is accepted even before the hub has folded its
+		// turn.start.
+		r.emit(&rpc.AssistantTurnStartData{TurnID: "t2"})
+		r.callHandler()
+		eventually(t, "the next turn's ask to reach the hub", func() bool { return r.askCount() == 2 })
+		if got := r.lastTurnID(); got != "t2" {
+			t.Fatalf("next ask TurnID = %q, want t2", got)
+		}
+		eventually(t, "the next turn's ask to be registered", func() bool {
+			s, err := r.hub.Stats(context.Background())
+			return err == nil && s.PendingPermissions == 1
+		})
+	})
+	t.Run("abort with no turn start", func(t *testing.T) {
+		r := newTurnRig(t)
+		r.emit(idleAborted())
+		awaitUnavailable(t, "ask after an abort with no turn start", r.callHandler())
+		if n := r.askCount(); n != 0 {
+			t.Fatalf("%d asks reached the hub; an ask after an abort must not be enqueued", n)
+		}
+	})
 }
 
 func TestShutdownAggregatesAndLogsAdapterStopErrors(t *testing.T) {
