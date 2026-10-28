@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -248,6 +249,11 @@ type Hub struct {
 	agentIdle      bool
 	turnRunning    bool
 	promptsPending int
+	// activeTurnID is the turn of the latest turn.start; abortedTurnIDs are
+	// the turns whose abort-idle was observed, so a late ask of such a turn
+	// is rejected (see intakeAsk).
+	activeTurnID   string
+	abortedTurnIDs map[string]struct{}
 	idleWaiters    []*ctlReq
 
 	stopCh   chan struct{}
@@ -401,6 +407,7 @@ func New(cfg Config) (*Hub, error) {
 		buildFrame:     newFrame,
 		ring:           make([]Frame, cfg.ReplayRing),
 		clients:        make(map[uint64]*Client),
+		abortedTurnIDs: make(map[string]struct{}),
 		wake:           wake,
 	}, nil
 }
@@ -569,7 +576,7 @@ func (h *Hub) Run(ctx context.Context) error {
 		case req := <-h.connects:
 			h.intake(req)
 		case ask := <-h.asks:
-			h.handleAsk(ask)
+			h.intakeAsk(ask)
 		case act := <-h.actions:
 			h.handleAction(act)
 		case req := <-h.ctl:
@@ -665,6 +672,8 @@ func (h *Hub) handleEvent(ev agent.Event) {
 		// A turn started: it consumes one accepted prompt (a turn.start with
 		// none pending, e.g. an agent-initiated turn, leaves the count at 0).
 		h.promptsPending = max(h.promptsPending-1, 0)
+		h.activeTurnID = ev.TurnID
+		delete(h.abortedTurnIDs, ev.TurnID) // a reused id is a new turn
 	case agent.KindIdle:
 		// Idle only when no accepted prompt is still waiting for its turn.
 		h.turnRunning = false
@@ -682,6 +691,79 @@ func (h *Hub) handleEvent(ev agent.Event) {
 		}
 	}
 	h.publish(kind, payload)
+	if ev.Kind == agent.KindIdle && ev.Aborted {
+		h.abortTurn(ev.TurnID)
+	}
+}
+
+// maxAbortedTurnIDs bounds the remembered aborted turns; past it the set is
+// reset (a late ask of a turn aborted that long ago is not a realistic race).
+const maxAbortedTurnIDs = 256
+
+// abortTurn handles a turn's abort-idle: it remembers the turn so a late ask
+// of it is refused (the ask channel is not ordered against the event
+// channel), answers asks already buffered for it, settles decided
+// requests and resolves pending ones of that turn to UserNotAvailable.
+func (h *Hub) abortTurn(eventTurnID string) {
+	turnID := eventTurnID
+	if turnID == "" {
+		turnID = h.activeTurnID
+	}
+	if turnID != "" {
+		if len(h.abortedTurnIDs) >= maxAbortedTurnIDs {
+			clear(h.abortedTurnIDs)
+		}
+		h.abortedTurnIDs[turnID] = struct{}{}
+	}
+	if h.activeTurnID == turnID {
+		h.activeTurnID = ""
+	}
+	h.drainAbortedTurnAsks(turnID)
+	for _, e := range slices.Clone(h.perm.order) {
+		if !askBelongsToTurn(e.ask, turnID) {
+			continue
+		}
+		switch e.state {
+		case permDecided:
+			h.settleDecided(e, permReasonTurnAborted)
+		case permPending:
+			h.decide(e, ActorHub, agent.PermissionDecision{Kind: agent.DecisionUnavailable}, permReasonTurnAborted)
+		}
+	}
+}
+
+// askBelongsToTurn reports whether ask is attributable to turnID; an ask
+// carrying no turn id is attributed to whatever turn was aborted.
+func askBelongsToTurn(ask agent.PermissionAsk, turnID string) bool {
+	return ask.Request.TurnID == "" || ask.Request.TurnID == turnID
+}
+
+// drainAbortedTurnAsks answers the asks already buffered in h.asks that belong
+// to the aborted turn with UserNotAvailable, and passes the others (asks of a
+// later turn) through intakeAsk.
+func (h *Hub) drainAbortedTurnAsks(abortedTurnID string) {
+	var keep []agent.PermissionAsk
+	for drained := false; !drained; {
+		select {
+		case ask := <-h.asks:
+			if askBelongsToTurn(ask, abortedTurnID) {
+				answerUnavailable(ask)
+			} else {
+				keep = append(keep, ask)
+			}
+		default:
+			drained = true
+		}
+	}
+	for _, ask := range keep {
+		h.intakeAsk(ask)
+	}
+}
+
+func answerUnavailable(ask agent.PermissionAsk) {
+	if ask.Reply != nil {
+		trySend(ask.Reply, agent.PermissionDecision{Kind: agent.DecisionUnavailable})
+	}
 }
 
 // publish is THE single step that assigns seq and enqueues to all clients

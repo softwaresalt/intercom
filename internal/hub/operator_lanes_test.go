@@ -3,10 +3,138 @@ package hub
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/softwaresalt/intercom-go/internal/agent"
 )
+
+// ---- 074.003: aborted-turn permission asks ----
+
+// drainFrames returns every frame currently queued to c without blocking.
+func drainFrames(c *Client) []Frame {
+	var out []Frame
+	for {
+		select {
+		case f := <-c.send:
+			out = append(out, f)
+		default:
+			return out
+		}
+	}
+}
+
+func turnAsk(turnID string) *testAsk {
+	a := newTestAsk(agent.PermissionKindShell, "cmd")
+	a.ask.Request.TurnID = turnID
+	return a
+}
+
+func replyKind(t *testing.T, a *testAsk) agent.DecisionKind {
+	t.Helper()
+	select {
+	case d := <-a.reply:
+		return d.Kind
+	default:
+		t.Fatal("ask was not answered")
+		return 0
+	}
+}
+
+func TestAbortedIdleEventSettlesDecidedResolvesPendingAndRejectsLateAsks(t *testing.T) {
+	h := idleHub(t, Config{})
+	c := newClient(1, ClientTUI, 128)
+	h.register(c)
+	h.handleEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: "t1"})
+
+	// (a) one decided-but-unacknowledged and one pending ask of the turn.
+	decided, pending := turnAsk("t1"), turnAsk("t1")
+	h.intakeAsk(decided.ask)
+	h.intakeAsk(pending.ask)
+	if h.perm.len() != 2 {
+		t.Fatalf("setup: %d registered", h.perm.len())
+	}
+	h.decide(h.perm.order[0], ActorLocalTUI, allowOnce, "")
+	<-decided.reply // the allow sits in the handler's reply buffer; the handler has not delivered
+
+	// (b) asks buffered in h.asks: one of the aborted turn, one of the next.
+	buffered, next := turnAsk("t1"), turnAsk("t2")
+	h.asks <- buffered.ask
+	h.asks <- next.ask
+
+	h.handleEvent(agent.Event{Kind: agent.KindIdle, TurnID: "t1", Aborted: true})
+
+	if _, ok := decided.outcome.Delivered(); ok {
+		t.Fatal("decided ask delivered after abort")
+	}
+	if replyKind(t, pending) != agent.DecisionUnavailable {
+		t.Fatal("pending ask of the aborted turn must resolve to unavailable")
+	}
+	if e := h.perm.order[0]; e.ask.Request.TurnID != "t1" || e.state != permDecided || e.reason != permReasonTurnAborted {
+		t.Fatalf("pending entry = %+v, want decided with %s", e, permReasonTurnAborted)
+	}
+	if replyKind(t, buffered) != agent.DecisionUnavailable {
+		t.Fatal("buffered ask of the aborted turn must be answered unavailable")
+	}
+	if len(h.asks) != 0 {
+		t.Fatalf("%d asks left in the buffer", len(h.asks))
+	}
+	// The next turn's buffered ask was passed through intake: registered.
+	if h.perm.len() != 2 { // pending (awaiting ack) + next
+		t.Fatalf("registry has %d entries, want 2", h.perm.len())
+	}
+	var sawAborted, sawRequested bool
+	for _, f := range drainFrames(c) {
+		switch f.Kind() {
+		case KindPermissionAborted:
+			sawAborted = sawAborted || contains(f, permReasonTurnAborted)
+		case KindPermissionRequested:
+			sawRequested = true
+		}
+	}
+	if !sawAborted || !sawRequested {
+		t.Fatalf("aborted=%v requested=%v, want both broadcast", sawAborted, sawRequested)
+	}
+
+	// (c) idle-before-ask: a late ask carrying the aborted turn's id.
+	before := h.perm.len()
+	late := turnAsk("t1")
+	h.intakeAsk(late.ask)
+	if replyKind(t, late) != agent.DecisionUnavailable || h.perm.len() != before {
+		t.Fatalf("late aborted-turn ask registered (len %d, was %d)", h.perm.len(), before)
+	}
+}
+
+func TestAbortedIdleThenNextTurnAskBeforeTurnStartIsAccepted(t *testing.T) {
+	h := idleHub(t, Config{})
+	c := newClient(1, ClientTUI, 128)
+	h.register(c)
+	h.handleEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: "t1"})
+	h.handleEvent(agent.Event{Kind: agent.KindIdle, TurnID: "t1", Aborted: true})
+	drainFrames(c)
+
+	// (d) the next turn's ask is dequeued before its TurnStart.
+	a := turnAsk("t2")
+	h.intakeAsk(a.ask)
+	if h.perm.len() != 1 {
+		t.Fatalf("next-turn ask not registered (len %d)", h.perm.len())
+	}
+	var requested bool
+	for _, f := range drainFrames(c) {
+		requested = requested || f.Kind() == KindPermissionRequested
+	}
+	if !requested {
+		t.Fatal("next-turn ask did not broadcast permission.requested")
+	}
+	h.handleEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: "t2"})
+	if h.activeTurnID != "t2" {
+		t.Fatalf("activeTurnID = %q", h.activeTurnID)
+	}
+}
+
+func contains(f Frame, s string) bool { return strings.Contains(string(f.Bytes()), s) }
 
 // ---- review cycle 2 N3: lanes context and agentIdle bookkeeping ----
 

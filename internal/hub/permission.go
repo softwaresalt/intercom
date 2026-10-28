@@ -158,7 +158,8 @@ const (
 	permReasonNoSurface = "no_surface"
 	permReasonTimeout   = "timeout"
 	permReasonShutdown  = "shutdown"
-
+	// permReasonTurnAborted resolves a request whose turn was aborted.
+	permReasonTurnAborted     = "turn_aborted"
 	permAbortHandlerGone      = "handler_gone"
 	permAbortReplyUnavailable = "reply_unavailable"
 	permAbortAckTimeout       = "ack_timeout"
@@ -376,6 +377,22 @@ func (h *Hub) reapEmptyBroadcastSet() {
 // select/default, never blocking) and learns what the SDK received from the
 // ask's Outcome, never from the reply buffer.
 func (h *Hub) Asks() chan<- agent.PermissionAsk { return h.asks }
+
+// intakeAsk is the hub's entry for an ask taken from h.asks. An ask whose
+// non-empty turn id belongs to an already-aborted turn is refused at once
+// (UserNotAvailable, nothing registered): the ask and event channels are not
+// ordered, so the abort-idle may be observed before the ask. An ask of any
+// other turn, including a next turn whose turn.start has not been dequeued
+// yet, is accepted.
+func (h *Hub) intakeAsk(ask agent.PermissionAsk) {
+	if id := ask.Request.TurnID; id != "" {
+		if _, aborted := h.abortedTurnIDs[id]; aborted {
+			answerUnavailable(ask)
+			return
+		}
+	}
+	h.handleAsk(ask)
+}
 
 // handleAsk registers one permission request and broadcasts it, both in this
 // single hub iteration and in that order (design §5.4 item 1): were the

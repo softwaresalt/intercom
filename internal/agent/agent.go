@@ -94,6 +94,10 @@ type PermissionRequest struct {
 	// in full, so the adapter denies such requests itself rather than asking.
 	Truncated bool
 	FullLen   int
+	// TurnID identifies the agent turn that issued the request, so the hub can
+	// resolve asks of an aborted turn without relying on the relative order of
+	// the ask channel and the event channel. Empty when unknown.
+	TurnID string
 }
 
 // DecisionKind is the intercom-owned permission outcome. The zero value is
