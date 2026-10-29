@@ -149,6 +149,16 @@ func NewShutdown(cfg ShutdownConfig) (*Shutdown, error) {
 	if cfg.AdapterStopTimeout < 0 {
 		return nil, apperr.New(apperr.KindConfig, "hub: agent StopTimeout must not be negative")
 	}
+	// Fold the agent's full ForceStop budget (StopTimeout plus any SDK
+	// lifecycle-lock allowance for an in-flight Client.Stop) into the adapter
+	// stop timeout, so the post-graceful-cutoff Force budget alone covers it.
+	if fb, ok := cfg.Agent.(interface{ ForceStopBudget() time.Duration }); ok {
+		b := fb.ForceStopBudget()
+		if b < 0 {
+			return nil, apperr.New(apperr.KindConfig, "hub: agent ForceStopBudget must not be negative")
+		}
+		cfg.AdapterStopTimeout = max(cfg.AdapterStopTimeout, b)
+	}
 	if cfg.AdapterStopTimeout > 0 && cfg.Timeouts.Force > 0 && cfg.Timeouts.Force < cfg.AdapterStopTimeout {
 		return nil, apperr.Newf(apperr.KindConfig,
 			"hub: shutdown Force %s must be at least the adapter stop timeout %s", cfg.Timeouts.Force, cfg.AdapterStopTimeout)

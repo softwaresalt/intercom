@@ -41,6 +41,16 @@ const (
 	DefaultStopTimeout = 5 * time.Second
 
 	defaultOpTimeout = 30 * time.Second
+
+	// SDKRuntimeShutdownTimeout is the SDK's bound on the graceful runtime
+	// shutdown phase of Client.Stop, during which it holds its lifecycle lock.
+	SDKRuntimeShutdownTimeout = 10 * time.Second
+	// SDKProcessExitTimeout is the SDK's bound on reaping the CLI process after
+	// the runtime shutdown phase, still under the same lifecycle lock.
+	SDKProcessExitTimeout = 10 * time.Second
+	// DefaultSDKStopLockTimeout is the worst-case time an in-flight
+	// Client.Stop can hold the SDK lifecycle lock that ForceStop must acquire.
+	DefaultSDKStopLockTimeout = SDKRuntimeShutdownTimeout + SDKProcessExitTimeout
 )
 
 // Config configures an Adapter.
@@ -61,6 +71,11 @@ type Config struct {
 	// DefaultOpTimeout applies to Send/Abort when the caller's context has no
 	// deadline. Default 30s.
 	DefaultOpTimeout time.Duration
+	// SDKStopLockTimeout is the extra time ForceStop may wait because an
+	// in-flight Client.Stop holds the SDK lifecycle lock. Zero defaults to
+	// DefaultSDKStopLockTimeout for the real SDK client and to 0 for injected
+	// fake clients; a negative value is clamped to 0.
+	SDKStopLockTimeout time.Duration
 
 	// Ingress receives normalized events. It must be buffered and drained by
 	// a hub that never blocks (§4.1). The adapter never closes it.
@@ -92,6 +107,9 @@ type sdkClient interface {
 }
 
 type realClient struct{ c *copilotsdk.Client }
+
+// isRealSDKClient marks the production SDK client (see Config.SDKStopLockTimeout).
+func (realClient) isRealSDKClient() {}
 
 func (r realClient) Start(ctx context.Context) error { return r.c.Start(ctx) }
 func (r realClient) GetStatus(ctx context.Context) (*copilotsdk.GetStatusResponse, error) {
@@ -143,6 +161,10 @@ type Adapter struct {
 	// doStop re-checks forceDone so a Start-failure cleanup that timed out is
 	// not forgotten once fail() has marked the client not started.
 	forceUnconfirmed bool
+	// clientStopStart/clientStopActive record an in-flight Client.Stop, which
+	// holds the SDK lifecycle lock ForceStop needs. Guarded by mu.
+	clientStopStart  time.Time
+	clientStopActive bool
 	stopResult       error
 	ops              context.Context // cancelled by Stop; parents Send/Abort calls
 	opsCancel        context.CancelFunc
@@ -176,6 +198,12 @@ func newAdapter(cfg Config, c sdkClient) *Adapter {
 	}
 	if cfg.DefaultOpTimeout <= 0 {
 		cfg.DefaultOpTimeout = defaultOpTimeout
+	}
+	if _, real := c.(interface{ isRealSDKClient() }); real && cfg.SDKStopLockTimeout == 0 {
+		cfg.SDKStopLockTimeout = DefaultSDKStopLockTimeout
+	}
+	if cfg.SDKStopLockTimeout < 0 {
+		cfg.SDKStopLockTimeout = 0
 	}
 	a := &Adapter{
 		cfg:    cfg,
@@ -669,7 +697,7 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 		step("disconnect session", sess.Disconnect)
 	}
 	if clientStarted {
-		step("stop copilot client", a.client.Stop)
+		step("stop copilot client", a.trackedClientStop)
 	}
 	if needForce {
 		if err := a.forceStop(); err != nil {
@@ -679,6 +707,41 @@ func (a *Adapter) doStop(ctx context.Context, cancelStart context.CancelFunc, st
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// trackedClientStop runs Client.Stop and records, for as long as it is in
+// flight (even after a bounded wait gave up on it), that the SDK lifecycle
+// lock is held.
+func (a *Adapter) trackedClientStop() error {
+	a.mu.Lock()
+	a.clientStopStart, a.clientStopActive = time.Now(), true
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		a.clientStopActive = false
+		a.mu.Unlock()
+	}()
+	return a.client.Stop()
+}
+
+// forceStopWait is how long a ForceStop wait may last: StopTimeout, extended by
+// whatever remains of SDKStopLockTimeout while an in-flight Client.Stop still
+// holds the SDK lifecycle lock that ForceStop queues behind.
+func (a *Adapter) forceStopWait() time.Duration {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	d := a.cfg.StopTimeout
+	if a.clientStopActive {
+		d += max(a.cfg.SDKStopLockTimeout-time.Since(a.clientStopStart), 0)
+	}
+	return d
+}
+
+// ForceStopBudget is the worst-case duration of the adapter's ForceStop wait
+// (StopTimeout plus the SDK lock allowance). The hub's shutdown Force budget
+// must cover it.
+func (a *Adapter) ForceStopBudget() time.Duration {
+	return a.cfg.StopTimeout + a.cfg.SDKStopLockTimeout
 }
 
 // forceStop runs the SDK's ForceStop under its own finite budget (StopTimeout,
@@ -696,7 +759,8 @@ func (a *Adapter) forceStop() error {
 			close(a.forceDone)
 		}()
 	})
-	t := time.NewTimer(a.cfg.StopTimeout)
+	wait := a.forceStopWait()
+	t := time.NewTimer(wait)
 	defer t.Stop()
 	select {
 	case <-a.forceDone:
@@ -710,7 +774,7 @@ func (a *Adapter) forceStop() error {
 		a.mu.Lock()
 		a.forceUnconfirmed = true
 		a.mu.Unlock()
-		return fmt.Errorf("agent: %w: ForceStop did not return within %v", agent.ErrCleanupIncomplete, a.cfg.StopTimeout)
+		return fmt.Errorf("agent: %w: ForceStop did not return within %v", agent.ErrCleanupIncomplete, wait)
 	}
 }
 

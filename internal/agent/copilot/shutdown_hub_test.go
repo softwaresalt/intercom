@@ -589,3 +589,121 @@ func TestShutdownWithABlockedPermissionHandlerDoesNotDeadlockOrForceStop(t *test
 	}
 	r.assertNoStrandedChild(t)
 }
+
+// ---- 077.003-T: ForceStop waits out an in-flight Client.Stop's SDK lock ----
+
+func TestForceStopExtendsWaitForInFlightClientStopHoldingSDKLock(t *testing.T) {
+	t.Run("force wait is extended only while a Client.Stop holds the lock", func(t *testing.T) {
+		a := newAdapter(Config{StopTimeout: 100 * time.Millisecond, SDKStopLockTimeout: 400 * time.Millisecond}, newFakeClient())
+		if got := a.forceStopWait(); got != 100*time.Millisecond {
+			t.Fatalf("idle forceStopWait = %v, want StopTimeout", got)
+		}
+		a.mu.Lock()
+		a.clientStopActive, a.clientStopStart = true, time.Now()
+		a.mu.Unlock()
+		if got := a.forceStopWait(); got < 400*time.Millisecond || got > 500*time.Millisecond {
+			t.Fatalf("forceStopWait during Client.Stop = %v, want ~Stop+lock (500ms)", got)
+		}
+		// Hurried Client.Stop: most of the lock allowance already elapsed.
+		a.mu.Lock()
+		a.clientStopStart = time.Now().Add(-390 * time.Millisecond)
+		a.mu.Unlock()
+		if got := a.forceStopWait(); got < 100*time.Millisecond || got > 150*time.Millisecond {
+			t.Fatalf("forceStopWait after the allowance elapsed = %v, want ~StopTimeout", got)
+		}
+		a.mu.Lock()
+		a.clientStopStart = time.Now().Add(-time.Hour)
+		a.mu.Unlock()
+		if got := a.forceStopWait(); got != 100*time.Millisecond {
+			t.Fatalf("forceStopWait with an expired allowance = %v, want StopTimeout", got)
+		}
+		if got := a.ForceStopBudget(); got != 500*time.Millisecond {
+			t.Fatalf("ForceStopBudget = %v, want 500ms", got)
+		}
+	})
+
+	t.Run("two-phase Client.Stop contention: ForceStop is awaited past StopTimeout", func(t *testing.T) {
+		h := newHarness(t, func(c *Config, f *fakeClient) {
+			c.StopTimeout = 100 * time.Millisecond
+			c.SDKStopLockTimeout = 600 * time.Millisecond
+			f.stopBlock = make(chan struct{}) // Client.Stop holds the lock throughout
+			f.forceBlock = make(chan struct{})
+		})
+		if _, err := h.ad.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { close(h.client.stopBlock) })
+		// ForceStop is only able to proceed ~300ms after it was requested,
+		// which is past StopTimeout but inside the lock allowance.
+		go func() {
+			for h.client.forceStops.Load() == 0 {
+				time.Sleep(time.Millisecond)
+			}
+			time.Sleep(300 * time.Millisecond)
+			close(h.client.forceBlock)
+		}()
+		err := h.ad.Stop(context.Background())
+		if errors.Is(err, agent.ErrCleanupIncomplete) {
+			t.Fatalf("Stop = %v; the wedge was within the SDK lock allowance and must not be reported incomplete", err)
+		}
+		if h.client.childAlive.Load() {
+			t.Fatal("the CLI child was stranded")
+		}
+	})
+
+	t.Run("no Client.Stop in flight keeps the plain StopTimeout bound", func(t *testing.T) {
+		h := newHarness(t, func(c *Config, f *fakeClient) {
+			c.StopTimeout = 100 * time.Millisecond
+			c.SDKStopLockTimeout = 600 * time.Millisecond
+			f.status = &copilotsdk.GetStatusResponse{Version: "1.0.0", ProtocolVersion: 3}
+			f.forceBlock = make(chan struct{})
+		})
+		defer close(h.client.forceBlock)
+		start := time.Now()
+		if _, err := h.ad.Start(context.Background()); !errors.Is(err, agent.ErrCleanupIncomplete) {
+			t.Fatalf("Start error = %v, want ErrCleanupIncomplete", err)
+		}
+		if d := time.Since(start); d > 450*time.Millisecond {
+			t.Fatalf("ForceStop wait took %v without a Client.Stop in flight; the lock allowance must not apply", d)
+		}
+	})
+
+	t.Run("real client defaults the lock allowance independently of StopTimeout", func(t *testing.T) {
+		real := newAdapter(Config{StopTimeout: time.Second}, realClient{})
+		if real.cfg.SDKStopLockTimeout != DefaultSDKStopLockTimeout || DefaultSDKStopLockTimeout != 20*time.Second {
+			t.Fatalf("real-client SDKStopLockTimeout = %v, want %v (20s)", real.cfg.SDKStopLockTimeout, DefaultSDKStopLockTimeout)
+		}
+		if got := real.ForceStopBudget(); got != time.Second+DefaultSDKStopLockTimeout {
+			t.Fatalf("real ForceStopBudget = %v", got)
+		}
+		fake := newAdapter(Config{}, newFakeClient())
+		if fake.cfg.SDKStopLockTimeout != 0 {
+			t.Fatalf("fake-client SDKStopLockTimeout = %v, want 0", fake.cfg.SDKStopLockTimeout)
+		}
+		if neg := newAdapter(Config{SDKStopLockTimeout: -time.Second}, newFakeClient()); neg.cfg.SDKStopLockTimeout != 0 {
+			t.Fatalf("negative allowance = %v, want clamped to 0", neg.cfg.SDKStopLockTimeout)
+		}
+	})
+
+	t.Run("NewShutdown rejects Force below the ForceStopBudget", func(t *testing.T) {
+		hb, err := hub.New(hub.Config{SessionID: "s"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ad := newAdapter(Config{StopTimeout: 5 * time.Second}, realClient{}) // budget 25s
+		mk := func(force time.Duration) error {
+			_, err := hub.NewShutdown(hub.ShutdownConfig{Hub: hb, Agent: ad, Gate: &rigGate{},
+				Timeouts: hub.ShutdownTimeouts{Force: force}})
+			return err
+		}
+		if err := mk(10 * time.Second); err == nil {
+			t.Fatal("Force 10s < ForceStopBudget 25s must be rejected")
+		}
+		if err := mk(25 * time.Second); err != nil {
+			t.Fatalf("Force == ForceStopBudget must be accepted: %v", err)
+		}
+		if err := mk(0); err != nil {
+			t.Fatalf("default Force must scale to the budget: %v", err)
+		}
+	})
+}
