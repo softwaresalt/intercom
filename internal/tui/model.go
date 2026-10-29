@@ -24,12 +24,26 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
+	"github.com/charmbracelet/x/ansi"
 	"github.com/softwaresalt/intercom-go/internal/hub"
 )
 
 // DefaultActionTimeout bounds one ingress call made by an action Cmd.
 const DefaultActionTimeout = 5 * time.Second
+
+// DefaultApprovalDelay is how long a freshly shown (or reset) permission modal
+// refuses approval, so typed-ahead keys cannot approve a request unseen.
+const DefaultApprovalDelay = 150 * time.Millisecond
+
+// ApprovalReadyMsg unlocks approval for a modal once its delay elapsed. It is
+// ignored unless both fields still match the live modal.
+type ApprovalReadyMsg struct {
+	RequestID string
+	ModalGen  uint64
+}
+
+// ResyncFailedMsg reports that the model-initiated re-hydrate failed.
+type ResyncFailedMsg struct{ Err error }
 
 // Layout constants: header, status and input take one row each.
 const (
@@ -56,6 +70,22 @@ type Options struct {
 	// Passing it here (rather than sending it after start) means no startup
 	// message can race a Ctrl+R re-issue.
 	Credentials CredentialsMsg
+	// ApprovalDelay is the approval lock-out after a modal opens or resets.
+	// Zero selects [DefaultApprovalDelay].
+	ApprovalDelay time.Duration
+	// NoApprovalDelay (or a negative ApprovalDelay) disables the lock-out;
+	// synchronous tests use it.
+	NoApprovalDelay bool
+	// MaxEntries caps the live transcript; the oldest entries beyond it are
+	// evicted. Zero or negative selects hub.DefaultMaxEntries.
+	MaxEntries int
+	// NoMouse leaves mouse reporting off. It is for programs fed from a pipe
+	// rather than a terminal: on Windows, enabling mouse mode restarts
+	// Bubble Tea's input reader, which cannot be cancelled on a pipe and
+	// would swallow the next keystroke.
+	NoMouse bool
+	// After is the timer source for the approval delay. Nil selects time.After.
+	After func(time.Duration) <-chan time.Time
 }
 
 type styles struct {
@@ -119,6 +149,16 @@ type Model struct {
 	modalFor  string
 	modalSeen int // furthest body line the operator has scrolled into view
 
+	approvalDelay time.Duration
+	after         func(time.Duration) <-chan time.Time
+	modalReady    bool
+	modalGen      uint64
+
+	resyncRequested bool
+	noMouse         bool
+	maxEntries      int
+	timerNeeded     bool // syncModal opened/reset a modal that needs its delay timer
+
 	promptBusy bool
 	input      []rune
 
@@ -144,7 +184,23 @@ func New(o Options) Model {
 	if o.ActionTimeout <= 0 {
 		o.ActionTimeout = DefaultActionTimeout
 	}
-	m := Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0), reissue: o.Reissue}
+	m := Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0), reissue: o.Reissue, after: o.After}
+	switch {
+	case o.NoApprovalDelay || o.ApprovalDelay < 0:
+		m.approvalDelay = 0
+	case o.ApprovalDelay == 0:
+		m.approvalDelay = DefaultApprovalDelay
+	default:
+		m.approvalDelay = o.ApprovalDelay
+	}
+	if m.after == nil {
+		m.after = time.After
+	}
+	m.maxEntries = o.MaxEntries
+	m.noMouse = o.NoMouse
+	if m.maxEntries <= 0 {
+		m.maxEntries = hub.DefaultMaxEntries
+	}
 	if len(o.Credentials.Credentials) > 0 {
 		m = m.showCredentials(o.Credentials)
 	}
@@ -152,11 +208,94 @@ func New(o Options) Model {
 }
 
 // Init implements tea.Model.
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	if m.noMouse {
+		return nil
+	}
+	return tea.EnableMouseCellMotion
+}
 
 // Update implements tea.Model. It performs no I/O: actions are returned as
 // Cmds that run on Bubble Tea's own goroutines.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	nm, ok := next.(Model)
+	if !ok || !nm.timerNeeded {
+		return next, cmd
+	}
+	nm.timerNeeded = false
+	timer := nm.approvalTimerCmd(nm.modalFor, nm.modalGen)
+	if cmd == nil {
+		return nm, timer
+	}
+	return nm, tea.Batch(cmd, timer)
+}
+
+// approvalTimerCmd waits out the approval delay, then reports the modal it was
+// started for.
+func (m Model) approvalTimerCmd(id string, gen uint64) tea.Cmd {
+	after, d := m.after, m.approvalDelay
+	return func() tea.Msg {
+		<-after(d)
+		return ApprovalReadyMsg{RequestID: id, ModalGen: gen}
+	}
+}
+
+// wheelStep is how many rows one wheel notch scrolls.
+const wheelStep = 3
+
+// onMouse handles wheel scrolling. Any mouse event disarms a pending approval;
+// the modal only ever scrolls contiguously so "seen" stays honest.
+func (m Model) onMouse(msg tea.MouseMsg) Model {
+	m.armed = ""
+	dir := 0
+	switch msg.Button { //nolint:exhaustive // only the wheel scrolls
+	case tea.MouseButtonWheelUp:
+		dir = -1
+	case tea.MouseButtonWheelDown:
+		dir = 1
+	default:
+		return m
+	}
+	switch {
+	case len(m.pending) > 0:
+		n := min(wheelStep, max(m.modal.Height, 1))
+		if dir < 0 {
+			m.modal.ScrollUp(n)
+		} else {
+			m.modal.ScrollDown(n)
+		}
+		m.noteSeen()
+	case m.credOpen:
+		m = m.scrollCredentials(dir * wheelStep)
+	case dir < 0:
+		m.vp.ScrollUp(wheelStep)
+	default:
+		m.vp.ScrollDown(wheelStep)
+	}
+	return m
+}
+
+// requestRehydrate asks the connection to re-serve a hydrate once per stuck
+// resync, bounded by the action timeout.
+func (m Model) requestRehydrate() (Model, tea.Cmd) {
+	r, ok := m.ingress.(Rehydrater)
+	if !ok || m.resyncRequested {
+		return m, nil
+	}
+	m.resyncRequested = true
+	timeout := m.timeout
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := r.Rehydrate(ctx); err != nil {
+			return ResyncFailedMsg{Err: err}
+		}
+		return nil
+	}
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -164,8 +303,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case FrameMsg:
 		return m.onFrame(msg.Frame)
+	case tea.MouseMsg:
+		return m.onMouse(msg), nil
+	case ApprovalReadyMsg:
+		if len(m.pending) > 0 && m.pending[0].RequestID == msg.RequestID && m.modalFor == msg.RequestID && m.modalGen == msg.ModalGen {
+			m.modalReady = true
+		}
+		return m, nil
+	case ResyncFailedMsg:
+		m.resyncRequested = false
+		if msg.Err != nil {
+			m.notice = "re-hydrate failed: " + SanitizeLine(msg.Err.Error())
+		}
+		return m, nil
 	case ResyncMsg:
 		m.resync = true
+		m.armed = ""
 		return m, nil
 	case DisconnectedMsg:
 		m.disconnected = msg.Err
@@ -371,15 +524,26 @@ func (m Model) onResolveResult(msg ActionResultMsg) Model {
 // ---- envelopes ----
 
 func (m Model) onFrame(f hub.Frame) (tea.Model, tea.Cmd) {
-	switch m.cursor.Apply(f) {
+	action := m.cursor.Apply(f)
+	if f.Kind() == hub.KindServerShutdown {
+		// Terminal frame: even across a gap (deliverTerminal may drop the
+		// oldest queued frame) the hub is going away, so never resync.
+		m.shutdown = true
+		m.resync = false
+		if action != hub.ActionApply {
+			return m, nil
+		}
+	}
+	switch action {
 	case hub.ActionDiscard:
 		return m, nil
 	case hub.ActionRehydrate:
 		// A gap, generation change or missing baseline: nothing may be applied
 		// until the next hydrate (hub.Cursor contract). The feed forces that
-		// hydrate; the model just says so.
+		// hydrate; the model asks for one too, in case the feed cannot.
 		m.resync = true
-		return m, nil
+		m.armed = ""
+		return m.requestRehydrate()
 	}
 	env, err := decodeEnvelope(f)
 	if err != nil {
@@ -388,9 +552,13 @@ func (m Model) onFrame(f hub.Frame) (tea.Model, tea.Cmd) {
 	}
 	ts := parseTS(env.TS)
 	atBottom := m.vp.AtBottom()
+	var cmd tea.Cmd
 	switch env.Kind {
 	case hub.KindSessionHydrate:
 		m = m.applyHydrate(env.Payload, ts)
+		if m.resync {
+			m, cmd = m.requestRehydrate()
+		}
 	case hub.KindAgentMessageDelta:
 		m = m.applyMessage(env.Payload, true)
 	case hub.KindAgentMessage:
@@ -416,7 +584,7 @@ func (m Model) onFrame(f hub.Frame) (tea.Model, tea.Cmd) {
 	}
 	m.refreshTranscript(atBottom)
 	m.syncModal(false)
-	return m, nil
+	return m, cmd
 }
 
 func (m Model) applyHydrate(raw []byte, ts time.Time) Model {
@@ -437,7 +605,13 @@ func (m Model) applyHydrate(raw []byte, ts time.Time) Model {
 	}
 	m.turnActive = body.TurnActive
 	m.evicted = body.EvictedCount
+	m.capEntries()
 	m.resync = false
+	m.resyncRequested = false
+	m.armed = ""
+	// Force syncModal to rebuild the modal (fresh viewport, read progress and
+	// approval delay) even when the head request ID is unchanged.
+	m.modalFor = ""
 	m.shutdown = false
 	// The hydrate is authoritative for pending permissions: replace, never merge.
 	m.pending = nil
@@ -482,6 +656,7 @@ func (m Model) applyMessage(raw []byte, isDelta bool) Model {
 	case isDelta && i >= 0:
 		m.entries[i].Text += text
 		m.entries[i].Truncated = m.entries[i].Truncated || p.Truncated
+		m.entries[i].wrapped, m.entries[i].wrapWidth = "", 0
 	case isDelta:
 		m.entries = append(m.entries, entry{Kind: kindMessage, ID: id, Text: text, Status: statusStreaming, Truncated: p.Truncated})
 	case i >= 0:
@@ -489,7 +664,18 @@ func (m Model) applyMessage(raw []byte, isDelta bool) Model {
 	default:
 		m.entries = append(m.entries, entry{Kind: kindMessage, ID: id, Text: text, Status: statusComplete, Truncated: p.Truncated})
 	}
+	m.capEntries()
 	return m
+}
+
+// capEntries evicts the oldest entries beyond maxEntries.
+func (m *Model) capEntries() {
+	if m.maxEntries <= 0 || len(m.entries) <= m.maxEntries {
+		return
+	}
+	n := len(m.entries) - m.maxEntries
+	m.entries = append([]entry(nil), m.entries[n:]...)
+	m.evicted += n
 }
 
 func (m Model) applyToolStarted(raw []byte) Model {
@@ -499,6 +685,7 @@ func (m Model) applyToolStarted(raw []byte) Model {
 	}
 	m.entries = append(append([]entry(nil), m.entries...),
 		entry{Kind: kindTool, ID: SanitizeLine(p.ToolCallID), Tool: SanitizeLine(p.ToolName), Status: statusRunning, Truncated: p.Truncated})
+	m.capEntries()
 	return m
 }
 
@@ -519,9 +706,11 @@ func (m Model) applyToolEnded(raw []byte) Model {
 			m.entries[i].Tool = name
 		}
 		m.entries[i].Truncated = m.entries[i].Truncated || p.Truncated
+		m.entries[i].wrapped, m.entries[i].wrapWidth = "", 0
 		return m
 	}
 	m.entries = append(m.entries, entry{Kind: kindTool, ID: id, Tool: name, Status: status, Truncated: p.Truncated})
+	m.capEntries()
 	return m
 }
 
@@ -535,6 +724,7 @@ func (m Model) applyError(raw []byte) Model {
 	}
 	m.entries = append(append([]entry(nil), m.entries...),
 		entry{Kind: kindError, ID: SanitizeLine(p.Code), Text: Sanitize(p.Message)})
+	m.capEntries()
 	return m
 }
 
@@ -607,7 +797,7 @@ func entryText(e entry) string {
 	return s
 }
 
-func (m Model) renderTranscript() string {
+func (m *Model) renderTranscript() string {
 	if len(m.entries) == 0 {
 		return "No activity yet. Type a prompt and press Enter."
 	}
@@ -615,8 +805,13 @@ func (m Model) renderTranscript() string {
 	if m.evicted > 0 {
 		parts = append(parts, fmt.Sprintf("[%d earlier entries evicted]", m.evicted))
 	}
-	for _, e := range m.entries {
-		parts = append(parts, m.wrap(entryText(e), m.vp.Width))
+	w := m.vp.Width
+	for i := range m.entries {
+		e := &m.entries[i]
+		if e.wrapped == "" || e.wrapWidth != w {
+			e.wrapped, e.wrapWidth = m.wrap(entryText(*e), w), w
+		}
+		parts = append(parts, e.wrapped)
 	}
 	return strings.Join(parts, "\n")
 }
@@ -682,8 +877,10 @@ func (m Model) View() string {
 	} else if len(m.pending) > 0 {
 		prompt = "> (answer the permission request first)"
 	}
-	if rs := []rune(prompt); len(rs) > m.width {
-		prompt = "> ..." + string(rs[len(rs)-(m.width-5):])
+	if pw := lipgloss.Width(prompt); pw > m.width {
+		// Linear, grapheme-aware: drop whole cells from the left in one pass.
+		keep := max(m.width-lipgloss.Width("> ..."), 0)
+		prompt = "> ..." + ansi.TruncateLeft(prompt, pw-keep, "")
 	}
 	return strings.Join([]string{header, area, m.st.status.Render(m.fit(m.statusLine(), m.width)), prompt}, "\n")
 }

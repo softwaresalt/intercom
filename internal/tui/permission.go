@@ -41,8 +41,12 @@ func newPermission(p hub.PermissionRequestedPayload, ts time.Time) permission {
 		Kind:       SanitizeLine(p.PermissionKind),
 		Summary:    Sanitize(p.Summary),
 	}
-	if strings.TrimSpace(p.Summary) == "" {
+	switch {
+	case strings.TrimSpace(p.Summary) == "":
 		out.Summary, out.Empty = emptyRequestText, true
+	case isBlankSummary(p.Summary):
+		// Invisible-only text: keep the visible markers and flag it deny-only.
+		out.Summary, out.Empty = out.Summary+"\n"+emptyRequestText, true
 	}
 	if p.RemainingMS > 0 && !ts.IsZero() {
 		out.Deadline = ts.Add(time.Duration(p.RemainingMS) * time.Millisecond)
@@ -162,15 +166,23 @@ func (m Model) modalInnerWidth() int {
 
 // body is the scrollable text of the request. The kind and tool call id sit in
 // it, not in a fixed header row, so a long one is wrapped and has to be
-// scrolled through like the rest before approval unlocks.
-func (p permission) body() string {
-	return "kind: " + p.Kind + "\ntool call: " + p.ToolCallID + "\n\n" + p.Summary
+// scrolled through like the rest before approval unlocks. Every summary line
+// (newline-separated or soft-wrapped) is indented two spaces so none can
+// start at column 0 and pass for a "kind:" or "tool call:" header.
+func (m Model) permissionBody(p permission) string {
+	inner := m.modalInnerWidth()
+	lines := strings.Split(m.wrap(p.Summary, max(inner-2, 1)), "\n")
+	for i, l := range lines {
+		lines[i] = "  " + l
+	}
+	return m.wrap("kind: "+p.Kind, inner) + "\n" + m.wrap("tool call: "+p.ToolCallID, inner) + "\n\n" + strings.Join(lines, "\n")
 }
 
 // syncModal keeps the modal viewport in step with the head pending request.
 func (m *Model) syncModal(reset bool) {
 	if len(m.pending) == 0 {
 		m.modalFor, m.armed = "", ""
+		m.modalReady = false
 		return
 	}
 	p := m.pending[0]
@@ -180,8 +192,11 @@ func (m *Model) syncModal(reset bool) {
 			rows = 0
 		}
 		m.modal = viewport.New(m.modalInnerWidth(), rows)
-		m.modal.SetContent(m.wrap(p.body(), m.modalInnerWidth()))
+		m.modal.SetContent(m.permissionBody(p))
 		m.modalFor, m.modalSeen, m.armed = p.RequestID, 0, ""
+		m.modalGen++
+		m.modalReady = m.approvalDelay <= 0
+		m.timerNeeded = !m.modalReady
 	}
 	m.noteSeen()
 }
@@ -198,10 +213,10 @@ func (m *Model) noteSeen() {
 // terminal is too small for any body row) is deny-only. This is the guard that
 // keeps a truncated or partly seen request from being approved.
 func (m Model) approvable() bool {
-	if len(m.pending) == 0 || m.tooSmall() || m.modal.Height < 1 || m.modalFor != m.pending[0].RequestID || m.pending[0].Empty {
+	if m.resync || len(m.pending) == 0 || m.tooSmall() || m.modal.Height < 1 || m.modalFor != m.pending[0].RequestID || m.pending[0].Empty {
 		return false
 	}
-	return m.modalSeen >= m.modal.TotalLineCount() && !m.inflight[m.pending[0].RequestID]
+	return m.modalSeen >= m.modal.TotalLineCount() && m.modalReady && !m.inflight[m.pending[0].RequestID]
 }
 
 func (m Model) decisionCmd(kind agent.DecisionKind) (Model, tea.Cmd) {
@@ -232,6 +247,8 @@ func (m Model) onModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.notice = "scroll to the end of the request (PgDn) before approving"
 			if m.pending[0].Empty {
 				m.notice = "an empty request cannot be approved"
+			} else if !m.modalReady && m.modalSeen >= m.modal.TotalLineCount() {
+				m.notice = "wait a moment before approving"
 			}
 		default:
 			// Approval takes y then Enter, so typing ahead ("yes\n") when the
@@ -287,6 +304,8 @@ func (m Model) modalView(height int) string {
 		hint = "empty request: approve disabled   n deny"
 	case m.approvable():
 		hint = "y approve (then Enter to confirm)   n deny"
+	case m.modalSeen >= m.modal.TotalLineCount() && !m.modalReady:
+		hint = "approval unlocks in a moment   n deny"
 	default:
 		hint = "scroll to the end (PgDn) to enable approve   n deny"
 	}

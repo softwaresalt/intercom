@@ -31,7 +31,7 @@ func Sanitize(s string) string {
 			b.WriteByte('\n')
 		case r == '\t':
 			b.WriteString("    ")
-		case unicode.IsControl(r) || r == '\u2028' || r == '\u2029' || unicode.Is(unicode.Cf, r):
+		case isHiddenRune(r):
 			fmt.Fprintf(&b, "<U+%04X>", r)
 		default:
 			b.WriteRune(r)
@@ -44,4 +44,25 @@ func Sanitize(s string) string {
 // text): newlines are shown as markers too.
 func SanitizeLine(s string) string {
 	return strings.ReplaceAll(Sanitize(s), "\n", "<U+000A>")
+}
+
+// isHiddenRune reports runes that render as nothing (or as blank filler) and
+// so must be shown as a visible marker.
+func isHiddenRune(r rune) bool {
+	return unicode.IsControl(r) || r == '\u2028' || r == '\u2029' ||
+		unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Co, r) ||
+		unicode.Is(unicode.Variation_Selector, r) ||
+		r == '\u2800' || r == '\u3164' || r == '\u115f' || r == '\u1160' ||
+		r == '\uffa0' || r == '\u034f' || r == '\u17b4' || r == '\u17b5'
+}
+
+// isBlankSummary reports whether s shows nothing meaningful: every rune is
+// whitespace, hidden, or a replacement/invalid rune.
+func isBlankSummary(s string) bool {
+	for _, r := range s {
+		if !unicode.IsSpace(r) && !isHiddenRune(r) && r != utf8.RuneError {
+			return false
+		}
+	}
+	return true
 }

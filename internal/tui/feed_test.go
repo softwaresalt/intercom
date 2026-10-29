@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -169,6 +170,136 @@ func TestOverflowDropsOldestAndTriggersRehydrate(t *testing.T) {
 	converge(t, s, want)
 }
 
+// countingDial wraps a Dial and counts how many connections it opened.
+func countingDial(inner Dial, n *atomic.Int32) Dial {
+	return func(ctx context.Context) (Conn, error) {
+		n.Add(1)
+		return inner(ctx)
+	}
+}
+
+func TestOverflowRehydratesInPlaceWithoutAutoDenyingPendingPermission(t *testing.T) {
+	r := newRig(t, hub.Config{PermissionTimeout: time.Hour})
+	r.c.Close() // only one TUI may attach
+	s := newSinkRig(true)
+	var dials atomic.Int32
+	f := NewFeed(FeedOptions{Dial: countingDial(HubDialer(r.h, 0), &dials), Sink: s.sink, QueueSize: 4})
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := f.Start(ctx); err != nil {
+		cancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() {
+		select {
+		case <-s.gate:
+		default:
+			close(s.gate)
+		}
+		cancel()
+		f.Close()
+	})
+
+	a := newPermAsk(agent.PermissionKindShell, "ls")
+	a.post(t, r.h)
+	want := streamBurst(t, r, 200)
+
+	deadline := time.Now().Add(testWait)
+	for f.Stats().Rehydrates == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("overflow never forced a re-hydrate")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if n := dials.Load(); n != 1 {
+		t.Fatalf("dialled %d times, want 1: overflow must rehydrate in place, not close and redial", n)
+	}
+	sctx, scancel := context.WithTimeout(context.Background(), testWait)
+	defer scancel()
+	st, err := r.h.Stats(sctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PendingPermissions != 1 {
+		t.Fatalf("pending permissions = %d, want 1 kept alive", st.PendingPermissions)
+	}
+	select {
+	case d := <-a.reply:
+		t.Fatalf("pending permission was resolved (%v) by the overflow recovery", d.Kind)
+	default:
+	}
+	s.release()
+	converge(t, s, want)
+}
+
+// fakeConn is a scriptable Conn.
+type fakeConn struct {
+	frames chan hub.Frame
+	done   chan struct{}
+	once   sync.Once
+}
+
+func newFakeConn() *fakeConn {
+	return &fakeConn{frames: make(chan hub.Frame, 4), done: make(chan struct{})}
+}
+
+func (c *fakeConn) Frames() <-chan hub.Frame { return c.frames }
+func (c *fakeConn) Done() <-chan struct{}    { return c.done }
+func (c *fakeConn) Do(context.Context, hub.OperatorAction) (hub.ActionResult, error) {
+	return hub.ActionResult{Accepted: true}, nil
+}
+func (c *fakeConn) Rehydrate(context.Context) error { return nil }
+func (c *fakeConn) Close()                          { c.once.Do(func() { close(c.done) }) }
+
+func TestFeedRedialRetriesTransientFailureAndRecoversDroppedClient(t *testing.T) {
+	first, second := newFakeConn(), newFakeConn()
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		switch dials.Add(1) {
+		case 1:
+			return first, nil
+		case 2, 3:
+			return nil, errors.New("transient dial failure")
+		default:
+			return second, nil
+		}
+	}
+	s := newSinkRig(false)
+	f := NewFeed(FeedOptions{Dial: dial, Sink: s.sink, RedialRetries: 3, RedialBackoff: time.Millisecond})
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := f.Start(ctx); err != nil {
+		cancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { cancel(); f.Close() })
+
+	first.Close() // the hub dropped this client: no server.shutdown frame
+
+	deadline := time.After(testWait)
+	for resynced := false; !resynced; {
+		select {
+		case msg := <-s.out:
+			switch msg.(type) {
+			case ResyncMsg:
+				resynced = true
+			case DisconnectedMsg:
+				t.Fatal("feed gave up on a dropped client instead of redialling")
+			}
+		case <-deadline:
+			t.Fatalf("no resync after a dropped client; dials=%d", dials.Load())
+		}
+	}
+	if n := dials.Load(); n != 4 {
+		t.Fatalf("dials = %d, want 4 (initial + two transient failures + success)", n)
+	}
+	if st := f.Stats(); st.Rehydrates != 1 {
+		t.Fatalf("rehydrates = %d, want 1", st.Rehydrates)
+	}
+	res, err := f.Do(context.Background(), hub.OperatorAction{Type: hub.OpAbortTurn})
+	if err != nil || !res.Accepted {
+		t.Fatalf("Do after recovery = %+v, %v", res, err)
+	}
+}
+
 func TestFeedDeliversInOrderWithoutOverflow(t *testing.T) {
 	r := newRig(t, hub.Config{})
 	s := newSinkRig(false)
@@ -297,4 +428,209 @@ func TestFeedReleasesHubSlotWhenContextCancelledWithoutClose(t *testing.T) {
 		}
 	}
 	f.Close()
+}
+
+// blockingRehydrateConn is a fakeConn whose in-place Rehydrate blocks until
+// its context ends or release is closed.
+type blockingRehydrateConn struct {
+	*fakeConn
+	started chan struct{}
+	release chan struct{}
+	ctxErr  atomic.Value // error seen by Rehydrate, if its ctx ended
+}
+
+func (c *blockingRehydrateConn) Rehydrate(ctx context.Context) error {
+	close(c.started)
+	select {
+	case <-ctx.Done():
+		c.ctxErr.Store(ctx.Err())
+		return ctx.Err()
+	case <-c.release:
+		return nil
+	}
+}
+
+func TestFeedRehydrateCallerCancelDoesNotTearDownFeed(t *testing.T) {
+	conn := &blockingRehydrateConn{fakeConn: newFakeConn(), started: make(chan struct{}), release: make(chan struct{})}
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		dials.Add(1)
+		return conn, nil
+	}
+	s := newSinkRig(false)
+	f := NewFeed(FeedOptions{Dial: dial, Sink: s.sink, RedialRetries: -1})
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := f.Start(ctx); err != nil {
+		cancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { cancel(); f.Close() })
+
+	rctx, rcancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() { errc <- f.Rehydrate(rctx) }()
+	select {
+	case <-conn.started:
+	case <-time.After(testWait):
+		t.Fatal("rehydrate never reached the connection")
+	}
+	rcancel()
+	if err := <-errc; !errors.Is(err, context.Canceled) {
+		t.Fatalf("caller got %v, want context.Canceled", err)
+	}
+	close(conn.release) // recovery completes under the feed's own lifetime
+	deadline := time.After(testWait)
+	for f.Stats().Rehydrates != 1 {
+		select {
+		case <-deadline:
+			t.Fatalf("rehydrate did not complete (ctx err seen: %v)", conn.ctxErr.Load())
+		case <-time.After(time.Millisecond):
+		}
+	}
+	select {
+	case <-conn.Done():
+		t.Fatal("a cancelled caller closed the live connection")
+	default:
+	}
+	if _, err := f.Do(context.Background(), hub.OperatorAction{Type: hub.OpAbortTurn}); err != nil {
+		t.Fatalf("feed unusable after a cancelled Rehydrate: %v", err)
+	}
+	if n := dials.Load(); n != 1 {
+		t.Fatalf("dials = %d, want 1", n)
+	}
+}
+
+func TestFeedShutdownFrameOnFramesPathIsNotRedialled(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	r.frame() // hydrate
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := r.h.AnnounceShutdown(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	sd := r.frame()
+	if sd.Kind() != hub.KindServerShutdown {
+		t.Fatalf("got %s, want server.shutdown", sd.Kind())
+	}
+
+	conn := newFakeConn()
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		dials.Add(1)
+		return conn, nil
+	}
+	s := newSinkRig(false)
+	f := NewFeed(FeedOptions{Dial: dial, Sink: s.sink, RedialRetries: 2, RedialBackoff: time.Millisecond})
+	fctx, fcancel := context.WithCancel(context.Background())
+	if err := f.Start(fctx); err != nil {
+		fcancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { fcancel(); f.Close() })
+
+	conn.frames <- sd
+	deadline := time.After(testWait)
+	for got := false; !got; { // the Frames() path has forwarded it
+		select {
+		case msg := <-s.out:
+			if fm, ok := msg.(FrameMsg); ok && fm.Frame.Kind() == hub.KindServerShutdown {
+				got = true
+			}
+		case <-deadline:
+			t.Fatal("shutdown frame not delivered")
+		}
+	}
+	conn.Close() // the hub goes away after announcing shutdown
+	for {
+		select {
+		case msg := <-s.out:
+			switch msg.(type) {
+			case DisconnectedMsg:
+				if n := dials.Load(); n != 1 {
+					t.Fatalf("dials = %d, want 1: intentional shutdown must not redial", n)
+				}
+				return
+			case ResyncMsg:
+				t.Fatal("redialled after an intentional shutdown")
+			}
+		case <-deadline:
+			t.Fatal("no DisconnectedMsg after shutdown")
+		}
+	}
+}
+
+func TestFeedLateBroadcastsAfterShutdownDoNotEvictShutdownFrame(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	r.frame() // hydrate
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := r.h.AnnounceShutdown(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	sd := r.frame()
+	if sd.Kind() != hub.KindServerShutdown {
+		t.Fatalf("got %s, want server.shutdown", sd.Kind())
+	}
+	r.send(message("a", "1"), message("b", "2"), message("c", "3"))
+	late := []hub.Frame{r.frame(), r.frame(), r.frame()}
+
+	conn := newFakeConn()
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		dials.Add(1)
+		return conn, nil
+	}
+	s := newSinkRig(true) // stalled: the queue is the only buffer
+	f := NewFeed(FeedOptions{Dial: dial, Sink: s.sink, QueueSize: 2, RedialRetries: 1, RedialBackoff: time.Millisecond})
+	fctx, fcancel := context.WithCancel(context.Background())
+	if err := f.Start(fctx); err != nil {
+		fcancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() {
+		select {
+		case <-s.gate:
+		default:
+			close(s.gate)
+		}
+		fcancel()
+		f.Close()
+	})
+
+	conn.frames <- sd
+	for _, fr := range late {
+		select {
+		case conn.frames <- fr:
+		case <-time.After(testWait):
+			t.Fatal("could not queue late frame")
+		}
+	}
+	time.Sleep(50 * time.Millisecond) // let the pump consume what it will
+	s.release()
+
+	deadline := time.After(testWait)
+	gotShutdown := false
+	for {
+		select {
+		case msg := <-s.out:
+			switch m := msg.(type) {
+			case FrameMsg:
+				if m.Frame.Kind() == hub.KindServerShutdown {
+					gotShutdown = true
+				}
+			case ResyncMsg:
+				t.Fatal("late broadcasts after shutdown triggered overflow recovery")
+			case DisconnectedMsg:
+				if !gotShutdown {
+					t.Fatal("shutdown frame was evicted before delivery")
+				}
+				if n := dials.Load(); n != 1 || f.Stats().Rehydrates != 0 {
+					t.Fatalf("dials=%d rehydrates=%d, want 1 and 0", n, f.Stats().Rehydrates)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("no DisconnectedMsg after shutdown")
+		}
+	}
 }

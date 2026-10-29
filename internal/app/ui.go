@@ -116,7 +116,7 @@ func startUI(startCtx context.Context, h *hub.Hub, o TUIOptions, creds tui.Crede
 	} else {
 		opts = append(opts, tea.WithAltScreen())
 	}
-	prog = tea.NewProgram(tui.New(tui.Options{Ingress: ui.feed, Reissue: reissue, Credentials: creds}), opts...)
+	prog = tea.NewProgram(tui.New(tui.Options{Ingress: ui.feed, Reissue: reissue, Credentials: creds, NoMouse: o.Input != nil}), opts...)
 	ui.prog = prog
 	ui.quit, ui.kill = prog.Quit, prog.Kill
 

@@ -18,6 +18,12 @@ const (
 	DefaultQueueSize = 256
 	// dialTimeout bounds one (re)connect to the hub.
 	dialTimeout = 5 * time.Second
+	// DefaultRedialRetries is the number of redial retries after the first
+	// failed attempt when FeedOptions.RedialRetries is 0.
+	DefaultRedialRetries = 3
+	// DefaultRedialBackoff is the pause between redial attempts when
+	// FeedOptions.RedialBackoff is 0.
+	DefaultRedialBackoff = 25 * time.Millisecond
 )
 
 // queue is the TUI's own buffered channel with a drop-oldest overflow policy
@@ -86,6 +92,13 @@ type FeedOptions struct {
 	// QueueSize is the capacity of the TUI's own channel. 0 selects
 	// [DefaultQueueSize].
 	QueueSize int
+	// RedialRetries is the number of redial retries after the first failed
+	// attempt (in-place rehydrate failure or an unexpected disconnect).
+	// 0 selects [DefaultRedialRetries]; a negative value disables retries.
+	RedialRetries int
+	// RedialBackoff is the pause between redial attempts. 0 selects
+	// [DefaultRedialBackoff].
+	RedialBackoff time.Duration
 }
 
 // FeedStats are the feed's counters.
@@ -121,6 +134,7 @@ type Feed struct {
 	closed  bool
 
 	rehydrates atomic.Uint64
+	rehydrateC chan rehydrateReq
 
 	wg       sync.WaitGroup
 	pumpDone chan struct{}
@@ -137,7 +151,50 @@ var (
 
 // NewFeed builds an unstarted feed.
 func NewFeed(o FeedOptions) *Feed {
-	return &Feed{opt: o, q: newQueue[item](o.QueueSize), pumpDone: make(chan struct{})}
+	if o.RedialRetries == 0 {
+		o.RedialRetries = DefaultRedialRetries
+	}
+	if o.RedialBackoff <= 0 {
+		o.RedialBackoff = DefaultRedialBackoff
+	}
+	return &Feed{
+		opt:        o,
+		q:          newQueue[item](o.QueueSize),
+		pumpDone:   make(chan struct{}),
+		rehydrateC: make(chan rehydrateReq),
+	}
+}
+
+// rehydrateReq asks the pump (the owner of the connection) to rehydrate.
+type rehydrateReq struct {
+	ctx   context.Context
+	reply chan error // buffered: the pump never blocks on a gone caller
+}
+
+// Rehydrate forces a re-hydrate of the feed's connection now, in place when
+// the connection supports it, otherwise by redialling. It returns
+// [ErrNotConnected] when the feed is not started, closed or has no connection.
+func (f *Feed) Rehydrate(ctx context.Context) error {
+	f.mu.Lock()
+	ok := f.started && !f.closed && f.conn != nil
+	f.mu.Unlock()
+	if !ok {
+		return ErrNotConnected
+	}
+	req := rehydrateReq{ctx: ctx, reply: make(chan error, 1)}
+	select {
+	case f.rehydrateC <- req:
+	case <-f.pumpDone:
+		return ErrNotConnected
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case err := <-req.reply:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Start dials the hub once, synchronously (so a failure is reported to the
@@ -229,9 +286,21 @@ func (f *Feed) pump(ctx context.Context, conn Conn) {
 		f.mu.Unlock()
 		conn.Close()
 	}()
+	// shutdown records that a server.shutdown envelope was drained from the
+	// connection after it closed.
+	shutdown := false
 	for {
 		select {
 		case fr := <-conn.Frames():
+			if fr.Kind() == hub.KindServerShutdown {
+				// Terminal frame: queue it and stop pumping. The hub may still
+				// broadcast after server.shutdown; those late frames must not
+				// evict the notice or trigger recovery from an intentional
+				// stop. Ending the pump lets deliver flush the queue.
+				f.q.push(item{frame: fr})
+				f.pumpErr = hub.ErrStopped
+				return
+			}
 			if !f.q.push(item{frame: fr}) {
 				continue
 			}
@@ -243,56 +312,116 @@ func (f *Feed) pump(ctx context.Context, conn Conn) {
 				return
 			}
 			conn = next
+		case req := <-f.rehydrateC:
+			if err := req.ctx.Err(); err != nil {
+				req.reply <- err // the caller already gave up; leave the feed alone
+				continue
+			}
+			// Recovery runs under the feed's lifetime ctx: a caller whose own
+			// ctx ends must not tear down the live connection.
+			next, err := f.reconnect(ctx, conn)
+			req.reply <- err
+			if err != nil {
+				f.pumpErr = err
+				return
+			}
+			conn = next
 		case <-conn.Done():
 			// Pick up what the hub queued before it went away (the shutdown
-			// envelope), then end.
+			// envelope).
+		drain:
 			for {
 				select {
 				case fr := <-conn.Frames():
 					f.q.push(item{frame: fr})
+					if fr.Kind() == hub.KindServerShutdown {
+						shutdown = true
+						break drain // terminal: later frames must not evict it
+					}
 				default:
-					f.pumpErr = hub.ErrStopped
-					return
+					break drain
 				}
 			}
+			if shutdown || ctx.Err() != nil {
+				f.pumpErr = hub.ErrStopped
+				return
+			}
+			// Dropped without a shutdown notice: recover with a fresh dial.
+			conn.Close()
+			next, err := f.redial(ctx)
+			if err != nil {
+				f.pumpErr = err
+				return
+			}
+			conn = next
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-// reconnect forces a re-hydrate: the old client is closed first (the hub
-// admits one TUI), a new one is dialled, and everything queued is discarded
-// because the hydrate that heads the new stream supersedes it.
-//
-// Known limitation (reported as a hub follow-up): the hub offers no in-place
-// "re-hydrate me" call for a client, so this close-and-redial passes through a
-// moment with no TUI attached. If the TUI is the only surface and a permission
-// request is pending, the hub's empty-broadcast-set rule (§5.4) may resolve it
-// to UserNotAvailable in that window. That fails closed (the agent is denied,
-// never granted), and the default queue is as large as the hub's own TUI
-// buffer so only a genuinely stalled renderer reaches this path.
+// reconnect forces a re-hydrate. It prefers an in-place rehydrate of old, which
+// keeps the client registered so a pending permission never loses its surface
+// (the hub's empty-broadcast-set rule, §5.4, would otherwise resolve it to
+// UserNotAvailable in the close-and-redial window). When old cannot rehydrate
+// in place, or that fails, the old client is closed and the feed redials with
+// bounded retry. Everything queued is discarded because the hydrate that heads
+// the refreshed stream supersedes it.
 func (f *Feed) reconnect(ctx context.Context, old Conn) (Conn, error) {
-	old.Close()
-	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
-	defer cancel()
-	next, err := f.opt.Dial(dctx)
-	if err != nil {
-		f.mu.Lock()
-		f.conn = nil
-		f.mu.Unlock()
+	if r, ok := old.(Rehydrater); ok {
+		dctx, cancel := context.WithTimeout(ctx, dialTimeout)
+		err := r.Rehydrate(dctx)
+		cancel()
+		if err == nil {
+			f.rehydrates.Add(1)
+			f.q.drain()
+			f.q.push(item{resync: true})
+			return old, nil
+		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, err
+	}
+	old.Close()
+	return f.redial(ctx)
+}
+
+// redial dials a fresh connection, retrying a failed dial up to RedialRetries
+// times with RedialBackoff between attempts. On success the queue is replaced
+// by a resync note; on failure the feed has no connection.
+func (f *Feed) redial(ctx context.Context) (Conn, error) {
+	retries := max(f.opt.RedialRetries, 0)
+	var err error
+	for attempt := 0; attempt <= retries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(f.opt.RedialBackoff):
+			case <-ctx.Done():
+			}
+		}
+		if ctx.Err() != nil {
+			err = ctx.Err()
+			break
+		}
+		var next Conn
+		dctx, cancel := context.WithTimeout(ctx, dialTimeout)
+		next, err = f.opt.Dial(dctx)
+		cancel()
+		if err != nil {
+			continue
+		}
+		f.mu.Lock()
+		f.conn = next
+		f.mu.Unlock()
+		f.rehydrates.Add(1)
+		f.q.drain()
+		f.q.push(item{resync: true})
+		return next, nil
 	}
 	f.mu.Lock()
-	f.conn = next
+	f.conn = nil
 	f.mu.Unlock()
-	f.rehydrates.Add(1)
-	f.q.drain()
-	f.q.push(item{resync: true})
-	return next, nil
+	return nil, err
 }
 
 // deliver hands queued items to the program. It is the only goroutine that

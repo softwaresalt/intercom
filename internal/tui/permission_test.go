@@ -3,8 +3,10 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -327,7 +329,7 @@ func TestResizeBelowViewMinimumIsDenyOnly(t *testing.T) {
 }
 
 func TestBlankSummaryIsDenyOnly(t *testing.T) {
-	for _, summary := range []string{"", "  \n\t "} {
+	for _, summary := range []string{"", "  \n\t ", "\u3164", "\u2800", "\u200b", "\ufffd", "\ue000\n\t"} {
 		ing := &fakeIngress{result: hub.ActionResult{Accepted: true}}
 		m := newModel(t, ing, 70, 16)
 		m.pending = []permission{newPermission(hub.PermissionRequestedPayload{RequestID: "r1", ToolCallID: "c", PermissionKind: "shell", Summary: summary}, time.Time{})}
@@ -351,6 +353,36 @@ func TestBlankSummaryIsDenyOnly(t *testing.T) {
 	}
 }
 
+func TestPermissionSummaryIsIndentedAgainstNewlineAndSoftWrapHeaderSpoofing(t *testing.T) {
+	inner := 36
+	cases := map[string]string{
+		"newline":   "ls\nkind: EVIL\ntool call: EVIL",
+		"soft wrap": strings.Repeat("x", inner-5) + " kind: EVIL tool call: EVIL",
+	}
+	for name, summary := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := newModel(t, &fakeIngress{}, inner+4, 14)
+			m.pending = []permission{newPermission(hub.PermissionRequestedPayload{RequestID: "r1", ToolCallID: "c1", PermissionKind: "shell", Summary: summary}, time.Time{})}
+			m.syncModal(true)
+			headers := map[string]bool{}
+			for i := 0; i < 50; i++ {
+				for _, l := range strings.Split(view(m), "\n") {
+					l = strings.TrimPrefix(l, "│ ")
+					if strings.HasPrefix(l, "kind:") || strings.HasPrefix(l, "tool call:") {
+						headers[strings.TrimRight(l, " │")] = true
+					}
+				}
+				if m.approvable() {
+					break
+				}
+				m, _ = step(m, tea.KeyMsg{Type: tea.KeyPgDown})
+			}
+			if len(headers) != 2 || !headers["kind: shell"] || !headers["tool call: c1"] {
+				t.Fatalf("column-0 header spoofing possible: %v", headers)
+			}
+		})
+	}
+}
 func TestLongToolCallIDAndKindAreNotClipped(t *testing.T) {
 	id := strings.Repeat("a", 150) + "TAILMARK"
 	m := newModel(t, &fakeIngress{}, 40, 14)
@@ -510,5 +542,187 @@ func TestEndToEndApproveReachesAgentHandler(t *testing.T) {
 	m = r.untilKind(m, hub.KindPermissionResolved)
 	if len(m.pending) != 0 || !strings.Contains(view(m), hub.ActorLocalTUI) {
 		t.Fatalf("resolved by the local TUI should clear and say so:\n%s", view(m))
+	}
+}
+
+// scrollAll scrolls the modal to its end without consulting approvable.
+func scrollAll(m Model) Model {
+	for i := 0; i < 100 && m.modalSeen < m.modal.TotalLineCount(); i++ {
+		m, _ = step(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	}
+	return m
+}
+
+func TestApprovalDelayBlocksApproveUntilReadyMsgAndRejectsStaleModalGenAfterResize(t *testing.T) {
+	var delays []time.Duration
+	fakeAfter := func(d time.Duration) <-chan time.Time {
+		delays = append(delays, d)
+		ch := make(chan time.Time, 1)
+		ch <- time.Time{}
+		return ch
+	}
+	r := newRig(t, hub.Config{})
+	m := New(Options{Ingress: &fakeIngress{}, Renderer: asciiRenderer(), After: fakeAfter})
+	if m.approvalDelay != DefaultApprovalDelay || DefaultApprovalDelay != 150*time.Millisecond {
+		t.Fatalf("default delay = %v, want 150ms", m.approvalDelay)
+	}
+	m, _ = step(m, tea.WindowSizeMsg{Width: 70, Height: 16})
+	m = r.feedFrames(m, 1)
+	newPermAsk(agent.PermissionKindShell, "git status").post(t, r.h)
+	var cmd tea.Cmd
+	for {
+		f := r.frame()
+		var c tea.Cmd
+		m, c = step(m, FrameMsg{Frame: f})
+		if c != nil {
+			cmd = c
+		}
+		if f.Kind() == hub.KindPermissionRequested {
+			break
+		}
+	}
+	if cmd == nil || m.modalReady {
+		t.Fatalf("modal must start locked with a timer cmd (cmd nil=%v ready=%v)", cmd == nil, m.modalReady)
+	}
+	first, ok := cmd().(ApprovalReadyMsg)
+	if !ok || len(delays) == 0 || delays[0] != DefaultApprovalDelay {
+		t.Fatalf("timer cmd gave %+v ok=%v delays=%v", first, ok, delays)
+	}
+
+	m = scrollAll(m)
+	if m2, _ := step(m, keyRunes("y")); m2.armed != "" || strings.Contains(view(m2), "y approve (then Enter") {
+		t.Fatalf("y must not arm before the delay:\n%s", view(m2))
+	}
+	if _, c := step(m, keyRunes("n")); c == nil {
+		t.Fatal("deny must stay immediate during the delay")
+	}
+
+	// A resize resets the modal: the earlier timer is now stale.
+	m, cmd = step(m, tea.WindowSizeMsg{Width: 72, Height: 16})
+	if cmd == nil {
+		t.Fatal("resize reset must schedule a new timer")
+	}
+	second, ok := cmd().(ApprovalReadyMsg)
+	if !ok || second.ModalGen == first.ModalGen {
+		t.Fatalf("new timer must carry a new generation: %+v vs %+v", second, first)
+	}
+	m, _ = step(m, first)
+	m = scrollAll(m)
+	if m.modalReady || m.approvable() {
+		t.Fatal("stale ApprovalReadyMsg unlocked approval")
+	}
+	m, _ = step(m, second)
+	if !m.modalReady || !m.approvable() {
+		t.Fatal("current ApprovalReadyMsg must unlock approval")
+	}
+	m, _ = step(m, keyRunes("y"))
+	if m.armed == "" || !strings.Contains(view(m), "Enter") {
+		t.Fatal("y must arm once ready")
+	}
+}
+
+// rehydIngress is an Ingress that is also a Rehydrater.
+type rehydIngress struct {
+	fakeIngress
+	calls atomic.Int32
+	err   error
+}
+
+func (r *rehydIngress) Rehydrate(context.Context) error {
+	r.calls.Add(1)
+	return r.err
+}
+
+func TestCursorGapAndBadHydrateTriggerModelRehydrateAndClearArmed(t *testing.T) {
+	ing := &rehydIngress{err: errors.New("boom")}
+	m, r, _ := modalModel(t, &ing.fakeIngress, agent.PermissionKindShell, "git status", 70, 16)
+	m.ingress = ing
+	m = scrollModalToEnd(t, m)
+	m, _ = step(m, keyRunes("y"))
+	if m.armed == "" {
+		t.Fatal("not armed")
+	}
+
+	// ResyncMsg disarms.
+	if m2, _ := step(m, ResyncMsg{}); m2.armed != "" {
+		t.Fatal("ResyncMsg must disarm")
+	}
+
+	// A gap starts one model-initiated re-hydrate.
+	r.send(delta("a", "x"), delta("a", "y"))
+	r.frame() // dropped on purpose
+	gap := r.frame()
+	m, cmd := step(m, FrameMsg{Frame: gap})
+	if !m.resync || !m.resyncRequested || cmd == nil {
+		t.Fatalf("gap must request a rehydrate (resync=%v requested=%v cmd nil=%v)", m.resync, m.resyncRequested, cmd == nil)
+	}
+	// Before the rehydrate runs, the gap must have disarmed and approval must
+	// stay disabled: Enter (even with a forced armed id) approves nothing.
+	if m.armed != "" || m.approvable() {
+		t.Fatalf("gap must disarm and disable approval (armed=%q approvable=%v)", m.armed, m.approvable())
+	}
+	pre := m
+	pre.armed = pre.pending[0].RequestID
+	if m2, c := step(pre, tea.KeyMsg{Type: tea.KeyEnter}); c != nil || m2.inflight[m2.pending[0].RequestID] {
+		t.Fatal("Enter during resync must not approve against pre-gap state")
+	}
+	msg := cmd()
+	if ing.calls.Load() != 1 {
+		t.Fatalf("Rehydrate calls = %d", ing.calls.Load())
+	}
+	failed, ok := msg.(ResyncFailedMsg)
+	if !ok || failed.Err == nil {
+		t.Fatalf("want ResyncFailedMsg, got %#v", msg)
+	}
+	// While requested, further gaps do not re-request.
+	r.send(delta("a", "z"))
+	if _, c := step(m, FrameMsg{Frame: r.frame()}); c != nil {
+		t.Fatal("must not request twice while one is outstanding")
+	}
+	// Failure clears the latch so a later gap may retry.
+	m, _ = step(m, failed)
+	if m.resyncRequested {
+		t.Fatal("ResyncFailedMsg must clear resyncRequested")
+	}
+
+	// A hydrate resolves everything and disarms.
+	m.armed = m.pending[0].RequestID
+	genBefore, headBefore := m.modalGen, m.pending[0].RequestID
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := r.c.Rehydrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	m = r.untilKind(m, hub.KindSessionHydrate)
+	if len(m.pending) == 0 || m.pending[0].RequestID != headBefore {
+		t.Fatalf("expected the same head request after hydrate: %+v", m.pending)
+	}
+	if m.modalGen == genBefore {
+		t.Fatal("a hydrate must reset the modal (fresh generation/delay) even for the same head request")
+	}
+	if m.armed != "" || m.resync || m.resyncRequested {
+		t.Fatalf("hydrate must clear armed/resync (armed=%q resync=%v requested=%v)", m.armed, m.resync, m.resyncRequested)
+	}
+}
+
+func TestServerShutdownAcrossCursorGapDoesNotResync(t *testing.T) {
+	ing := &rehydIngress{}
+	r := newRig(t, hub.Config{})
+	m := newModel(t, ing, 70, 16)
+	m = r.feedFrames(m, 1)
+	r.send(delta("a", "x"))
+	r.frame() // dropped, as deliverTerminal may drop the oldest queued frame
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := r.h.AnnounceShutdown(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	f := r.frame()
+	if f.Kind() != hub.KindServerShutdown {
+		t.Fatalf("got %s, want server.shutdown", f.Kind())
+	}
+	m, cmd := step(m, FrameMsg{Frame: f})
+	if !m.shutdown || m.resync || m.resyncRequested || cmd != nil || ing.calls.Load() != 0 {
+		t.Fatalf("shutdown across a gap must not resync (shutdown=%v resync=%v cmd nil=%v calls=%d)", m.shutdown, m.resync, cmd == nil, ing.calls.Load())
 	}
 }

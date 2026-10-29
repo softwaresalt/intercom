@@ -32,6 +32,11 @@ type entry struct {
 	Tool      string `json:"tool_name"`
 	Status    string `json:"status"`
 	Truncated bool   `json:"truncated"`
+
+	// Wrap cache: wrapped is entryText wrapped to wrapWidth columns. Cleared
+	// whenever the entry is mutated; unexported so it is never serialized.
+	wrapped   string
+	wrapWidth int
 }
 
 // Entry kinds and statuses, as produced by the hub fold.
