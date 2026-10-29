@@ -19,14 +19,16 @@ type EventKind string
 // §5.2). KindUnknown is an explicit result for SDK event variants the
 // adapter does not map; it is never a silent drop.
 const (
-	KindAgentMessage EventKind = "agent.message"
-	KindDelta        EventKind = "agent.delta"
-	KindTurnStart    EventKind = "turn.start"
-	KindTurnEnd      EventKind = "turn.end"
-	KindIdle         EventKind = "session.idle"
-	KindToolStarted  EventKind = "tool.started"
-	KindToolEnded    EventKind = "tool.ended"
-	KindUnknown      EventKind = "unknown"
+	KindAgentMessage   EventKind = "agent.message"
+	KindDelta          EventKind = "agent.delta"
+	KindTurnStart      EventKind = "turn.start"
+	KindTurnEnd        EventKind = "turn.end"
+	KindIdle           EventKind = "session.idle"
+	KindToolStarted    EventKind = "tool.started"
+	KindToolEnded      EventKind = "tool.ended"
+	KindReasoning      EventKind = "agent.reasoning"
+	KindReasoningDelta EventKind = "agent.reasoning.delta"
+	KindUnknown        EventKind = "unknown"
 )
 
 // Event is a normalized agent event. It carries no SDK types. Fields not
@@ -35,7 +37,7 @@ type Event struct {
 	Kind EventKind
 	// MessageID identifies the assistant message (agent.message, agent.delta).
 	MessageID string
-	// Text is message content or a streaming delta.
+	// Text is message content, a streaming delta, reasoning text, or the\n	// result/error text of a completed tool (tool.ended).
 	Text string
 	// TurnID identifies the agent-loop turn (turn.start, turn.end).
 	TurnID string
@@ -49,6 +51,9 @@ type Event struct {
 	// RawType is the SDK event type name; set for KindUnknown so the hub can
 	// see what was not understood.
 	RawType string
+	// Truncated reports that an adapter bounded Text or an identifier to fit
+	// the event size limits; the content shown is a rune-safe prefix.
+	Truncated bool
 }
 
 // SessionHandle identifies the single agent session owned by a process
