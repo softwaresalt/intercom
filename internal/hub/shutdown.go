@@ -323,6 +323,7 @@ const (
 	ctlAnnounce
 	ctlClients
 	ctlIdle
+	ctlRehydrate
 )
 
 // WaitIdle blocks until the agent session is positively idle (design §3.1
@@ -356,12 +357,30 @@ type ctlResp struct {
 type ctlReq struct {
 	op     ctlOp
 	reason string
+	client *Client      // ctlRehydrate target
 	reply  chan ctlResp // capacity 1: the hub never blocks on it
+}
+
+// rehydrateClient asks the hub to re-serve c a fresh session.hydrate in place.
+func (h *Hub) rehydrateClient(ctx context.Context, c *Client) error {
+	req := &ctlReq{op: ctlRehydrate, client: c, reply: make(chan ctlResp, 1)}
+	return h.ctlSend(ctx, req)
 }
 
 // ctlCall delivers a control message to the hub and waits for its reply.
 func (h *Hub) ctlCall(ctx context.Context, op ctlOp, reason string) (ctlResp, error) {
 	req := &ctlReq{op: op, reason: reason, reply: make(chan ctlResp, 1)}
+	return h.ctlExchange(ctx, req)
+}
+
+// ctlSend is ctlExchange discarding the response body.
+func (h *Hub) ctlSend(ctx context.Context, req *ctlReq) error {
+	_, err := h.ctlExchange(ctx, req)
+	return err
+}
+
+// ctlExchange posts req to the hub and waits for its reply.
+func (h *Hub) ctlExchange(ctx context.Context, req *ctlReq) (ctlResp, error) {
 	select {
 	case h.ctl <- req:
 	case <-ctx.Done():
@@ -422,9 +441,36 @@ func (h *Hub) handleCtl(r *ctlReq) {
 		trySend(r.reply, ctlResp{clients: out})
 	case ctlIdle:
 		h.idleWaiters = append(h.idleWaiters, r)
+	case ctlRehydrate:
+		h.handleRehydrate(r)
 	default:
 		trySend(r.reply, ctlResp{err: apperr.New(apperr.KindConfig, "hub: unknown control message")})
 	}
+}
+
+// handleRehydrate serves an in-place re-hydrate of one registered client while
+// keeping it in the broadcast set (and as h.tui for the TUI), so a pending
+// permission is never reaped for want of a surface.
+func (h *Hub) handleRehydrate(r *ctlReq) {
+	switch {
+	case h.closing:
+		trySend(r.reply, ctlResp{err: apperr.Wrap(apperr.KindPolicy, ErrShuttingDown)})
+		return
+	case r.client == nil || r.client.isClosed() || h.clients[r.client.id] != r.client:
+		trySend(r.reply, ctlResp{err: apperr.Wrap(apperr.KindPolicy, ErrClientClosed)})
+		return
+	}
+	c := r.client
+	c.drainAllFrames()
+	c.stale = false
+	c.lastHydrate = h.cfg.Now()
+	if !h.rehydrate(c) {
+		c.stale = true
+		h.staleQ = append(h.staleQ, c)
+		trySend(r.reply, ctlResp{err: apperr.New(apperr.KindIO, "hub: build hydrate snapshot")})
+		return
+	}
+	trySend(r.reply, ctlResp{})
 }
 
 // beginShutdown closes admission and fails every pending permission. The reply
@@ -506,7 +552,7 @@ func (h *Hub) drainAndCloseClients(ctx context.Context, timeout time.Duration) e
 
 func queuesEmpty(cs []*Client) bool {
 	for _, c := range cs {
-		if len(c.send) > 0 && !c.isClosed() {
+		if !c.Drained() {
 			return false
 		}
 	}
