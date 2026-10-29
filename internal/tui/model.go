@@ -76,6 +76,14 @@ type Options struct {
 	// NoApprovalDelay (or a negative ApprovalDelay) disables the lock-out;
 	// synchronous tests use it.
 	NoApprovalDelay bool
+	// MaxEntries caps the live transcript; the oldest entries beyond it are
+	// evicted. Zero or negative selects hub.DefaultMaxEntries.
+	MaxEntries int
+	// NoMouse leaves mouse reporting off. It is for programs fed from a pipe
+	// rather than a terminal: on Windows, enabling mouse mode restarts
+	// Bubble Tea's input reader, which cannot be cancelled on a pipe and
+	// would swallow the next keystroke.
+	NoMouse bool
 	// After is the timer source for the approval delay. Nil selects time.After.
 	After func(time.Duration) <-chan time.Time
 }
@@ -147,6 +155,8 @@ type Model struct {
 	modalGen      uint64
 
 	resyncRequested bool
+	noMouse         bool
+	maxEntries      int
 	timerNeeded     bool // syncModal opened/reset a modal that needs its delay timer
 
 	promptBusy bool
@@ -186,6 +196,11 @@ func New(o Options) Model {
 	if m.after == nil {
 		m.after = time.After
 	}
+	m.maxEntries = o.MaxEntries
+	m.noMouse = o.NoMouse
+	if m.maxEntries <= 0 {
+		m.maxEntries = hub.DefaultMaxEntries
+	}
 	if len(o.Credentials.Credentials) > 0 {
 		m = m.showCredentials(o.Credentials)
 	}
@@ -193,7 +208,12 @@ func New(o Options) Model {
 }
 
 // Init implements tea.Model.
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	if m.noMouse {
+		return nil
+	}
+	return tea.EnableMouseCellMotion
+}
 
 // Update implements tea.Model. It performs no I/O: actions are returned as
 // Cmds that run on Bubble Tea's own goroutines.
@@ -219,6 +239,41 @@ func (m Model) approvalTimerCmd(id string, gen uint64) tea.Cmd {
 		<-after(d)
 		return ApprovalReadyMsg{RequestID: id, ModalGen: gen}
 	}
+}
+
+// wheelStep is how many rows one wheel notch scrolls.
+const wheelStep = 3
+
+// onMouse handles wheel scrolling. Any mouse event disarms a pending approval;
+// the modal only ever scrolls contiguously so "seen" stays honest.
+func (m Model) onMouse(msg tea.MouseMsg) Model {
+	m.armed = ""
+	dir := 0
+	switch msg.Button { //nolint:exhaustive // only the wheel scrolls
+	case tea.MouseButtonWheelUp:
+		dir = -1
+	case tea.MouseButtonWheelDown:
+		dir = 1
+	default:
+		return m
+	}
+	switch {
+	case len(m.pending) > 0:
+		n := min(wheelStep, max(m.modal.Height, 1))
+		if dir < 0 {
+			m.modal.ScrollUp(n)
+		} else {
+			m.modal.ScrollDown(n)
+		}
+		m.noteSeen()
+	case m.credOpen:
+		m = m.scrollCredentials(dir * wheelStep)
+	case dir < 0:
+		m.vp.ScrollUp(wheelStep)
+	default:
+		m.vp.ScrollDown(wheelStep)
+	}
+	return m
 }
 
 // requestRehydrate asks the connection to re-serve a hydrate once per stuck
@@ -248,6 +303,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case FrameMsg:
 		return m.onFrame(msg.Frame)
+	case tea.MouseMsg:
+		return m.onMouse(msg), nil
 	case ApprovalReadyMsg:
 		if len(m.pending) > 0 && m.pending[0].RequestID == msg.RequestID && m.modalFor == msg.RequestID && m.modalGen == msg.ModalGen {
 			m.modalReady = true
@@ -547,6 +604,7 @@ func (m Model) applyHydrate(raw []byte, ts time.Time) Model {
 	}
 	m.turnActive = body.TurnActive
 	m.evicted = body.EvictedCount
+	m.capEntries()
 	m.resync = false
 	m.resyncRequested = false
 	m.armed = ""
@@ -594,6 +652,7 @@ func (m Model) applyMessage(raw []byte, isDelta bool) Model {
 	case isDelta && i >= 0:
 		m.entries[i].Text += text
 		m.entries[i].Truncated = m.entries[i].Truncated || p.Truncated
+		m.entries[i].wrapped, m.entries[i].wrapWidth = "", 0
 	case isDelta:
 		m.entries = append(m.entries, entry{Kind: kindMessage, ID: id, Text: text, Status: statusStreaming, Truncated: p.Truncated})
 	case i >= 0:
@@ -601,7 +660,18 @@ func (m Model) applyMessage(raw []byte, isDelta bool) Model {
 	default:
 		m.entries = append(m.entries, entry{Kind: kindMessage, ID: id, Text: text, Status: statusComplete, Truncated: p.Truncated})
 	}
+	m.capEntries()
 	return m
+}
+
+// capEntries evicts the oldest entries beyond maxEntries.
+func (m *Model) capEntries() {
+	if m.maxEntries <= 0 || len(m.entries) <= m.maxEntries {
+		return
+	}
+	n := len(m.entries) - m.maxEntries
+	m.entries = append([]entry(nil), m.entries[n:]...)
+	m.evicted += n
 }
 
 func (m Model) applyToolStarted(raw []byte) Model {
@@ -611,6 +681,7 @@ func (m Model) applyToolStarted(raw []byte) Model {
 	}
 	m.entries = append(append([]entry(nil), m.entries...),
 		entry{Kind: kindTool, ID: SanitizeLine(p.ToolCallID), Tool: SanitizeLine(p.ToolName), Status: statusRunning, Truncated: p.Truncated})
+	m.capEntries()
 	return m
 }
 
@@ -631,9 +702,11 @@ func (m Model) applyToolEnded(raw []byte) Model {
 			m.entries[i].Tool = name
 		}
 		m.entries[i].Truncated = m.entries[i].Truncated || p.Truncated
+		m.entries[i].wrapped, m.entries[i].wrapWidth = "", 0
 		return m
 	}
 	m.entries = append(m.entries, entry{Kind: kindTool, ID: id, Tool: name, Status: status, Truncated: p.Truncated})
+	m.capEntries()
 	return m
 }
 
@@ -647,6 +720,7 @@ func (m Model) applyError(raw []byte) Model {
 	}
 	m.entries = append(append([]entry(nil), m.entries...),
 		entry{Kind: kindError, ID: SanitizeLine(p.Code), Text: Sanitize(p.Message)})
+	m.capEntries()
 	return m
 }
 
@@ -719,7 +793,7 @@ func entryText(e entry) string {
 	return s
 }
 
-func (m Model) renderTranscript() string {
+func (m *Model) renderTranscript() string {
 	if len(m.entries) == 0 {
 		return "No activity yet. Type a prompt and press Enter."
 	}
@@ -727,8 +801,13 @@ func (m Model) renderTranscript() string {
 	if m.evicted > 0 {
 		parts = append(parts, fmt.Sprintf("[%d earlier entries evicted]", m.evicted))
 	}
-	for _, e := range m.entries {
-		parts = append(parts, m.wrap(entryText(e), m.vp.Width))
+	w := m.vp.Width
+	for i := range m.entries {
+		e := &m.entries[i]
+		if e.wrapped == "" || e.wrapWidth != w {
+			e.wrapped, e.wrapWidth = m.wrap(entryText(*e), w), w
+		}
+		parts = append(parts, e.wrapped)
 	}
 	return strings.Join(parts, "\n")
 }
@@ -794,8 +873,12 @@ func (m Model) View() string {
 	} else if len(m.pending) > 0 {
 		prompt = "> (answer the permission request first)"
 	}
-	if rs := []rune(prompt); len(rs) > m.width {
-		prompt = "> ..." + string(rs[len(rs)-(m.width-5):])
+	if lipgloss.Width(prompt) > m.width {
+		tail := []rune(prompt)
+		for len(tail) > 0 && lipgloss.Width("> ..."+string(tail)) > m.width {
+			tail = tail[1:]
+		}
+		prompt = "> ..." + string(tail)
 	}
 	return strings.Join([]string{header, area, m.st.status.Render(m.fit(m.statusLine(), m.width)), prompt}, "\n")
 }

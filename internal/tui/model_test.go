@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
 	"github.com/softwaresalt/intercom-go/internal/hub"
@@ -414,4 +415,110 @@ func TestToolEndedBackfillsNameAndPropagatesTruncationLiveAndHydrated(t *testing
 			t.Fatalf("entry %d live/hydrated mismatch: live=%+v hydrated=%+v", i, l, h)
 		}
 	}
+}
+
+func TestLiveTranscriptCapAndWrapCacheInvalidatesMutatedDeltaEntry(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	m := New(Options{Renderer: asciiRenderer(), NoApprovalDelay: true, MaxEntries: 3})
+	m, _ = step(m, tea.WindowSizeMsg{Width: 40, Height: 12})
+	m = r.feedFrames(m, 1)
+	r.send(message("m1", "one"), message("m2", "two"), message("m3", "three"), message("m4", "four"), message("m5", "five"))
+	m = r.feedFrames(m, 5)
+	if len(m.entries) != 3 || m.evicted != 2 || m.entries[0].ID != "m3" {
+		t.Fatalf("cap not applied: len=%d evicted=%d entries=%+v", len(m.entries), m.evicted, m.entries)
+	}
+	if !strings.Contains(view(m), "2 earlier entries evicted") {
+		t.Fatalf("eviction not shown:\n%s", view(m))
+	}
+
+	r.send(delta("s", "hel"))
+	m = r.feedFrames(m, 1)
+	last := len(m.entries) - 1
+	if m.entries[last].wrapWidth != m.vp.Width || !strings.Contains(m.entries[last].wrapped, "hel") {
+		t.Fatalf("rendered entry must be cached: %+v", m.entries[last])
+	}
+	m.entries[0].wrapped = "SENTINEL-CACHE" // proves an unchanged entry is not re-wrapped
+	m.entries[0].wrapWidth = m.vp.Width
+
+	r.send(delta("s", "lo"))
+	m = r.feedFrames(m, 1)
+	last = len(m.entries) - 1
+	if !strings.Contains(m.entries[last].wrapped, "hello") {
+		t.Fatalf("mutated delta entry served a stale wrap: %q", m.entries[last].wrapped)
+	}
+	if m.entries[0].wrapped != "SENTINEL-CACHE" || !strings.Contains(view(m), "hello") {
+		t.Fatalf("unchanged entry must keep its cache and the new text must render:\n%s", view(m))
+	}
+
+	// A width change re-wraps everything.
+	m, _ = step(m, tea.WindowSizeMsg{Width: 50, Height: 12})
+	if m.entries[0].wrapped == "SENTINEL-CACHE" {
+		t.Fatal("width change must invalidate the cache")
+	}
+}
+
+func wheel(b tea.MouseButton) tea.MouseMsg {
+	return tea.MouseMsg{Button: b, Action: tea.MouseActionPress}
+}
+
+func TestWideRunePromptTruncatesToDisplayWidthAndMouseInitAndWheelScrolls(t *testing.T) {
+	m := newModel(t, &fakeIngress{}, 30, 10)
+	cmd := m.Init()
+	if cmd == nil || cmd() != tea.EnableMouseCellMotion() {
+		t.Fatal("Init must enable mouse cell-motion reporting")
+	}
+	m = typeText(m, strings.Repeat("世", 40))
+	lines := strings.Split(m.View(), "\n")
+	if w := lipgloss.Width(lines[len(lines)-1]); w > 30 {
+		t.Fatalf("prompt is %d columns wide on a 30 column terminal", w)
+	}
+
+	t.Run("transcript", func(t *testing.T) {
+		r := newRig(t, hub.Config{})
+		m := newModel(t, &fakeIngress{}, 40, 10)
+		m = r.feedFrames(m, 1)
+		for i := 0; i < 30; i++ {
+			r.send(message("m"+strconv.Itoa(i), "line"))
+		}
+		m = r.feedFrames(m, 30)
+		before := m.vp.YOffset
+		m, _ = step(m, wheel(tea.MouseButtonWheelUp))
+		if m.vp.YOffset >= before {
+			t.Fatalf("wheel up did not scroll the transcript (%d -> %d)", before, m.vp.YOffset)
+		}
+		up := m.vp.YOffset
+		m, _ = step(m, wheel(tea.MouseButtonWheelDown))
+		if m.vp.YOffset <= up {
+			t.Fatal("wheel down did not scroll the transcript back")
+		}
+	})
+
+	t.Run("modal disarms and scrolls", func(t *testing.T) {
+		m, _, _ := modalModel(t, &fakeIngress{}, agent.PermissionKindShell, longSummary(30), 70, 16)
+		m, _ = step(m, wheel(tea.MouseButtonWheelDown))
+		if m.modal.YOffset == 0 || m.modalSeen <= m.modal.Height {
+			t.Fatalf("wheel did not scroll the modal (offset=%d seen=%d)", m.modal.YOffset, m.modalSeen)
+		}
+		m = scrollModalToEnd(t, m)
+		m, _ = step(m, keyRunes("y"))
+		if m.armed == "" {
+			t.Fatal("not armed")
+		}
+		m, _ = step(m, wheel(tea.MouseButtonWheelUp))
+		if m.armed != "" {
+			t.Fatal("mouse wheel must disarm a pending approval")
+		}
+	})
+
+	t.Run("credentials", func(t *testing.T) {
+		m := New(Options{Renderer: asciiRenderer(), NoApprovalDelay: true, Credentials: credsMsg(fakeApprover, fakeObserver)})
+		m, _ = step(m, tea.WindowSizeMsg{Width: 30, Height: 6})
+		if !m.credOpen {
+			t.Fatal("credential panel should be open")
+		}
+		m, _ = step(m, wheel(tea.MouseButtonWheelDown))
+		if m.credScroll == 0 {
+			t.Fatal("wheel did not scroll the credential panel")
+		}
+	})
 }
