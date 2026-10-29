@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -459,6 +460,24 @@ func TestLiveTranscriptCapAndWrapCacheInvalidatesMutatedDeltaEntry(t *testing.T)
 
 func wheel(b tea.MouseButton) tea.MouseMsg {
 	return tea.MouseMsg{Button: b, Action: tea.MouseActionPress}
+}
+
+func TestLargePromptTruncatesLinearlyWithCorrectTail(t *testing.T) {
+	m := newModel(t, &fakeIngress{}, 30, 10)
+	m.input = []rune(strings.Repeat("a世", 100000) + "END")
+	start := time.Now()
+	out := m.View()
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("View with a huge prompt took %v (quadratic truncation?)", d)
+	}
+	lines := strings.Split(out, "\n")
+	last := lines[len(lines)-1]
+	if w := lipgloss.Width(last); w > 30 {
+		t.Fatalf("prompt is %d columns wide on a 30 column terminal", w)
+	}
+	if !strings.HasPrefix(last, "> ...") || !strings.HasSuffix(last, "END_") {
+		t.Fatalf("unexpected truncated prompt %q", last)
+	}
 }
 
 func TestWideRunePromptTruncatesToDisplayWidthAndMouseInitAndWheelScrolls(t *testing.T) {

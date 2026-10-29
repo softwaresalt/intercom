@@ -656,6 +656,16 @@ func TestCursorGapAndBadHydrateTriggerModelRehydrateAndClearArmed(t *testing.T) 
 	if !m.resync || !m.resyncRequested || cmd == nil {
 		t.Fatalf("gap must request a rehydrate (resync=%v requested=%v cmd nil=%v)", m.resync, m.resyncRequested, cmd == nil)
 	}
+	// Before the rehydrate runs, the gap must have disarmed and approval must
+	// stay disabled: Enter (even with a forced armed id) approves nothing.
+	if m.armed != "" || m.approvable() {
+		t.Fatalf("gap must disarm and disable approval (armed=%q approvable=%v)", m.armed, m.approvable())
+	}
+	pre := m
+	pre.armed = pre.pending[0].RequestID
+	if m2, c := step(pre, tea.KeyMsg{Type: tea.KeyEnter}); c != nil || m2.inflight[m2.pending[0].RequestID] {
+		t.Fatal("Enter during resync must not approve against pre-gap state")
+	}
 	msg := cmd()
 	if ing.calls.Load() != 1 {
 		t.Fatalf("Rehydrate calls = %d", ing.calls.Load())
@@ -677,12 +687,19 @@ func TestCursorGapAndBadHydrateTriggerModelRehydrateAndClearArmed(t *testing.T) 
 
 	// A hydrate resolves everything and disarms.
 	m.armed = m.pending[0].RequestID
+	genBefore, headBefore := m.modalGen, m.pending[0].RequestID
 	ctx, cancel := context.WithTimeout(context.Background(), testWait)
 	defer cancel()
 	if err := r.c.Rehydrate(ctx); err != nil {
 		t.Fatal(err)
 	}
 	m = r.untilKind(m, hub.KindSessionHydrate)
+	if len(m.pending) == 0 || m.pending[0].RequestID != headBefore {
+		t.Fatalf("expected the same head request after hydrate: %+v", m.pending)
+	}
+	if m.modalGen == genBefore {
+		t.Fatal("a hydrate must reset the modal (fresh generation/delay) even for the same head request")
+	}
 	if m.armed != "" || m.resync || m.resyncRequested {
 		t.Fatalf("hydrate must clear armed/resync (armed=%q resync=%v requested=%v)", m.armed, m.resync, m.resyncRequested)
 	}

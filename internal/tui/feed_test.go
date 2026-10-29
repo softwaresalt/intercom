@@ -429,3 +429,132 @@ func TestFeedReleasesHubSlotWhenContextCancelledWithoutClose(t *testing.T) {
 	}
 	f.Close()
 }
+
+// blockingRehydrateConn is a fakeConn whose in-place Rehydrate blocks until
+// its context ends or release is closed.
+type blockingRehydrateConn struct {
+	*fakeConn
+	started chan struct{}
+	release chan struct{}
+	ctxErr  atomic.Value // error seen by Rehydrate, if its ctx ended
+}
+
+func (c *blockingRehydrateConn) Rehydrate(ctx context.Context) error {
+	close(c.started)
+	select {
+	case <-ctx.Done():
+		c.ctxErr.Store(ctx.Err())
+		return ctx.Err()
+	case <-c.release:
+		return nil
+	}
+}
+
+func TestFeedRehydrateCallerCancelDoesNotTearDownFeed(t *testing.T) {
+	conn := &blockingRehydrateConn{fakeConn: newFakeConn(), started: make(chan struct{}), release: make(chan struct{})}
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		dials.Add(1)
+		return conn, nil
+	}
+	s := newSinkRig(false)
+	f := NewFeed(FeedOptions{Dial: dial, Sink: s.sink, RedialRetries: -1})
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := f.Start(ctx); err != nil {
+		cancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { cancel(); f.Close() })
+
+	rctx, rcancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() { errc <- f.Rehydrate(rctx) }()
+	select {
+	case <-conn.started:
+	case <-time.After(testWait):
+		t.Fatal("rehydrate never reached the connection")
+	}
+	rcancel()
+	if err := <-errc; !errors.Is(err, context.Canceled) {
+		t.Fatalf("caller got %v, want context.Canceled", err)
+	}
+	close(conn.release) // recovery completes under the feed's own lifetime
+	deadline := time.After(testWait)
+	for f.Stats().Rehydrates != 1 {
+		select {
+		case <-deadline:
+			t.Fatalf("rehydrate did not complete (ctx err seen: %v)", conn.ctxErr.Load())
+		case <-time.After(time.Millisecond):
+		}
+	}
+	select {
+	case <-conn.Done():
+		t.Fatal("a cancelled caller closed the live connection")
+	default:
+	}
+	if _, err := f.Do(context.Background(), hub.OperatorAction{Type: hub.OpAbortTurn}); err != nil {
+		t.Fatalf("feed unusable after a cancelled Rehydrate: %v", err)
+	}
+	if n := dials.Load(); n != 1 {
+		t.Fatalf("dials = %d, want 1", n)
+	}
+}
+
+func TestFeedShutdownFrameOnFramesPathIsNotRedialled(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	r.frame() // hydrate
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := r.h.AnnounceShutdown(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	sd := r.frame()
+	if sd.Kind() != hub.KindServerShutdown {
+		t.Fatalf("got %s, want server.shutdown", sd.Kind())
+	}
+
+	conn := newFakeConn()
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		dials.Add(1)
+		return conn, nil
+	}
+	s := newSinkRig(false)
+	f := NewFeed(FeedOptions{Dial: dial, Sink: s.sink, RedialRetries: 2, RedialBackoff: time.Millisecond})
+	fctx, fcancel := context.WithCancel(context.Background())
+	if err := f.Start(fctx); err != nil {
+		fcancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { fcancel(); f.Close() })
+
+	conn.frames <- sd
+	deadline := time.After(testWait)
+	for got := false; !got; { // the Frames() path has forwarded it
+		select {
+		case msg := <-s.out:
+			if fm, ok := msg.(FrameMsg); ok && fm.Frame.Kind() == hub.KindServerShutdown {
+				got = true
+			}
+		case <-deadline:
+			t.Fatal("shutdown frame not delivered")
+		}
+	}
+	conn.Close() // the hub goes away after announcing shutdown
+	for {
+		select {
+		case msg := <-s.out:
+			switch msg.(type) {
+			case DisconnectedMsg:
+				if n := dials.Load(); n != 1 {
+					t.Fatalf("dials = %d, want 1: intentional shutdown must not redial", n)
+				}
+				return
+			case ResyncMsg:
+				t.Fatal("redialled after an intentional shutdown")
+			}
+		case <-deadline:
+			t.Fatal("no DisconnectedMsg after shutdown")
+		}
+	}
+}

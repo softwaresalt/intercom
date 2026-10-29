@@ -286,9 +286,19 @@ func (f *Feed) pump(ctx context.Context, conn Conn) {
 		f.mu.Unlock()
 		conn.Close()
 	}()
+	// shutdown records that a server.shutdown envelope was received on the
+	// current connection, whichever receive path delivered it.
+	shutdown := false
 	for {
 		select {
 		case fr := <-conn.Frames():
+			if fr.Kind() == hub.KindServerShutdown {
+				// Terminal frame: queue it and let Done end the pump. An
+				// overflow here must not redial away from an intentional stop.
+				shutdown = true
+				f.q.push(item{frame: fr})
+				continue
+			}
 			if !f.q.push(item{frame: fr}) {
 				continue
 			}
@@ -301,7 +311,13 @@ func (f *Feed) pump(ctx context.Context, conn Conn) {
 			}
 			conn = next
 		case req := <-f.rehydrateC:
-			next, err := f.reconnect(req.ctx, conn)
+			if err := req.ctx.Err(); err != nil {
+				req.reply <- err // the caller already gave up; leave the feed alone
+				continue
+			}
+			// Recovery runs under the feed's lifetime ctx: a caller whose own
+			// ctx ends must not tear down the live connection.
+			next, err := f.reconnect(ctx, conn)
 			req.reply <- err
 			if err != nil {
 				f.pumpErr = err
@@ -311,7 +327,6 @@ func (f *Feed) pump(ctx context.Context, conn Conn) {
 		case <-conn.Done():
 			// Pick up what the hub queued before it went away (the shutdown
 			// envelope).
-			shutdown := false
 		drain:
 			for {
 				select {

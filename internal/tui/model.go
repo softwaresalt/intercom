@@ -24,7 +24,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
+	"github.com/charmbracelet/x/ansi"
 	"github.com/softwaresalt/intercom-go/internal/hub"
 )
 
@@ -542,6 +542,7 @@ func (m Model) onFrame(f hub.Frame) (tea.Model, tea.Cmd) {
 		// until the next hydrate (hub.Cursor contract). The feed forces that
 		// hydrate; the model asks for one too, in case the feed cannot.
 		m.resync = true
+		m.armed = ""
 		return m.requestRehydrate()
 	}
 	env, err := decodeEnvelope(f)
@@ -608,6 +609,9 @@ func (m Model) applyHydrate(raw []byte, ts time.Time) Model {
 	m.resync = false
 	m.resyncRequested = false
 	m.armed = ""
+	// Force syncModal to rebuild the modal (fresh viewport, read progress and
+	// approval delay) even when the head request ID is unchanged.
+	m.modalFor = ""
 	m.shutdown = false
 	// The hydrate is authoritative for pending permissions: replace, never merge.
 	m.pending = nil
@@ -873,12 +877,10 @@ func (m Model) View() string {
 	} else if len(m.pending) > 0 {
 		prompt = "> (answer the permission request first)"
 	}
-	if lipgloss.Width(prompt) > m.width {
-		tail := []rune(prompt)
-		for len(tail) > 0 && lipgloss.Width("> ..."+string(tail)) > m.width {
-			tail = tail[1:]
-		}
-		prompt = "> ..." + string(tail)
+	if pw := lipgloss.Width(prompt); pw > m.width {
+		// Linear, grapheme-aware: drop whole cells from the left in one pass.
+		keep := max(m.width-lipgloss.Width("> ..."), 0)
+		prompt = "> ..." + ansi.TruncateLeft(prompt, pw-keep, "")
 	}
 	return strings.Join([]string{header, area, m.st.status.Render(m.fit(m.statusLine(), m.width)), prompt}, "\n")
 }
