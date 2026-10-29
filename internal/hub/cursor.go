@@ -66,6 +66,9 @@ func (c *Cursor) Apply(f Frame) Action {
 		c.pos, c.have, c.stale = Position{Gen: f.Gen(), Seq: f.Seq()}, true, false
 		return ActionApply
 	}
+	if f.Kind() == KindServerShutdown {
+		return c.applyShutdown(f)
+	}
 	if !c.have || c.stale || f.Gen() != c.pos.Gen {
 		c.stale = true
 		return ActionRehydrate
@@ -80,6 +83,25 @@ func (c *Cursor) Apply(f Frame) Action {
 		c.stale = true
 		return ActionRehydrate
 	}
+}
+
+// applyShutdown handles the terminal server.shutdown frame. It is always
+// applicable, even across a sequence gap, because it is the last frame of the
+// connection and dropping it would hide the shutdown from the consumer. A
+// frame at or behind the current position within the same generation is a
+// duplicate. Anything that is not the contiguous successor leaves the cursor
+// stale so Position never offers a resume point that skipped frames.
+func (c *Cursor) applyShutdown(f Frame) Action {
+	same := c.have && f.Gen() == c.pos.Gen
+	switch {
+	case same && f.Seq() <= c.pos.Seq:
+		return ActionDiscard
+	case same && !c.stale && f.Seq() == c.pos.Seq+1:
+		c.pos.Seq = f.Seq()
+	default:
+		c.pos, c.have, c.stale = Position{Gen: f.Gen(), Seq: f.Seq()}, true, true
+	}
+	return ActionApply
 }
 
 // Position returns the last-applied (gen, seq) for a reconnect, and false if
