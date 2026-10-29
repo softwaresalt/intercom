@@ -1,7 +1,7 @@
 ---
 title: "067-S / 074-F post-merge operational closure"
-description: "BLOCKED pending operator live re-verification of three release-required manual checkpoints. Post-merge closure for hub fold, publish and lifecycle hardening (067-S, covering feature 074-F). Feature PR 202 merged as a merge commit; cascade close completed with the per-closure approval relayed by the Orchestrator."
-status: blocked
+description: "READY after live re-verification of the release-required manual checkpoints (docs/closure/evidence/067-S-live-verification-evidence.md). Post-merge closure for hub fold, publish and lifecycle hardening (067-S, covering feature 074-F). Feature PR 202 merged as a merge commit; cascade close completed with the per-closure approval relayed by the Orchestrator."
+status: complete
 date: 2026-10-28
 mode: post-merge
 shipment: 067-S
@@ -13,25 +13,25 @@ head_sha_reviewed: b7a2934658d4d97af08e1997ec6ae09dabc737cb
 closure_branch: post-merge/074-f-hub-fold-publish-and-lifecycle-hardening
 close_path: cascade
 close_evidence: docs/closure/evidence/067-S-074-F-close-evidence.json
-closure_status: BLOCKED
-releasability: BLOCKED
+closure_status: READY
+releasability: READY
 compaction_status: done
 conditions:
   - id: "tui-render"
     description: "Manual checkpoint required for release (surface cli): the Bubble Tea TUI renders and accepts local key input without breaking terminal scrollback. 074.001-T changed the live tui.Model.applyToolEnded backfill only, and 074.002-T changed adapter shutdown timing and Hub.Run's worker join, which the TUI stop path depends on."
-    satisfied: false
-    disposition: "deferred-live-recheck (automated evidence only; operator live re-run recommended)"
-    evidence: "The prior live console run (docs/closure/evidence/065-S-tui-render-live-evidence.md, commit 2920ed1) predates this shipment and does not verify the current shutdown path, so it is not claimed as satisfying this checkpoint. Automated evidence on the closure branch (merged main a2cacf3): go test -race ./internal/tui/... ./internal/app/... ./internal/hub/... and ./tests/integration/... all ok, including the shutdown and wedged-TUI bounded-stop tests."
+    satisfied: true
+    disposition: "satisfied"
+    evidence: "docs/closure/evidence/067-S-live-verification-evidence.md: on 2026-10-29 UTC (2026-10-28 local) the real intercom.exe built from main (0fd7936, containing the 067-S merge a2cacf3) ran in a real Win32 console. The credential panel rendered (secrets redacted), Esc dismissed it, one unauthenticated upgrade showed 'rejected upgrades: 1 (last: 401 credential_rejected)', and Ctrl+C quit through the TUI path with exit code 0 (709 ms and 1061 ms in two clean runs) with scrollback sentinels intact and no stranded copilot child. One earlier run exited 1 on a bounded agent-stop timeout; it is recorded in the evidence as a non-reproduced intermittent anomaly and as a follow-up stash entry. Windows conhost only."
   - id: "devtunnel-connect"
     description: "Dev Tunnel registration and authenticated remote connect. This shipment changed remote hydration (Hub.rehydrate buffer drain) and publish behavior, not tunnel registration."
-    satisfied: false
-    disposition: "deferred-live-recheck (not exercised; tunnel code unchanged)"
-    evidence: "No live Dev Tunnel run was performed for 067-S. Automated WebSocket connect and hydrate coverage in ./tests/integration/... passed with -race. Last live evidence: docs/closure/evidence/062-S-live-verification-evidence.md (predates this shipment)."
+    satisfied: true
+    disposition: "satisfied"
+    evidence: "docs/closure/evidence/067-S-live-verification-evidence.md (Dev Tunnel section): on 2026-10-29 UTC the merged binary ran behind a live Dev Tunnel (devtunnel host, anonymous tunnel access, intercom bearer auth still enforced, host listed in allowed_hosts). The approver and observer authenticated over wss through the tunnel and each received session.hydrate, a prompt round-tripped to agent.idle through the tunnel, a wrong credential got HTTP 401, and Ctrl+C exited 0 with shutdown complete ok. Live evidence covers connect and initial hydration; the changed Hub.rehydrate stale-buffer drain is covered by TestRehydrateDrainsFullStaleRemoteBufferInsteadOfDropping, not a live stale-client scenario."
   - id: "tool-approval-routing"
     description: "Tool-approval first-responder routing across the local TUI and a remote client. This shipment changed permission handling (aborted-turn settling, turn-scoped ask identity via PermissionRequest.TurnID)."
-    satisfied: false
-    disposition: "deferred-live-recheck (automated evidence only; operator live re-run recommended)"
-    evidence: "No live two-surface approval run was performed for 067-S. Automated coverage of permission routing, aborted-turn settling and next-turn ask preservation passed in go test -race ./internal/hub/... and ./tests/integration/... on the closure branch."
+    satisfied: true
+    disposition: "satisfied"
+    evidence: "docs/closure/evidence/067-S-live-verification-evidence.md: against the live Copilot runtime, permission.requested reached the local Win32 console TUI (modal rendered in CONOUT$) and both remote clients; a TUI y then Enter approval produced permission.resolved (allow_once, actor local-tui) on both remote surfaces; a remote approver resolution cleared the TUI modal (actor remote-approver); the observer was refused (role_not_permitted) and a late duplicate was refused (request_unknown). The all-denied repeat behaved the same."
 ---
 
 * Merge: PR 202 merged as a merge commit (P-009) at a2cacf3 with reviewed HEAD b7a2934, verified in origin/main history.
@@ -42,8 +42,8 @@ conditions:
 * Close: classify-only selected `cascade`; the mutating `autoharness shipment cascade-close` run (`run_id: eb9db0a3a48b454ab835440fd09a029a`) invoked `backlogit shipment ship 067-S` and exited 0, with the per-closure approval relayed by the Orchestrator for this specific closure (`--shipment 067-S --feature 074-F`); the `DARK_MODE_ACTIVE` record alone was not treated as approval. Blast radius: the 067-S record, members 074-F and 074.001-T..074.005-T, and the evidence record; no out-of-manifest descendants. backlogit 1.12.0 prints `validating member ...` progress lines on stdout; the first evidence parse failed on them. The operator updated `autoharness.shipment_close.postclose.parse_ship_response`, and Ship re-parsed the captured stdout excerpt (ParsedResult, shipment_status `shipped`, seven archived ids) and finalized the evidence record to `mutation_state: completed`, `postcondition_verdict: pass` (every filesystem postcondition passed: baseline_invariant, disposition_byte_identical, parent_id_preserved, shipment_archived_shipped, no missing or unexpected archived ids, no linked-deliberation drift).
 * Post-close verification: 067-S (`archived_status: shipped`), 074-F and 074.001-T through 074.005-T are present in `.backlogit/archive/`; no archive deletions (P-007); no shipment lock remains. Reconcile reports: `.backlogit/reconcile/067-S-pre-20261028T0441Z-queued.md`, `.backlogit/reconcile/067-S-pre-20261028T0608Z-done.md` and `.backlogit/reconcile/067-S-post-20261029T0013Z.md`. `backlogit sync` indexed 761 artifacts.
 * Linked-deliberation disposition: `DISPOSITION_COMPLETE`; nothing archived by Ship outside the close path.
-* Runtime verification: applicable (hub, permission, adapter and TUI code changed; no flag or protocol change). Evidence, 2026-10-28 on Windows from the closure branch (merged main a2cacf3): `go build ./cmd/intercom` exited 0; `--help` lists the unchanged flags; started with stdout redirected, the binary refused to start with exit code 1 (`config: stdout is not a terminal ...`), the documented non-TTY refusal. `go test -race ./internal/hub/... ./internal/app/... ./internal/tui/... ./tests/integration/... -count=1` all passed. No live interactive console, Dev Tunnel or two-surface tool-approval run was performed for this shipment; those three manual checkpoints are recorded as unsatisfied conditions above rather than claimed from older evidence.
-* Releasability: `BLOCKED`; closure status `BLOCKED` pending operator disposition (the closure-evidence gate accepts READY_WITH_CONDITIONS only when every condition is satisfied: true, and Ship may not self-disposition unsatisfied release-required checkpoints). Automated evidence shows no defect and no deployment, tag or publish step applies, but the three release-required manual checkpoints (`tui-render`, `devtunnel-connect`, `tool-approval-routing`) need operator live re-verification on return. Rollback is a revert of merge commit a2cacf3. Owner: repository maintainer.
+* Runtime verification: applicable (hub, permission, adapter and TUI code changed; no flag or protocol change). Evidence, 2026-10-28 on Windows from the closure branch (merged main a2cacf3): `go build ./cmd/intercom` exited 0; `--help` lists the unchanged flags; started with stdout redirected, the binary refused to start with exit code 1 (`config: stdout is not a terminal ...`), the documented non-TTY refusal. `go test -race ./internal/hub/... ./internal/app/... ./internal/tui/... ./tests/integration/... -count=1` all passed. The live checkpoints were then exercised on 2026-10-29 UTC (2026-10-28 local) from main 0fd7936 (containing a2cacf3) in a real Win32 console against the live Copilot runtime with the local TUI plus approver and observer WebSocket clients, and through a live Dev Tunnel (credential panel, Esc dismiss, 401 status line, TUI-first and remote-first permission routing, Ctrl+C exit code 0 with scrollback intact, no stranded copilot child); see `docs/closure/evidence/067-S-live-verification-evidence.md`. One of three live runs exited 1 on a bounded agent-stop timeout (`ForceStop did not return within 5s`); it was not reproduced in two further runs or in `TestLiveCopilotEndToEnd`, and is recorded as residual risk and stash entry 407291BE.
+* Releasability: `READY`. All three release-required manual checkpoints (`tui-render`, `devtunnel-connect`, `tool-approval-routing`) are satisfied by live evidence (see `conditions`). It was first recorded as `BLOCKED` in PR 203 and is closed by the evidence PR that updated this record. Residual risk: the one non-reproduced failed shutdown above, and the `Hub.rehydrate` stale-buffer drain, which is covered by a race-enabled test rather than a live scenario. No deployment, tag or publish step applies. Rollback is a revert of merge commit a2cacf3. Owner: repository maintainer.
 
 ## Source artifact cleanup
 
@@ -51,7 +51,8 @@ conditions:
 
 ## Follow-ups (stash, capture-only)
 
-* No new follow-ups were identified during post-merge closure. The P3 advisories above remain residual-risk notes.
+* Deferred scope (P-021 C2), captured during live verification: 407291BE (intermittent failed agent stop on Ctrl+C: `stop copilot client: timed out; ForceStop did not return within 5s`, observed once in three live runs).
+* The P3 advisories above remain residual-risk notes.
 
 ## Degradations
 
