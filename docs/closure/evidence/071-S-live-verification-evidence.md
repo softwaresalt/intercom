@@ -118,12 +118,33 @@ token; intercom's own bearer authentication stayed enforced and the tunnel host
 * Afterwards the `devtunnel host` process was stopped and the tunnel was deleted
   with `devtunnel delete`.
 
+## Scrollback preservation (tui-render, added after Copilot review of the closure PR)
+
+A separate ConPTY run (120 by 30, 2026-10-29 about 23:25Z, same merged code)
+wrote three sentinel lines (`SCROLLBACK-SENTINEL-1`, `-2`, `-3`, each followed
+by `(written before launching intercom.exe)`) to the main screen buffer through
+`cmd.exe` and then launched `intercom.exe`, let it run 12 s, and sent Ctrl+C.
+The raw pseudoconsole output stream was inspected:
+
+* The three sentinel lines were emitted before the TUI's alternate-screen enter
+  (`ESC[?1049h`), so they sit in the main buffer.
+* The TUI left the alternate screen on exit (`ESC[?1049l`), restoring the main
+  buffer; `intercom.exe` exited with code 0.
+* No scrollback-clear (`ESC[3J`) and no main-buffer clear (`ESC[2J`) was emitted
+  after leaving the alternate screen.
+
+This is a stream-level check of ConPTY output, not a screenshot of the visible
+rows; it matches the design (`tea.WithAltScreen()` in `internal/app/ui.go`) and
+the earlier 065-S evidence that read the same sentinels back unchanged. It is
+ConPTY only.
+
 ## Assertion summary
 
 | Assertion | Result |
 |---|---|
 | tui-render: credential panel rendered with both roles and the endpoint | pass |
 | tui-render: modal `kind:` and `tool call:` header lines render on their own lines | pass |
+| tui-render: scrollback preserved (main-buffer sentinels before launch, alt-screen left on exit, no clear sequences) | pass |
 | tui-render: local key input accepted (`y`, `Enter`, Ctrl+C) and the TUI quit with exit code 0 | pass |
 | tool-approval-routing: `permission.requested` delivered to the TUI and both remote clients | pass |
 | tool-approval-routing: `y` inside the 150 ms lock-out refused; later `y` then `Enter` approved (`allow_once`, `local-tui`) | pass |
@@ -136,7 +157,8 @@ token; intercom's own bearer authentication stayed enforced and the tunnel host
 ## Limits
 
 * Windows ConPTY only. Windows Terminal, a dedicated conhost window, macOS and
-  Linux were not exercised, and scrollback preservation was not re-measured.
+  Linux were not exercised. Scrollback was checked at stream level only (see
+  the scrollback section).
 * The remote surface was the Go reference client, not a browser.
 * The soft-wrap indentation of an over-long `kind:` or `tool call:` value
   cannot be produced by the live agent (live kinds are short and tool call ids
