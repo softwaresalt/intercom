@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -167,6 +168,136 @@ func TestOverflowDropsOldestAndTriggersRehydrate(t *testing.T) {
 	}
 	s.release()
 	converge(t, s, want)
+}
+
+// countingDial wraps a Dial and counts how many connections it opened.
+func countingDial(inner Dial, n *atomic.Int32) Dial {
+	return func(ctx context.Context) (Conn, error) {
+		n.Add(1)
+		return inner(ctx)
+	}
+}
+
+func TestOverflowRehydratesInPlaceWithoutAutoDenyingPendingPermission(t *testing.T) {
+	r := newRig(t, hub.Config{PermissionTimeout: time.Hour})
+	r.c.Close() // only one TUI may attach
+	s := newSinkRig(true)
+	var dials atomic.Int32
+	f := NewFeed(FeedOptions{Dial: countingDial(HubDialer(r.h, 0), &dials), Sink: s.sink, QueueSize: 4})
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := f.Start(ctx); err != nil {
+		cancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() {
+		select {
+		case <-s.gate:
+		default:
+			close(s.gate)
+		}
+		cancel()
+		f.Close()
+	})
+
+	a := newPermAsk(agent.PermissionKindShell, "ls")
+	a.post(t, r.h)
+	want := streamBurst(t, r, 200)
+
+	deadline := time.Now().Add(testWait)
+	for f.Stats().Rehydrates == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("overflow never forced a re-hydrate")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if n := dials.Load(); n != 1 {
+		t.Fatalf("dialled %d times, want 1: overflow must rehydrate in place, not close and redial", n)
+	}
+	sctx, scancel := context.WithTimeout(context.Background(), testWait)
+	defer scancel()
+	st, err := r.h.Stats(sctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.PendingPermissions != 1 {
+		t.Fatalf("pending permissions = %d, want 1 kept alive", st.PendingPermissions)
+	}
+	select {
+	case d := <-a.reply:
+		t.Fatalf("pending permission was resolved (%v) by the overflow recovery", d.Kind)
+	default:
+	}
+	s.release()
+	converge(t, s, want)
+}
+
+// fakeConn is a scriptable Conn.
+type fakeConn struct {
+	frames chan hub.Frame
+	done   chan struct{}
+	once   sync.Once
+}
+
+func newFakeConn() *fakeConn {
+	return &fakeConn{frames: make(chan hub.Frame, 4), done: make(chan struct{})}
+}
+
+func (c *fakeConn) Frames() <-chan hub.Frame { return c.frames }
+func (c *fakeConn) Done() <-chan struct{}    { return c.done }
+func (c *fakeConn) Do(context.Context, hub.OperatorAction) (hub.ActionResult, error) {
+	return hub.ActionResult{Accepted: true}, nil
+}
+func (c *fakeConn) Rehydrate(context.Context) error { return nil }
+func (c *fakeConn) Close()                          { c.once.Do(func() { close(c.done) }) }
+
+func TestFeedRedialRetriesTransientFailureAndRecoversDroppedClient(t *testing.T) {
+	first, second := newFakeConn(), newFakeConn()
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		switch dials.Add(1) {
+		case 1:
+			return first, nil
+		case 2, 3:
+			return nil, errors.New("transient dial failure")
+		default:
+			return second, nil
+		}
+	}
+	s := newSinkRig(false)
+	f := NewFeed(FeedOptions{Dial: dial, Sink: s.sink, RedialRetries: 3, RedialBackoff: time.Millisecond})
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := f.Start(ctx); err != nil {
+		cancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { cancel(); f.Close() })
+
+	first.Close() // the hub dropped this client: no server.shutdown frame
+
+	deadline := time.After(testWait)
+	for resynced := false; !resynced; {
+		select {
+		case msg := <-s.out:
+			switch msg.(type) {
+			case ResyncMsg:
+				resynced = true
+			case DisconnectedMsg:
+				t.Fatal("feed gave up on a dropped client instead of redialling")
+			}
+		case <-deadline:
+			t.Fatalf("no resync after a dropped client; dials=%d", dials.Load())
+		}
+	}
+	if n := dials.Load(); n != 4 {
+		t.Fatalf("dials = %d, want 4 (initial + two transient failures + success)", n)
+	}
+	if st := f.Stats(); st.Rehydrates != 1 {
+		t.Fatalf("rehydrates = %d, want 1", st.Rehydrates)
+	}
+	res, err := f.Do(context.Background(), hub.OperatorAction{Type: hub.OpAbortTurn})
+	if err != nil || !res.Accepted {
+		t.Fatalf("Do after recovery = %+v, %v", res, err)
+	}
 }
 
 func TestFeedDeliversInOrderWithoutOverflow(t *testing.T) {

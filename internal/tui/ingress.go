@@ -30,7 +30,15 @@ type Conn interface {
 	Frames() <-chan hub.Frame
 	Done() <-chan struct{}
 	Do(ctx context.Context, act hub.OperatorAction) (hub.ActionResult, error)
+	Rehydrate(ctx context.Context) error
 	Close()
+}
+
+// Rehydrater is implemented by a [Conn] that can re-serve itself a fresh
+// session.hydrate in place, staying registered with the hub (so a pending
+// permission keeps its surface). *hub.Client satisfies it.
+type Rehydrater interface {
+	Rehydrate(ctx context.Context) error
 }
 
 // Dial opens a fresh TUI connection. Every dial starts with a session.hydrate
