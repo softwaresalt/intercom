@@ -142,7 +142,8 @@ type Adapter struct {
 	bridge *permissionBridge
 
 	latch    *latch
-	stop     chan struct{} // closed once at Stop; never the ingress channel
+	unmapped unmappedLogGate // once-per-type warn gate for unmapped SDK events
+	stop     chan struct{}   // closed once at Stop; never the ingress channel
 	stopOnce sync.Once
 
 	mu            sync.Mutex
@@ -453,7 +454,7 @@ func (a *Adapter) onEvent(ev copilotsdk.SessionEvent) {
 	}
 	defer a.latch.exit()
 
-	e := normalize(ev, a.log)
+	e := normalizeWithGate(ev, a.log, &a.unmapped)
 	switch e.Kind {
 	case agent.KindTurnStart:
 		e.TurnID = a.bridge.setTurn(e.TurnID)

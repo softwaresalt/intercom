@@ -375,7 +375,7 @@ func TestCallbackUnknownEventIsForwardedNotDropped(t *testing.T) {
 	if _, err := h.ad.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	h.client.session.emit(copilotsdk.SessionEvent{Data: &rpc.AssistantReasoningData{}})
+	h.client.session.emit(copilotsdk.SessionEvent{Data: &rpc.SessionErrorData{}})
 	select {
 	case ev := <-h.ingress:
 		if ev.Kind != agent.KindUnknown {
@@ -617,4 +617,43 @@ func TestAbortReturnsPromptlyWithBlockedPermissionHandler(t *testing.T) {
 		t.Error("Abort did not return promptly with a blocked permission handler")
 	}
 	close(h.hubDone) // release the parked handler
+}
+
+func TestCallbackMapsReasoningAndRateLimitsRepeatedUnmappedEventWarnLogs(t *testing.T) {
+	log, buf := newBufLogger()
+	h := newHarness(t, func(cfg *Config, _ *fakeClient) { cfg.Logger = log })
+	if _, err := h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	sess := h.client.session
+	sess.emit(copilotsdk.SessionEvent{Data: &rpc.AssistantReasoningData{ReasoningID: "r1", Content: "thinking"}})
+	sess.emit(copilotsdk.SessionEvent{Data: &rpc.AssistantReasoningDeltaData{ReasoningID: "r1", DeltaContent: "th"}})
+	for range 3 {
+		sess.emit(copilotsdk.SessionEvent{Data: &rpc.SessionErrorData{}})
+	}
+	next := func() agent.Event {
+		t.Helper()
+		select {
+		case ev := <-h.ingress:
+			return ev
+		case <-time.After(time.Second):
+			t.Fatal("event not delivered")
+			return agent.Event{}
+		}
+	}
+	if ev := next(); ev.Kind != agent.KindReasoning || ev.MessageID != "r1" || ev.Text != "thinking" {
+		t.Errorf("reasoning event = %+v", ev)
+	}
+	if ev := next(); ev.Kind != agent.KindReasoningDelta || ev.MessageID != "r1" || ev.Text != "th" {
+		t.Errorf("reasoning delta event = %+v", ev)
+	}
+	for range 3 {
+		if ev := next(); ev.Kind != agent.KindUnknown {
+			t.Errorf("unmapped event = %+v", ev)
+		}
+	}
+	out := buf.String()
+	if n := strings.Count(out, "level=WARN msg=\"unhandled agent SDK event type\""); n != 1 {
+		t.Errorf("unhandled WARN count = %d, want 1\n%s", n, out)
+	}
 }

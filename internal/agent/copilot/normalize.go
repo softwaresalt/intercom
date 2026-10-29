@@ -199,6 +199,10 @@ func normalizeWithGate(ev rpc.SessionEvent, log *slog.Logger, g *unmappedLogGate
 		return boundEvent(agent.Event{Kind: agent.KindTurnStart, TurnID: d.TurnID})
 	case *rpc.AssistantTurnEndData:
 		return boundEvent(agent.Event{Kind: agent.KindTurnEnd, TurnID: d.TurnID})
+	case *rpc.AssistantReasoningData:
+		return boundEvent(agent.Event{Kind: agent.KindReasoning, MessageID: d.ReasoningID, Text: d.Content})
+	case *rpc.AssistantReasoningDeltaData:
+		return boundEvent(agent.Event{Kind: agent.KindReasoningDelta, MessageID: d.ReasoningID, Text: d.DeltaContent})
 	case *rpc.SessionIdleData:
 		return agent.Event{Kind: agent.KindIdle, Aborted: d.Aborted != nil && *d.Aborted}
 	case *rpc.ToolExecutionStartData:
