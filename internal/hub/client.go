@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
@@ -72,6 +73,47 @@ type Client struct {
 	// authorization role (ADR MVP-3); it can never be changed by a message.
 	role Role
 	hub  *Hub
+
+	// inflight counts frames the hub has queued that the consumer has not yet
+	// finished with (queued, or dequeued but not acknowledged). It is
+	// incremented before a send and decremented on a failed send, a hub drain
+	// or a consumer acknowledgement.
+	inflight atomic.Int64
+	// terminal (hub-owned) is set once the terminal server.shutdown frame has
+	// been queued: the client is skipped by hydration, staleness marking and
+	// later broadcasts so that frame is never drained or replaced.
+	terminal bool
+}
+
+// sendFrame queues f without blocking and reports whether it was queued. The
+// in-flight count is raised before the send so a consumer that dequeues and
+// acknowledges immediately can never drive it negative.
+func (c *Client) sendFrame(f Frame) bool {
+	c.inflight.Add(1)
+	select {
+	case c.send <- f:
+		return true
+	default:
+		c.inflight.Add(-1)
+		return false
+	}
+}
+
+// drainOneFrame discards the oldest queued frame, reporting whether one existed.
+func (c *Client) drainOneFrame() bool {
+	select {
+	case <-c.send:
+		c.inflight.Add(-1)
+		return true
+	default:
+		return false
+	}
+}
+
+// drainAllFrames discards every queued frame.
+func (c *Client) drainAllFrames() {
+	for c.drainOneFrame() {
+	}
 }
 
 // ErrClientClosed reports an action attempted through a client that has been
