@@ -1,0 +1,8 @@
+# 068-S (075-F) compacted memory
+
+* Scope: shutdown broadcast/drain fidelity and in-place hub `Client.Rehydrate` (stash 4AFE4DA4, AEF57AF1, 1DCB6108 hub half). Tasks 075.001-T (`09bfe4e`), 075.002-T (`46d5f0a`), 075.003-T (`7f0984c`) and 075.004-T (`bf8890a`) done, implemented test-first. Branch `feat/068-s-shutdown-broadcast-drain-fidelity-and-in-place-hub-client-rehydrate`, reviewed HEAD `766a15cb5e24b1c7fdc69608fa454adef6284ff4`. PR #205 merged as a merge commit 2fff94b6722ff763aafc04a5e44432f2733bd58c.
+* Decisions: terminal clients still receive later non-terminal frames when their buffer has room (existing tests require post-shutdown frames) and skip them silently when full. `reapUnlessConnecting` is the single guarded reap at both `Hub.Run` call sites. `handleRehydrate` refuses terminal clients and avoids duplicate stale queueing (review P3 fixes). Explicit operator P-001 exception over 062-S.
+* Review: concurrency and correctness persona reviews found no P0/P1. P3 advisories kept as residual risk (mint lock ignores ctx; Drained assumes write-ack enabled before dequeue). Deferred P-021 C2 stash entry 80996C79 (Cursor/wsclient gap handling vs `server.shutdown`).
+* Closure: cascade close of 068-S exited 0 (archived 068-S shipped, 075-F, 075.001-T..075.004-T); evidence `docs/closure/evidence/068-S-075-F-close-evidence.json`. Live verification (Win32 console + Copilot + Dev Tunnel) recorded in `docs/closure/evidence/068-S-live-verification-evidence.md`; closure `READY`.
+* Next: closure PR, CI, Copilot gate, merge.
+* Original: docs/archive/memory/2026-10-29/068-s-ship-memory.md.
