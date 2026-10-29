@@ -24,6 +24,8 @@ const (
 	KindSessionHydrate      Kind = "session.hydrate"
 	KindAgentMessage        Kind = "agent.message"
 	KindAgentMessageDelta   Kind = "agent.message.delta"
+	KindAgentReasoning      Kind = "agent.reasoning"
+	KindAgentReasoningDelta Kind = "agent.reasoning.delta"
 	KindAgentTurnStart      Kind = "agent.turn.start"
 	KindAgentTurnEnd        Kind = "agent.turn.end"
 	KindAgentIdle           Kind = "agent.idle"
@@ -117,6 +119,7 @@ type (
 		ToolCallID string `json:"tool_call_id"`
 		ToolName   string `json:"tool_name"`
 		Success    bool   `json:"success"`
+		Text       string `json:"text,omitempty"`
 		Truncated  bool   `json:"truncated,omitempty"`
 	}
 	// ErrorPayload is the payload of hub-produced error envelopes.
@@ -225,6 +228,10 @@ func KindFor(k agent.EventKind) (Kind, bool) {
 		return KindAgentMessage, true
 	case agent.KindDelta:
 		return KindAgentMessageDelta, true
+	case agent.KindReasoning:
+		return KindAgentReasoning, true
+	case agent.KindReasoningDelta:
+		return KindAgentReasoningDelta, true
 	case agent.KindTurnStart:
 		return KindAgentTurnStart, true
 	case agent.KindTurnEnd:
@@ -258,23 +265,25 @@ func mapEvent(ev agent.Event, textCap int) (Kind, any) {
 		return KindError, unknownEventError()
 	}
 	switch kind {
-	case KindAgentMessage, KindAgentMessageDelta:
+	case KindAgentMessage, KindAgentMessageDelta, KindAgentReasoning, KindAgentReasoningDelta:
 		id, t1 := capIdent(ev.MessageID)
 		text := truncUTF8(ev.Text, textCap)
-		return kind, MessagePayload{MessageID: id, Text: text, Truncated: t1 || len(text) < len(ev.Text)}
+		return kind, MessagePayload{MessageID: id, Text: text, Truncated: t1 || len(text) < len(ev.Text) || ev.Truncated}
 	case KindAgentTurnStart, KindAgentTurnEnd:
 		id, t := capIdent(ev.TurnID)
-		return kind, TurnPayload{TurnID: id, Truncated: t}
+		return kind, TurnPayload{TurnID: id, Truncated: t || ev.Truncated}
 	case KindAgentIdle:
 		return kind, IdlePayload{Aborted: ev.Aborted}
 	case KindToolStarted:
 		id, t1 := capIdent(ev.ToolCallID)
 		name, t2 := capIdent(ev.ToolName)
-		return kind, ToolStartedPayload{ToolCallID: id, ToolName: name, Truncated: t1 || t2}
+		return kind, ToolStartedPayload{ToolCallID: id, ToolName: name, Truncated: t1 || t2 || ev.Truncated}
 	default: // tool.ended
 		id, t1 := capIdent(ev.ToolCallID)
 		name, t2 := capIdent(ev.ToolName)
-		return kind, ToolEndedPayload{ToolCallID: id, ToolName: name, Success: ev.Success, Truncated: t1 || t2}
+		text := truncUTF8(ev.Text, textCap)
+		return kind, ToolEndedPayload{ToolCallID: id, ToolName: name, Success: ev.Success, Text: text,
+			Truncated: t1 || t2 || len(text) < len(ev.Text) || ev.Truncated}
 	}
 }
 

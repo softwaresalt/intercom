@@ -169,3 +169,74 @@ func TestNewFoldRejectsInconsistentLimits(t *testing.T) {
 		t.Fatal("expected error for negative cap")
 	}
 }
+
+func TestFoldAndMapEventReasoningAndToolEndedTextAndTruncation(t *testing.T) {
+	// KindFor mapping.
+	for in, want := range map[agent.EventKind]Kind{
+		agent.KindReasoning:      KindAgentReasoning,
+		agent.KindReasoningDelta: KindAgentReasoningDelta,
+	} {
+		if got, ok := KindFor(in); !ok || got != want {
+			t.Errorf("KindFor(%q) = %q,%v want %q", in, got, ok, want)
+		}
+	}
+
+	// mapEvent: reasoning shares the message payload; tool.ended carries text;
+	// the adapter's Truncated flag survives onto the wire.
+	k, p := mapEvent(agent.Event{Kind: agent.KindReasoningDelta, MessageID: "r1", Text: "hm", Truncated: true}, 1024)
+	if mp, ok := p.(MessagePayload); k != KindAgentReasoningDelta || !ok || mp.MessageID != "r1" || mp.Text != "hm" || !mp.Truncated {
+		t.Errorf("reasoning delta mapEvent = %q %+v", k, p)
+	}
+	k, p = mapEvent(agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c", ToolName: "n", Success: true, Text: "result"}, 1024)
+	if tp, ok := p.(ToolEndedPayload); k != KindToolEnded || !ok || tp.Text != "result" || tp.Truncated {
+		t.Errorf("tool ended mapEvent = %q %+v", k, p)
+	}
+	_, p = mapEvent(agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c", Text: "abcdef"}, 3)
+	if tp := p.(ToolEndedPayload); tp.Text != "abc" || !tp.Truncated {
+		t.Errorf("capped tool text = %+v", tp)
+	}
+	_, p = mapEvent(agent.Event{Kind: agent.KindToolStarted, ToolCallID: "c", Truncated: true}, 1024)
+	if tp := p.(ToolStartedPayload); !tp.Truncated {
+		t.Errorf("tool started must propagate Truncated: %+v", tp)
+	}
+
+	// Fold: reasoning streams then completes; tool text is recorded.
+	f := mustFold(t, Limits{})
+	f.Apply(agent.Event{Kind: agent.KindReasoningDelta, MessageID: "r1", Text: "ab"})
+	f.Apply(agent.Event{Kind: agent.KindReasoningDelta, MessageID: "r1", Text: "c"})
+	if txt, tr := f.LastDelta(); txt != "c" || tr {
+		t.Errorf("LastDelta = %q,%v", txt, tr)
+	}
+	f.Apply(agent.Event{Kind: agent.KindReasoning, MessageID: "r1", Text: "abc"})
+	f.Apply(agent.Event{Kind: agent.KindToolStarted, ToolCallID: "c1", ToolName: "bash"})
+	f.Apply(agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c1", Success: true, Text: "out"})
+	f.Apply(agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c2", ToolName: "grep", Text: "err"})
+	want := `{"entries":[` +
+		`{"kind":"reasoning","id":"r1","text":"abc","status":"complete"},` +
+		`{"kind":"tool","id":"c1","text":"out","tool_name":"bash","status":"succeeded"},` +
+		`{"kind":"tool","id":"c2","text":"err","tool_name":"grep","status":"failed"}` +
+		`],"turn_active":false,"truncated":false,"evicted_count":0}`
+	if got := string(f.Snapshot()); got != want {
+		t.Errorf("snapshot\n got: %s\nwant: %s", got, want)
+	}
+
+	// Fold: the adapter's Truncated flag is propagated everywhere.
+	g := mustFold(t, Limits{})
+	g.Apply(agent.Event{Kind: agent.KindDelta, MessageID: "m1", Text: "x", Truncated: true})
+	if _, tr := g.LastDelta(); !tr {
+		t.Error("LastDelta must report the adapter's Truncated")
+	}
+	g.Apply(agent.Event{Kind: agent.KindDelta, MessageID: "m1", Text: "y", Truncated: true})
+	g.Apply(agent.Event{Kind: agent.KindToolStarted, ToolCallID: "c1", Truncated: true})
+	g.Apply(agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c1", Success: true, Truncated: true})
+	g.Apply(agent.Event{Kind: agent.KindAgentMessage, MessageID: "m1", Text: "xy", Truncated: true})
+	snap := string(g.Snapshot())
+	if !strings.Contains(snap, `"truncated":true`) || strings.Count(snap, `"truncated":true`) != 3 {
+		t.Errorf("expected truncated on message, tool and snapshot: %s", snap)
+	}
+	h := mustFold(t, Limits{})
+	h.Apply(agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c9", Text: "t", Truncated: true})
+	if s := string(h.Snapshot()); !strings.Contains(s, `"truncated":true,"evicted_count"`) {
+		t.Errorf("standalone tool.ended must set snapshot truncated: %s", s)
+	}
+}
