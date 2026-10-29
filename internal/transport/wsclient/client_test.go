@@ -97,6 +97,18 @@ func TestCursorTreatsServerShutdownAsAlwaysApplicableAcrossGaps(t *testing.T) {
 			t.Fatalf("got %v", v)
 		}
 	})
+	t.Run("foreign gen and repeated gap", func(t *testing.T) {
+		c := hydrated()
+		if v := c.apply(env(hub.KindServerShutdown, "other", 2)); v != VerdictApply {
+			t.Fatalf("foreign gen: %v", v)
+		}
+		if _, ok := c.position(); ok {
+			t.Fatal("foreign-gen shutdown must leave the cursor stale")
+		}
+		if v := c.apply(env(hub.KindServerShutdown, "other", 2)); v != VerdictDiscard {
+			t.Fatalf("repeat: %v", v)
+		}
+	})
 }
 
 func TestDialErrorNeverCarriesCredential(t *testing.T) {
