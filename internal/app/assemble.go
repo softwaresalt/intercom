@@ -224,6 +224,9 @@ func (a *App) assemble(ctx context.Context, o Options, port uint16) error {
 		defer close(a.hubRunDone)
 		if err := h.Run(hubCtx); err != nil {
 			a.log.Error("hub stopped with error", "error", err)
+			// Recorded before hubRunDone closes, so the shutdown that awaits it
+			// joins the failure (e.g. a stuck lane worker) into Err().
+			a.addErr(fmt.Errorf("hub: %w", err))
 		}
 	}()
 
@@ -419,5 +422,6 @@ func (a *App) teardown(ctx context.Context) error {
 		}
 	}
 	a.awaitHub()
+	errs = append(errs, a.takeErrs()...) // e.g. a Hub.Run failure recorded before hubRunDone closed
 	return errors.Join(errs...)
 }

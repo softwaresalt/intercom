@@ -693,3 +693,57 @@ func TestStartWarnsOnlyWhenAnUnconsumedKeyDiffersFromDefault(t *testing.T) {
 		}
 	})
 }
+
+// TestShutdownRecordsHubRunErrCleanupIncompleteInAppErr: an operator lane
+// worker wedged in an agent call that ignores cancellation makes Hub.Run
+// return agent.ErrCleanupIncomplete; the app must surface that in Err() rather
+// than only logging it.
+func TestShutdownRecordsHubRunErrCleanupIncompleteInAppErr(t *testing.T) {
+	baseline := ownGoroutines()
+	f := newFactory()
+	f.sendGate = make(chan struct{})
+	f.sendEntered = make(chan struct{}, 1)
+	o, _ := baseOptions(t, f)
+	o.Timeouts = hub.ShutdownTimeouts{Permissions: time.Second, Gate: time.Second, Announce: time.Second,
+		Abort: time.Second, Idle: 200 * time.Millisecond, Stop: time.Second, Force: 2 * time.Second, Drain: 200 * time.Millisecond}
+	a := startApp(t, o)
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			close(f.sendGate)
+		}
+	}
+	t.Cleanup(release)
+
+	ctx, cancel := context.WithTimeout(context.Background(), waitFor)
+	defer cancel()
+	c, err := a.Hub().Connect(ctx, hub.ConnectOptions{Kind: hub.ClientTUI, Buffer: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if res, err := c.Do(ctx, hub.OperatorAction{Type: hub.OpPrompt, Prompt: "wedge"}); err != nil || !res.Accepted {
+		t.Fatalf("prompt = %+v, %v", res, err)
+	}
+	select {
+	case <-f.sendEntered:
+	case <-time.After(waitFor):
+		t.Fatal("Send never entered")
+	}
+
+	a.Shutdown("wedged lane")
+	select {
+	case <-a.Done():
+	case <-time.After(waitFor):
+		t.Fatal("shutdown did not finish")
+	}
+	if err := a.Err(); !errors.Is(err, agent.ErrCleanupIncomplete) {
+		t.Fatalf("Err() = %v; want it to wrap agent.ErrCleanupIncomplete from Hub.Run", err)
+	}
+	if !strings.Contains(a.Err().Error(), "hub: ") {
+		t.Fatalf("Err() = %v; want the Hub.Run failure recorded with its hub: prefix", a.Err())
+	}
+	release() // let the wedged worker finish so nothing leaks
+	assertNoLeaks(t, baseline)
+}

@@ -66,6 +66,32 @@ func fromSDKDecision(d rpc.PermissionDecision) (agent.PermissionDecision, bool) 
 // accidental megabyte command line cannot flow unbounded into the hub.
 const maxSummaryRunes = 2048
 
+// maxIdentRunes bounds single-line identifiers (RawKind, ToolCallID).
+const maxIdentRunes = 128
+
+// sanitizeIdent returns s as a single-line identifier: control, format, and
+// line/paragraph-separator runes (including \n and \t) become U+FFFD and the
+// result is capped at max runes with an ellipsis.
+func sanitizeIdent(s string, max int) string {
+	var b strings.Builder
+	n := 0
+	for _, r := range s {
+		n++
+		if n > max {
+			break
+		}
+		if r == '\u2028' || r == '\u2029' || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			b.WriteRune(utf8.RuneError)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	if n > max {
+		b.WriteString("…")
+	}
+	return b.String()
+}
+
 // sanitizeBound returns s with control and bidi/format runes replaced by
 // U+FFFD (newline and tab are kept), truncated to max runes with an ellipsis.
 // It is a single pass that never allocates proportionally to an oversized
@@ -80,7 +106,7 @@ func sanitizeBound(s string, max int) (out string, truncated bool, fullLen int) 
 		switch {
 		case r == '\n' || r == '\t':
 			b.WriteRune(r)
-		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r):
+		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029':
 			b.WriteRune(utf8.RuneError)
 		default:
 			b.WriteRune(r)
@@ -107,6 +133,7 @@ func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvoca
 		return out
 	}
 	out.RawKind = string(req.Kind())
+	rawKind := out.RawKind
 	var text string
 	switch r := req.(type) {
 	case *rpc.PermissionRequestShell:
@@ -121,9 +148,12 @@ func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvoca
 		// Kinds not yet modelled carry only their discriminator; the live-SDK
 		// test records which kinds reach the handler (ADR MVP-1). Hub policy
 		// treats Other as the most restrictive class.
-		out.Kind, text = agent.PermissionKindOther, out.RawKind
+		out.Kind, text = agent.PermissionKindOther, rawKind
 	}
 	out.Summary, out.Truncated, out.FullLen = sanitizeBound(text, maxSummaryRunes)
+	// Identifiers are single-line and capped independently of the summary.
+	out.RawKind = sanitizeIdent(rawKind, maxIdentRunes)
+	out.ToolCallID = sanitizeIdent(out.ToolCallID, maxIdentRunes)
 	return out
 }
 
@@ -268,6 +298,11 @@ func (b *permissionBridge) handle(req copilot.PermissionRequest, inv copilot.Per
 		return toSDKDecision(d), nil
 	}
 	notAvailable := agent.PermissionDecision{Kind: agent.DecisionUnavailable}
+	// Shutdown or an abort may have begun while the request was converted;
+	// re-check so a ready send never wins a random select over it.
+	if gone() {
+		return unavailable()
+	}
 	select {
 	case b.asks <- ask:
 	case <-b.hubDone:
