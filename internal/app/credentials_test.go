@@ -186,6 +186,26 @@ func TestReissueThroughTUIMintsNewAndRevokesOld(t *testing.T) {
 	}
 }
 
+func TestReissueHonoursCancelledContext(t *testing.T) {
+	f := newFactory()
+	o, _ := baseOptions(t, f)
+	a := startApp(t, o)
+	old := a.Credentials()
+	cctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if live, err := a.Reissue(cctx); !errors.Is(err, context.Canceled) || len(live) != 0 {
+		t.Fatalf("Reissue(cancelled) = %d creds, %v; want no set and context.Canceled", len(live), err)
+	}
+	if msg, err := a.tuiReissue(cctx); !errors.Is(err, context.Canceled) || len(msg.Credentials) != 0 {
+		t.Fatalf("tuiReissue(cancelled) = %+v, %v; want an empty message and context.Canceled", msg, err)
+	}
+	for i := range old {
+		if err := dialToken(a, old[i].Token.Reveal()); err != nil {
+			t.Errorf("credential %d was revoked by a cancelled re-issue: %v", i, err)
+		}
+	}
+}
+
 func TestReissueMintsBothRolesAndRevokesBoth(t *testing.T) {
 	f := newFactory()
 	o, _ := baseOptions(t, f)

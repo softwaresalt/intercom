@@ -943,10 +943,24 @@ func shutdownScenario(t *testing.T, trigger func(*e2eRig)) {
 
 	trigger(r)
 
+	// Drain the remote peer concurrently so it completes the close handshake
+	// as soon as the hub closes it at step 5, instead of the server waiting out
+	// closeGrace for a peer that only starts reading after shutdown finished.
+	drainDone := make(chan struct{})
+	go func() {
+		defer close(drainDone)
+		remote.drain()
+	}()
+
 	select {
 	case <-r.app.Done():
 	case <-time.After(waitFor):
 		t.Fatal("the process did not finish shutting down")
+	}
+	select {
+	case <-drainDone:
+	case <-time.After(waitFor):
+		t.Fatal("the remote peer did not observe the close")
 	}
 	if err := r.app.Err(); err != nil {
 		t.Fatalf("shutdown reported errors: %v", err)
@@ -966,7 +980,6 @@ func shutdownScenario(t *testing.T, trigger func(*e2eRig)) {
 		}
 	}
 
-	remote.drain()
 	kinds := remote.kinds()
 	if r, s := indexOf(kinds, string(hub.KindPermissionResolved)), indexOf(kinds, string(hub.KindServerShutdown)); r < 0 || s < 0 || r > s {
 		t.Errorf("remote client saw %v; want permission.resolved before server.shutdown", kinds)
