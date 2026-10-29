@@ -495,3 +495,108 @@ func TestStaleRehydrateRateLimitUsesConfigNow(t *testing.T) {
 	}
 	_ = tui
 }
+
+// ---- 075.001-T: intake sweep, pending-connect reap guard, terminal shutdown ----
+
+func TestIntakeSweepsClosedRemotesBeforeCheckingPendingLimit(t *testing.T) {
+	g, err := New(Config{SessionID: "s", MaxRemote: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < g.cfg.MaxRemote; i++ {
+		req := &connectReq{opts: ConnectOptions{Kind: ClientRemote}, reply: make(chan connectResp, 1)}
+		g.completeConnect(req, false)
+		r := <-req.reply
+		if r.err != nil || r.client == nil {
+			t.Fatalf("seed connect %d failed: %v", i, r.err)
+		}
+		r.client.Close() // closed, but the hub has not stepped since
+	}
+	reqs := make([]*connectReq, 0, g.pendingLimit())
+	for i := 0; i < g.pendingLimit(); i++ {
+		req := &connectReq{opts: ConnectOptions{Kind: ClientRemote}, reply: make(chan connectResp, 1)}
+		reqs = append(reqs, req)
+		g.intake(req)
+	}
+	for i, req := range reqs {
+		select {
+		case r := <-req.reply:
+			if errors.Is(r.err, ErrTooManyClients) {
+				t.Fatalf("request %d falsely refused with ErrTooManyClients: closed remotes were not swept at intake", i)
+			}
+		default:
+		}
+	}
+}
+
+func TestStaleClientReceivesServerShutdownBeforeClose(t *testing.T) {
+	var now atomic.Int64
+	base := time.Unix(1_000_000, 0)
+	h := startHub(t, Config{Now: func() time.Time { return base.Add(time.Duration(now.Load())) }})
+	tui := connect(t, h, ClientTUI, 2)
+	for i := 0; i < 4; i++ { // overflows the TUI twice; the frozen clock keeps it stale
+		send(t, h, msgEvent("m", "x"))
+	}
+	settle(t, h, 4)
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := h.AnnounceShutdown(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	now.Store(int64(time.Second)) // past staleRetryInterval
+	send(t, h, msgEvent("m", "after"))
+	for i := 0; i < 3; i++ { // drive further hub-loop iterations and hydration passes
+		stats(t, h)
+		time.Sleep(40 * time.Millisecond)
+	}
+	var kinds []string
+	for drained := false; !drained; {
+		select {
+		case f := <-tui.Frames():
+			kinds = append(kinds, string(f.Kind()))
+		default:
+			drained = true
+		}
+	}
+	for _, k := range kinds {
+		if k == string(KindServerShutdown) {
+			return
+		}
+	}
+	t.Fatalf("stale client never received server.shutdown intact; frames = %v", kinds)
+}
+
+func TestReapEmptyBroadcastSetWaitsForQueuedPendingConnectAndReapsOnAbandon(t *testing.T) {
+	g, err := New(Config{SessionID: "s", PermissionTimeout: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newTestAsk(agent.PermissionKindShell, "cmd")
+	defer close(a.resolved)
+	g.handleAsk(a.ask)
+	req := &connectReq{opts: ConnectOptions{Kind: ClientRemote}, reply: make(chan connectResp, 1)}
+	g.pending = append(g.pending, req)
+	if !g.hasPendingConnect() {
+		t.Fatal("hasPendingConnect = false with a live queued connect")
+	}
+	g.reapUnlessConnecting()
+	select {
+	case d := <-a.reply:
+		t.Fatalf("request resolved (%v) while a connect was queued", d.Kind)
+	default:
+	}
+	req.abandoned.Store(true)
+	if g.hasPendingConnect() {
+		t.Fatal("hasPendingConnect = true for an abandoned connect")
+	}
+	g.serviceHydrations() // discards the abandoned request
+	g.reapUnlessConnecting()
+	select {
+	case d := <-a.reply:
+		if d.Kind != agent.DecisionUnavailable {
+			t.Fatalf("decision = %v, want unavailable", d.Kind)
+		}
+	default:
+		t.Fatal("request not resolved no_surface after the connect was abandoned")
+	}
+}

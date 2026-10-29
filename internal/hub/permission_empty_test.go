@@ -1,6 +1,8 @@
 package hub
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -120,4 +122,106 @@ func TestEmptySetFastResolveIsRaceCleanUnderChurn(t *testing.T) {
 		rem.Close()
 		wantUnavailable(t, a)
 	}
+}
+
+// ---- 075.002-T: write-ack drain tracking and in-place Rehydrate ----
+
+func TestClientDrainedTracksWriteAckAcrossSendAndDrain(t *testing.T) {
+	c := newClient(1, ClientRemote, 4)
+	c.EnableWriteAck()
+	if !c.Drained() {
+		t.Fatal("fresh client not drained")
+	}
+	if !c.sendFrame(Frame{}) {
+		t.Fatal("sendFrame failed on an empty buffer")
+	}
+	if c.Drained() {
+		t.Fatal("Drained with a queued frame")
+	}
+	<-c.Frames()
+	if c.Drained() {
+		t.Fatal("Drained after dequeue but before AckWrite")
+	}
+	c.AckWrite()
+	if !c.Drained() {
+		t.Fatal("not Drained after AckWrite")
+	}
+	c.sendFrame(Frame{})
+	c.sendFrame(Frame{})
+	c.drainAllFrames()
+	if n := c.inflight.Load(); n != 0 {
+		t.Fatalf("inflight = %d after drainAllFrames, want 0", n)
+	}
+	if !c.Drained() {
+		t.Fatal("not Drained after drainAllFrames")
+	}
+	c.sendFrame(Frame{})
+	c.Close()
+	if !c.Drained() {
+		t.Fatal("a closed client must report Drained")
+	}
+}
+
+func TestDrainAndCloseClientsWaitsForAckWrite(t *testing.T) {
+	h := startHub(t, Config{})
+	c := connect(t, h, ClientRemote, 16)
+	c.inflight.Store(0) // connect() consumed the hydrate frame without a pump ack
+	c.EnableWriteAck()
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := h.AnnounceShutdown(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	recvKind(t, c, KindServerShutdown) // dequeued, write still "in flight"
+	done := make(chan error, 1)
+	go func() { done <- h.drainAndCloseClients(ctx, 10*time.Second) }()
+	select {
+	case <-done:
+		t.Fatal("drainAndCloseClients returned before the final frame was acknowledged")
+	case <-time.After(100 * time.Millisecond):
+	}
+	c.AckWrite()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("drainAndCloseClients: %v", err)
+		}
+	case <-time.After(testWait):
+		t.Fatal("drainAndCloseClients did not return after AckWrite")
+	}
+}
+
+func TestClientRehydrateInPlaceKeepsPendingPermissionAlive(t *testing.T) {
+	h := startHub(t, Config{PermissionTimeout: time.Hour})
+	tui := connect(t, h, ClientTUI, 8)
+	a := newTestAsk(agent.PermissionKindShell, "cmd")
+	a.post(t, h)
+	for i := 0; i < 3; i++ {
+		send(t, h, msgEvent("m", "x"))
+	}
+	settle(t, h, 4)
+	before := stats(t, h).Rehydrations
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := tui.Rehydrate(ctx); err != nil {
+		t.Fatalf("Rehydrate: %v", err)
+	}
+	f := recv(t, tui)
+	if f.Kind() != KindSessionHydrate {
+		t.Fatalf("first frame after Rehydrate = %s, want session.hydrate", f.Kind())
+	}
+	var payload struct {
+		Pending []json.RawMessage `json:"pending_permissions"`
+	}
+	if err := json.Unmarshal(decode(t, f).Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Pending) != 1 {
+		t.Fatalf("hydrate carries %d pending permissions, want 1", len(payload.Pending))
+	}
+	if got := stats(t, h).Rehydrations; got != before+1 {
+		t.Fatalf("Rehydrations = %d, want %d", got, before+1)
+	}
+	assertStillPending(t, h, a)
+	settleMembership(t, h, 0, true)
 }

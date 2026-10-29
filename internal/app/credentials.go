@@ -13,7 +13,7 @@ import (
 // mintAll issues the approver and observer credentials. Only the role, the
 // fingerprint and the expiry are ever logged.
 func (a *App) mintAll() error {
-	_, err := a.mint()
+	_, err := a.mint(context.Background())
 	return err
 }
 
@@ -27,10 +27,17 @@ var credentialRoles = [...]hub.Role{hub.RoleApprover, hub.RoleObserver}
 // and the rest keep theirs, so neither Credentials nor a caller ever shows a
 // revoked credential. The snapshot the set starts from is taken inside mintMu,
 // so concurrent re-issues cannot start from a stale set. Only role,
-// fingerprint and expiry are logged.
-func (a *App) mint() ([]transport.Issued, error) {
+// fingerprint and expiry are logged. A cancelled ctx returns ctx.Err() before
+// any credential is revoked or rotated.
+func (a *App) mint(ctx context.Context) ([]transport.Issued, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	a.mintMu.Lock()
 	defer a.mintMu.Unlock()
+	if err := ctx.Err(); err != nil { // cancelled while waiting for another mint
+		return nil, err
+	}
 	if a.shuttingDown() {
 		return nil, a.revokedForShutdown(nil)
 	}
@@ -120,8 +127,8 @@ func (a *App) zeroPlaintext() {
 // failure part-way it returns the authoritative live set together with the
 // error (some roles may already have been replaced); when nothing was replaced
 // or shutdown revoked the credentials it returns no set.
-func (a *App) Reissue(context.Context) ([]transport.Issued, error) {
-	live, err := a.mint()
+func (a *App) Reissue(ctx context.Context) ([]transport.Issued, error) {
+	live, err := a.mint(ctx)
 	if err != nil {
 		return live, err
 	}

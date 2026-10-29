@@ -307,3 +307,35 @@ func TestNonReadingPeerCannotHoldSessionPastCloseGrace(t *testing.T) {
 	eventually(t, "connection slot released", 2*time.Second, func() bool { return e.srv.ActiveConnections() == 0 })
 	_ = c
 }
+
+// 075.002-T/075.003-T: the pump enables write-ack tracking and acknowledges a
+// frame only after the socket write returned, so Drained turns true only then.
+func TestWritePumpAcksFrameOnlyAfterSocketWriteCompletes(t *testing.T) {
+	e := newEnv(t, envOpts{})
+	is, err := e.creds.Mint(hub.RoleApprover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := e.creds.Verify(is.Token.Reveal(), e.hub.Gen())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var client *hub.Client
+	c := e.serveSession(t, g, func(s *session) {
+		client = s.client
+		<-s.client.Frames() // simulate a dequeued frame whose write is still in flight
+		if s.client.Drained() {
+			t.Error("Drained before the in-flight frame was acknowledged: write-ack not enabled by newSession")
+		}
+		s.client.AckWrite() // balance the simulated frame
+	})
+	e.event("hello")
+	_, data, err := c.Read(context.Background())
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("empty frame")
+	}
+	eventually(t, "pump acknowledged the written frame", 2*time.Second, func() bool { return client.Drained() })
+}

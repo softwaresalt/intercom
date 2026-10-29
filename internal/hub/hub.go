@@ -497,7 +497,7 @@ func (h *Hub) handleDegraded(reason string) {
 // broadcast until served a fresh session.hydrate.
 func (h *Hub) markAllStale() {
 	for _, c := range h.clients {
-		if !c.stale && !c.isClosed() {
+		if !c.stale && !c.terminal && !c.isClosed() {
 			c.stale = true
 			h.staleQ = append(h.staleQ, c)
 		}
@@ -564,6 +564,7 @@ func (h *Hub) Run(ctx context.Context) error {
 		// Hydrations run at the top of each iteration under the per-iteration
 		// cap, so a burst of reconnects cannot monopolise the loop (§5.3).
 		immediate, retryIn := h.serviceHydrations()
+		h.reapUnlessConnecting()
 		h.armPermissionTimer()
 		var wake, retry <-chan time.Time
 		if immediate {
@@ -622,7 +623,7 @@ func (h *Hub) Run(ctx context.Context) error {
 			trySend(reply, s)
 		}
 		h.mutFlush()
-		h.reapEmptyBroadcastSet()
+		h.reapUnlessConnecting()
 		h.releaseIdleWaiters()
 	}
 }
@@ -880,22 +881,46 @@ func (h *Hub) replayFrom(seq uint64) []Frame {
 	return out
 }
 
-// broadcast enqueues f to every live client without ever blocking.
+// broadcast enqueues f to every live client without ever blocking. A terminal
+// server.shutdown frame is delivered to every non-closed client, including
+// stale and full-buffer ones, and then protected from being drained or replaced.
 func (h *Hub) broadcast(f Frame) {
+	terminal := f.Kind() == KindServerShutdown
 	for id, c := range h.clients {
 		if c.isClosed() {
 			h.unregister(id, c)
 			continue
 		}
+		if terminal {
+			deliverTerminal(c, f)
+			continue
+		}
+		if c.terminal {
+			// The queued server.shutdown must survive: later frames are
+			// delivered while there is room and skipped (never drained, never
+			// an overflow or stale transition) when the buffer is full.
+			c.sendFrame(f)
+			continue
+		}
 		if c.stale {
 			continue // will be served a fresh hydrate that already includes f
 		}
-		select {
-		case c.send <- f:
-		default:
+		if !c.sendFrame(f) {
 			h.overflow(id, c)
 		}
 	}
+}
+
+// deliverTerminal queues the terminal server.shutdown frame on c, discarding
+// at most one oldest frame when the buffer is full, and marks c terminal so no
+// later hub step drains or replaces it.
+func deliverTerminal(c *Client, f Frame) {
+	if !c.sendFrame(f) {
+		c.drainOneFrame()
+		c.sendFrame(f)
+	}
+	c.stale = false
+	c.terminal = true
 }
 
 // overflow applies the per-kind backpressure policy (design §4, §5.5).
@@ -1021,6 +1046,7 @@ func (h *Hub) Connect(ctx context.Context, opts ConnectOptions) (*Client, error)
 		// reply already arrived. The hub stores the reply before it re-checks
 		// the flag, so one side always sees the other.
 		req.abandoned.Store(true)
+		trySend(h.membershipWake, struct{}{}) // let the hub re-evaluate the broadcast set
 		select {
 		case r := <-req.reply:
 			if r.client != nil {
@@ -1039,6 +1065,9 @@ func (h *Hub) Connect(ctx context.Context, opts ConnectOptions) (*Client, error)
 // ErrTooManyClients rather than queued, so ingress, degraded signals and stop
 // keep being serviced under a flood.
 func (h *Hub) intake(req *connectReq) {
+	// Sweep first: a remote that closed itself since the last hub step must not
+	// count against the pending limit.
+	h.sweep()
 	h.admitPending(req)
 	for i := 1; i < connectBatch; i++ {
 		select {
@@ -1056,6 +1085,10 @@ func (h *Hub) intake(req *connectReq) {
 func (h *Hub) pendingLimit() int { return 2*h.cfg.MaxRemote + 1 }
 
 func (h *Hub) admitPending(req *connectReq) {
+	if req.abandoned.Load() {
+		trySend(req.reply, connectResp{err: apperr.New(apperr.KindIO, "hub: connect abandoned")})
+		return
+	}
 	live, tuiPending := 0, false
 	for _, p := range h.pending {
 		if p.abandoned.Load() {
@@ -1127,7 +1160,7 @@ func (h *Hub) serviceHydrations() (immediate bool, retryIn time.Duration) {
 
 	var carryStale []*Client
 	for _, c := range h.staleQ {
-		if c.isClosed() || !c.stale {
+		if c.isClosed() || !c.stale || c.terminal {
 			continue
 		}
 		if wait := staleRetryInterval - now.Sub(c.lastHydrate); wait > 0 {
@@ -1229,24 +1262,20 @@ func (h *Hub) hydratePayload() []byte {
 // full buffer (TUI or remote) is drained oldest-first: everything queued is
 // superseded by the snapshot, so the client is re-hydrated rather than dropped.
 func (h *Hub) rehydrate(c *Client) bool {
+	if c.terminal {
+		return false // the queued server.shutdown must not be replaced
+	}
 	f, ok := h.hydrateFrame()
 	if !ok {
 		return false
 	}
-	if trySend(c.send, f) {
+	if c.sendFrame(f) {
 		c.stale = false
 		h.st.Rehydrations++
 		return true
 	}
-drain:
-	for {
-		select {
-		case <-c.send:
-		default:
-			break drain
-		}
-	}
-	if trySend(c.send, f) {
+	c.drainAllFrames()
+	if c.sendFrame(f) {
 		c.stale = false
 		h.st.Rehydrations++
 		return true
@@ -1281,7 +1310,7 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 	if replay {
 		c.mode = ModeReplay
 		for _, f := range h.replayFrom(req.opts.Resume.Seq) {
-			trySend(c.send, f) // capacity checked by replayable: cannot fail
+			c.sendFrame(f) // capacity checked by replayable: cannot fail
 		}
 		h.st.Replays++
 	} else {
@@ -1291,7 +1320,7 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 			return
 		}
 		c.mode = ModeHydrate
-		trySend(c.send, f) // fresh channel with capacity >= 2: cannot fail
+		c.sendFrame(f) // fresh channel with capacity >= 2: cannot fail
 		h.st.Hydrations++
 	}
 	if replay || !h.cfg.mutHydrateThenRegister {
@@ -1323,4 +1352,30 @@ func (h *Hub) mutFlush() {
 		h.register(c)
 	}
 	h.mutReady, h.mutLate = h.mutLate, nil
+}
+
+// hasPendingConnect reports whether a live (unabandoned) connect is queued, in
+// the connects channel or the pending set. While one is, an empty broadcast
+// set is not final: the connect may be about to register a surface.
+func (h *Hub) hasPendingConnect() bool {
+	if h.closing {
+		return false
+	}
+	if len(h.connects) > 0 {
+		return true
+	}
+	for _, p := range h.pending {
+		if !p.abandoned.Load() {
+			return true
+		}
+	}
+	return false
+}
+
+// reapUnlessConnecting reaps the empty broadcast set unless a connect is in
+// flight, so a reconnecting surface is not raced by permReasonNoSurface.
+func (h *Hub) reapUnlessConnecting() {
+	if !h.hasPendingConnect() {
+		h.reapEmptyBroadcastSet()
+	}
 }

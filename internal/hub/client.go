@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
@@ -72,11 +73,79 @@ type Client struct {
 	// authorization role (ADR MVP-3); it can never be changed by a message.
 	role Role
 	hub  *Hub
+
+	// inflight counts frames the hub has queued that the consumer has not yet
+	// finished with (queued, or dequeued but not acknowledged). It is
+	// incremented before a send and decremented on a failed send, a hub drain
+	// or a consumer acknowledgement.
+	inflight atomic.Int64
+	// terminal (hub-owned) is set once the terminal server.shutdown frame has
+	// been queued: the client is skipped by hydration, staleness marking and
+	// later broadcasts so that frame is never drained or replaced.
+	terminal bool
+	// writeAck (set once by the consumer) enables write-ack tracking in Drained.
+	writeAck atomic.Bool
+}
+
+// sendFrame queues f without blocking and reports whether it was queued. The
+// in-flight count is raised before the send so a consumer that dequeues and
+// acknowledges immediately can never drive it negative.
+func (c *Client) sendFrame(f Frame) bool {
+	c.inflight.Add(1)
+	select {
+	case c.send <- f:
+		return true
+	default:
+		c.inflight.Add(-1)
+		return false
+	}
+}
+
+// drainOneFrame discards the oldest queued frame, reporting whether one existed.
+func (c *Client) drainOneFrame() bool {
+	select {
+	case <-c.send:
+		c.inflight.Add(-1)
+		return true
+	default:
+		return false
+	}
+}
+
+// drainAllFrames discards every queued frame.
+func (c *Client) drainAllFrames() {
+	for c.drainOneFrame() {
+	}
 }
 
 // ErrClientClosed reports an action attempted through a client that has been
 // closed or dropped.
 var ErrClientClosed = errors.New("hub: client closed")
+
+// EnableWriteAck opts the client into write-acknowledgement tracking: its
+// consumer promises to call [Client.AckWrite] after finishing each dequeued
+// frame, so [Client.Drained] reflects frames written, not merely dequeued.
+func (c *Client) EnableWriteAck() { c.writeAck.Store(true) }
+
+// AckWrite records that the consumer finished writing one dequeued frame.
+func (c *Client) AckWrite() { c.inflight.Add(-1) }
+
+// Drained reports whether the client has nothing left to deliver: it is closed,
+// or its queue is empty and (when write-ack is enabled) every dequeued frame
+// has been acknowledged.
+func (c *Client) Drained() bool {
+	return c.isClosed() || (len(c.send) == 0 && (!c.writeAck.Load() || c.inflight.Load() <= 0))
+}
+
+// Rehydrate re-serves this client a fresh session.hydrate in place: the client
+// stays registered (so a pending permission keeps its surface), its queued
+// backlog is discarded and replaced by the snapshot.
+func (c *Client) Rehydrate(ctx context.Context) error {
+	if c.isClosed() {
+		return apperr.Wrap(apperr.KindPolicy, ErrClientClosed)
+	}
+	return c.hub.rehydrateClient(ctx, c)
+}
 
 // Role reports the client's authorization role.
 func (c *Client) Role() Role { return c.role }

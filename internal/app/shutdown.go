@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/softwaresalt/intercom-go/internal/agent"
 	"github.com/softwaresalt/intercom-go/internal/hub"
 )
 
@@ -121,6 +122,16 @@ func (a *App) shuttingDown() bool {
 	}
 }
 
+// adapterStopTimeout reports the agent's own ForceStop wait when it exposes one
+// (the real Copilot adapter), and 0 for agents that do not (in-process test
+// fakes), which keeps their short Force budgets valid.
+func adapterStopTimeout(ag agent.Agent) time.Duration {
+	if st, ok := ag.(interface{ StopTimeout() time.Duration }); ok {
+		return st.StopTimeout()
+	}
+	return 0
+}
+
 // supervise is the dedicated shutdown goroutine: it waits for the first
 // trigger and then runs the design §3.1 sequence through [hub.Shutdown] — never
 // on the hub goroutine, the Bubble Tea goroutine or the signal watcher.
@@ -143,7 +154,11 @@ func (a *App) supervise() {
 		Gate:     a.remote, // step 0: revoke credentials, close the listener
 		Reason:   a.shut.reason,
 		Timeouts: a.shut.timeouts,
-		Logger:   a.log,
+		// Always forwarded (never gated on the Force budget) so an explicit
+		// Force shorter than the real adapter's stop timeout is rejected by
+		// NewShutdown instead of silently skipping the validation.
+		AdapterStopTimeout: adapterStopTimeout(a.agent),
+		Logger:             a.log,
 	})
 	if err != nil {
 		// Cannot happen with the components assembled above; if it does, still
