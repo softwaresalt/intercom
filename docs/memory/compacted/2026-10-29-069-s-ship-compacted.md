@@ -1,0 +1,8 @@
+# 069-S (076-F) compacted memory
+
+* Scope: resilient TUI reconnect, sanitization, modal anti-spoofing and viewport hardening (stash 1DCB6108 TUI half, E9223340). Tasks 076.001-T (`d85d671`), 076.002-T (`6a3e4be`), 076.003-T (`22646ca`), 076.004-T (`43abaea`) and 076.005-T (`80c3132`) done, implemented test-first. Branch `feat/069-s-resilient-tui-reconnect-sanitization-modal-anti-spoofing-and-viewport-hardening`, reviewed HEAD `a55ec99a888fbb33eb98188962d2cedc07968ed2`. PR #207 merged as a merge commit 5f561d2c6f25ff01db6ddc298e2392bf2380de27.
+* Decisions: `app.Options.NoMouse` is set when a custom `Input` is supplied (Windows mouse mode swallows the first key on a pipe). The feed pump stops after queuing `server.shutdown`. Six Copilot threads fixed across three rounds (lifetime-ctx rehydrate recovery, disarm and no approval during resync, modal reset on same-head hydrate, shutdown flag across receive paths, linear prompt truncation, pump stop after terminal frame) plus a lint fix. Explicit operator P-001 exception over 062-S.
+* Review: no P0-P2. Deferred P-021 C2 stash entry A999ABD6 (kind/tool-call wrap spoofing, P3). Known timing flakes: `TestStalledRendererNeverBlocksHubAndStateConverges`, `TestIntegrationExpiredWrongAndWrongRoleCredentials`.
+* Closure: cascade close of 069-S exited 0 (archived 069-S shipped, 076-F, 076.001-T..076.005-T); evidence `docs/closure/evidence/069-S-076-F-close-evidence.json`. Live verification (Win32 console + Copilot + Dev Tunnel) recorded in `docs/closure/evidence/069-S-live-verification-evidence.md`; closure `READY`.
+* Next: closure PR, CI, Copilot gate, merge.
+* Original: docs/archive/memory/2026-10-29/069-s-ship-memory.md.
