@@ -175,7 +175,19 @@ func (m Model) permissionBody(p permission) string {
 	for i, l := range lines {
 		lines[i] = "  " + l
 	}
-	return m.wrap("kind: "+p.Kind, inner) + "\n" + m.wrap("tool call: "+p.ToolCallID, inner) + "\n\n" + strings.Join(lines, "\n")
+	return m.wrapHeader("kind: ", p.Kind, inner) + "\n" + m.wrapHeader("tool call: ", p.ToolCallID, inner) + "\n\n" + strings.Join(lines, "\n")
+}
+
+// wrapHeader wraps prefix+val to max(inner-2, 1) columns and indents every
+// continuation line two spaces, keeping the first line at column 0. A
+// soft-wrapped value therefore cannot start a line at column 0 and pass for a
+// "kind:" or "tool call:" header.
+func (m Model) wrapHeader(prefix, val string, inner int) string {
+	lines := strings.Split(m.wrap(prefix+val, max(inner-2, 1)), "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = "  " + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // syncModal keeps the modal viewport in step with the head pending request.

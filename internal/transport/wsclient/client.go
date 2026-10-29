@@ -497,6 +497,9 @@ func (c *cursor) apply(e hub.Envelope) Verdict {
 		c.gen, c.seq, c.have, c.stale = e.Gen, e.Seq, true, false
 		return VerdictApply
 	}
+	if e.Kind == hub.KindServerShutdown {
+		return c.applyShutdown(e)
+	}
 	if !c.have || c.stale || e.Gen != c.gen {
 		c.stale = true
 		return VerdictRehydrate
@@ -511,6 +514,22 @@ func (c *cursor) apply(e hub.Envelope) Verdict {
 		c.stale = true
 		return VerdictRehydrate
 	}
+}
+
+// applyShutdown mirrors hub.Cursor.applyShutdown: server.shutdown is always
+// applicable across gaps, duplicates are discarded, and a non-contiguous
+// arrival leaves the cursor stale.
+func (c *cursor) applyShutdown(e hub.Envelope) Verdict {
+	same := c.have && e.Gen == c.gen
+	switch {
+	case same && e.Seq <= c.seq:
+		return VerdictDiscard
+	case same && !c.stale && e.Seq == c.seq+1:
+		c.seq = e.Seq
+	default:
+		c.gen, c.seq, c.have, c.stale = e.Gen, e.Seq, true, true
+	}
+	return VerdictApply
 }
 
 func (c *cursor) position() (hub.Position, bool) {

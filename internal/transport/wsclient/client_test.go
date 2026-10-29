@@ -43,6 +43,74 @@ func TestCursorAppliesDiscardsAndDetectsGaps(t *testing.T) {
 	}
 }
 
+func TestCursorTreatsServerShutdownAsAlwaysApplicableAcrossGaps(t *testing.T) {
+	hydrated := func() *cursor {
+		var c cursor
+		if v := c.apply(env(hub.KindSessionHydrate, "g", 10)); v != VerdictApply {
+			t.Fatal("hydrate must apply")
+		}
+		return &c
+	}
+	t.Run("contiguous", func(t *testing.T) {
+		c := hydrated()
+		if v := c.apply(env(hub.KindServerShutdown, "g", 11)); v != VerdictApply {
+			t.Fatalf("got %v", v)
+		}
+		if p, ok := c.position(); !ok || p.Seq != 11 {
+			t.Fatalf("position %+v %v", p, ok)
+		}
+	})
+	t.Run("gap", func(t *testing.T) {
+		c := hydrated()
+		if v := c.apply(env(hub.KindServerShutdown, "g", 15)); v != VerdictApply {
+			t.Fatalf("got %v", v)
+		}
+		if _, ok := c.position(); ok {
+			t.Fatal("gapped shutdown must leave the cursor stale")
+		}
+	})
+	t.Run("stale", func(t *testing.T) {
+		c := hydrated()
+		c.apply(env(hub.KindAgentMessage, "g", 14))
+		if v := c.apply(env(hub.KindServerShutdown, "g", 15)); v != VerdictApply {
+			t.Fatalf("got %v", v)
+		}
+		if _, ok := c.position(); ok {
+			t.Fatal("stale cursor must stay stale")
+		}
+	})
+	t.Run("no baseline", func(t *testing.T) {
+		var c cursor
+		if v := c.apply(env(hub.KindServerShutdown, "g", 3)); v != VerdictApply {
+			t.Fatalf("got %v", v)
+		}
+		if _, ok := c.position(); ok {
+			t.Fatal("no-baseline shutdown must not offer a resume position")
+		}
+	})
+	t.Run("duplicate", func(t *testing.T) {
+		c := hydrated()
+		if v := c.apply(env(hub.KindServerShutdown, "g", 10)); v != VerdictDiscard {
+			t.Fatalf("got %v", v)
+		}
+		if v := c.apply(env(hub.KindServerShutdown, "g", 9)); v != VerdictDiscard {
+			t.Fatalf("got %v", v)
+		}
+	})
+	t.Run("foreign gen and repeated gap", func(t *testing.T) {
+		c := hydrated()
+		if v := c.apply(env(hub.KindServerShutdown, "other", 2)); v != VerdictApply {
+			t.Fatalf("foreign gen: %v", v)
+		}
+		if _, ok := c.position(); ok {
+			t.Fatal("foreign-gen shutdown must leave the cursor stale")
+		}
+		if v := c.apply(env(hub.KindServerShutdown, "other", 2)); v != VerdictDiscard {
+			t.Fatalf("repeat: %v", v)
+		}
+	})
+}
+
 func TestDialErrorNeverCarriesCredential(t *testing.T) {
 	const secret = "SECRETVALUE"
 	in := errString("dial failed: Bearer " + secret + " rejected by proxy")

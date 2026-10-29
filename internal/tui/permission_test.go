@@ -383,6 +383,40 @@ func TestPermissionSummaryIsIndentedAgainstNewlineAndSoftWrapHeaderSpoofing(t *t
 		})
 	}
 }
+func TestPermissionModalIndentsWrappedKindAndToolCallContinuations(t *testing.T) {
+	inner := 36
+	longKind := strings.Repeat("x", inner-9) + " tool call: EVIL"
+	longID := strings.Repeat("y", inner-14) + " kind: EVIL"
+	m := newModel(t, &fakeIngress{}, inner+4, 14)
+	m.pending = []permission{newPermission(hub.PermissionRequestedPayload{RequestID: "r1", ToolCallID: longID, PermissionKind: longKind, Summary: "ls"}, time.Time{})}
+	m.syncModal(true)
+
+	body := m.permissionBody(m.pending[0])
+	lines := strings.Split(body, "\n")
+	var col0 []string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "kind:") || strings.HasPrefix(l, "tool call:") {
+			col0 = append(col0, l)
+		}
+	}
+	if len(col0) != 2 {
+		t.Fatalf("wrapped continuation can spoof a column-0 header: %q", col0)
+	}
+	if !strings.HasPrefix(lines[0], "kind: ") {
+		t.Fatalf("first line must stay at column 0: %q", lines[0])
+	}
+	if got := m.modal.TotalLineCount(); got != len(lines) {
+		t.Fatalf("modal line count %d != body lines %d", got, len(lines))
+	}
+	if m.approvable() {
+		t.Fatal("approvable before the wrapped headers were scrolled through")
+	}
+	m = scrollModalToEnd(t, m)
+	if !m.approvable() {
+		t.Fatal("never became approvable")
+	}
+}
+
 func TestLongToolCallIDAndKindAreNotClipped(t *testing.T) {
 	id := strings.Repeat("a", 150) + "TAILMARK"
 	m := newModel(t, &fakeIngress{}, 40, 14)
