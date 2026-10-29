@@ -47,7 +47,7 @@ func asciiRenderer() *lipgloss.Renderer { return lipgloss.NewRenderer(io.Discard
 
 func newModel(t *testing.T, ing Ingress, w, h int) Model {
 	t.Helper()
-	m := New(Options{Ingress: ing, Renderer: asciiRenderer()})
+	m := New(Options{Ingress: ing, Renderer: asciiRenderer(), NoApprovalDelay: true})
 	m, _ = step(m, tea.WindowSizeMsg{Width: w, Height: h})
 	return m
 }

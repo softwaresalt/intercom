@@ -31,6 +31,20 @@ import (
 // DefaultActionTimeout bounds one ingress call made by an action Cmd.
 const DefaultActionTimeout = 5 * time.Second
 
+// DefaultApprovalDelay is how long a freshly shown (or reset) permission modal
+// refuses approval, so typed-ahead keys cannot approve a request unseen.
+const DefaultApprovalDelay = 150 * time.Millisecond
+
+// ApprovalReadyMsg unlocks approval for a modal once its delay elapsed. It is
+// ignored unless both fields still match the live modal.
+type ApprovalReadyMsg struct {
+	RequestID string
+	ModalGen  uint64
+}
+
+// ResyncFailedMsg reports that the model-initiated re-hydrate failed.
+type ResyncFailedMsg struct{ Err error }
+
 // Layout constants: header, status and input take one row each.
 const (
 	chromeRows = 3
@@ -56,6 +70,14 @@ type Options struct {
 	// Passing it here (rather than sending it after start) means no startup
 	// message can race a Ctrl+R re-issue.
 	Credentials CredentialsMsg
+	// ApprovalDelay is the approval lock-out after a modal opens or resets.
+	// Zero selects [DefaultApprovalDelay].
+	ApprovalDelay time.Duration
+	// NoApprovalDelay (or a negative ApprovalDelay) disables the lock-out;
+	// synchronous tests use it.
+	NoApprovalDelay bool
+	// After is the timer source for the approval delay. Nil selects time.After.
+	After func(time.Duration) <-chan time.Time
 }
 
 type styles struct {
@@ -119,6 +141,14 @@ type Model struct {
 	modalFor  string
 	modalSeen int // furthest body line the operator has scrolled into view
 
+	approvalDelay time.Duration
+	after         func(time.Duration) <-chan time.Time
+	modalReady    bool
+	modalGen      uint64
+
+	resyncRequested bool
+	timerNeeded     bool // syncModal opened/reset a modal that needs its delay timer
+
 	promptBusy bool
 	input      []rune
 
@@ -144,7 +174,18 @@ func New(o Options) Model {
 	if o.ActionTimeout <= 0 {
 		o.ActionTimeout = DefaultActionTimeout
 	}
-	m := Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0), reissue: o.Reissue}
+	m := Model{ingress: o.Ingress, timeout: o.ActionTimeout, st: newStyles(o.Renderer), vp: viewport.New(0, 0), reissue: o.Reissue, after: o.After}
+	switch {
+	case o.NoApprovalDelay || o.ApprovalDelay < 0:
+		m.approvalDelay = 0
+	case o.ApprovalDelay == 0:
+		m.approvalDelay = DefaultApprovalDelay
+	default:
+		m.approvalDelay = o.ApprovalDelay
+	}
+	if m.after == nil {
+		m.after = time.After
+	}
 	if len(o.Credentials.Credentials) > 0 {
 		m = m.showCredentials(o.Credentials)
 	}
@@ -157,6 +198,49 @@ func (m Model) Init() tea.Cmd { return nil }
 // Update implements tea.Model. It performs no I/O: actions are returned as
 // Cmds that run on Bubble Tea's own goroutines.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	nm, ok := next.(Model)
+	if !ok || !nm.timerNeeded {
+		return next, cmd
+	}
+	nm.timerNeeded = false
+	timer := nm.approvalTimerCmd(nm.modalFor, nm.modalGen)
+	if cmd == nil {
+		return nm, timer
+	}
+	return nm, tea.Batch(cmd, timer)
+}
+
+// approvalTimerCmd waits out the approval delay, then reports the modal it was
+// started for.
+func (m Model) approvalTimerCmd(id string, gen uint64) tea.Cmd {
+	after, d := m.after, m.approvalDelay
+	return func() tea.Msg {
+		<-after(d)
+		return ApprovalReadyMsg{RequestID: id, ModalGen: gen}
+	}
+}
+
+// requestRehydrate asks the connection to re-serve a hydrate once per stuck
+// resync, bounded by the action timeout.
+func (m Model) requestRehydrate() (Model, tea.Cmd) {
+	r, ok := m.ingress.(Rehydrater)
+	if !ok || m.resyncRequested {
+		return m, nil
+	}
+	m.resyncRequested = true
+	timeout := m.timeout
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := r.Rehydrate(ctx); err != nil {
+			return ResyncFailedMsg{Err: err}
+		}
+		return nil
+	}
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -164,8 +248,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case FrameMsg:
 		return m.onFrame(msg.Frame)
+	case ApprovalReadyMsg:
+		if len(m.pending) > 0 && m.pending[0].RequestID == msg.RequestID && m.modalFor == msg.RequestID && m.modalGen == msg.ModalGen {
+			m.modalReady = true
+		}
+		return m, nil
+	case ResyncFailedMsg:
+		m.resyncRequested = false
+		if msg.Err != nil {
+			m.notice = "re-hydrate failed: " + SanitizeLine(msg.Err.Error())
+		}
+		return m, nil
 	case ResyncMsg:
 		m.resync = true
+		m.armed = ""
 		return m, nil
 	case DisconnectedMsg:
 		m.disconnected = msg.Err
@@ -371,15 +467,25 @@ func (m Model) onResolveResult(msg ActionResultMsg) Model {
 // ---- envelopes ----
 
 func (m Model) onFrame(f hub.Frame) (tea.Model, tea.Cmd) {
-	switch m.cursor.Apply(f) {
+	action := m.cursor.Apply(f)
+	if f.Kind() == hub.KindServerShutdown {
+		// Terminal frame: even across a gap (deliverTerminal may drop the
+		// oldest queued frame) the hub is going away, so never resync.
+		m.shutdown = true
+		m.resync = false
+		if action != hub.ActionApply {
+			return m, nil
+		}
+	}
+	switch action {
 	case hub.ActionDiscard:
 		return m, nil
 	case hub.ActionRehydrate:
 		// A gap, generation change or missing baseline: nothing may be applied
 		// until the next hydrate (hub.Cursor contract). The feed forces that
-		// hydrate; the model just says so.
+		// hydrate; the model asks for one too, in case the feed cannot.
 		m.resync = true
-		return m, nil
+		return m.requestRehydrate()
 	}
 	env, err := decodeEnvelope(f)
 	if err != nil {
@@ -388,9 +494,13 @@ func (m Model) onFrame(f hub.Frame) (tea.Model, tea.Cmd) {
 	}
 	ts := parseTS(env.TS)
 	atBottom := m.vp.AtBottom()
+	var cmd tea.Cmd
 	switch env.Kind {
 	case hub.KindSessionHydrate:
 		m = m.applyHydrate(env.Payload, ts)
+		if m.resync {
+			m, cmd = m.requestRehydrate()
+		}
 	case hub.KindAgentMessageDelta:
 		m = m.applyMessage(env.Payload, true)
 	case hub.KindAgentMessage:
@@ -416,7 +526,7 @@ func (m Model) onFrame(f hub.Frame) (tea.Model, tea.Cmd) {
 	}
 	m.refreshTranscript(atBottom)
 	m.syncModal(false)
-	return m, nil
+	return m, cmd
 }
 
 func (m Model) applyHydrate(raw []byte, ts time.Time) Model {
@@ -438,6 +548,8 @@ func (m Model) applyHydrate(raw []byte, ts time.Time) Model {
 	m.turnActive = body.TurnActive
 	m.evicted = body.EvictedCount
 	m.resync = false
+	m.resyncRequested = false
+	m.armed = ""
 	m.shutdown = false
 	// The hydrate is authoritative for pending permissions: replace, never merge.
 	m.pending = nil

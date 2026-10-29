@@ -182,6 +182,7 @@ func (m Model) permissionBody(p permission) string {
 func (m *Model) syncModal(reset bool) {
 	if len(m.pending) == 0 {
 		m.modalFor, m.armed = "", ""
+		m.modalReady = false
 		return
 	}
 	p := m.pending[0]
@@ -193,6 +194,9 @@ func (m *Model) syncModal(reset bool) {
 		m.modal = viewport.New(m.modalInnerWidth(), rows)
 		m.modal.SetContent(m.permissionBody(p))
 		m.modalFor, m.modalSeen, m.armed = p.RequestID, 0, ""
+		m.modalGen++
+		m.modalReady = m.approvalDelay <= 0
+		m.timerNeeded = !m.modalReady
 	}
 	m.noteSeen()
 }
@@ -212,7 +216,7 @@ func (m Model) approvable() bool {
 	if len(m.pending) == 0 || m.tooSmall() || m.modal.Height < 1 || m.modalFor != m.pending[0].RequestID || m.pending[0].Empty {
 		return false
 	}
-	return m.modalSeen >= m.modal.TotalLineCount() && !m.inflight[m.pending[0].RequestID]
+	return m.modalSeen >= m.modal.TotalLineCount() && m.modalReady && !m.inflight[m.pending[0].RequestID]
 }
 
 func (m Model) decisionCmd(kind agent.DecisionKind) (Model, tea.Cmd) {
@@ -243,6 +247,8 @@ func (m Model) onModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.notice = "scroll to the end of the request (PgDn) before approving"
 			if m.pending[0].Empty {
 				m.notice = "an empty request cannot be approved"
+			} else if !m.modalReady && m.modalSeen >= m.modal.TotalLineCount() {
+				m.notice = "wait a moment before approving"
 			}
 		default:
 			// Approval takes y then Enter, so typing ahead ("yes\n") when the
@@ -298,6 +304,8 @@ func (m Model) modalView(height int) string {
 		hint = "empty request: approve disabled   n deny"
 	case m.approvable():
 		hint = "y approve (then Enter to confirm)   n deny"
+	case m.modalSeen >= m.modal.TotalLineCount() && !m.modalReady:
+		hint = "approval unlocks in a moment   n deny"
 	default:
 		hint = "scroll to the end (PgDn) to enable approve   n deny"
 	}
