@@ -1,0 +1,178 @@
+---
+title: "End-to-End Shutdown Reliability, Remote Disconnect, and Live Copilot Resilience Deliberation"
+description: "Deliberation on Capability Set 1: resolving deferred scope expansions and follow-ups 407291BE, 70BEBF29, FA1C38F7, 80996C79, A999ABD6, DA760FBB, and E7B78125 across internal/agent, internal/agent/copilot, internal/app, internal/hub, internal/transport/wsclient, internal/tui, and docs/design-docs."
+topic: "End-to-End Shutdown Reliability, Remote Disconnect, and Live Copilot Resilience"
+depth: "deep"
+decision_status: "decided"
+promoted_to: "plan"
+linked_artifacts:
+  - "docs/plans/2026-10-29-intercom-go-shutdown-disconnect-and-event-telemetry-plan.md"
+  - ".backlogit/queue/077-F.md"
+  - ".backlogit/queue/078-F.md"
+  - ".backlogit/queue/079-F.md"
+  - ".backlogit/queue/070-S.md"
+  - ".backlogit/queue/071-S.md"
+  - ".backlogit/queue/072-S.md"
+tags:
+  - "shutdown"
+  - "copilot"
+  - "hub"
+  - "wsclient"
+  - "tui"
+  - "permissions"
+  - "telemetry"
+---
+
+## Problem Frame
+
+Following the merge and post-merge operational closure of the `067-S..069-S` shipment chain (`069-S` merged at `5f561d2c6f25ff01db6ddc298e2392bf2380de27`, closure commit `078713bc50482b40c7b879f7bb4b037b7f6cb304`), the operator selected **Option 1: Capability Set 1 — End-to-End Shutdown Reliability, Remote Disconnect & Live Copilot Resilience** for execution in dark-factory mode (`DARK_MODE_ACTIVE`, P-017). Capability Set 1 comprises seven active stash entries captured during `057-S`, `067-S`, `068-S`, and `069-S`:
+
+1. **`407291BE`** (`medium` / `bug`): Intermittent failed shutdown observed once in three live `067-S` runs (`0fd7936`, `docs/closure/evidence/067-S-live-verification-evidence.md`): `Ctrl+C` exited with code 1 after 11.7 s; step `2+4 stop agent` failed with `agent did not confirm it stopped; the CLI child may be orphaned: agent: stop copilot client: timed out; agent cleanup incomplete: ForceStop did not return within 5s` after a denied-permission turn with a long reasoning-event retry stream, while no `copilot` process remained alive.
+2. **`70BEBF29`** (`medium` / `task`): Record `Hub.Run`'s `ErrCleanupIncomplete` (stuck operator lane) in `App.Err` via `a.addErr` before `hubRunDone` closes in `internal/app/assemble.go`, and add an `internal/app` shutdown regression test for a stuck lane.
+3. **`FA1C38F7`** (`low` / `task`): Residual `057-S` review items in `internal/agent/copilot`: (a) `sanitizeBound` should also replace Unicode `Zl`/`Zp` (`U+2028`/`U+2029`) and evaluate newline handling in shell summaries; (b) sanitize and cap `PermissionRequest.RawKind` and `PermissionRequest.ToolCallID` at ~128 runes; (c) `Adapter.Start` `fail()` should quiesce the callback latch (`a.latch.quiesce(0)`) for consistency; (d) re-check `gone()` before sending permission asks on `b.asks`; (e) surface write diff/new-file-content and shell `possibleUrls` to the hub for operator review; (f) classify `session.shutdown` as informational and ensure a terminal `session.idle` arriving between `latch.quiesce` and `sess.Disconnect` is not lost.
+4. **`80996C79`** (`low` / `bug`): After shutdown, `hub.deliverTerminal` may drop the oldest queued frame from a full-buffer client to fit `server.shutdown`, creating a sequence gap so a `Cursor`-based consumer (`hub.Cursor` / `wsclient`) returns `ActionRehydrate` / `VerdictRehydrate` and may discard the `server.shutdown` frame it receives; `hub.Cursor` and `wsclient` should treat `KindServerShutdown` as always-applicable. (The TUI half in `Model.onFrame` was closed in `076.004-T` / `069-S`; the `hub.Cursor` and `wsclient` half remains.)
+5. **`A999ABD6`** (`low` / `bug`): Indent soft-wrap continuation lines of the permission modal `kind:` and `tool call:` values in `internal/tui/permission.go` `permissionBody` so agent-controlled `Kind` or `ToolCallID` text cannot wrap to column 0 and imitate a modal header.
+6. **`DA760FBB`** (`medium` / `task`): Bound and enrich `agent.Event`: cap `Event.Text`, `ToolName`, `MessageID`, `TurnID`, `ToolCallID`, and `RawType` sizes (rune-safe UTF-8 truncation with an `Event.Truncated` flag), and carry `tool.ended` result/error text and reasoning event kinds (`agent.reasoning`, `agent.reasoning.delta`) for the TUI and WebSocket observers.
+7. **`E7B78125`** (`low` / `task`): Rate-limit / deduplicate the per-event `Warn` log for unmapped SDK event types in `internal/agent/copilot` `normalize` (log the first occurrence of each unmapped event type at `Warn`, then subsequent occurrences at `Debug`) to avoid log flooding on high-frequency unmapped events, and amend normative design §4.3 wording.
+
+Under P-021 C6, every entry carrying the `DEFERRED SCOPE EXPANSION` marker must pass through deliberation before planning and harvest. In addition, Ship Step 6.1(a1) `S2` enforces `n == 1` covering feature per shipment (`A1_MULTIPLE_FEATURE_MEMBERS` halts if `n > 1`), so this deliberation defines the covering-feature and shipment boundary architecture for the batch.
+
+## P-021 C5/C6 Triage Audit: Unconditional Duplicate Scan and Late-Identifier Reconciliation
+
+### 1. Unconditional Duplicate Scan (Trigger A)
+
+An unconditional pairwise scan was executed across all 148 active stash entries in `.backlogit/stash.jsonl`, all archived stash entries in `.backlogit/archive/stash.jsonl`, and all items in `.backlogit/queue/`:
+
+* **`407291BE`**: **CLEAN DUPLICATE SCAN**. No other active or archived stash entry duplicates `Adapter.Stop` / `ForceStop` timeout and SDK `startStopMux` contention hardening under a busy Copilot CLI.
+* **`70BEBF29`**: **CLEAN DUPLICATE SCAN**. `074.005-T` (shipped in `067-S`) bounded the operator lane worker join in `Hub.Run`; `70BEBF29` is the sole entry covering `internal/app/assemble.go` `a.addErr` propagation of `Hub.Run`'s returned error into `App.Err()`.
+* **`FA1C38F7`**: **CLEAN DUPLICATE SCAN**. No other active or archived stash entry duplicates `internal/agent/copilot` `sanitizeBound` `Zl`/`Zp` filtering, `RawKind`/`ToolCallID` rune capping, `fail()` latch quiescing, pre-send `gone()` re-checking, write-diff / shell `possibleUrls` surfacing, or post-quiesce `session.shutdown` / terminal `session.idle` handling. Sub-item `(e)` (`write` diff/content and `shell` `possibleUrls` surfacing) is grouped into `072-S` (`079-F`) alongside `DA760FBB` as directed, while sub-items `(a)`, `(b)`, `(c)`, `(d)`, and `(f)` are grouped into `070-S` (`077-F`).
+* **`80996C79`**: **CLEAN DUPLICATE SCAN**. The TUI `Model.onFrame` half was completed in `076.004-T` (`069-S`); no other entry duplicates the remaining `hub.Cursor.Apply` and `wsclient` `cursor.apply` `KindServerShutdown` gap-handling contract.
+* **`A999ABD6`**: **CLEAN DUPLICATE SCAN**. `076.003-T` (`069-S`) indented `permission.Summary` lines; `A999ABD6` is the sole entry covering soft-wrap continuation indentation of `kind:` and `tool call:` header lines in `permissionBody`.
+* **`DA760FBB`**: **CLEAN DUPLICATE SCAN**. No other active or archived stash entry duplicates `agent.Event` rune-safe size bounds, `Event.Truncated`, `tool.ended` result/error text, or `agent.reasoning` / `agent.reasoning.delta` mapping.
+* **`E7B78125`**: **CLEAN DUPLICATE SCAN**. Archived entry `9A14D3B7` concerned `scripts/check-retired-architecture.sh` unmapped file extensions; `E7B78125` is the sole entry covering unmapped Copilot SDK event `Warn`-to-`Debug` rate-limiting in `internal/agent/copilot` and design §4.3.
+
+### 2. Late-Identifier Reconciliation (Trigger B)
+
+Using the shipment closure records in `docs/closure/`, all missing PR numbers and merge commit SHAs were recovered and reconciled in place via `backlogit stash edit` after passing the Step 1.9 branch gate:
+
+| Entry | Originally Captured Source Refs | Reconciled Source Refs & Retrieval Source | Disposition |
+|---|---|---|---|
+| `407291BE` | `shipment 067-S, feature 074-F, evidence docs/closure/evidence/067-S-live-verification-evidence.md` | `PR #202 (merge commit a2cacf32c29b5e3a0ee596f01f14686ceeb3775d), evidence docs/closure/evidence/067-S-live-verification-evidence.md (commit 0fd7936), review-thread N/A (live verification run)` recovered from `docs/closure/067-S-074-F-post-merge-closure.md`. | Reconciled in place via `backlogit stash edit 407291BE` |
+| `70BEBF29` | `task 074.005-T, feature 074-F, shipment 067-S, PR 202, review-thread PRRT_kwDOTPuhps6xACpd` | `PR #202 (merge commit a2cacf32c29b5e3a0ee596f01f14686ceeb3775d), review-thread PRRT_kwDOTPuhps6xACpd` recovered from `docs/closure/067-S-074-F-post-merge-closure.md`. | Reconciled in place via `backlogit stash edit 70BEBF29` |
+| `FA1C38F7` | `shipment 057-S, feature 065-F, tasks 065.003-T/065.004-T, internal/agent/copilot` | `PR #175 (merge commit e43ad660aa2f0bd98c9eff58833cbfbe0e4963a2), review-thread N/A (pre-PR local review cycle 3)` recovered from `docs/closure/057-S-065-F-post-merge-closure.md`. | Reconciled in place via `backlogit stash edit FA1C38F7` |
+| `80996C79` | `task 075.001-T, feature 075-F, shipment 068-S, PR N/A, review-thread N/A (pre-PR local review, concurrency-reviewer P3)` | `PR #205 (merge commit 2fff94b6722ff763aafc04a5e44432f2733bd58c), review-thread N/A (pre-PR local review, concurrency-reviewer P3)` recovered from `docs/closure/068-S-075-F-post-merge-closure.md`. | Reconciled in place via `backlogit stash edit 80996C79` |
+| `A999ABD6` | `task 076.003-T, feature 076-F, shipment 069-S, PR N/A, review-thread N/A (local review, pre-PR)` | `PR #207 (merge commit 5f561d2c6f25ff01db6ddc298e2392bf2380de27), review-thread N/A (local review, pre-PR)` recovered from `docs/closure/069-S-076-F-post-merge-closure.md`. | Reconciled in place via `backlogit stash edit A999ABD6` |
+| `DA760FBB` | `task 065.002-T, feature 065-F, shipment 057-S, PR N/A (pre-PR local review: security P3, architecture 7), review thread N/A` | `PR #175 (merge commit e43ad660aa2f0bd98c9eff58833cbfbe0e4963a2, pre-PR local review: security P3, architecture 7), review thread N/A` recovered from `docs/closure/057-S-065-F-post-merge-closure.md`. | Reconciled in place via `backlogit stash edit DA760FBB` |
+| `E7B78125` | `task 065.002-T, feature 065-F, shipment 057-S, PR N/A (pre-PR local review finding F9), review thread N/A` | `PR #175 (merge commit e43ad660aa2f0bd98c9eff58833cbfbe0e4963a2, pre-PR local review finding F9), review thread N/A` recovered from `docs/closure/057-S-065-F-post-merge-closure.md`. | Reconciled in place via `backlogit stash edit E7B78125` |
+
+## Research Findings
+
+### Compound Learnings Consulted
+
+* `docs/compound/2026-10-20-backlogit-cli-pitfalls-and-permission-outcome-lessons.md`: Documents running `Agent.Stop` under `context.WithoutCancel` with a hard budget, surfacing unconfirmed `ForceStop` as `agent.ErrCleanupIncomplete` / `hub.ErrOrphanRisk`, and using atomic `PermissionOutcome` (`Deliver` vs `Revoke`).
+* `docs/compound/2026-10-20-process-wiring-credential-panel-and-approval-disarm.md`: Documents decoupling `Hub.Run`'s context from signal cancellation until shutdown step 6 and aggregating runtime errors via `a.addErr` before closing completion channels.
+* `docs/compound/2026-10-20-tui-permission-modal-safety-and-linux-test-clock.md`: Documents sharing a single layout and line-count calculation between `permissionBody` and `m.approvable()` so wrapped header and summary lines must be scrolled into view before approval unlocks.
+* `docs/compound/2026-10-19-hub-test-oracles-and-toolchain-pitfalls.md`: Documents `Cursor` sequence-gap recovery semantics across local TUI and remote `wsclient` consumers.
+
+### Codebase and SDK Inspection Findings (Baseline `069-S` / `078713b`)
+
+1. **Root-Cause Analysis of `407291BE` (`internal/agent/copilot/adapter.go`, `internal/hub/shutdown.go`, and `github.com/github/copilot-sdk/go@v1.0.11`)**:
+   * Inspection of `github.com/github/copilot-sdk/go@v1.0.11/client.go:536-685` and `internal/jsonrpc2/jsonrpc2.go:296-352` revealed the exact mechanism behind the single `067-S` Run 1 shutdown failure (`11.7 s` total elapsed time, `agent: stop copilot client: timed out; agent cleanup incomplete: ForceStop did not return within 5s`, with zero stranded `copilot.exe` process):
+     1. In `copilotsdk.Client.Stop()` (`client.go:552-572`), the SDK acquires `c.startStopMux.Lock()` and issues `rpcClient.Runtime.Shutdown(context.Background())`, waiting on `case <-time.After(runtimeShutdownTimeout):` where `const runtimeShutdownTimeout = 10 * time.Second` (`client.go:1749`).
+     2. In `Adapter.doStop` (`internal/agent/copilot/adapter.go:639`), `step("stop copilot client", a.client.Stop)` runs `boundedCall(ctx, a.budget(ctx), a.client.Stop)` with `a.budget(ctx) = DefaultStopTimeout = 5 * time.Second`. At `t0 + 5.0 s`, `boundedCall` times out while `copilotsdk.Client.Stop()` is still running in its background goroutine holding `c.startStopMux.Lock()` for the remaining `5.0 s` of `runtimeShutdownTimeout` (`10.0 s`).
+     3. At `t0 + 5.0 s`, `Adapter.doStop` invokes `a.forceStop()`, which spawns `a.client.ForceStop()` and starts a `5.0 s` timer (`a.cfg.StopTimeout = 5 s`). Inside `copilotsdk.Client.ForceStop()` (`client.go:637-645`), line 637 (`if p := c.osProcess.Swap(nil); p != nil { p.Kill() }`) **immediately kills `copilot.exe`** (which is why no `copilot.exe` child survived Run 1), and then line 645 blocks on `c.startStopMux.Lock()` behind the in-flight `c.Stop()`!
+     4. When `p.Kill()` terminates `copilot.exe`, `jsonrpc2.Client.readLoop()` (`jsonrpc2.go:346`) hits `io.EOF` on `stdout` and returns **without** closing `c.stopChan` and **without** waking `c.pendingRequests` (`Runtime.Shutdown`), while `monitorProcess`'s `proc.Wait()` (`client.go:2270`) waits for the `c.process.Stderr` pipe reader to drain before closing `c.processDone`. Consequently, `c.Stop()` holds `c.startStopMux.Lock()` until its `10.0 s` `runtimeShutdownTimeout` fires at `t0 + 10.0 s`.
+     5. Because `5.0 s (client.Stop timeout) + 5.0 s (forceStop timeout) == 10.0 s (SDK runtimeShutdownTimeout)`, `a.forceStop()`'s `5.0 s` timer expires at `t0 + 10.0 s` (`1.7 s` pre-stop + `10.0 s` = `11.7 s` total run time) at the exact instant `c.Stop()`'s `10.0 s` timer fires, before `c.Stop()` can finish `killProcessAndWait()` / `c.client.Stop()` and unlock `c.startStopMux` for `c.ForceStop()` to return! Furthermore, if an operator hurries shutdown with a second `Ctrl+C` `0.5 s` into `a.client.Stop()`, `c.Stop()` still has `9.5 s` left on its `10.0 s` lock hold, so a fixed `5.0 s` `forceStop()` timer would expire `4.5 s` before `c.Stop()` releases `c.startStopMux`.
+   * **Fix**: Export `const SDKRuntimeShutdownTimeout = 10 * time.Second` and add `SDKStopLockTimeout time.Duration` to `copilot.Config` (defaulting to `SDKRuntimeShutdownTimeout` when `cfg.StopTimeout >= DefaultStopTimeout`, and configurable in unit tests). Track `clientStopStart time.Time` and `clientStopActive bool` (under `a.mu`) around `a.client.Stop` in `doStop`. In `(*Adapter).forceStopWait() time.Duration`, when `a.clientStopActive && a.cfg.SDKStopLockTimeout > 0`, add `max(a.cfg.SDKStopLockTimeout-time.Since(a.clientStopStart), 0)` to `a.cfg.StopTimeout` so `a.forceStop()` always waits out the remaining `startStopMux` lock-hold window plus a full `a.cfg.StopTimeout` margin, and export `(*Adapter).ForceStopBudget() time.Duration` returning `a.cfg.StopTimeout + a.cfg.SDKStopLockTimeout` (`15 s` in production, `a.cfg.StopTimeout` when `SDKStopLockTimeout == 0`). In `internal/hub/shutdown.go`, raise `DefaultShutdownForce` from `7 * time.Second` to `12 * time.Second` and validate in `NewShutdown` that when the agent exposes `ForceStopBudget() time.Duration`, the effective `Stop + Force` budget is at least `ForceStopBudget()` (defaulting `Force` when unset so `Stop + Force >= ForceStopBudget() + 2s`), preventing custom configurations from abandoning `Agent.Stop` while the adapter is still waiting out `SDKStopLockTimeout + StopTimeout`.
+
+2. **`FA1C38F7(a, b, c, d, f)` (`internal/agent/copilot/permission.go`, `adapter.go`, `normalize.go`)**:
+   * **(a)** In `sanitizeBound` (`internal/agent/copilot/permission.go:75`), replace `r == '\u2028' || r == '\u2029'` (`Zl`/`Zp`) with `utf8.RuneError` (`U+FFFD`) alongside `unicode.IsControl(r) || unicode.Is(unicode.Cf, r)`. Preserve `\n` and `\t` in `Summary` because `076.003-T` (`069-S`) already indents every newline-separated and soft-wrapped summary line by two spaces in `internal/tui/permission.go` `permissionBody` and `TestSummarySanitizesControlAndBidiRunes` pins newline/tab preservation.
+   * **(b)** Define `const maxIdentRunes = 128` and `sanitizeIdent(s string, max int) string` in `internal/agent/copilot/permission.go` (replacing `\n`, `\t`, `\u2028`, `\u2029`, `unicode.IsControl`, and `unicode.Cf` with `U+FFFD` and capping at `128` runes with `"…"`). Apply `sanitizeIdent` to `out.RawKind` and `out.ToolCallID` in `toDomainRequest` (computing `PermissionKindOther`'s `out.Summary` from the raw unclipped `string(req.Kind())` first so an oversized unknown kind still sets `out.Truncated = true`).
+   * **(c)** In `(*Adapter).Start` `fail` (`internal/agent/copilot/adapter.go:264`), call `a.latch.quiesce(0)` right after `a.stopOnce.Do(func() { close(a.stop) })` so callbacks registered during a failed `Start` are quiesced consistently with `Stop`.
+   * **(d)** In `(*permissionBridge).handle` (`internal/agent/copilot/permission.go:246`), re-check `if gone() { return unavailable() }` immediately before `select { case b.asks <- ask: ... }` and document how the reply `select` and `gone()` downgrade guard concurrent closes.
+   * **(f)** Add `"session.shutdown": {}` to `informationalTypes` in `internal/agent/copilot/normalize.go` so the SDK's post-disconnect `session.shutdown` event is dropped at `Debug` before `a.latch.enter()`. In `(*Adapter).onEvent` (`internal/agent/copilot/adapter.go:388`), when `!a.latch.enter()` returns false and `ev.Data` is `*rpc.SessionIdleData`, normalize the terminal idle event, update `a.bridge` (`abortTurn`/`clearTurn`), and attempt a non-blocking send to `a.cfg.Ingress` when `a.cfg.HubDone` is still open before falling back to the `Warn` log.
+
+3. **`70BEBF29` (`internal/app/assemble.go` & `internal/app/shutdown_test.go`)**:
+   * In `(*App).assemble` (`internal/app/assemble.go:223-228`), when `err := h.Run(hubCtx); err != nil`, call `a.addErr(fmt.Errorf("hub: %w", err))` before `defer close(a.hubRunDone)` runs. Because `(*App).reap` calls `a.awaitHub()` (`<-a.hubRunDone`) before `supervise()` calls `a.takeErrs()`, any `agent.ErrCleanupIncomplete` returned by `Hub.Run` on a stuck operator lane worker is deterministically joined into `App.Err()`.
+
+4. **`80996C79` & `A999ABD6` (`internal/hub/cursor.go`, `internal/transport/wsclient/client.go`, `internal/tui/permission.go`)**:
+   * **`80996C79`**: In `(*Cursor).Apply(f Frame)` (`internal/hub/cursor.go:55`) and `(*cursor).apply(e hub.Envelope)` (`internal/transport/wsclient/client.go:399`), handle `KindServerShutdown` before the general gap/stale rejection:
+     * If `c.have && Gen matches && Seq <= current Seq`, return `ActionDiscard` / `VerdictDiscard` (duplicate terminal frame).
+     * If `c.have && !c.stale && Gen matches && Seq == current Seq + 1`, advance `Seq` and return `ActionApply` / `VerdictApply` with `c.stale = false`.
+     * Otherwise (sequence gap after `deliverTerminal` evicted the oldest frame from a full buffer, or `c.stale` already true, or `!c.have` / gen change), record `(Gen, Seq)` with `c.have = true` and `c.stale = true` (so `Position()` returns `false` and never claims skipped sequence numbers were applied, while any duplicate of the same `server.shutdown` is discarded) and return `ActionApply` / `VerdictApply`.
+   * **`A999ABD6`**: In `internal/tui/permission.go:159-166`, add `(m Model) wrapHeader(prefix, val string, inner int) string` which wraps `prefix + val` to `max(inner-2, 1)` and prefixes continuation lines (`i >= 1`) with `"  "`. Single-line `kind: <val>` and `tool call: <val>` headers remain unchanged at column 0 (preserving `internal/tui/testdata/modal.golden`), while wrapped continuation lines are indented by two spaces within `inner` columns and included in `m.modal.TotalLineCount()` for `m.approvable()`.
+
+5. **`DA760FBB`, `FA1C38F7(e)`, & `E7B78125` (`internal/agent`, `internal/agent/copilot`, `internal/hub`, `internal/tui`, `docs/design-docs`)**:
+   * **`FA1C38F7(e)`**: In `toDomainRequest` (`internal/agent/copilot/permission.go`), for `*rpc.PermissionRequestShell`, append non-empty `r.PossibleURLs` as `"\nurls: " + strings.Join(urls, ", ")` before `sanitizeBound(text, maxSummaryRunes)`. For `*rpc.PermissionRequestWrite`, run `fnSan, fnTrunc, fnLen := sanitizeBound(r.FileName, maxSummaryRunes)` on `r.FileName` first (preserving fail-closed auto-deny if `FileName` itself exceeds `maxSummaryRunes`); when `!fnTrunc` and `body := r.Diff` (falling back to `deref(r.NewFileContents)` when `Diff == ""`) is non-empty, check whether `body` fits unclipped within `avail := maxSummaryRunes - fnLen - 1` runes. If it fits unclipped, append `"\n" + bodySan` with `out.Truncated = false`. If `body` must be clipped, reserve `utf8.RuneCountInString("\n[write preview truncated]")` (`26` runes) plus `1` rune for `sanitizeBound`'s `"…"`: if `fnLen + 26 > maxSummaryRunes` (so even the truncation notice cannot fit within `maxSummaryRunes`), set `out.Truncated = true` (fail-closed auto-deny); otherwise bound `body` to `previewBudget := max(maxSummaryRunes-fnLen-1-26-1, 0)` runes and append `"\n" + preview + "\n[write preview truncated]"` (or `"\n[write preview truncated]"` when `previewBudget == 0`) with `out.Truncated = false`, keeping `utf8.RuneCountInString(out.Summary) <= maxSummaryRunes` (`2048` runes) and giving operators an explicit `[write preview truncated]` notice whenever a write diff/content preview is partial.
+   * **`DA760FBB` & `E7B78125`**:
+     * Add `KindReasoning EventKind = "agent.reasoning"` and `KindReasoningDelta EventKind = "agent.reasoning.delta"`, plus `Truncated bool`, to `agent.Event` in `internal/agent/agent.go`.
+     * In `internal/agent/copilot/normalize.go` and `adapter.go`: define `MaxEventTextBytes = 16 << 10` (`16384`), `MaxEventIdentBytes = 128`, `maxWarnedEventTypes = 256`, single-pass rune-safe `boundUTF8(s string, maxBytes int) (string, bool)`, and `unmappedLogGate` (lazily initializing `seen` under `g.mu`, sanitizing and bounding `raw` to `MaxEventIdentBytes` before `gate.shouldWarn(raw)` and logging). Extract `ToolExecutionCompleteData` result/error text (`d.Error.Message` on failure or when present, `d.Result.Content` / `*d.Result.DetailedContent` on success) into `Event.Text` on `agent.KindToolEnded`, bound all identifier fields (`MessageID`, `TurnID`, `ToolCallID`, `ToolName`, `RawType`) to `MaxEventIdentBytes` and `Text` to `MaxEventTextBytes` on rune boundaries, and set `Event.Truncated`. Map `*rpc.AssistantReasoningData` to `agent.KindReasoning` and `*rpc.AssistantReasoningDeltaData` to `agent.KindReasoningDelta` in `079.003-T` alongside wiring `a.unmapped` in `Adapter.onEvent` and migrating `TestCallbackUnknownEventIsForwardedNotDropped` in `adapter_test.go` so every task leaves `go test ./internal/agent/...` green.
+     * In `internal/hub/envelope.go`, `internal/hub/fold.go`, `internal/hub/hub.go`, and `internal/tui/model.go`: add `KindAgentReasoning` (`"agent.reasoning"`) and `KindAgentReasoningDelta` (`"agent.reasoning.delta"`) using `MessagePayload`, add `Text string` (`json:"text,omitempty"`) to `ToolEndedPayload`, propagate `ev.Truncated` across all `Fold` branches (`applyDelta`, `applyMessage`, reasoning, `KindToolStarted`, `applyToolEnded`, and `f.lastDelta.truncated`), apply `h.fold.LastDelta()` to live `agent.KindReasoningDelta` frames and rate-limit repeated `hub: unmapped agent event` `Warn` logs per `ev.RawType` in `Hub.handleEvent`, render `thinking> ...` and `tool> <name> [<state>]: <text>` in `tui.Model`, and amend `docs/design-docs/intercom-go-backend-architecture.md` §3.1, §4.2, §4.3, and §5.2.
+
+## Options Considered
+
+### Option A: Three Single-Feature Shipments Chained Sequentially (`070-S -> 071-S -> 072-S`)
+
+* **Shipment `070-S` (Covering Feature `077-F`, 4 tasks `077.001-T..077.004-T`)**: Copilot adapter Stop/ForceStop resilience, latch/permission hardening, and `App.Err` stuck-lane reporting (`407291BE`, `70BEBF29`, `FA1C38F7(a,b,c,d,f)`).
+* **Shipment `071-S` (Covering Feature `078-F`, 2 tasks `078.001-T..078.002-T`, blocked by `070-S`)**: Remote `Cursor`/`wsclient` terminal `server.shutdown` gap handling and TUI permission modal `kind:`/`tool call:` continuation anti-spoofing (`80996C79`, `A999ABD6`).
+* **Shipment `072-S` (Covering Feature `079-F`, 6 tasks `079.001-T..079.006-T`, blocked by `071-S`)**: `agent.Event` rune-safe bounds, `tool.ended` result/error & reasoning enrichment, write-diff/shell-URL surfacing, and unmapped-event log rate-limiting (`DA760FBB`, `FA1C38F7(e)`, `E7B78125`).
+* **Pros**:
+  * Satisfies Ship Step 6.1(a1) `S2` (`n == 1` covering feature per shipment) with clean subsystem boundaries.
+  * Every task touches `1–3` files, `<= 4` functions, and `< 4` test scenarios within a single skill domain (`code` or `docs`) under the 2-Hour Rule.
+  * Separates shutdown/lifecycle bug fixes (`070-S`) and remote/TUI disconnect/modal bug fixes (`071-S`) from protocol/event enrichment (`072-S`).
+* **Cons**:
+  * Requires 3 sequential shipment lifecycles in Ship.
+
+### Option B: Single Monolithic Shipment (`070-S` Combining All 7 Stash Entries)
+
+* **Pros**:
+  * Single PR lifecycle.
+* **Cons**:
+  * Bundles 12 tasks across 6 packages (`internal/agent`, `internal/agent/copilot`, `internal/app`, `internal/hub`, `internal/transport/wsclient`, `internal/tui`) and architecture docs into a single shipment, increasing review blast radius and coupling shutdown fixes with wire-vocabulary additions.
+
+## Trade-off Comparison
+
+| Criterion | Option A (3 Chained Shipments: `070-S..072-S`) | Option B (1 Monolithic Shipment: `070-S`) |
+|---|---|---|
+| Ship `S2` (`n == 1` feature/shipment) compliance | Full (`077-F`, `078-F`, `079-F`) | Full (`077-F`) |
+| PR blast radius & reviewability | Small and cohesive (2–6 tasks per shipment) | High (12 tasks across 6 packages + docs) |
+| Architectural layering | Clean (`copilot/hub/app` -> `cursor/wsclient/tui` -> `agent/hub/tui/docs`) | Mixed in one PR |
+| Alignment with 2-hour rule & Width Isolation | High (`1–3` files per task, pure `code` or `docs` per task) | Moderate |
+
+## Decision
+
+We select **Option A: Three Single-Feature Shipments Chained Sequentially (`070-S -> 071-S -> 072-S`)**, with the following specific technical decisions:
+
+1. **D-1 (`070-S` DAG Root Declaration under Explicit Operator P-001 Policy Exception over `062-S`, Code Baseline `069-S` `5f561d2` / `078713b`)**:
+   * `062-S` (`6290151`) has `compaction_status: done` and `closure_status: READY_WITH_CONDITIONS` with two open operator-present live-environment conditions, while `063-S..069-S` are `READY` and closed on `main` (`078713bc50482b40c7b879f7bb4b037b7f6cb304`). Under `.github/policies/workflow-policies.md` P-001, the operator explicitly selected Option 1 (Capability Set 1) and invoked dark factory mode (`DARK_MODE_ACTIVE`). Therefore, `070-S` is declared a DAG root (`labels: ["dag-root"]`, `predecessor_source: "declared_root"`), with `069-S` (`5f561d2c6f25ff01db6ddc298e2392bf2380de27`) documented as the code baseline, and `070-S -> 071-S -> 072-S` chained via `blocks` dependencies.
+2. **D-2 (`070-S` / `077-F`: Copilot Adapter Stop/ForceStop Resilience, Latch/Permission Hardening, and `App.Err` Stuck-Lane Reporting)**:
+   * Replace `U+2028` and `U+2029` with `U+FFFD` in `sanitizeBound` (keeping `\n` and `\t` in multi-line summaries), sanitize and cap `PermissionRequest.RawKind` and `PermissionRequest.ToolCallID` at `maxIdentRunes = 128` via `sanitizeIdent`, and re-check `if gone() { return unavailable() }` immediately before sending on `b.asks` in `permissionBridge.handle` (`077.001-T`).
+   * Call `a.latch.quiesce(0)` in `Adapter.Start` `fail()`, add `"session.shutdown"` to `informationalTypes`, and deliver terminal `*rpc.SessionIdleData` arriving after `latch.quiesce` (while `HubDone` is open and `Ingress` has buffer space) non-blockingly in `Adapter.onEvent` (`077.002-T`).
+   * Export `SDKRuntimeShutdownTimeout = 10 * time.Second`, add `Config.SDKStopLockTimeout` (defaulting to `SDKRuntimeShutdownTimeout` when `StopTimeout >= DefaultStopTimeout`), track `clientStopStart` and `clientStopActive` in `Adapter.doStop`, extend `Adapter.forceStopWait()` by `max(SDKStopLockTimeout-time.Since(clientStopStart), 0)` when `clientStopActive` is true, export `(*Adapter).ForceStopBudget() time.Duration`, raise `hub.DefaultShutdownForce` to `12 * time.Second`, and validate `Stop + Force >= ForceStopBudget()` in `hub.NewShutdown` (`077.003-T`).
+   * Record `Hub.Run`'s returned error via `a.addErr(fmt.Errorf("hub: %w", err))` before `hubRunDone` closes in `internal/app/assemble.go` and add a stuck-lane shutdown regression test in `internal/app/shutdown_test.go` (`077.004-T`).
+3. **D-3 (`071-S` / `078-F`: Remote `Cursor`/`wsclient` Terminal `server.shutdown` Gap Handling and TUI Permission Modal `kind:`/`tool call:` Anti-Spoofing)**:
+   * Treat `KindServerShutdown` as always-applicable (`ActionApply` / `VerdictApply`) across sequence gaps, stale state, or missing baseline in `(*hub.Cursor).Apply` and `wsclient` `(*cursor).apply`, while setting `c.stale = true` on non-contiguous terminal delivery (so `Position()` returns `false` when frames were skipped) and still discarding duplicate `KindServerShutdown` frames (`Seq <= current Seq`) (`078.001-T`).
+   * Wrap `kind: <Kind>` and `tool call: <ToolCallID>` via `m.wrapHeader(prefix, val, inner)` in `internal/tui/permission.go` `permissionBody` so continuation lines (`i >= 1`) are indented by two spaces (`"  "`) within `inner` columns and cannot imitate column-0 modal headers (`078.002-T`).
+4. **D-4 (`072-S` / `079-F`: `agent.Event` Rune-Safe Bounds, `tool.ended` & Reasoning Enrichment, Write-Diff/Shell-URL Surfacing, and Unmapped-Event Log Rate-Limiting)**:
+   * Append non-empty `PossibleURLs` (`"\nurls: ..."`) in `PermissionRequestShell` summaries and append sanitized, rune-bounded `Diff` (or `NewFileContents`) previews in `PermissionRequestWrite` summaries (reserving space for an explicit `"\n[write preview truncated]"` suffix within `maxSummaryRunes = 2048` when the preview is clipped, and failing closed with `out.Truncated = true` if `FileName` itself exceeds `maxSummaryRunes` or leaves no room for the truncation notice) (`079.001-T`).
+   * Add `KindReasoning`, `KindReasoningDelta`, and `Event.Truncated` to `internal/agent/agent.go`; enforce single-pass rune-safe `MaxEventTextBytes` (`16384`) and `MaxEventIdentBytes` (`128`) bounds, extract `ToolExecutionCompleteData` result/error text into `Event.Text`, and deduplicate unmapped SDK event `Warn` logs via `unmappedLogGate` (`Warn` once per sanitized/bounded event type up to `maxWarnedEventTypes = 256`, then `Debug`) in `internal/agent/copilot/normalize.go` (`079.002-T`), then map `AssistantReasoningData` and `AssistantReasoningDeltaData` and wire `a.unmapped` in `Adapter.onEvent` together with `adapter_test.go` in `079.003-T`.
+   * Map, fold, broadcast, and render `KindAgentReasoning`, `KindAgentReasoningDelta`, `ToolEndedPayload.Text`, and `ev.Truncated` (propagated across all `Fold` branches and `f.lastDelta`, plus per-`RawType` rate-limiting of `hub: unmapped agent event` `Warn` logs in `Hub.handleEvent`) across `internal/hub/envelope.go`, `internal/hub/fold.go`, `internal/hub/hub.go`, and `internal/tui/model.go` (`079.004-T`, `079.005-T`), and amend `docs/design-docs/intercom-go-backend-architecture.md` §3.1, §4.2, §4.3, and §5.2 (`079.006-T`).
+
+## Rejected Alternatives
+
+* **Option B (Single Monolithic Shipment)**: Rejected because combining 12 tasks across 6 packages and architecture documentation increases review complexity and couples independent failure domains.
+* **Auto-denying `PermissionRequestWrite` whenever `FileName + Diff` exceeds `maxSummaryRunes` (`FA1C38F7(e)`)**: Rejected because legitimate file writes and patches routinely exceed 2,048 runes; auto-denying when the diff preview is clipped would make normal multi-KB file writes impossible to approve, whereas auto-denying only when `FileName` itself exceeds `maxSummaryRunes` and clipping the diff preview with `"…"` to fit `maxSummaryRunes` preserves both reviewability and the 2,048-rune summary bound.
+* **Replacing `\n` in `PermissionRequestShell` `Summary` (`FA1C38F7(a)`)**: Rejected because `076.003-T` (`069-S`) already indents every newline-separated and soft-wrapped summary line by two spaces in `permissionBody` (preventing column-0 header spoofing) and `TestSummarySanitizesControlAndBidiRunes` explicitly requires `\n` and `\t` preservation in multi-line shell commands.
+
+## Unresolved Questions
+
+None. All 7 scoped stash entries have deterministic designs verified against the codebase and the pinned Copilot SDK (`v1.0.11`).
+
+## Risks and Mitigations
+
+* **Risk**: Raising `forceStopWait()` in `Adapter.forceStop()` could slow down existing unit tests that set short `StopTimeout` values (`100ms`, `200ms`, `1s`) with `fakeClient`.
+  * **Mitigation**: Default `Config.SDKStopLockTimeout` to `SDKRuntimeShutdownTimeout` (`10s`) only when `cfg.StopTimeout >= DefaultStopTimeout` (`5s`), leaving `SDKStopLockTimeout == 0` for sub-5s test harnesses unless a test explicitly sets `SDKStopLockTimeout` to exercise the lock-contention window.
+* **Risk**: Mapping `*rpc.AssistantReasoningData` in `normalize.go` changes the return value of `normalize(rpc.SessionEvent{Data: &rpc.AssistantReasoningData{}}, log)` from `agent.KindUnknown` to `agent.KindReasoning`.
+  * **Mitigation**: Update the three existing tests that used `AssistantReasoningData` as a sample unmapped event (`TestNormalizeUnknownVariantLogsWarnAndIsExplicit` and `TestNormalizeNilLoggerDoesNotPanic` in `normalize_test.go` inside `079.002-T`, and `TestCallbackUnknownEventIsForwardedNotDropped` in `adapter_test.go` inside `079.003-T`) to use `&rpc.SessionErrorData{}`.
+* **Risk**: Adding `Text` to `ToolEndedPayload` and `wrapHeader` to `permissionBody` could alter existing wire golden tests (`TestEnvelopeGoldenForAll12Kinds`) or TUI modal golden files (`testdata/modal.golden`).
+  * **Mitigation**: Tag `ToolEndedPayload.Text` with `json:"text,omitempty"` so empty-text `tool.ended` envelopes serialize identically, and in `wrapHeader` indent only continuation lines (`i >= 1`) so single-line `kind:` and `tool call:` headers render identically to `testdata/modal.golden`.
