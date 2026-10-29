@@ -286,18 +286,20 @@ func (f *Feed) pump(ctx context.Context, conn Conn) {
 		f.mu.Unlock()
 		conn.Close()
 	}()
-	// shutdown records that a server.shutdown envelope was received on the
-	// current connection, whichever receive path delivered it.
+	// shutdown records that a server.shutdown envelope was drained from the
+	// connection after it closed.
 	shutdown := false
 	for {
 		select {
 		case fr := <-conn.Frames():
 			if fr.Kind() == hub.KindServerShutdown {
-				// Terminal frame: queue it and let Done end the pump. An
-				// overflow here must not redial away from an intentional stop.
-				shutdown = true
+				// Terminal frame: queue it and stop pumping. The hub may still
+				// broadcast after server.shutdown; those late frames must not
+				// evict the notice or trigger recovery from an intentional
+				// stop. Ending the pump lets deliver flush the queue.
 				f.q.push(item{frame: fr})
-				continue
+				f.pumpErr = hub.ErrStopped
+				return
 			}
 			if !f.q.push(item{frame: fr}) {
 				continue
@@ -331,10 +333,11 @@ func (f *Feed) pump(ctx context.Context, conn Conn) {
 			for {
 				select {
 				case fr := <-conn.Frames():
+					f.q.push(item{frame: fr})
 					if fr.Kind() == hub.KindServerShutdown {
 						shutdown = true
+						break drain // terminal: later frames must not evict it
 					}
-					f.q.push(item{frame: fr})
 				default:
 					break drain
 				}
@@ -394,7 +397,6 @@ func (f *Feed) redial(ctx context.Context) (Conn, error) {
 			select {
 			case <-time.After(f.opt.RedialBackoff):
 			case <-ctx.Done():
-				err = ctx.Err()
 			}
 		}
 		if ctx.Err() != nil {

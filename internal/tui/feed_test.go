@@ -558,3 +558,79 @@ func TestFeedShutdownFrameOnFramesPathIsNotRedialled(t *testing.T) {
 		}
 	}
 }
+
+func TestFeedLateBroadcastsAfterShutdownDoNotEvictShutdownFrame(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	r.frame() // hydrate
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	if err := r.h.AnnounceShutdown(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	sd := r.frame()
+	if sd.Kind() != hub.KindServerShutdown {
+		t.Fatalf("got %s, want server.shutdown", sd.Kind())
+	}
+	r.send(message("a", "1"), message("b", "2"), message("c", "3"))
+	late := []hub.Frame{r.frame(), r.frame(), r.frame()}
+
+	conn := newFakeConn()
+	var dials atomic.Int32
+	dial := func(context.Context) (Conn, error) {
+		dials.Add(1)
+		return conn, nil
+	}
+	s := newSinkRig(true) // stalled: the queue is the only buffer
+	f := NewFeed(FeedOptions{Dial: dial, Sink: s.sink, QueueSize: 2, RedialRetries: 1, RedialBackoff: time.Millisecond})
+	fctx, fcancel := context.WithCancel(context.Background())
+	if err := f.Start(fctx); err != nil {
+		fcancel()
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() {
+		select {
+		case <-s.gate:
+		default:
+			close(s.gate)
+		}
+		fcancel()
+		f.Close()
+	})
+
+	conn.frames <- sd
+	for _, fr := range late {
+		select {
+		case conn.frames <- fr:
+		case <-time.After(testWait):
+			t.Fatal("could not queue late frame")
+		}
+	}
+	time.Sleep(50 * time.Millisecond) // let the pump consume what it will
+	s.release()
+
+	deadline := time.After(testWait)
+	gotShutdown := false
+	for {
+		select {
+		case msg := <-s.out:
+			switch m := msg.(type) {
+			case FrameMsg:
+				if m.Frame.Kind() == hub.KindServerShutdown {
+					gotShutdown = true
+				}
+			case ResyncMsg:
+				t.Fatal("late broadcasts after shutdown triggered overflow recovery")
+			case DisconnectedMsg:
+				if !gotShutdown {
+					t.Fatal("shutdown frame was evicted before delivery")
+				}
+				if n := dials.Load(); n != 1 || f.Stats().Rehydrates != 0 {
+					t.Fatalf("dials=%d rehydrates=%d, want 1 and 0", n, f.Stats().Rehydrates)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("no DisconnectedMsg after shutdown")
+		}
+	}
+}
