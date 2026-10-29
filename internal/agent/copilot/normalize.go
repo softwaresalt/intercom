@@ -47,6 +47,7 @@ var informationalTypes = map[string]struct{}{
 	"session.background_tasks_changed":  {},
 	"session.compaction_complete":       {},
 	"session.compaction_start":          {},
+	"session.shutdown":                  {},
 	"session.context_changed":           {},
 	"session.custom_agents_updated":     {},
 	"session.extensions_loaded":         {},

@@ -155,3 +155,81 @@ func TestParseVersionRejectsSignedComponents(t *testing.T) {
 		}
 	}
 }
+
+// A failed Start closes the callback latch exactly as Stop does, so a late SDK
+// callback cannot be admitted after the failure.
+func TestFailedStartQuiescesCallbackLatch(t *testing.T) {
+	h := newHarness(t, func(_ *Config, f *fakeClient) {
+		f.status = &copilotsdk.GetStatusResponse{Version: "1.0.0", ProtocolVersion: 3}
+	})
+	if _, err := h.ad.Start(context.Background()); err == nil {
+		t.Fatal("expected version failure")
+	}
+	if h.ad.latch.enter() {
+		h.ad.latch.exit()
+		t.Fatal("a failed Start must close the callback latch")
+	}
+}
+
+func TestSessionShutdownIsInformationalAndTerminalIdleAfterQuiesceIsDeliveredWhenIngressHasRoom(t *testing.T) {
+	if !isInformational("session.shutdown") {
+		t.Fatal(`"session.shutdown" must be classified informational`)
+	}
+	log, buf := newBufLogger()
+	h := newHarness(t, func(c *Config, _ *fakeClient) { c.Logger = log })
+	if _, err := h.ad.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	h.ad.bridge.setTurn("t1")
+	if err := h.ad.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// A post-disconnect session.shutdown is dropped quietly (no Warn).
+	h.client.session.emit(copilotsdk.SessionEvent{Data: &rpc.SessionShutdownData{}})
+	if strings.Contains(buf.String(), "level=WARN") {
+		t.Errorf("post-quiesce session.shutdown must not warn: %q", buf.String())
+	}
+	select {
+	case ev := <-h.ingress:
+		t.Fatalf("session.shutdown leaked to ingress: %+v", ev)
+	default:
+	}
+
+	// A terminal idle that arrives after quiesce is still delivered when
+	// ingress has room, and the bridge turn is closed out.
+	aborted := true
+	h.client.session.emit(copilotsdk.SessionEvent{Data: &rpc.SessionIdleData{Aborted: &aborted}})
+	select {
+	case ev := <-h.ingress:
+		if ev.Kind != agent.KindIdle || !ev.Aborted {
+			t.Fatalf("event = %+v, want aborted idle", ev)
+		}
+	default:
+		t.Fatal("terminal idle after quiesce was dropped although ingress had room")
+	}
+	if _, stopCh := h.ad.bridge.currentTurn(); stopCh == nil {
+		t.Fatal("bridge lost its turn channel")
+	} else {
+		select {
+		case <-stopCh:
+		default:
+			t.Error("an aborted terminal idle must abort the bridge turn")
+		}
+	}
+
+	// A full ingress never blocks the late callback: it falls through to Warn.
+	for len(h.ingress) < cap(h.ingress) {
+		h.ingress <- agent.Event{}
+	}
+	done := make(chan struct{})
+	go func() {
+		h.client.session.emit(copilotsdk.SessionEvent{Data: &rpc.SessionIdleData{}})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("late terminal idle blocked on a full ingress")
+	}
+}

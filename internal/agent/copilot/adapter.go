@@ -27,6 +27,7 @@ import (
 	"time"
 
 	copilotsdk "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
 )
@@ -260,6 +261,7 @@ func (a *Adapter) Start(ctx context.Context) (agent.SessionHandle, error) {
 		a.clientStarted = false
 		a.mu.Unlock()
 		a.stopOnce.Do(func() { close(a.stop) })
+		a.latch.quiesce(0) // a failed Start closes the callback latch like Stop
 		// Cleanup gets its own finite budget so a wedged ForceStop cannot
 		// hold Start (or startDone) open; the original error is preserved.
 		if cerr := a.forceStop(); cerr != nil {
@@ -415,6 +417,9 @@ func (a *Adapter) onEvent(ev copilotsdk.SessionEvent) {
 		return
 	}
 	if !a.latch.enter() {
+		if _, ok := ev.Data.(*rpc.SessionIdleData); ok && a.deliverLateIdle(ev) {
+			return
+		}
 		a.log.Warn("agent event arrived after quiesce; discarded", "event_type", string(ev.Type()))
 		return
 	}
@@ -447,6 +452,32 @@ func (a *Adapter) onEvent(ev copilotsdk.SessionEvent) {
 		a.log.Warn("agent event discarded during shutdown", "event_type", string(ev.Type()))
 	case <-a.cfg.HubDone:
 		a.log.Warn("agent event discarded: hub is gone", "event_type", string(ev.Type()))
+	}
+}
+
+// deliverLateIdle handles a terminal session.idle that arrives after the latch
+// closed (between quiesce and Disconnect). The turn is closed out on the bridge
+// and, unless the hub is gone, the event is offered to ingress without ever
+// blocking. It reports whether the event was delivered.
+func (a *Adapter) deliverLateIdle(ev copilotsdk.SessionEvent) bool {
+	e := normalize(ev, a.log)
+	if e.Aborted {
+		if id := a.bridge.abortTurn(); e.TurnID == "" {
+			e.TurnID = id
+		}
+	} else {
+		a.bridge.clearTurn()
+	}
+	select {
+	case <-a.cfg.HubDone:
+		return false
+	default:
+	}
+	select {
+	case a.cfg.Ingress <- e:
+		return true
+	default:
+		return false
 	}
 }
 
