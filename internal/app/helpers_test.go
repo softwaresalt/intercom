@@ -66,6 +66,10 @@ type agentKnobs struct {
 	stopBlock bool
 	// stopErr is returned by Stop (a failing stop).
 	stopErr error
+	// sendGate makes Send park, ignoring its context, until the gate closes (a
+	// wedged operator lane worker); sendEntered then receives one signal.
+	sendGate    chan struct{}
+	sendEntered chan struct{}
 }
 
 // fakeAgent is an injected agent.Agent: no CLI child, every call recorded.
@@ -100,6 +104,13 @@ func (f *fakeAgent) Send(_ context.Context, p string) error {
 	f.mu.Lock()
 	f.sends = append(f.sends, p)
 	f.mu.Unlock()
+	if f.sendGate != nil {
+		select {
+		case f.sendEntered <- struct{}{}:
+		default:
+		}
+		<-f.sendGate // deliberately ignores ctx
+	}
 	return nil
 }
 
