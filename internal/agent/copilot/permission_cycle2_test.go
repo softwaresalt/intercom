@@ -353,3 +353,48 @@ func TestPermissionBridgeRechecksGoneBeforeAskSend(t *testing.T) {
 		}
 	}
 }
+
+func TestToDomainRequestSurfacesShellPossibleURLsAndWriteDiffOrContent(t *testing.T) {
+	inv := copilot.PermissionInvocation{}
+	runes := func(s string) int { return len([]rune(s)) }
+
+	shell := toDomainRequest(&rpc.PermissionRequestShell{
+		FullCommandText: "curl x",
+		PossibleURLs:    []rpc.PermissionRequestShellPossibleURL{{URL: "https://a.example"}, {URL: "https://b.example"}},
+	}, inv)
+	if want := "curl x\nurls: https://a.example, https://b.example"; shell.Summary != want {
+		t.Errorf("shell summary = %q, want %q", shell.Summary, want)
+	}
+	if plain := toDomainRequest(&rpc.PermissionRequestShell{FullCommandText: "ls"}, inv); plain.Summary != "ls" {
+		t.Errorf("shell without urls summary = %q, want ls", plain.Summary)
+	}
+
+	diff := toDomainRequest(&rpc.PermissionRequestWrite{FileName: "a.txt", Diff: "-old\n+new", NewFileContents: strp("ignored")}, inv)
+	if diff.Summary != "a.txt\n-old\n+new" || diff.Truncated {
+		t.Errorf("diff summary = %q truncated=%v", diff.Summary, diff.Truncated)
+	}
+	content := toDomainRequest(&rpc.PermissionRequestWrite{FileName: "n.txt", NewFileContents: strp("hello")}, inv)
+	if content.Summary != "n.txt\nhello" || content.Truncated {
+		t.Errorf("content summary = %q truncated=%v", content.Summary, content.Truncated)
+	}
+
+	big := toDomainRequest(&rpc.PermissionRequestWrite{FileName: "big.go", Diff: strings.Repeat("é", maxSummaryRunes*2)}, inv)
+	if big.Truncated {
+		t.Error("clipped write preview must not set Truncated (explicit notice instead)")
+	}
+	if !strings.HasSuffix(big.Summary, writePreviewTruncatedSuffix) {
+		t.Errorf("clipped preview must end with the notice: %q", big.Summary)
+	}
+	if n := runes(big.Summary); n > maxSummaryRunes {
+		t.Errorf("summary = %d runes, want <= %d", n, maxSummaryRunes)
+	}
+
+	longName := toDomainRequest(&rpc.PermissionRequestWrite{FileName: strings.Repeat("p", maxSummaryRunes+5), Diff: "x"}, inv)
+	if !longName.Truncated {
+		t.Error("an over-long file name must stay Truncated")
+	}
+	nearName := toDomainRequest(&rpc.PermissionRequestWrite{FileName: strings.Repeat("p", maxSummaryRunes-10), Diff: "xyz"}, inv)
+	if !nearName.Truncated {
+		t.Error("no room for the preview notice must set Truncated")
+	}
+}
