@@ -1,12 +1,13 @@
 ---
-title: "067-S live verification evidence (real Win32 console and live Copilot runtime, 2026-10-28)"
+title: "067-S live verification evidence (real Win32 console, live Copilot runtime and Dev Tunnel, 2026-10-29 UTC)"
 description: "Live verification of the tui-render and tool-approval-routing manual checkpoints for the 067-S / 074-F closure: the real intercom.exe built from main (0fd7936, containing 067-S merge a2cacf3) ran in a real Windows console against the live Copilot CLI runtime, with the local TUI and two authenticated remote WebSocket clients. Credentials are redacted. No token text is recorded."
 shipment: 067-S
 feature: 074-F
-date: 2026-10-28
+date: 2026-10-29
 ---
 
-This is the evidence for the `tui-render` and `tool-approval-routing`
+This is the evidence for the `tui-render`, `devtunnel-connect` and
+`tool-approval-routing`
 conditions of `docs/closure/067-S-074-F-post-merge-closure.md`. It comes from
 live runs, not CI. It uses the same method as
 `docs/closure/evidence/065-S-tui-render-live-evidence.md`, extended with live
@@ -148,6 +149,33 @@ after exit. Stderr also contained the existing warnings
 `agent event arrived after quiesce; discarded` for a late `session.shutdown`;
 neither affected the exit code.
 
+## Dev Tunnel connect (devtunnel-connect)
+
+All runs in this record took place between 2026-10-29T00:35Z and 00:50Z
+(2026-10-28 in local time, UTC-7), after the merge of PR 203.
+
+A separate run used the same binary and console method behind a live Dev Tunnel
+(`devtunnel host -p <port> -a`, CLI 1.0.2014, logged in). Anonymous tunnel
+access was used only so the reference client needs no tunnel token; intercom's
+own bearer authentication stayed enforced, and the tunnel host was listed in
+`[remote].allowed_hosts`. The tunnel was temporary and was stopped afterwards.
+
+* Registration: the tunnel registered and printed a public URL
+  (`https://<id>-<port>.usw3.devtunnels.ms`).
+* The approver and the observer authenticated with their bearer tokens over
+  `wss://<tunnel-host>/ws` and each received `session.hydrate` as the first frame.
+* A prompt sent by the approver through the tunnel returned `action.accepted`
+  and the turn reached `agent.idle`.
+* A wrong credential through the tunnel was refused with HTTP 401.
+* Ctrl+C exited with code 0 and stderr logged `shutdown complete` with
+  `"ok":true`.
+
+This covers Dev Tunnel registration, authenticated remote connect and initial
+hydration. It does not exercise the `Hub.rehydrate` stale-client buffer drain
+that 067-S changed: no live stale-buffer scenario was run, and that behavior is
+covered by `TestRehydrateDrainsFullStaleRemoteBufferInsteadOfDropping` in the
+race-enabled suite.
+
 ## Observed anomaly: one intermittent failed shutdown (run 1)
 
 Run 1 (earlier, same binary and script, with both requests denied because of a
@@ -188,9 +216,8 @@ code and log rather than hanging).
 ## Limits
 
 * Windows conhost only. Windows Terminal, macOS and Linux were not exercised.
-* The remote surface was the loopback reference client, not a browser or a Dev
-  Tunnel. Dev Tunnel registration is unchanged by 067-S; its live evidence
-  remains `docs/closure/evidence/062-S-live-verification-evidence.md`.
+* The remote surface was the Go reference client (loopback for the tui-render
+  and approval runs, a live Dev Tunnel for the connect run), not a browser.
 * The bounded-stop wedge case remains covered by the race-enabled tests named in
   the closure artifact, not by these runs.
 * A simultaneous two-surface answer race (both surfaces resolving in the same
