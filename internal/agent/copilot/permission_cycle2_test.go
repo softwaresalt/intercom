@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -281,6 +282,74 @@ func TestStaleApprovalNeverWinsOverShutdown(t *testing.T) {
 		ask.Reply <- agent.PermissionDecision{Kind: agent.DecisionAllowOnce}
 		if d := <-res; d.Kind() == rpc.PermissionDecisionKindApproveOnce {
 			t.Fatalf("iteration %d: approval delivered after hub shutdown", i)
+		}
+	}
+}
+
+// kindReq overrides Kind() on an embedded SDK request so tests can feed an
+// adversarial discriminator and observe the moment the adapter reads it.
+type kindReq struct {
+	rpc.PermissionRequest
+	kind rpc.PermissionRequestKind
+	hook func()
+}
+
+func (k kindReq) Kind() rpc.PermissionRequestKind {
+	if k.hook != nil {
+		k.hook()
+	}
+	return k.kind
+}
+
+func TestSummaryAndIdentifiersSanitizeUnicodeSeparatorsAndCapRunes(t *testing.T) {
+	// Zl/Zp are not caught by IsControl or Cf; they must still be replaced.
+	got := toDomainRequest(&rpc.PermissionRequestShell{FullCommandText: "a\u2028b\u2029c\nd\te"}, copilot.PermissionInvocation{}).Summary
+	if strings.ContainsAny(got, "\u2028\u2029") {
+		t.Errorf("summary still contains a Unicode line/paragraph separator: %q", got)
+	}
+	if got != "a\uFFFDb\uFFFDc\nd\te" {
+		t.Errorf("summary = %q, want separators replaced and \\n,\\t preserved", got)
+	}
+
+	// ToolCallID is single-line and capped.
+	id := "x\ny\tz\u2028w" + strings.Repeat("q", 500)
+	r := toDomainRequest(&rpc.PermissionRequestShell{FullCommandText: "ls", ToolCallID: strp(id)}, copilot.PermissionInvocation{})
+	if strings.ContainsAny(r.ToolCallID, "\n\t\u2028\u2029") {
+		t.Errorf("ToolCallID must be single-line: %q", r.ToolCallID)
+	}
+	if n := len([]rune(r.ToolCallID)); n != maxIdentRunes+1 || !strings.HasSuffix(r.ToolCallID, "…") {
+		t.Errorf("ToolCallID runes = %d (%q), want %d with ellipsis", n, r.ToolCallID, maxIdentRunes+1)
+	}
+
+	// RawKind likewise; the Other summary is computed from the unclipped kind.
+	raw := "k\nind\u2029" + strings.Repeat("r", maxSummaryRunes*2)
+	o := toDomainRequest(kindReq{PermissionRequest: &rpc.PermissionRequestMemory{}, kind: rpc.PermissionRequestKind(raw)}, copilot.PermissionInvocation{})
+	if strings.ContainsAny(o.RawKind, "\n\t\u2028\u2029") || len([]rune(o.RawKind)) != maxIdentRunes+1 {
+		t.Errorf("RawKind not sanitized/capped: %d runes %q", len([]rune(o.RawKind)), o.RawKind)
+	}
+	if !o.Truncated || o.FullLen != len([]rune(raw)) {
+		t.Errorf("Other summary must be bounded against the unclipped kind: Truncated=%v FullLen=%d want %d", o.Truncated, o.FullLen, len([]rune(raw)))
+	}
+}
+
+func TestPermissionBridgeRechecksGoneBeforeAskSend(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		asks := make(chan agent.PermissionAsk, 1) // room: the send is ready
+		b := newPermissionBridge(asks, make(chan struct{}), nil)
+		stop := make(chan struct{})
+		b.stop = stop
+		var once sync.Once
+		// Shutdown begins after the first gone() check but before the send.
+		req := kindReq{PermissionRequest: &rpc.PermissionRequestMemory{}, kind: "memory", hook: func() { once.Do(func() { close(stop) }) }}
+		d, err := b.handle(req, copilot.PermissionInvocation{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Kind() != rpc.PermissionDecisionKindUserNotAvailable {
+			t.Fatalf("iteration %d: got %q, want user-not-available", i, d.Kind())
+		}
+		if len(asks) != 0 {
+			t.Fatalf("iteration %d: an ask was sent after shutdown began", i)
 		}
 	}
 }
