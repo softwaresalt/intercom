@@ -88,6 +88,10 @@ func newSession(h *Handler, sock *websocket.Conn, client *hub.Client, grant *Gra
 		bucket:   newTokenBucket(h.actionRate, h.actionBurst, h.now),
 	}
 	s.read = s.readPump
+	// The pump acknowledges each frame after its socket write returns, so the
+	// hub's shutdown drain waits for the final frame to be written, not merely
+	// dequeued.
+	client.EnableWriteAck()
 	return s
 }
 
@@ -202,7 +206,9 @@ func (s *session) writePump(ctx context.Context) {
 		}
 		select {
 		case f := <-s.client.Frames():
-			if err := s.writeFrame(ctx, f.Bytes()); err != nil {
+			err := s.writeFrame(ctx, f.Bytes())
+			s.client.AckWrite() // the frame left the hub's custody, written or not
+			if err != nil {
 				s.fail()
 				return
 			}
