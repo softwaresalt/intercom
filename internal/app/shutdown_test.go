@@ -741,6 +741,9 @@ func TestShutdownRecordsHubRunErrCleanupIncompleteInAppErr(t *testing.T) {
 	if err := a.Err(); !errors.Is(err, agent.ErrCleanupIncomplete) {
 		t.Fatalf("Err() = %v; want it to wrap agent.ErrCleanupIncomplete from Hub.Run", err)
 	}
+	if !strings.Contains(a.Err().Error(), "hub: ") {
+		t.Fatalf("Err() = %v; want the Hub.Run failure recorded with its hub: prefix", a.Err())
+	}
 	release() // let the wedged worker finish so nothing leaks
 	assertNoLeaks(t, baseline)
 }

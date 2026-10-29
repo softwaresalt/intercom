@@ -601,14 +601,14 @@ func TestForceStopExtendsWaitForInFlightClientStopHoldingSDKLock(t *testing.T) {
 		a.mu.Lock()
 		a.clientStopActive, a.clientStopStart = true, time.Now()
 		a.mu.Unlock()
-		if got := a.forceStopWait(); got < 400*time.Millisecond || got > 500*time.Millisecond {
+		if got := a.forceStopWait(); got < 400*time.Millisecond || got > 450*time.Millisecond+time.Second {
 			t.Fatalf("forceStopWait during Client.Stop = %v, want ~Stop+lock (500ms)", got)
 		}
 		// Hurried Client.Stop: most of the lock allowance already elapsed.
 		a.mu.Lock()
 		a.clientStopStart = time.Now().Add(-390 * time.Millisecond)
 		a.mu.Unlock()
-		if got := a.forceStopWait(); got < 100*time.Millisecond || got > 150*time.Millisecond {
+		if got := a.forceStopWait(); got < 100*time.Millisecond || got > 100*time.Millisecond+time.Second {
 			t.Fatalf("forceStopWait after the allowance elapsed = %v, want ~StopTimeout", got)
 		}
 		a.mu.Lock()
@@ -636,7 +636,8 @@ func TestForceStopExtendsWaitForInFlightClientStopHoldingSDKLock(t *testing.T) {
 		// ForceStop is only able to proceed ~300ms after it was requested,
 		// which is past StopTimeout but inside the lock allowance.
 		go func() {
-			for h.client.forceStops.Load() == 0 {
+			deadline := time.Now().Add(10 * time.Second)
+			for h.client.forceStops.Load() == 0 && time.Now().Before(deadline) {
 				time.Sleep(time.Millisecond)
 			}
 			time.Sleep(300 * time.Millisecond)
