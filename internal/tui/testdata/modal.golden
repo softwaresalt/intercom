@@ -5,7 +5,7 @@ intercom | idle
 │ kind: shell                                                        │
 │ tool call: call-1                                                  │
 │                                                                    │
-│ git status --short                                                 │
+│   git status --short                                               │
 │                                                                    │
 │                                                                    │
 │                                                                    │

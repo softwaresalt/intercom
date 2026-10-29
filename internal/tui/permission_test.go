@@ -327,7 +327,7 @@ func TestResizeBelowViewMinimumIsDenyOnly(t *testing.T) {
 }
 
 func TestBlankSummaryIsDenyOnly(t *testing.T) {
-	for _, summary := range []string{"", "  \n\t "} {
+	for _, summary := range []string{"", "  \n\t ", "\u3164", "\u2800", "\u200b", "\ufffd", "\ue000\n\t"} {
 		ing := &fakeIngress{result: hub.ActionResult{Accepted: true}}
 		m := newModel(t, ing, 70, 16)
 		m.pending = []permission{newPermission(hub.PermissionRequestedPayload{RequestID: "r1", ToolCallID: "c", PermissionKind: "shell", Summary: summary}, time.Time{})}
@@ -351,6 +351,36 @@ func TestBlankSummaryIsDenyOnly(t *testing.T) {
 	}
 }
 
+func TestPermissionSummaryIsIndentedAgainstNewlineAndSoftWrapHeaderSpoofing(t *testing.T) {
+	inner := 36
+	cases := map[string]string{
+		"newline":   "ls\nkind: EVIL\ntool call: EVIL",
+		"soft wrap": strings.Repeat("x", inner-5) + " kind: EVIL tool call: EVIL",
+	}
+	for name, summary := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := newModel(t, &fakeIngress{}, inner+4, 14)
+			m.pending = []permission{newPermission(hub.PermissionRequestedPayload{RequestID: "r1", ToolCallID: "c1", PermissionKind: "shell", Summary: summary}, time.Time{})}
+			m.syncModal(true)
+			headers := map[string]bool{}
+			for i := 0; i < 50; i++ {
+				for _, l := range strings.Split(view(m), "\n") {
+					l = strings.TrimPrefix(l, "│ ")
+					if strings.HasPrefix(l, "kind:") || strings.HasPrefix(l, "tool call:") {
+						headers[strings.TrimRight(l, " │")] = true
+					}
+				}
+				if m.approvable() {
+					break
+				}
+				m, _ = step(m, tea.KeyMsg{Type: tea.KeyPgDown})
+			}
+			if len(headers) != 2 || !headers["kind: shell"] || !headers["tool call: c1"] {
+				t.Fatalf("column-0 header spoofing possible: %v", headers)
+			}
+		})
+	}
+}
 func TestLongToolCallIDAndKindAreNotClipped(t *testing.T) {
 	id := strings.Repeat("a", 150) + "TAILMARK"
 	m := newModel(t, &fakeIngress{}, 40, 14)
