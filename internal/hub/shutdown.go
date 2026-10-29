@@ -459,14 +459,21 @@ func (h *Hub) handleRehydrate(r *ctlReq) {
 	case r.client == nil || r.client.isClosed() || h.clients[r.client.id] != r.client:
 		trySend(r.reply, ctlResp{err: apperr.Wrap(apperr.KindPolicy, ErrClientClosed)})
 		return
+	case r.client.terminal:
+		// The queued server.shutdown must not be drained or replaced.
+		trySend(r.reply, ctlResp{err: apperr.Wrap(apperr.KindPolicy, ErrShuttingDown)})
+		return
 	}
 	c := r.client
+	wasStale := c.stale
 	c.drainAllFrames()
 	c.stale = false
 	c.lastHydrate = h.cfg.Now()
 	if !h.rehydrate(c) {
 		c.stale = true
-		h.staleQ = append(h.staleQ, c)
+		if !wasStale { // already queued for a forced re-hydrate otherwise
+			h.staleQ = append(h.staleQ, c)
+		}
 		trySend(r.reply, ctlResp{err: apperr.New(apperr.KindIO, "hub: build hydrate snapshot")})
 		return
 	}
