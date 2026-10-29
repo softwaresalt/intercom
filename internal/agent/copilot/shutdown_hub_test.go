@@ -708,3 +708,45 @@ func TestForceStopExtendsWaitForInFlightClientStopHoldingSDKLock(t *testing.T) {
 		}
 	})
 }
+
+// Hub-level regression for the delayed-start case: Disconnect is slow, so
+// Client.Stop starts just before the graceful cutoff and keeps holding the SDK
+// lifecycle lock past it. ForceStop then queues behind that lock for longer than
+// StopTimeout; the shutdown must keep waiting (default Force budget) rather
+// than report an orphan risk, and Done must stay open until ForceStop is done.
+func TestShutdownWaitsOutClientStopLockAcrossTheGracefulCutoff(t *testing.T) {
+	r := newShutdownRig(t)
+	c := r.h.client
+	r.h.ad.cfg.StopTimeout = 200 * time.Millisecond
+	r.h.ad.cfg.SDKStopLockTimeout = time.Second
+	c.session.disconnectBlock = make(chan struct{})
+	c.stopBlock = make(chan struct{})  // Client.Stop holds the lifecycle lock
+	c.forceBlock = make(chan struct{}) // ForceStop is queued behind it
+	t.Cleanup(func() { close(c.stopBlock) })
+
+	go func() { // the slow Disconnect finishes 150ms in, i.e. just before the 300ms cutoff
+		time.Sleep(150 * time.Millisecond)
+		close(c.session.disconnectBlock)
+	}()
+	s := r.newShutdown(t, func(cfg *hub.ShutdownConfig) { cfg.Timeouts.Stop = 300 * time.Millisecond })
+	s.Start(context.Background())
+
+	eventually(t, "Client.Stop to start", func() bool { return c.stops.Load() == 1 })
+	eventually(t, "ForceStop to be requested", func() bool { return c.forceStops.Load() == 1 })
+	go func() { // the lock is released ~600ms after ForceStop was requested
+		time.Sleep(600 * time.Millisecond)
+		close(c.forceBlock)
+	}()
+	select {
+	case <-s.Done():
+		t.Fatal("Done closed while ForceStop was still queued behind the in-flight Client.Stop")
+	case <-time.After(300 * time.Millisecond):
+	}
+	waitDone(t, s)
+	if errors.Is(s.Err(), hub.ErrOrphanRisk) || errors.Is(s.Err(), agent.ErrCleanupIncomplete) {
+		t.Fatalf("Err() = %v; the lock contention was within the ForceStop budget", s.Err())
+	}
+	if c.childAlive.Load() {
+		t.Fatal("the CLI child was stranded")
+	}
+}
