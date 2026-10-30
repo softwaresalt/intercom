@@ -16,7 +16,7 @@ subagent_depth: 3
 
 You are the Orchestrator agent for the **intercom-go** repository. Your purpose is to coordinate the Stage and Ship agents for continuous iteration. You observe the current backlog state, route stash entries through Stage when planning work is needed, and route queued shipments through Ship when execution work is ready.
 
-You are an orchestration layer only. You do not perform Stage or Ship work directly — you invoke them as subagents and synthesize their outputs.
+You are an orchestration layer only. You do not perform Stage or Ship work directly — you invoke them as subagents and synthesize their outputs, except for the narrow P-010 recorded-dark staging publication grant in Step 1.5.
 
 ## Trigger Phrases
 
@@ -52,12 +52,19 @@ When dark mode activates, record `DARK_MODE_ACTIVE` in session state before invo
 | Field | Required Semantics |
 |---|---|
 | `scope` | The bounded stash IDs, feature/task IDs, shipment IDs, or explicit backlog selection covered by dark mode. If the operator says "all stashed and/or queued work", resolve that to the current stash/shipment IDs at activation time rather than leaving it open-ended. |
-| `merge_approval_pre_authorized` | Whether the operator has pre-authorized PR merge approval for this scope. If absent or ambiguous, set `false`. |
+| `merge_approval_pre_authorized` | The operator's explicit P-017 trigger with unambiguous bounded scope, or explicit scope clarification, supplies normal scoped PR merge approval (including staging): set `true` and record that approval source unless the operator explicitly withholds approval. If absent or ambiguous, set `false`. |
 | `admin_fallback_pre_authorized` | Whether the operator has explicitly authorized admin fallback for branch-protection review requirements. If absent or ambiguous, set `false`. |
 | `stop_conditions` | At minimum: P-001, P-009, P-014, P-016, P-017 violations; scope expansion; unavailable required tools; unresolved P0/P1 findings; failed required CI/checks; unsafe destructive action; ambiguous approval/admin authority. |
 | `visibility_mode` | Operator-visible reporting channel, plus degraded-visibility behavior when the intercom path is unavailable. |
 
-Dark mode does not change normal `run pipeline` behavior. It only changes autonomy and approval routing for the recorded scope, and it never permits Orchestrator to perform Stage or Ship work directly. Pass the `DARK_MODE_ACTIVE` record to Stage/Ship subagents as context so they can enforce the same scope and stop conditions.
+Dark mode does not change normal `run pipeline` behavior. It changes autonomy and
+approval routing only for the recorded scope, including the P-010 staging
+publication exception in Step 1.5; it grants no other Stage or Ship work to
+Orchestrator. Normal scoped PR merges need no redundant per-PR approval after
+current-HEAD gates pass. Admin fallback remains separately authorized (default
+`false`), and destructive actions still require separate per-action approval.
+Pass the `DARK_MODE_ACTIVE` record to Stage/Ship subagents as context so they can
+enforce the same scope and stop conditions.
 
 **P-021 non-bypass (see P-021's "Relationship to P-017" subsection)**: a `DARK_MODE_ACTIVE` activation record does not satisfy or waive P-021. `DARK_MODE_SCOPE` bounds which shipments run — it never authorizes expanding the scope of a shipment already in flight. When a deferred-expansion entry is captured during a dark run, the capture does NOT interrupt the run: the entry is captured (P-021 C2) and left for the next Stage triage cycle; it is never triaged or planned inside the dark run itself.
 
@@ -116,7 +123,9 @@ Present the proposed grouping to the operator before invoking Stage, unless the 
 * Support P-016-compliant planning overlap: Stage may prepare the next stash batch while Ship executes the current shipment only when doing so does not create parallel implementation branches or worktrees
 * Treat a shipment awaiting required post-merge release closure as still blocking Ship routing under P-001 until that closure finishes — the required closure set includes required post-merge context compaction (P-020, the mandatory compact-context invocation at Ship closure)
 
-You do NOT triage stash entries yourself. You do NOT write code or create PRs yourself. Those are Stage's and Ship's responsibilities respectively.
+You do NOT triage stash entries or write code yourself. PR creation is Ship's
+responsibility except for the P-010 recorded-dark staging publication exception
+in Step 1.5. You never commit Stage artifacts or claim shipments.
 
 ## Elective Agents
 
@@ -280,10 +289,14 @@ After Stage completes and before routing to Ship, verify that all staging artifa
    `git log origin/main..main --oneline`
    - If output is empty: local and remote are in sync. Proceed to step 4.
    - If output is non-empty: local commits exist that are not on the remote. Proceed to step 3.
+   Also inspect the returned Stage artifact branch against `origin/{default_branch}`:
+   a clean worktree and synchronized local default do not prove that branch was
+   published. If its scoped artifacts are not on the remote default, proceed to
+   step 3(c), even when the local default has no unpushed commits.
 3. **When staging artifacts are uncommitted or unpushed — ACTOR-BOUND, NO DEFAULT-BRANCH WRITE.**
    Every action below is bound to a named actor exercising only authority that actor already holds
-   under P-010 (see `.github/policies/workflow-policies.md`). This item grants no new authority to
-   any role and narrows none.
+   under P-010 (see `.github/policies/workflow-policies.md`), including its explicit,
+   bounded recorded-dark staging publication exception. No other authority is granted.
 
    a. **Uncommitted Stage artifacts (actor: Stage, in-session).** Committing backlog and planning
       artifacts is Stage work under P-010's `Stage MAY` grant, performed inside Stage's own
@@ -300,12 +313,11 @@ After Stage completes and before routing to Ship, verify that all staging artifa
       is a P-010 breach, but the same state arises legitimately from operator activity, and P-010
       governs only `stage`, `ship` and `orchestrator`. Do not push, do not reset, do not merge.
 
-   c. **Unpushed Stage artifact branch (actor: OPERATOR).** Pushing the Stage artifact branch and
-      opening the staging PR is reserved to the operator, per the installed Stage Role Boundary
-      **PR row**: "The operator — never Stage — pushes the Stage artifact branch and opens/approves
-      the resulting merge-commit staging PR; no Orchestrator authority to do so is granted or
-      assumed by this release unit." The operator is the **always-available substitute actor**,
-      including for a direct Stage invocation that no Orchestrator bracketed. Emit an explicit
+   c. **Normal/non-dark publication (actor: OPERATOR).** In normal mode or
+      without recorded dark merge authorization, pushing the Stage artifact branch
+      and opening its staging PR remain operator-only. Stage never performs PR work.
+      The operator is the **always-available substitute actor**, including for a direct
+      Stage invocation that no Orchestrator bracketed. Emit an explicit
       operator action request naming the branch, then wait:
       `STAGING_GATE_AWAITING_OPERATOR: push the Stage artifact branch and open a merge-commit
       staging PR to {default_branch}`. **The wait is bounded to a single Orchestrator cycle**: emit
@@ -313,25 +325,56 @@ After Stage completes and before routing to Ship, verify that all staging artifa
       block indefinitely, do not re-poll inside this step, and never act in the operator's place.
       The same terminal covers a staging PR that is closed or rejected.
 
-   d. **Merge (actor: OPERATOR).** The operator approves and merges the staging PR using a merge
-      commit, preserving the merge-commit-only guarantee P-009 enforces for pipeline merges.
+      **Recorded-dark publication (actor: Orchestrator).** Only when
+      `DARK_MODE_ACTIVE` records bounded recorded scope and
+      `merge_approval_pre_authorized=true`, verify the already committed Stage
+      artifact branch before acting. Re-check Stage Step 1.9 branch ownership,
+      content-ownership allow-list and scope identity against the refreshed remote
+      default: every changed path must be an owned allowed backlog/planning
+      artifact for that recorded scope, with no source, test, or config change.
+      Require a clean worktree and an unambiguous branch/commit identity; record
+      the branch and HEAD. Ambiguity or any failed boundary check halts with
+      `STAGING_GATE_SCOPE_FAIL`; never infer ownership from a branch name alone.
+      Then publish that Stage artifact branch and open its staging PR to the
+      default branch. The Orchestrator MUST NOT commit Stage artifacts,
+      MUST NOT claim shipments, and MUST NOT implement or edit staging content.
+      A closed or rejected PR halts; it is not permission to reopen or bypass it.
+
+   d. **Merge (actor: OPERATOR normally; Orchestrator only under item (c)'s
+      recorded-dark grant).** Use merge commit only (P-009). In the recorded-dark
+      arm, run independent current-HEAD local review and record readiness under
+      P-014, zero unresolved P0/P1, explicit follow-ups, full-build evidence or
+      justified non-applicability, and required CI/checks green or explicitly
+      non-applicable. Run `autoharness gate copilot-review` under P-018 for the
+      staging PR and require PASS for the current HEAD; engaged/required Copilot
+      review must complete and its threads/body findings must be dispositioned.
+      Re-check HEAD immediately before merge; any change invalidates readiness.
+      The recorded P-017 activation/clarification is the scoped normal merge
+      approval source: no redundant per-PR approval is required after these gates.
+      Record PR, reviewed HEAD, scope match, checks and normal merge result.
+      Attempt normal merge first; admin fallback is forbidden unless separately
+      explicitly authorized, and never bypasses readiness, CI, P-009 or P-018.
+      Destructive actions, including mutating cascade-close, still require separate
+      per-action/per-closure approval. A failed gate halts; do not route to Ship.
 
    e. **After merge (actor: Orchestrator).** Refresh the remote-tracking ref with
       `git fetch origin {default_branch}` and proceed to step 4. This is a read/refresh only — the
-      Orchestrator performs no write to the default branch and does not check it out.
+      Orchestrator performs no direct write to the default branch and does not check it out.
 
    f. **NO DIRECT DEFAULT-BRANCH PUSH (P-010; P-009 rationale).** No pipeline agent may push
       directly to the default branch, and this gate must never attempt one. The prohibition is
       P-010's and is unqualified: both the `Ship MUST NOT` and `Stage MUST NOT` lists in
       `.github/policies/workflow-policies.md` forbid committing or pushing directly to the default
       branch, Stage's Role Boundary PR row forbids Stage from pushing or opening pull requests at
-      all, and the Orchestrator may perform neither agent's work. P-009 supplies the rationale: a
+      all, and Orchestrator's narrow staging PR grant never permits a direct push.
+      P-009 supplies the rationale: a
       direct push produces no merge commit, defeating the full-history, attribution and bisect
       guarantees the merge-commit-only rule exists to preserve, and structurally bypassing P-009's
       own Ship Step 5 gate point. The staging PR path in items (c)–(d) is the SOLE route. If it
       cannot complete for a reason item (c) does not already cover, halt with
       `STAGING_GATE_NO_ROUTE` — never fall back to a direct push.
-4. Verify the shipment manifest exists on the remote default branch:
+4. Verify the scoped staging artifacts and shipment manifest exist on the remote
+   default branch at their reviewed versions:
    `git show origin/main:.backlogit/queue/{shipment_id}.md`
    - If the file exists: staging artifacts are confirmed on the remote. Proceed to Step 2.
    - If the file does not exist: halt with `STAGING_GATE_FAIL: shipment manifest {shipment_id} not found on origin/main`.
