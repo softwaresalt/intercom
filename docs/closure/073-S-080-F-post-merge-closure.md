@@ -61,6 +61,7 @@ conditions:
 * Ship ran the step a1 feature completion and the read-only `--classify-only` classification, then the operator-approved mutating `cascade-close`, without first invoking `shipment-reconcile` pre-mode and without ever acquiring a `file-lock` token
 * After the close, Ship wrote the post-mode report by hand from direct archive checks, and the report's own lock line states that no token was taken
 * This closure's earlier text and final report did not call this out as a deviation; this note corrects that. It is recorded here as a P-005 procedural deviation. It is not an operator waiver, and no queue lock existed
+* The `file-lock` tool was not unavailable: its bundled scripts exist at `.github/skills/file-lock/scripts/acquire_lock.ps1` (and the release script). Only the agent template's root `scripts/acquire_lock.ps1` path is missing. This was an omission of the prescribed token, not a proven tool outage
 
 **Compensating evidence.**
 * The native `cascade-close` command held its own supervised journal/pair lock for the whole mutating run and finished with `postcondition_verdict: pass`
@@ -70,7 +71,7 @@ conditions:
 
 **Why this is procedural, not substantive.** The lock exists to give single-writer exclusion over the shipment record. The native command's own lock provided exclusion for the only mutation, and every machine postcondition passed. The deviation changes no shipped data and the four records and evidence JSON are unchanged by this note.
 
-**Underlying conflict.** The lock contract/path conflict between the skill and the workspace is Stage-owned and already tracked by stash `9F824B64`. It is referenced here only; it was not triaged, edited or duplicated.
+**Underlying conflict.** Stash `9F824B64` tracks the lock contract/path conflict between the skill and the template's root script path. It does not authorize skipping the lock. It is Stage-owned and is referenced here only; it was not triaged, edited or duplicated.
 
 ## Source artifact cleanup
 
