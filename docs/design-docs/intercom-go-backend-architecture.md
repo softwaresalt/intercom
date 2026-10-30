@@ -514,7 +514,16 @@ below).
   `permission_kind` (`shell` | `write` | `read` | `url` | `other` | `unknown`),
   `summary` (sanitized, bounded), `remaining_ms` (time left before the
   hub-owned timeout, measured at the envelope's `ts`; see §5.3).
-* `permission.resolved`: `request_id`, `decision` (`allow_once` | `deny` |
+  The `summary` of a shell request is the command followed by a `urls:` line
+  listing any URLs the command may access; that of a write request is the file
+  name followed by the proposed diff (or the new file contents when there is no
+  diff). A write preview too large for the summary is clipped and ends with the
+  in-text notice `[write preview truncated]`. This is a deliberate, documented
+  exception to the deny-when-`Truncated` rule: a clipped write preview does
+  **not** set `Truncated`, so the request is still put to the operator, who is
+  shown the notice but not the clipped tail. (A file name that alone fills the
+  summary still sets `Truncated` and is denied.) The notice is plain text and
+  can be imitated by file content, so it is informational, not a guarantee.* `permission.resolved`: `request_id`, `decision` (`allow_once` | `deny` |
   `unavailable`), `actor` (`local-tui` | `remote-approver` | `hub`), `reason`
   (empty when an operator answered; `timeout` | `shutdown` | `no_surface` when
   the hub decided). **`unavailable` means the SDK's `UserNotAvailable`: nobody

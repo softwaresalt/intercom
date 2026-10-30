@@ -95,8 +95,9 @@ const (
 )
 
 // boundUTF8 returns s limited to at most maxBytes bytes without splitting a
-// rune, and reports whether it was shortened. It inspects at most the few
-// bytes around the cut (a rune is at most 4 bytes), never the whole string.
+// rune, and reports whether it was shortened. For valid UTF-8 it inspects at
+// most the 3 bytes before the cut (a rune is at most 4 bytes); invalid input
+// is cut at maxBytes after the same bounded look-back, never scanned whole.
 func boundUTF8(s string, maxBytes int) (string, bool) {
 	if maxBytes < 0 {
 		maxBytes = 0
@@ -105,7 +106,7 @@ func boundUTF8(s string, maxBytes int) (string, bool) {
 		return s, false
 	}
 	cut := maxBytes
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
+	for back := 0; back < utf8.UTFMax-1 && cut > 0 && !utf8.RuneStart(s[cut]); back++ {
 		cut--
 	}
 	return s[:cut], true
@@ -142,7 +143,7 @@ func (g *unmappedLogGate) first(raw string) bool {
 	return true
 }
 
-// boundEvent applies the event size limits to e in place, setting Truncated
+// boundEvent returns e with the event size limits applied, setting Truncated
 // when anything was shortened.
 func boundEvent(e agent.Event) agent.Event {
 	var t bool

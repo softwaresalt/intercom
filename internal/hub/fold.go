@@ -148,8 +148,10 @@ func (f *Fold) Apply(ev agent.Event) {
 		f.applyMessage(ev, "reasoning")
 	case agent.KindTurnStart:
 		f.turnActive, f.turnID = true, f.ident(ev.TurnID)
+		f.flagTrunc(ev)
 	case agent.KindTurnEnd:
 		f.turnActive, f.turnID = false, f.ident(ev.TurnID)
+		f.flagTrunc(ev)
 	case agent.KindIdle:
 		f.turnActive = false
 	case agent.KindToolStarted:

@@ -191,3 +191,16 @@ func TestUnmappedLogGateBoundsMemory(t *testing.T) {
 		t.Errorf("warned set grew to %d, cap %d", len(g.warned), maxWarnedEventTypes)
 	}
 }
+
+func TestBoundUTF8InvalidInputIsBoundedAndNeverSplitsValidRunes(t *testing.T) {
+	cont := strings.Repeat("\x80", 1<<16) // continuation bytes only: not valid UTF-8
+	s, tr := boundUTF8(cont, 10)
+	if !tr || len(s) < 10-(utf8.UTFMax-1) || len(s) > 10 {
+		t.Errorf("invalid input cut = len %d truncated=%v, want within 3 bytes of the limit", len(s), tr)
+	}
+	// Valid text after an invalid prefix is still cut on a rune boundary.
+	mixed := "\xff\xfe" + strings.Repeat("é", 10)
+	if got, _ := boundUTF8(mixed, 5); !utf8.ValidString(got[2:]) {
+		t.Errorf("valid tail split mid-rune: %q", got)
+	}
+}
