@@ -121,3 +121,109 @@ func assertStagingGateActorContract(t *testing.T) {
 func TestStagingGateActorContract(t *testing.T) {
 	assertStagingGateActorContract(t)
 }
+
+// TestDarkStagingPublicationContract checks the installed authorization boundary,
+// not a runtime enforcement engine: these agents execute the policy prose.
+func TestDarkStagingPublicationContract(t *testing.T) {
+	files := make(map[string]string)
+	for name, path := range map[string]string{
+		"policy":       filepath.Join(".github", "policies", "workflow-policies.md"),
+		"stage":        filepath.Join(".github", "agents", "_stage.agent.md"),
+		"orchestrator": filepath.Join(".github", "agents", "_orchestrator.agent.md"),
+	} {
+		data, err := os.ReadFile(filepath.Join(repoRoot(t), path))
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		files[name] = strings.ReplaceAll(string(data), "\r\n", "\n")
+	}
+	gate := sliceBetween(t, files["orchestrator"],
+		"### Step 1.5: Staging Artifact Merge Gate", "### Step 2: Route to Ship", "dark-gate")
+	p010 := policySection(t, files["policy"], "## P-010:")
+	p017 := policySection(t, files["policy"], "## P-017:")
+
+	t.Run("recorded-dark-only-owned-committed-artifacts", func(t *testing.T) {
+		grant := sliceBetween(t, p010, "**Orchestrator MAY", "**Ship MUST NOT**", "dark-grant")
+		dark := sliceBetween(t, gate, "**Recorded-dark publication (actor: Orchestrator).**",
+			"d. **Merge", "dark-publication")
+		for surface, text := range map[string]string{"P-010 grant": grant, "handoff": dark} {
+			for _, needle := range []string{
+				"DARK_MODE_ACTIVE", "`merge_approval_pre_authorized=true`", "recorded scope",
+				"already committed", "Stage Step 1.9", "ownership", "source, test, or config",
+			} {
+				assertPresent(t, text, needle, surface)
+			}
+		}
+		for _, needle := range []string{
+			"publish that Stage artifact branch", "open its staging PR",
+			"MUST NOT commit Stage artifacts", "MUST NOT claim shipments",
+			"NO DIRECT DEFAULT-BRANCH PUSH", "STAGING_GATE_SCOPE_FAIL",
+			"a clean worktree and synchronized local default do not prove",
+		} {
+			assertPresent(t, gate, needle, "bounded-publication")
+		}
+		assertAbsent(t, p010, "the Orchestrator's role statement above is unchanged", "retired-conflict")
+		assertAbsent(t, files["orchestrator"], "You do NOT write code or create PRs yourself.", "retired-conflict")
+	})
+
+	t.Run("normal-mode-operator-and-stage-still-forbidden", func(t *testing.T) {
+		normal := sliceBetween(t, gate, "**Normal/non-dark publication (actor: OPERATOR).**",
+			"**Recorded-dark publication (actor: Orchestrator).**", "normal-publication")
+		for _, needle := range []string{
+			"without recorded dark merge authorization", "STAGING_GATE_AWAITING_OPERATOR",
+			"STAGING_GATE_OPERATOR_TIMEOUT", "never act in the operator's place",
+		} {
+			assertPresent(t, normal, needle, "normal-operator")
+		}
+		row := sliceBetween(t, files["stage"], "| PR |", "\n\n", "stage-pr-row")
+		assertPresent(t, row, "never Stage", "stage-pr")
+		assertPresent(t, row, "Create, push, or merge pull requests |", "stage-pr")
+		assertPresent(t, row, "P-010 recorded-dark staging publication exception", "stage-pr")
+		assertAbsent(t, row, "no Orchestrator authority to do so", "stage-pr")
+		stageForbidden := sliceBetween(t, p010, "**Stage MUST NOT**", "**Stage MAY**", "stage-forbidden")
+		assertPresent(t, stageForbidden, "Create, push, or merge pull requests", "stage-forbidden")
+		assertPresent(t, stageForbidden, "Run build systems, test suites, or linters", "stage-forbidden")
+	})
+
+	t.Run("approval-source-and-independent-safety-gates", func(t *testing.T) {
+		activation := sliceBetween(t, files["orchestrator"],
+			"| `merge_approval_pre_authorized`", "| `stop_conditions`", "activation")
+		for _, needle := range []string{
+			"explicit P-017 trigger", "scope clarification", "set `true`",
+			"explicitly withholds", "ambiguous", "set `false`",
+			"`admin_fallback_pre_authorized`",
+		} {
+			assertPresent(t, activation, needle, "activation")
+		}
+		for _, needle := range []string{
+			"current-HEAD local review", "P-009", "P-014", "P-018",
+			"required CI/checks", "autoharness gate copilot-review",
+			"no redundant per-PR approval", "admin fallback", "explicitly authorized",
+		} {
+			assertPresent(t, gate, needle, "merge-gates")
+		}
+		merge := sliceBetween(t, gate, "d. **Merge", "e. **After merge", "merge")
+		for _, needle := range []string{
+			"independent current-HEAD local review", "require PASS for the current HEAD",
+			"any change invalidates readiness",
+		} {
+			assertPresent(t, merge, needle, "current-head-gates")
+		}
+		remote := gate[indexOf(t, gate, "4. Verify the scoped staging artifacts", "remote-versions"):]
+		for _, needle := range []string{
+			"compare Git blob IDs", "{reviewed_head}:{path}", "origin/{default_branch}:{path}",
+			"deleted paths must be absent", "Missing or mismatched content halts",
+			"Manifest existence alone never authorizes Ship routing",
+		} {
+			assertPresent(t, remote, needle, "remote-versions")
+		}
+		for _, needle := range []string{
+			"explicit dark-mode activation or scope clarification",
+			"no redundant per-PR approval", "current-HEAD", "P-018",
+		} {
+			assertPresent(t, p017, needle, "P-017-approval")
+		}
+		assertPresent(t, p010, "per-closure operator approval, not waived in dark mode", "destructive-gate")
+		assertPresent(t, p017, "Destructive actions still require separate per-action approval", "destructive-gate")
+	})
+}

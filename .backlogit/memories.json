@@ -1,0 +1,3 @@
+{
+  "corrective-dark-staging-2026-10-30": "BLOCKED separate correction on fix/dark-staging-publication. Policy/agent fixes and focused RED/GREEN done; initial reviewed commit0f74407 had P2 remote-artifact-version gap and P3 test assertions, now corrected with second RED/GREEN. Format/vet/build pass; final full test with workspace-contained TEMP fails existing output-containment fixtures whose outside path now lies inside repo. Do not skip tests or alter original073-S/080-F. Initial reviewers lacked git execution; final independent committed-diff review remains required. No PR/merge/admin/destructive action. Preserve Stage3a6f5e8. See docs/memory/2026-10-30/dark-staging-correction-memory.md."
+}

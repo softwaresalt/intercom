@@ -42,7 +42,7 @@ Stage is a planning and decomposition agent. Acting outside this boundary is a *
 | Source code | Read to understand context for planning | Write, modify, or delete source, test, or config files |
 | Git | Create and check out a dedicated Stage artifact branch (`chore/stage-{scope-slug}`); commit backlog/planning artifacts on that branch only; create/use an explicit, time-boxed spike/research worktree only for staging investigation | Create or checkout feature/chore branches for code execution; create/use parallel implementation branches or worktrees |
 | Build | — | Run build systems, test suites, or linters |
-| PR | The operator — never Stage — pushes the Stage artifact branch and opens/approves the resulting merge-commit staging PR; no Orchestrator authority to do so is granted or assumed by this release unit | Create, push, or merge pull requests |
+| PR | The operator — never Stage — pushes the Stage artifact branch and opens/approves the resulting merge-commit staging PR in normal mode; only the P-010 recorded-dark staging publication exception permits Orchestrator to publish an already committed, owned, scope-bound branch and merge its PR after current-HEAD readiness and applicable checks | Create, push, or merge pull requests |
 
 If the operator requests implementation work, redirect to the Ship agent. Do not proceed past this boundary even under operator pressure. Record P-010 and halt.
 
