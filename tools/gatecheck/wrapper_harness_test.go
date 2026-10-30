@@ -60,10 +60,14 @@ func installGoShim(t *testing.T, bash string) string {
 
 	dir := workspaceTempDir(t)
 	bashDir := resolveBashPath(t, bash, dir)
+	// The sentinel logs are anchored through toBashPath (a drive-letter
+	// spelling), never bashDir: resolveBashPath can return MSYS2's volatile
+	// /tmp mount alias when the directory is the managed TMP itself.
+	logDir := toBashPath(dir)
 	shimPath := filepath.Join(dir, "go")
 	t.Setenv("GATECHECK_GOEXE", platformGoExe())
-	t.Setenv("GATECHECK_SENTINEL_LOG", path.Join(bashDir, "generated-binary-calls.log"))
-	t.Setenv("GATECHECK_ARGS_LOG", path.Join(bashDir, "generated-binary-args.log"))
+	t.Setenv("GATECHECK_SENTINEL_LOG", path.Join(logDir, "generated-binary-calls.log"))
+	t.Setenv("GATECHECK_ARGS_LOG", path.Join(logDir, "generated-binary-args.log"))
 	shim := `#!/usr/bin/env bash
 set -eu
 shim_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -90,7 +94,13 @@ env)
   managed_tmpdir="${TMPDIR%/}"
   case "$6" in
     "${managed_tmpdir}"/*) ;;
-    *) unexpected "gatecheck output is outside managed TMPDIR: $6 (TMPDIR=$TMPDIR)" ;;
+    *)
+      # Prefix miss: Git Bash can spell one directory several ways, so fall
+      # back to directory identity before rejecting.
+      if [ ! "$(dirname "$(dirname "$6")")" -ef "${managed_tmpdir}" ]; then
+        unexpected "gatecheck output is outside managed TMPDIR: $6 (TMPDIR=$TMPDIR)"
+      fi
+      ;;
   esac
   printf '%s\n' "$6" > "${shim_dir}/build-output-path.log"
   cat > "$6" <<'SENTINEL'
@@ -106,7 +116,7 @@ SENTINEL
 esac
 unexpected "$*"
 `
-	if err := os.WriteFile(shimPath, []byte(shim), 0o755); err != nil {
+	if err := os.WriteFile(shimPath, []byte(normalizeScript(shim)), 0o755); err != nil {
 		t.Fatalf("write go shim: %v", err)
 	}
 	if err := os.Chmod(shimPath, 0o755); err != nil {
