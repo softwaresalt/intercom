@@ -66,6 +66,9 @@ func fromSDKDecision(d rpc.PermissionDecision) (agent.PermissionDecision, bool) 
 // accidental megabyte command line cannot flow unbounded into the hub.
 const maxSummaryRunes = 2048
 
+// writePreviewTruncatedSuffix marks a write preview clipped to fit the summary.
+const writePreviewTruncatedSuffix = "\n[write preview truncated]"
+
 // maxIdentRunes bounds single-line identifiers (RawKind, ToolCallID).
 const maxIdentRunes = 128
 
@@ -126,6 +129,51 @@ func deref(p *string) string {
 	return *p
 }
 
+// shellSummary renders a shell request: the command text followed by any
+// URLs the command may access, so the operator sees network targets.
+func shellSummary(r *rpc.PermissionRequestShell) string {
+	text := r.FullCommandText
+	urls := make([]string, 0, len(r.PossibleURLs))
+	for _, u := range r.PossibleURLs {
+		if u.URL != "" {
+			urls = append(urls, u.URL)
+		}
+	}
+	if len(urls) > 0 {
+		text += "\nurls: " + strings.Join(urls, ", ")
+	}
+	return text
+}
+
+// writeSummary renders a write request: the file name followed by the diff
+// (or the new file contents when there is no diff). A body too large for the
+// summary is clipped with an explicit notice and does not set truncated; only
+// a file name that leaves no room for the preview does.
+func writeSummary(r *rpc.PermissionRequestWrite) (summary string, truncated bool, fullLen int) {
+	fnSan, fnTrunc, fnLen := sanitizeBound(r.FileName, maxSummaryRunes)
+	if fnTrunc {
+		return fnSan, true, fnLen
+	}
+	body := r.Diff
+	if body == "" {
+		body = deref(r.NewFileContents)
+	}
+	if body == "" {
+		return fnSan, false, fnLen
+	}
+	suffixLen := utf8.RuneCountInString(writePreviewTruncatedSuffix)
+	avail := maxSummaryRunes - fnLen - 1
+	if avail < suffixLen+1 {
+		return fnSan, true, fnLen
+	}
+	bodySan, bodyTrunc, _ := sanitizeBound(body, avail)
+	if !bodyTrunc {
+		return fnSan + "\n" + bodySan, false, fnLen
+	}
+	preview, _, _ := sanitizeBound(body, avail-suffixLen-1)
+	return fnSan + "\n" + preview + writePreviewTruncatedSuffix, false, fnLen
+}
+
 // toDomainRequest converts an SDK permission request to the intercom type.
 func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvocation) agent.PermissionRequest {
 	out := agent.PermissionRequest{SessionID: inv.SessionID}
@@ -135,11 +183,14 @@ func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvoca
 	out.RawKind = string(req.Kind())
 	rawKind := out.RawKind
 	var text string
+	done := false // write requests build their own summary
 	switch r := req.(type) {
 	case *rpc.PermissionRequestShell:
-		out.Kind, text, out.ToolCallID = agent.PermissionKindShell, r.FullCommandText, deref(r.ToolCallID)
+		out.Kind, text, out.ToolCallID = agent.PermissionKindShell, shellSummary(r), deref(r.ToolCallID)
 	case *rpc.PermissionRequestWrite:
-		out.Kind, text, out.ToolCallID = agent.PermissionKindWrite, r.FileName, deref(r.ToolCallID)
+		out.Kind, out.ToolCallID = agent.PermissionKindWrite, deref(r.ToolCallID)
+		out.Summary, out.Truncated, out.FullLen = writeSummary(r)
+		done = true
 	case *rpc.PermissionRequestRead:
 		out.Kind, text, out.ToolCallID = agent.PermissionKindRead, r.Path, deref(r.ToolCallID)
 	case *rpc.PermissionRequestURL:
@@ -150,7 +201,9 @@ func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvoca
 		// treats Other as the most restrictive class.
 		out.Kind, text = agent.PermissionKindOther, rawKind
 	}
-	out.Summary, out.Truncated, out.FullLen = sanitizeBound(text, maxSummaryRunes)
+	if !done {
+		out.Summary, out.Truncated, out.FullLen = sanitizeBound(text, maxSummaryRunes)
+	}
 	// Identifiers are single-line and capped independently of the summary.
 	out.RawKind = sanitizeIdent(rawKind, maxIdentRunes)
 	out.ToolCallID = sanitizeIdent(out.ToolCallID, maxIdentRunes)

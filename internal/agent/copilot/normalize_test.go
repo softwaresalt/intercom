@@ -2,9 +2,11 @@ package copilot
 
 import (
 	"bytes"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/github/copilot-sdk/go/rpc"
 
@@ -58,7 +60,7 @@ func TestNormalizeMappedEvents(t *testing.T) {
 
 func TestNormalizeUnknownVariantLogsWarnAndIsExplicit(t *testing.T) {
 	log, buf := newBufLogger()
-	ev := rpc.SessionEvent{Data: &rpc.AssistantReasoningData{}}
+	ev := rpc.SessionEvent{Data: &rpc.SessionErrorData{}}
 	got := normalize(ev, log)
 	if got.Kind != agent.KindUnknown {
 		t.Fatalf("Kind = %q, want unknown", got.Kind)
@@ -78,7 +80,7 @@ func TestIsInformationalClassification(t *testing.T) {
 			t.Errorf("%q should be informational", raw)
 		}
 	}
-	for _, raw := range []string{"assistant.reasoning", "model.call_failure", "session.error", "", "totally.new"} {
+	for _, raw := range []string{"model.call_failure", "session.error", "", "totally.new"} {
 		if isInformational(raw) {
 			t.Errorf("%q must stay visible as unknown", raw)
 		}
@@ -97,8 +99,108 @@ func TestNormalizeNilDataIsUnknownNotPanic(t *testing.T) {
 }
 
 func TestNormalizeNilLoggerDoesNotPanic(t *testing.T) {
-	got := normalize(rpc.SessionEvent{Data: &rpc.AssistantReasoningData{}}, nil)
+	got := normalize(rpc.SessionEvent{Data: &rpc.SessionErrorData{}}, nil)
 	if got.Kind != agent.KindUnknown {
 		t.Fatalf("Kind = %q, want unknown", got.Kind)
+	}
+}
+
+func TestNormalizeToolEndedExtractsResultAndErrorText(t *testing.T) {
+	ok := normalize(rpc.SessionEvent{Data: &rpc.ToolExecutionCompleteData{
+		ToolCallID: "c1", Success: true, Result: &rpc.ToolExecutionCompleteResult{Content: "done output"},
+	}}, nil)
+	if ok.Text != "done output" || !ok.Success {
+		t.Errorf("success Text = %q success=%v", ok.Text, ok.Success)
+	}
+	fail := normalize(rpc.SessionEvent{Data: &rpc.ToolExecutionCompleteData{
+		ToolCallID: "c2", Error: &rpc.ToolExecutionCompleteError{Message: "boom"},
+	}}, nil)
+	if fail.Text != "boom" || fail.Success {
+		t.Errorf("error Text = %q success=%v", fail.Text, fail.Success)
+	}
+	bare := normalize(rpc.SessionEvent{Data: &rpc.ToolExecutionCompleteData{ToolCallID: "c3", Success: true}}, nil)
+	if bare.Text != "" {
+		t.Errorf("no result must leave Text empty, got %q", bare.Text)
+	}
+}
+
+func TestNormalizeBoundsTextAndIdentifiersRuneSafely(t *testing.T) {
+	big := strings.Repeat("é", MaxEventTextBytes) // 2 bytes per rune
+	got := normalize(rpc.SessionEvent{Data: &rpc.AssistantMessageData{MessageID: strings.Repeat("i", 300), Content: big}}, nil)
+	if !got.Truncated {
+		t.Error("oversized text must set Truncated")
+	}
+	if len(got.Text) > MaxEventTextBytes || !utf8.ValidString(got.Text) {
+		t.Errorf("Text len=%d valid=%v", len(got.Text), utf8.ValidString(got.Text))
+	}
+	if len(got.MessageID) != MaxEventIdentBytes {
+		t.Errorf("MessageID len = %d, want %d", len(got.MessageID), MaxEventIdentBytes)
+	}
+	small := normalize(rpc.SessionEvent{Data: &rpc.AssistantMessageData{MessageID: "m", Content: "ok"}}, nil)
+	if small.Truncated {
+		t.Error("small event must not be Truncated")
+	}
+}
+
+func TestBoundUTF8SinglePassRuneSafe(t *testing.T) {
+	if s, tr := boundUTF8("hello", 5); s != "hello" || tr {
+		t.Errorf("exact fit = %q,%v", s, tr)
+	}
+	if s, tr := boundUTF8("hello", 3); s != "hel" || !tr {
+		t.Errorf("ascii cut = %q,%v", s, tr)
+	}
+	for _, in := range []string{"aé", "a€", "a😀", "😀😀😀"} {
+		for max := 0; max <= len(in); max++ {
+			s, tr := boundUTF8(in, max)
+			if !utf8.ValidString(s) || len(s) > max {
+				t.Errorf("boundUTF8(%q,%d) = %q (valid=%v)", in, max, s, utf8.ValidString(s))
+			}
+			if tr != (len(in) > max) {
+				t.Errorf("boundUTF8(%q,%d) truncated=%v", in, max, tr)
+			}
+		}
+	}
+}
+
+func TestUnmappedLogGateWarnsOncePerTypeThenDebug(t *testing.T) {
+	log, buf := newBufLogger()
+	var g unmappedLogGate
+	ev := rpc.SessionEvent{Data: &rpc.SessionErrorData{}}
+	for range 3 {
+		if got := normalizeWithGate(ev, log, &g); got.Kind != agent.KindUnknown {
+			t.Fatalf("Kind = %q", got.Kind)
+		}
+	}
+	if n := strings.Count(buf.String(), "level=WARN"); n != 1 {
+		t.Errorf("WARN count = %d, want 1\n%s", n, buf.String())
+	}
+	if n := strings.Count(buf.String(), "level=DEBUG"); n != 2 {
+		t.Errorf("DEBUG count = %d, want 2\n%s", n, buf.String())
+	}
+	if !g.first("brand.new.type") || g.first("brand.new.type") {
+		t.Error("first must be true once per type")
+	}
+}
+
+func TestUnmappedLogGateBoundsMemory(t *testing.T) {
+	var g unmappedLogGate
+	for i := range maxWarnedEventTypes + 50 {
+		g.first(fmt.Sprintf("type.%d", i))
+	}
+	if len(g.warned) > maxWarnedEventTypes {
+		t.Errorf("warned set grew to %d, cap %d", len(g.warned), maxWarnedEventTypes)
+	}
+}
+
+func TestBoundUTF8InvalidInputIsBoundedAndNeverSplitsValidRunes(t *testing.T) {
+	cont := strings.Repeat("\x80", 1<<16) // continuation bytes only: not valid UTF-8
+	s, tr := boundUTF8(cont, 10)
+	if !tr || len(s) < 10-(utf8.UTFMax-1) || len(s) > 10 {
+		t.Errorf("invalid input cut = len %d truncated=%v, want within 3 bytes of the limit", len(s), tr)
+	}
+	// Valid text after an invalid prefix is still cut on a rune boundary.
+	mixed := "\xff\xfe" + strings.Repeat("é", 10)
+	if got, _ := boundUTF8(mixed, 5); !utf8.ValidString(got[2:]) {
+		t.Errorf("valid tail split mid-rune: %q", got)
 	}
 }

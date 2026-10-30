@@ -41,9 +41,10 @@ type entry struct {
 
 // Entry kinds and statuses, as produced by the hub fold.
 const (
-	kindMessage = "message"
-	kindTool    = "tool"
-	kindError   = "error"
+	kindMessage   = "message"
+	kindTool      = "tool"
+	kindReasoning = "reasoning"
+	kindError     = "error"
 
 	statusStreaming = "streaming"
 	statusComplete  = "complete"

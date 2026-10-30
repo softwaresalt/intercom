@@ -541,3 +541,43 @@ func TestWideRunePromptTruncatesToDisplayWidthAndMouseInitAndWheelScrolls(t *tes
 		}
 	})
 }
+
+func TestReasoningAndToolEndedResultTextLiveAndHydratedParity(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	live := newModel(t, &fakeIngress{}, 60, 12)
+	r.send(
+		agent.Event{Kind: agent.KindReasoningDelta, MessageID: "r1", Text: "pla"},
+		agent.Event{Kind: agent.KindReasoningDelta, MessageID: "r1", Text: "n"},
+		agent.Event{Kind: agent.KindToolStarted, ToolCallID: "c1", ToolName: "grep"},
+		agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c1", ToolName: "grep", Success: true, Text: "found 3\x1b[31m"},
+		agent.Event{Kind: agent.KindToolEnded, ToolCallID: "c2", ToolName: "sh", Text: "bad"},
+	)
+	live = r.feedFrames(live, 6)
+	r.c.Close()
+	r.c = r.connect()
+	hydrated := newModel(t, &fakeIngress{}, 60, 12)
+	hydrated, _ = step(hydrated, FrameMsg{Frame: r.frame()})
+	if len(live.entries) != 3 || len(hydrated.entries) != 3 {
+		t.Fatalf("entries live=%d hydrated=%d, want 3", len(live.entries), len(hydrated.entries))
+	}
+	for i := range live.entries {
+		l, h := live.entries[i], hydrated.entries[i]
+		if l.Kind != h.Kind || l.Text != h.Text || l.Tool != h.Tool || l.Status != h.Status || l.Truncated != h.Truncated {
+			t.Fatalf("entry %d live/hydrated mismatch: live=%+v hydrated=%+v", i, l, h)
+		}
+	}
+	for name, m := range map[string]Model{"live": live, "hydrated": hydrated} {
+		if got := strings.TrimSuffix(entryText(m.entries[0]), " [streaming]"); got != "thinking> plan" {
+			t.Errorf("%s reasoning text = %q", name, entryText(m.entries[0]))
+		}
+		if got := entryText(m.entries[1]); !strings.HasPrefix(got, "tool> grep [ok]: found 3") {
+			t.Errorf("%s tool text = %q", name, got)
+		}
+		if strings.Contains(entryText(m.entries[1]), "\x1b") {
+			t.Errorf("%s tool text not sanitized: %q", name, entryText(m.entries[1]))
+		}
+		if got := entryText(m.entries[2]); got != "tool> sh [FAILED]: bad" {
+			t.Errorf("%s standalone tool text = %q", name, got)
+		}
+	}
+}

@@ -139,19 +139,25 @@ func (f *Fold) EvictedCount() int { return f.evicted }
 func (f *Fold) Apply(ev agent.Event) {
 	switch ev.Kind {
 	case agent.KindDelta:
-		f.applyDelta(ev)
+		f.applyDelta(ev, "message")
+	case agent.KindReasoningDelta:
+		f.applyDelta(ev, "reasoning")
 	case agent.KindAgentMessage:
-		f.applyMessage(ev)
+		f.applyMessage(ev, "message")
+	case agent.KindReasoning:
+		f.applyMessage(ev, "reasoning")
 	case agent.KindTurnStart:
 		f.turnActive, f.turnID = true, f.ident(ev.TurnID)
+		f.flagTrunc(ev)
 	case agent.KindTurnEnd:
 		f.turnActive, f.turnID = false, f.ident(ev.TurnID)
+		f.flagTrunc(ev)
 	case agent.KindIdle:
 		f.turnActive = false
 	case agent.KindToolStarted:
 		id, t1 := f.identFlag(ev.ToolCallID)
 		name, t2 := f.identFlag(ev.ToolName)
-		f.push(entry{Kind: "tool", ID: id, Tool: name, Status: statusRunning, Truncated: t1 || t2})
+		f.push(entry{Kind: "tool", ID: id, Tool: name, Status: statusRunning, Truncated: t1 || t2 || f.flagTrunc(ev)})
 	case agent.KindToolEnded:
 		f.applyToolEnded(ev)
 	default:
@@ -172,10 +178,20 @@ func (f *Fold) ApplyError(code, msg string) {
 	f.push(e)
 }
 
-func (f *Fold) applyDelta(ev agent.Event) {
+// flagTrunc reports the adapter-set Truncated flag, recording it in the
+// snapshot-level truncation marker.
+func (f *Fold) flagTrunc(ev agent.Event) bool {
+	if ev.Truncated {
+		f.anyTrunc = true
+	}
+	return ev.Truncated
+}
+
+func (f *Fold) applyDelta(ev agent.Event, kind string) {
 	id, idT := f.identFlag(ev.MessageID)
+	evT := f.flagTrunc(ev)
 	f.lastDelta = deltaResult{}
-	if i := f.find("message", id, statusStreaming); i >= 0 {
+	if i := f.find(kind, id, statusStreaming); i >= 0 {
 		cur := f.items[i].e
 		// Cap BEFORE concatenating: only the remaining budget of the delta is
 		// ever copied, so an oversize SDK delta is neither allocated nor kept.
@@ -185,33 +201,33 @@ func (f *Fold) applyDelta(ev agent.Event) {
 			add, clipped = truncUTF8(ev.Text, remaining), true
 		}
 		add = strings.Clone(add) // "" + s would otherwise alias s
-		f.lastDelta = deltaResult{text: add, truncated: clipped}
+		f.lastDelta = deltaResult{text: add, truncated: clipped || evT}
 		if clipped {
 			f.anyTrunc = true
 		}
-		if add == "" && (cur.Truncated || !clipped) {
+		if add == "" && (cur.Truncated || (!clipped && !evT)) {
 			return
 		}
 		cur.Text += add // fresh allocation of at most MaxEntryTextBytes
-		cur.Truncated = cur.Truncated || clipped
+		cur.Truncated = cur.Truncated || clipped || evT
 		f.replace(i, cur)
 		return
 	}
-	e := entry{Kind: "message", ID: id, Status: statusStreaming}
+	e := entry{Kind: kind, ID: id, Status: statusStreaming}
 	var txtT bool
 	e.Text, txtT = f.capText(ev.Text)
-	e.Truncated = idT || txtT
-	f.lastDelta = deltaResult{text: e.Text, truncated: txtT}
+	e.Truncated = idT || txtT || evT
+	f.lastDelta = deltaResult{text: e.Text, truncated: txtT || evT}
 	f.push(e)
 }
 
-func (f *Fold) applyMessage(ev agent.Event) {
+func (f *Fold) applyMessage(ev agent.Event, kind string) {
 	id, idT := f.identFlag(ev.MessageID)
-	e := entry{Kind: "message", ID: id, Status: statusComplete}
+	e := entry{Kind: kind, ID: id, Status: statusComplete}
 	var txtT bool
 	e.Text, txtT = f.capText(ev.Text)
-	e.Truncated = idT || txtT
-	if i := f.find("message", id, statusStreaming); i >= 0 {
+	e.Truncated = idT || txtT || f.flagTrunc(ev)
+	if i := f.find(kind, id, statusStreaming); i >= 0 {
 		f.replace(i, e)
 		return
 	}
@@ -225,17 +241,20 @@ func (f *Fold) applyToolEnded(ev agent.Event) {
 		status = statusSucceeded
 	}
 	name, t2 := f.identFlag(ev.ToolName)
+	text, t3 := f.capText(ev.Text)
+	t3 = t3 || f.flagTrunc(ev)
 	if i := f.find("tool", id, statusRunning); i >= 0 {
 		cur := f.items[i].e
 		cur.Status = status
+		cur.Text = text
 		if cur.Tool == "" && name != "" {
 			cur.Tool = name
 		}
-		cur.Truncated = cur.Truncated || t1 || t2
+		cur.Truncated = cur.Truncated || t1 || t2 || t3
 		f.replace(i, cur)
 		return
 	}
-	f.push(entry{Kind: "tool", ID: id, Tool: name, Status: status, Truncated: t1 || t2})
+	f.push(entry{Kind: "tool", ID: id, Tool: name, Text: text, Status: status, Truncated: t1 || t2 || t3})
 }
 
 // capText applies the per-entry text cap and records truncation. The result is

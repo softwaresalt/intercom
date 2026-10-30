@@ -563,6 +563,10 @@ func (m Model) onFrame(f hub.Frame) (tea.Model, tea.Cmd) {
 		m = m.applyMessage(env.Payload, true)
 	case hub.KindAgentMessage:
 		m = m.applyMessage(env.Payload, false)
+	case hub.KindAgentReasoningDelta:
+		m = m.applyMessageKind(env.Payload, true, kindReasoning)
+	case hub.KindAgentReasoning:
+		m = m.applyMessageKind(env.Payload, false, kindReasoning)
 	case hub.KindAgentTurnStart:
 		m.turnActive = true
 	case hub.KindAgentTurnEnd, hub.KindAgentIdle:
@@ -643,13 +647,19 @@ func (m Model) find(kind, id, status string) int {
 }
 
 func (m Model) applyMessage(raw []byte, isDelta bool) Model {
+	return m.applyMessageKind(raw, isDelta, kindMessage)
+}
+
+// applyMessageKind folds a message-shaped envelope (agent message or
+// reasoning) into the transcript as an entry of the given kind.
+func (m Model) applyMessageKind(raw []byte, isDelta bool, kind string) Model {
 	var p hub.MessagePayload
 	if unmarshal(raw, &p) != nil {
 		m.notice = "ignored an undecodable message envelope"
 		return m
 	}
 	id, text := SanitizeLine(p.MessageID), Sanitize(p.Text)
-	i := m.find(kindMessage, id, statusStreaming)
+	i := m.find(kind, id, statusStreaming)
 	// Entries are copied on write so a previous Model value is never mutated.
 	m.entries = append([]entry(nil), m.entries...)
 	switch {
@@ -658,11 +668,11 @@ func (m Model) applyMessage(raw []byte, isDelta bool) Model {
 		m.entries[i].Truncated = m.entries[i].Truncated || p.Truncated
 		m.entries[i].wrapped, m.entries[i].wrapWidth = "", 0
 	case isDelta:
-		m.entries = append(m.entries, entry{Kind: kindMessage, ID: id, Text: text, Status: statusStreaming, Truncated: p.Truncated})
+		m.entries = append(m.entries, entry{Kind: kind, ID: id, Text: text, Status: statusStreaming, Truncated: p.Truncated})
 	case i >= 0:
-		m.entries[i] = entry{Kind: kindMessage, ID: id, Text: text, Status: statusComplete, Truncated: p.Truncated}
+		m.entries[i] = entry{Kind: kind, ID: id, Text: text, Status: statusComplete, Truncated: p.Truncated}
 	default:
-		m.entries = append(m.entries, entry{Kind: kindMessage, ID: id, Text: text, Status: statusComplete, Truncated: p.Truncated})
+		m.entries = append(m.entries, entry{Kind: kind, ID: id, Text: text, Status: statusComplete, Truncated: p.Truncated})
 	}
 	m.capEntries()
 	return m
@@ -694,7 +704,7 @@ func (m Model) applyToolEnded(raw []byte) Model {
 	if unmarshal(raw, &p) != nil {
 		return m
 	}
-	id, name := SanitizeLine(p.ToolCallID), SanitizeLine(p.ToolName)
+	id, name, text := SanitizeLine(p.ToolCallID), SanitizeLine(p.ToolName), Sanitize(p.Text)
 	status := statusFailed
 	if p.Success {
 		status = statusSucceeded
@@ -702,6 +712,7 @@ func (m Model) applyToolEnded(raw []byte) Model {
 	m.entries = append([]entry(nil), m.entries...)
 	if i := m.find(kindTool, id, statusRunning); i >= 0 {
 		m.entries[i].Status = status
+		m.entries[i].Text = text
 		if m.entries[i].Tool == "" && name != "" {
 			m.entries[i].Tool = name
 		}
@@ -709,7 +720,7 @@ func (m Model) applyToolEnded(raw []byte) Model {
 		m.entries[i].wrapped, m.entries[i].wrapWidth = "", 0
 		return m
 	}
-	m.entries = append(m.entries, entry{Kind: kindTool, ID: id, Tool: name, Status: status, Truncated: p.Truncated})
+	m.entries = append(m.entries, entry{Kind: kindTool, ID: id, Tool: name, Text: text, Status: status, Truncated: p.Truncated})
 	m.capEntries()
 	return m
 }
@@ -783,6 +794,11 @@ func entryText(e entry) string {
 			state = e.Status
 		}
 		s = fmt.Sprintf("tool> %s [%s]", e.Tool, state)
+		if e.Text != "" {
+			s += ": " + e.Text
+		}
+	case kindReasoning:
+		s = "thinking> " + e.Text
 	case kindError:
 		s = fmt.Sprintf("error> %s: %s", e.ID, e.Text)
 	default:

@@ -184,6 +184,18 @@ Normative sequence:
    adapter itself could not confirm (its own bounded wait for `ForceStop`
    expired, surfaced as `agent.ErrCleanupIncomplete`); the hub's `Force` budget
    defaults above the adapter's `StopTimeout` so the adapter reports first.
+   **Force-stop budget reservation.** The adapter exposes
+   `Adapter.ForceStopBudget()`: its `StopTimeout` plus `SDKStopLockTimeout`,
+   the worst-case wait for the SDK lifecycle lock held by an in-flight
+   `Client.Stop` that `ForceStop` needs (`DefaultSDKStopLockTimeout` =
+   `SDKRuntimeShutdownTimeout` + `SDKProcessExitTimeout` = 20 s). `hub.NewShutdown`
+   folds that budget into the adapter stop timeout and **reserves it after the
+   graceful cutoff**: `Timeouts.Force` MUST be at least `ForceStopBudget()`, a
+   smaller explicit value is rejected at construction (`KindConfig`), and a
+   zero `Force` defaults to `max(DefaultShutdownForce, budget + 2 s)`. The
+   post-graceful-cutoff `Force` window therefore always covers the whole
+   `ForceStop` path, so the adapter reports an unconfirmed stop before the hub's
+   hard budget expires.
 5. **Bounded drain of client write pumps (1-2 s), then abort sockets.** Each client's `done` MUST be closed (via its `sync.Once`) before the abort, per §5.5's drop protocol. An
    unbounded drain can block for minutes on a client with a closed TCP window
    — precisely what §5.5 forbids.
@@ -301,6 +313,21 @@ invocation occurred. See
 > "no new entrants" latch above remains required — serialisation within one
 > subscription does not eliminate the shutdown race the latch guards against.
 
+**`session.shutdown` is informational.** The SDK's `session.shutdown` event is
+runtime lifecycle bookkeeping, not an operator-visible state change, so the
+adapter classifies it as informational: it is dropped at debug level and never
+surfaces as an `unknown_event` error. The hub-owned `server.shutdown` (§3.1
+step 1) remains the only shutdown signal operators see.
+
+**Post-quiesce terminal `session.idle` is delivered without blocking.** Step 3
+waits for a *positive* idle signal, but that terminal `session.idle` can arrive
+after the callback latch has closed (between quiesce and `Disconnect`). The
+adapter then closes out the turn on its permission bridge (clearing, or on an
+abort-idle aborting, the turn) and, unless the hub is gone, offers the event to
+ingress with a **non-blocking** send: it is delivered only if ingress has room
+and is otherwise abandoned, never blocking the SDK goroutine during shutdown.
+Every other event arriving after quiesce is discarded with a warning.
+
 **C2 closure status: CLOSED for SQ-b.** This amendment satisfies design
 §4.2's closure condition ("C2 may not close until the design has been amended
 with the chosen fallback").
@@ -312,6 +339,21 @@ variants can appear in a patch release **without any compile error**. Every
 type switch over `event.Data` MUST have a `default:` branch that logs the
 unhandled `event.Type()` at warn level. Silently dropping unknown events is
 prohibited.
+
+**Unmapped-event logging is rate-limited per event type.** A chatty SDK must
+not flood the log, so the first occurrence of each unhandled event type is
+logged at **warn** and every repeat at **debug**. The adapter's normalizer
+(`unmappedLogGate`) and the hub's `handleEvent` each keep a bounded set (256
+types) keyed by the sanitized, length-bounded type name; types beyond the cap
+log at debug only. The event is still normalized to `KindUnknown`, folded and
+published as an `error` envelope on every occurrence — only the log line is
+rate-limited, never the event.
+
+**Event strings are bounded rune-safely.** The adapter bounds every string it
+puts on an `agent.Event` in a single pass that never splits a UTF-8 rune: `Text`
+at `MaxEventTextBytes` (16 KiB) and identifiers at `MaxEventIdentBytes` (128
+bytes). When anything was shortened it sets `agent.Event.Truncated`, which the
+hub propagates to the fold and to the envelope's `truncated` flag.
 
 ---
 
@@ -449,7 +491,22 @@ counter, and MUST be captured once at hub construction.
 **Envelope kinds (initial set):** `session.hydrate`, `agent.message`,
 `agent.message.delta`, `agent.turn.start`, `agent.turn.end`, `agent.idle`,
 `permission.requested`, `permission.resolved`, `permission.aborted`,
-`tool.started`, `tool.ended`, `error`, `server.shutdown`.
+`tool.started`, `tool.ended`, `error`, `server.shutdown`, plus the reasoning
+kinds `agent.reasoning` and `agent.reasoning.delta` (listed in the payload notes
+below).
+
+**Reasoning and tool-result payloads (hub-mapped from agent events):**
+
+* `agent.reasoning` and `agent.reasoning.delta` carry the same payload as
+  `agent.message` / `agent.message.delta` (`message_id` = the SDK reasoning id,
+  bounded; `text`; `truncated`). A delta carries exactly the text the fold
+  accepted, so live and hydrated state agree. The fold keeps them as
+  `reasoning` entries (streaming, then complete), and surfaces render them as
+  model "thinking" distinct from the answer.
+* `tool.ended` additionally carries an optional `text`: the tool's result text
+  (or its error message on failure), bounded to the entry text cap with
+  `truncated` set when clipped. Surfaces sanitize it before rendering, and the
+  fold records it on the tool entry so hydration matches the live stream.
 
 **Permission and shutdown payloads (hub-produced; closed vocabularies):**
 
@@ -457,7 +514,16 @@ counter, and MUST be captured once at hub construction.
   `permission_kind` (`shell` | `write` | `read` | `url` | `other` | `unknown`),
   `summary` (sanitized, bounded), `remaining_ms` (time left before the
   hub-owned timeout, measured at the envelope's `ts`; see §5.3).
-* `permission.resolved`: `request_id`, `decision` (`allow_once` | `deny` |
+  The `summary` of a shell request is the command followed by a `urls:` line
+  listing any URLs the command may access; that of a write request is the file
+  name followed by the proposed diff (or the new file contents when there is no
+  diff). A write preview too large for the summary is clipped and ends with the
+  in-text notice `[write preview truncated]`. This is a deliberate, documented
+  exception to the deny-when-`Truncated` rule: a clipped write preview does
+  **not** set `Truncated`, so the request is still put to the operator, who is
+  shown the notice but not the clipped tail. (A file name that alone fills the
+  summary still sets `Truncated` and is denied.) The notice is plain text and
+  can be imitated by file content, so it is informational, not a guarantee.* `permission.resolved`: `request_id`, `decision` (`allow_once` | `deny` |
   `unavailable`), `actor` (`local-tui` | `remote-approver` | `hub`), `reason`
   (empty when an operator answered; `timeout` | `shutdown` | `no_surface` when
   the hub decided). **`unavailable` means the SDK's `UserNotAvailable`: nobody
