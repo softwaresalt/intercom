@@ -132,3 +132,13 @@ and destructive actions still require separate explicit authority.
 Original 073-S cannot resume under the proposed corrected rules until this
 correction is reviewed and merged. Do not publish the original Stage branch from
 this executor session. Preserve its commit `3a6f5e8` unchanged.
+
+## Validation method repair at 2026-10-30T04:53Z
+
+The full-suite blocker remains open (breaker at 3 attempts, not reset). A
+separately approved standalone diagnostic found that the gatecheck helper
+confines temp to its own package directory, and that the integration tests need
+a temp root outside the repository, so one global TEMP value cannot serve both.
+The temp contract, same-process recipe, gate provenance and evidence links are
+in `validation-method-repair-memory.md`. The full suite was not rerun, and the
+merge-readiness gate is still unmet.
