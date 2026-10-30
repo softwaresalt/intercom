@@ -31,3 +31,9 @@ source:
 * Explicit operator per-closure approval was received (operator timestamp 2026-10-30T07:20:23Z, recorded 07:25:08Z) for the exact four-record command; dark mode alone was not treated as approval
 * Mutating `autoharness shipment cascade-close` ran 07:28:37Z to 07:31:46Z: exit 0, `postcondition_verdict: pass`, `archived_ids` = 073-S, 080-F, 080.001-T, 080.002-T, `returned_ids` empty, 073-S `archived_status: shipped`, parents preserved
 * Evidence: `docs/closure/evidence/073-S-080-F-close-evidence.json`; reconcile report `.backlogit/reconcile/073-S-post-20261030T0740Z.md`; closure artifact `docs/closure/073-S-080-F-post-merge-closure.md`
+
+## Procedural deviation (P-005)
+
+* No `file-lock` token was acquired and no pre-mode reconcile preceded the close; post-mode checks were done by hand. Native `cascade-close` held its own supervised journal/pair lock and every postcondition passed, so the data closure stands
+* Closure status is therefore `READY_WITH_CONDITIONS` with the dispositioned `reconcile-lock-procedural-deviation` condition (not a waiver; no queue lock existed). The lock contract conflict is tracked by existing stash `9F824B64`
+* Still true: the telemetry limitation, old local breaker (3) untouched and stash 8356E5DA excluded
