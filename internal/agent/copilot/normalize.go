@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -109,7 +110,9 @@ func boundUTF8(s string, maxBytes int) (string, bool) {
 	for back := 0; back < utf8.UTFMax-1 && cut > 0 && !utf8.RuneStart(s[cut]); back++ {
 		cut--
 	}
-	return s[:cut], true
+	// Clone so a clipped event retains only the accepted prefix, never the
+	// whole (possibly multi-megabyte) SDK string it was cut from.
+	return strings.Clone(s[:cut]), true
 }
 
 // unmappedLogGate rate-limits unmapped-event Warn logs to the first

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -728,7 +729,8 @@ const maxUnmappedWarnedTypes = 256
 // a chatty SDK cannot flood the log. Only a fixed code and the raw type's
 // length are logged; adapter-controlled text is never logged.
 func (h *Hub) logUnmapped(ev agent.Event) {
-	key := truncUTF8(ev.RawType, maxIdentBytes)
+	// Clone: the key is retained in the set and must not pin ev.RawType.
+	key := strings.Clone(truncUTF8(ev.RawType, maxIdentBytes))
 	if _, seen := h.unmappedWarned[key]; !seen && len(h.unmappedWarned) < maxUnmappedWarnedTypes {
 		h.unmappedWarned[key] = struct{}{}
 		h.cfg.Logger.Warn("hub: unmapped agent event", "code", ErrCodeUnknownEvent, "raw_type_bytes", len(ev.RawType))
