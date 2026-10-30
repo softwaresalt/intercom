@@ -58,7 +58,7 @@ func TestCheckWritePathWrapper_LegitimateModesReachBuild(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// One install per test (see wrapper_harness_test.go); each subtest
 			// starts from empty shim logs so its call counts stay isolated.
-			for _, name := range []string{"go-calls.log", "build-output-path.log", "generated-binary-calls.log"} {
+			for _, name := range []string{"go-calls.log", "build-output-path.log", "generated-binary-calls.log", "generated-binary-args.log"} {
 				if err := os.Remove(filepath.Join(shimDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("reset shim log %s: %v", name, err)
 				}
@@ -76,7 +76,7 @@ func TestCheckWritePathWrapper_LegitimateModesReachBuild(t *testing.T) {
 			}
 			goShimCalls, err := os.ReadFile(goShimLog)
 			if err != nil {
-				t.Fatalf("read go shim calls: %v", err)
+				t.Fatalf("read go shim calls: %v (trace=%q)", err, trace)
 			}
 			calls := strings.Split(strings.TrimSpace(string(goShimCalls)), "\n")
 			if len(calls) != 2 {
@@ -94,7 +94,7 @@ func TestCheckWritePathWrapper_LegitimateModesReachBuild(t *testing.T) {
 			expectedGoExe := platformGoExe()
 			buildOutputPath, err := os.ReadFile(filepath.Join(filepath.Dir(goShimLog), "build-output-path.log"))
 			if err != nil {
-				t.Fatalf("read generated binary output path: %v", err)
+				t.Fatalf("read generated binary output path: %v (trace=%q)", err, trace)
 			}
 			if got, want := path.Base(strings.TrimSpace(string(buildOutputPath))), "gatecheck"+expectedGoExe; got != want {
 				t.Errorf("generated binary output name = %q, want %q", got, want)
@@ -103,7 +103,7 @@ func TestCheckWritePathWrapper_LegitimateModesReachBuild(t *testing.T) {
 			sentinelLog := filepath.Join(filepath.Dir(goShimLog), "generated-binary-calls.log")
 			sentinel, err := os.ReadFile(sentinelLog)
 			if err != nil {
-				t.Fatalf("read generated binary sentinel: %v", err)
+				t.Fatalf("read generated binary sentinel: %v (trace=%q)", err, trace)
 			}
 			if got, want := strings.TrimSpace(string(sentinel)), "invoked"; got != want {
 				t.Errorf("generated binary sentinel = %q, want %q", got, want)
@@ -150,6 +150,90 @@ func TestInstallGoShim_UnexpectedInvocationFailsClearly(t *testing.T) {
 func runWritePathWrapperWithTrace(t *testing.T, bash, script string, args ...string) (string, int) {
 	t.Helper()
 	return runWritePathWrapperInDir(t, bash, script, "", args...)
+}
+
+// TestInstallGoShim_SentinelLogsAvoidTmpAliasAndCheckTmpdirIdentity pins two
+// installGoShim properties (080.002-T): the sentinel logs are anchored through
+// toBashPath, never through MSYS2's volatile /tmp alias, and the shim's
+// managed-TMPDIR guard falls back to directory identity (test -ef) so an
+// aliased spelling of the same directory is accepted while a distinct output
+// directory is still rejected with exit code 97.
+func TestInstallGoShim_SentinelLogsAvoidTmpAliasAndCheckTmpdirIdentity(t *testing.T) {
+	bash := requireBash(t)
+	shimDir := installGoShim(t, bash)
+	otherDir := t.TempDir()
+
+	bashShimDir := toBashPath(shimDir)
+	if got, want := os.Getenv("GATECHECK_SENTINEL_LOG"), path.Join(bashShimDir, "generated-binary-calls.log"); got != want {
+		t.Errorf("GATECHECK_SENTINEL_LOG = %q, want %q", got, want)
+	}
+	if got, want := os.Getenv("GATECHECK_ARGS_LOG"), path.Join(bashShimDir, "generated-binary-args.log"); got != want {
+		t.Errorf("GATECHECK_ARGS_LOG = %q, want %q", got, want)
+	}
+
+	for _, dir := range []string{shimDir, otherDir} {
+		if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+			t.Fatalf("create sub directory: %v", err)
+		}
+	}
+	root := toBashPath(gatecheckRepoRoot(t))
+	exe := "gatecheck" + platformGoExe()
+	aliasedTmp := bashShimDir + "/sub/.."
+
+	runBuild := func(out string) (string, int) {
+		t.Helper()
+		cmd := exec.Command(bash, "-c", `go -C "$1" build -trimpath -o "$2" ./tools/gatecheck`, "bash", root, out)
+		cmd.Env = append(os.Environ(), "TMPDIR="+aliasedTmp, "PS4=+ ", "LC_ALL=C")
+		var combined bytes.Buffer
+		cmd.Stdout = &combined
+		cmd.Stderr = &combined
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start go shim: %v", err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		var waitErr error
+		select {
+		case waitErr = <-done:
+		case <-time.After(20 * time.Second):
+			killErr := cmd.Process.Kill()
+			<-done
+			t.Fatalf("go shim timed out after 20s (kill err=%v, output=%q)", killErr, combined.String())
+		}
+		var exitErr *exec.ExitError
+		switch {
+		case errors.As(waitErr, &exitErr):
+			return combined.String(), exitErr.ExitCode()
+		case waitErr != nil:
+			t.Fatalf("wait for go shim: %v (output=%q)", waitErr, combined.String())
+		}
+		return combined.String(), 0
+	}
+
+	// The aliased spelling (shim/sub/..) names the managed directory, so the
+	// output two levels below it is accepted via the directory-identity check.
+	accepted := bashShimDir + "/sub/" + exe
+	if out, code := runBuild(accepted); code != 0 {
+		t.Fatalf("aliased TMPDIR spelling rejected: exit %d, want 0 (output=%q)", code, out)
+	}
+	if err := os.Remove(filepath.Join(shimDir, "generated-binary-calls.log")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reset sentinel log: %v", err)
+	}
+	if out, err := exec.Command(bash, accepted).CombinedOutput(); err != nil {
+		t.Fatalf("run generated sentinel: %v (output=%q)", err, out)
+	}
+	sentinel, err := os.ReadFile(filepath.Join(shimDir, "generated-binary-calls.log"))
+	if err != nil {
+		t.Fatalf("read sentinel log: %v", err)
+	}
+	if got := strings.TrimSpace(string(sentinel)); got != "invoked" {
+		t.Errorf("sentinel log = %q, want %q", got, "invoked")
+	}
+
+	// A distinct directory (still inside the workspace) must stay rejected.
+	if out, code := runBuild(toBashPath(otherDir) + "/sub/" + exe); code != 97 {
+		t.Errorf("distinct output directory exit = %d, want 97 (output=%q)", code, out)
+	}
 }
 
 // runWritePathWrapperInDir runs the wrapper with dir as its working directory
