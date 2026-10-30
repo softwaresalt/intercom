@@ -205,7 +205,7 @@ func (f *Fold) applyDelta(ev agent.Event, kind string) {
 		if clipped {
 			f.anyTrunc = true
 		}
-		if add == "" && (cur.Truncated || !(clipped || evT)) {
+		if add == "" && (cur.Truncated || (!clipped && !evT)) {
 			return
 		}
 		cur.Text += add // fresh allocation of at most MaxEntryTextBytes
