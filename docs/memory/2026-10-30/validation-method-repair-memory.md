@@ -2,9 +2,28 @@
 title: "Validation method repair: gatecheck temp containment diagnostic"
 description: "Evidence, corrected validation recipe, temp contract and gate provenance for the open policy-snapshot containment breaker"
 date: 2026-10-30
-status: method-repaired-suite-not-rerun
+status: contained-diagnostic-passed-suite-still-blocked
 tags: [memory, validation, diagnostics, circuit-breaker]
 ---
+
+## Superseding containment incident
+
+Post-run evidence review at 2026-10-30T04:58:10Z found a P-005 violation of
+CLI workspace containment. Probe cases B and C created `t.TempDir()`
+fixtures under the inherited OS temporary directory, outside the authorized
+workspace. The diagnostic's exit code 0 does not establish safety compliance
+or a validated suite runner.
+
+Further execution is halted. No outside-workspace cleanup is authorized or
+attempted. The original full-suite breaker remains open at three attempts;
+this incident does not reset or extend it.
+
+The findings below are retained as evidence, not permission to repeat the
+probe. A future authorized probe must put both its artificial package directory
+and its sibling temporary directory inside the actual workspace. "Outside"
+must mean outside that artificial package, never outside the actual workspace.
+Every candidate write path, including a first-use `t.TempDir()` parent, must
+be checked before execution. The original five-test failure remains unproven.
 
 ## Scope and authority
 
@@ -90,9 +109,10 @@ go test -count=1 -v -timeout 4m .\tempprobe_windows_test.go
   Stdout 32 lines, 20138 bytes. Stderr 0 bytes. First launch attempt was
   rejected by the shell tool before execution (no process started), so the
   probe ran exactly once.
-* Parent environment at launch: TEMP and TMP
-  `C:\Users\DEWILL~1\AppData\Local\Temp` (8.3 form), TMPDIR, GATECHECK_TMPDIR
-  and GOTMPDIR unset. Go: `C:\Program Files\Go\bin\go.exe`, go1.27.0.
+* Parent environment at launch: TEMP and TMP pointed to the inherited OS
+  temporary directory outside the workspace (8.3 form). TMPDIR,
+  GATECHECK_TMPDIR and GOTMPDIR were unset. Go: `C:\Program Files\Go\bin\go.exe`,
+  go1.27.0.
 * The five subtests report `PASS` because the probe itself ran. The
   containment verdicts are in the JSON evidence, not the PASS marker.
 
@@ -115,9 +135,9 @@ Observed facts:
   `t.TempDir()` exists.
 * Cases B and C reproduce the exact failure text condition
   (`temporary directory is outside workspace`) with an unchanged helper.
-* The outside directory canonicalizes to a long-name path
-  (`C:\Users\dewilliams\...`) while the inherited env uses `DEWILL~1`. Lexical
-  `filepath.Rel` is already outside in both spellings, so this is not the cause.
+* The outside directory canonicalizes to a long-name path while the inherited
+  environment uses an 8.3 spelling. Lexical `filepath.Rel` is already outside
+  in both spellings, so this does not explain an inside path being rejected.
 * On this machine's inherited PATH, `bash` resolves to
   `C:\Windows\system32\bash.exe` and `uname -o` returns `GNU/Linux`. The
   helper's gate (`requireWindowsCompatibleBash`) would SKIP the five tests
@@ -169,48 +189,45 @@ Premises that were wrong:
 * Environment and CWD persist across tool calls. They do not. Each PowerShell
   call is a new process.
 
-Contract (stated, not yet validated by a suite run):
+Test contracts observed from source (not an approved execution recipe):
 
 * Gatecheck package tests
   * inside the package directory: the helper's `t.TempDir()` parent and the
     shim directory
   * outside requirement: none, but GOTMPDIR must be unset, or point inside the
     package directory
-  * inherited TEMP, TMP and TMPDIR: leave at their defaults
+  * the helper replaces TEMP, TMP and TMPDIR itself; initial values alone do
+    not establish containment for every test or the Go compiler
   * bash: Git for Windows bash first on PATH, or the tests skip
 * Integration tests (`tests/integration/build_script_test.go` output-path
   guards)
   * the process temp root must be OUTSIDE the repository under test
   * a workspace-local TEMP inside the repository breaks this premise
-* Therefore one global TEMP value cannot serve both groups. Run them as
-  separate native invocations with different scratch settings. This repairs
-  the method only; it is not a result.
-* "Repository under test" must be named per run. A clone under
-  `logs/validation/...` is inside the authorized workspace but outside the
-  checked-out repository, which is why sibling-TEMP and in-clone TEMP both
-  differ from a normal local run.
+* A global override is not a verified solution for these different contracts.
+  Separate invocations remain a proposal, not a validated full-suite result.
+* "Repository under test" and "actual authorized workspace" must be named
+  separately. A fixture beneath `logs/validation` is inside both the actual
+  workspace and its checked-out repository; its own repository boundary is a
+  different, nested boundary.
 
-Same-process recipe (preflight, then one native command). It is a recipe, not
-a result, and it has not been run against the suite.
+The earlier inherited-TEMP recipe is withdrawn. Before any newly authorized
+diagnostic execution, the method must satisfy all of these conditions:
 
-```powershell
-# All setup and the native command in ONE PowerShell process.
-$pkg = Join-Path (Get-Location).Path 'tools\gatecheck'
-$env:PATH = 'C:\Program Files\Git\usr\bin;' + $env:PATH
-Remove-Item Env:GOTMPDIR -ErrorAction SilentlyContinue
-# Child-observed preflight: print only allowlisted keys and resolved tools.
-foreach ($k in 'TEMP','TMP','TMPDIR','GATECHECK_TMPDIR','GOTMPDIR') {
-  '{0}={1}' -f $k, $(if ($null -eq [Environment]::GetEnvironmentVariable($k)) { '<unset>' } else { [Environment]::GetEnvironmentVariable($k) })
-}
-(Get-Command bash).Source; (Get-Command go).Source
-# Then the single authorized native command, with the exit code read from the
-# process object, bounded output (1 MiB or 10000 lines), timeout of 5 minutes.
-```
+* Put the artificial package directory and sibling scratch below a canonical,
+  ignored diagnostic scope inside the actual workspace, with no reparse escape
+* Reject every outside-workspace write candidate before any `t.TempDir()` or
+  `os.MkdirTemp` call, including cached-parent and GOTMPDIR cases
+* Configure environment and execute Go in the same process, without depending
+  on state from a previous PowerShell tool call
+* Observe CWD, canonical paths, TEMP, TMP, TMPDIR, GOTMPDIR and resolved tools
+  in the actual Go child; do not capture the complete environment
+* Select Git for Windows Bash explicitly for relevant tests, not the WSL
+  launcher
+* Capture bounded output and the native exit code independently of logging
+* Obtain explicit disposition of the still-open full-suite breaker before
+  rerunning that failed operation
 
-Required preflight observed by the Go child, not only by the shell: a
-standalone probe like the one above (or the `snap` records it logs) must show
-`os.TempDir`, GOTMPDIR, `Getwd` and the bash `uname -o` result (`Msys`) before
-any suite run. That preflight is itself a counted, separately authorized step.
+No replacement probe or suite invocation has been executed.
 
 ## Gate provenance
 
@@ -258,8 +275,10 @@ Can remote CI supply canonical full-suite evidence before merge?
 
 ## Result and remaining authorization
 
-* A method fix is justified for the temp contract and the same-process recipe
-  above. No source, test, policy, timeout or containment change was made.
+* Source analysis and the diagnostic establish useful temp-path facts, but a
+  compliant replacement runner has not been validated. The earlier
+  "method repaired" claim is superseded by the containment incident above.
+* No tracked source, test, policy, timeout or containment change was made.
 * The full suite, the five tests and original 073-S were not run. The open
   breaker is unchanged at 3 attempts.
 * Needed from the operator before any suite run: (1) whether a single
@@ -270,3 +289,65 @@ Can remote CI supply canonical full-suite evidence before merge?
   unreachable.
 * The immutable clone `logs/validation/policy-4dcf82e` and its ignored
   fixtures were not touched. Cleanup remains pending approval.
+
+## Authorized contained retry (2026-10-30T05:24Z)
+
+The "further execution is halted" statement above applied at incident time.
+Later, explicit operator authorization ("Let's retry that and make sure all
+fixtures remain inside the CWD") allowed ONE new standalone diagnostic. It is
+a separate operation: it does not reset, extend or close the open breaker and
+it is not a rerun of the blocked suite.
+
+* Scope `logs/diagnostics/contained-temp-probe-20261029-2213` is an opaque
+  identifier. All recorded times are UTC.
+* Two boundaries were kept distinct. The ARTIFICIAL subject (`subject`) and its
+  sibling scratch (`scratch`) both sit below the ACTUAL workspace root.
+  "Outside the subject" meant the sibling, never outside the workspace.
+* Pre-write guards: the literal actual root and scope were checked in the
+  launcher and in `TestMain` before any fixture; every candidate path got a
+  lexical check, a component walk rejecting reparse points and a canonical
+  parent check; before every `t.TempDir()` the effective base (GOTMPDIR when
+  set, else `os.TempDir()`), TMP, TEMP, TMPDIR and any cached parent had to be
+  inside the actual root. Failed preflight meant no launch.
+* Compiler and runtime environment: TEMP, TMP, TMPDIR, GOTMPDIR, GOCACHE,
+  GOMODCACHE, GOPATH, APPDATA, LOCALAPPDATA, USERPROFILE, HOME and
+  GOTELEMETRYDIR were all forced to scope subdirectories before Go started
+  (12 paths checked). `GOENV=off`, `GOWORK=off`, `GOTOOLCHAIN=local`,
+  `GOPROXY=off`, `GOFLAGS=-mod=readonly` and `CGO_ENABLED=0` were pinned. Setup
+  and the Go child shared one `ProcessStartInfo`, with Git for Windows
+  `usr\bin` on the child PATH. Raw environment values are not copied here.
+* Result: cases A-D ran and all four expectations were met (A inside the
+  subject, B cached sibling parent outside the subject, C GOTMPDIR sibling
+  outside the subject, D GOTMPDIR inside the subject). 5 fixtures were
+  created, all canonical under the scope and the actual root. 10 lexical
+  rejection checks passed. 0 safety failures, 0 skipped cases.
+* Run facts: finished 2026-10-30T05:24:41.477Z, outcome `native_success`,
+  native exit 0, no timeout, no truncation, no launcher error, no termination,
+  24237 ms, 740 bytes and 14 lines captured, stderr empty (limits 1 MiB and
+  10,000 lines, 240 s). Six SHA-256 values were recomputed and matched; a
+  reparse-point scan of the scope found none. Prefixes: source
+  `5736C57D7231AB1D`, launcher `70444FACF36102A3`, evidence `6AE19D239A9E830B`;
+  full values are in the result metadata.
+* Attempt history, stated plainly: the first launcher invocation failed in
+  PowerShell before preflight (`1MiB` is not a valid literal, so it ran as an
+  unknown command, pwsh exit 1). No evidence directory and no Go process
+  existed. The literal was fixed to `1048576` and ONE Go execution followed.
+  That is one Go run, not two.
+* Evidence (ignored local files):
+  [result-metadata.json](../../../logs/diagnostics/contained-temp-probe-20261029-2213/evidence/result-metadata.json),
+  [probe-evidence.jsonl](../../../logs/diagnostics/contained-temp-probe-20261029-2213/evidence/probe-evidence.jsonl),
+  [launch-metadata.json](../../../logs/diagnostics/contained-temp-probe-20261029-2213/evidence/launch-metadata.json),
+  [stdout.txt](../../../logs/diagnostics/contained-temp-probe-20261029-2213/evidence/stdout.txt),
+  [stderr.txt](../../../logs/diagnostics/contained-temp-probe-20261029-2213/evidence/stderr.txt)
+
+What this establishes and what it does not:
+
+* The GOTMPDIR and cached-parent mechanisms are now reproduced safely with
+  every fixture inside the actual workspace.
+* The prior validator's actual GOTMPDIR, PATH and Bash remain unknown. The
+  original five-test root cause is NOT proven, no helper defect is proven and
+  the original full suite is NOT green.
+* The full-package breaker stays OPEN at `attempts: 3`. Original shipment 073-S
+  was not run and the policy correction is not merged.
+* No tracked source, test, policy, timeout or containment change was made, and
+  no cleanup was performed.

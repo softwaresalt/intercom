@@ -106,6 +106,24 @@ See `dark-staging-correction-memory.md` for the corrective implementation
 history. Do not report the correction as merged or the original operation
 as resumed.
 
+## Diagnostic containment incident
+
+At 2026-10-30T04:58:10Z, post-run review of the separately authorized diagnostic
+found that cases B and C created temporary fixtures outside the actual
+workspace. This is a P-005 CLI containment violation, not a successful repair
+of the blocked runner. Further execution is halted; no outside-workspace
+cleanup was attempted.
+
+The diagnostic established that Go 1.27 `testing.T.TempDir` uses GOTMPDIR,
+but the earlier validator's actual GOTMPDIR remains unknown. The five-test
+failure is still not conclusively diagnosed. Preserve the three failed native
+attempts above; no fourth attempt or replacement diagnostic was executed.
+
+The inherited-TEMP recipe is withdrawn in
+`validation-method-repair-memory.md`. Any future authorized diagnostic must
+simulate an outside-package path using a sibling directory that is still
+inside the actual workspace, with pre-write containment checks.
+
 ## Method Repair Checkpoint (2026-10-30T04:53Z)
 
 This is a separate, explicitly operator-approved operation
@@ -134,3 +152,21 @@ are unchanged. The five tests, the full suite and `tools/gatecheck` were not run
   after a PR exists, and whether it may count is an operator disposition.
 * Further execution of the validation operation still needs explicit operator
   disposition, as stated in Resolution above.
+
+## Contained Retry Checkpoint (2026-10-30T05:24Z)
+
+A later, separately authorized standalone diagnostic ran once under the new
+opaque scope `contained-temp-probe-20261029-2213`, with the artificial subject
+and sibling scratch both inside the actual workspace and all Go temp, cache and
+home bases forced into the scope. Native exit 0, 4 of 4 case expectations met,
+5 fixtures contained, 0 safety failures. One earlier PowerShell literal failure
+occurred before preflight, with no Go process; one Go execution followed.
+
+* The incident-time "execution halted" statement was superseded only by that
+  explicit user authorization. It is not a fourth attempt, and `attempts: 3`
+  and the OPEN status are unchanged.
+* The GOTMPDIR and cached-parent mechanisms are reproduced safely. The earlier
+  validator's actual environment is still unknown, so the original root cause
+  is not proven and the full suite is not green.
+* Original shipment 073-S was not run and the policy correction is not merged.
+  Details and evidence links are in `validation-method-repair-memory.md`.
