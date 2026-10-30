@@ -99,7 +99,9 @@ func TestCheckRetiredArchitectureWrapper_RejectsUnknownFirstArgument(t *testing.
 // `bash -x` trace of the actual gatecheck_invoke call line rather than
 // waiting on a real `go build`, so a slow/unavailable Go toolchain cannot
 // make this test flaky; any resulting build failure happens strictly after
-// the point this test inspects.
+// the point this test inspects. The go toolchain is replaced by the hermetic
+// installGoShim shim (one install per test, logs reset per subtest), so no
+// real `go build` ever runs and the 20s safety timer fails the test explicitly.
 func TestCheckRetiredArchitectureWrapper_IgnoresArgumentsAfterTheFirst(t *testing.T) {
 	bash := requireBash(t)
 	script := retiredArchWrapperPath(t)
@@ -124,35 +126,80 @@ func TestCheckRetiredArchitectureWrapper_IgnoresArgumentsAfterTheFirst(t *testin
 		},
 	}
 
+	shimDir := installGoShim(t, bash)
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			traceArgs := append([]string{"-x", script}, tc.args...)
-			cmd := exec.Command(bash, traceArgs...)
-			var combined bytes.Buffer
-			cmd.Stdout = &combined
-			cmd.Stderr = &combined
-
-			if startErr := cmd.Start(); startErr != nil {
-				t.Fatalf("start wrapper: %v", startErr)
-			}
-			done := make(chan error, 1)
-			go func() { done <- cmd.Wait() }()
-			select {
-			case <-done:
-			case <-time.After(20 * time.Second):
-				_ = cmd.Process.Kill()
-				<-done
+			for _, name := range []string{
+				"go-calls.log",
+				"build-output-path.log",
+				"generated-binary-calls.log",
+				"generated-binary-args.log",
+			} {
+				if err := os.Remove(filepath.Join(shimDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("reset %s: %v", name, err)
+				}
 			}
 
-			out := combined.String()
+			out, exitCode := runRetiredArchWrapperWithTrace(t, bash, script, tc.args...)
+
+			if exitCode != 0 {
+				t.Fatalf("exit code = %d, want 0 (trace=%q)", exitCode, out)
+			}
 			if !strings.Contains(out, "+ "+tc.wantInvoke) {
 				t.Fatalf("trace missing expected single-argument invoke line %q: %q", tc.wantInvoke, out)
 			}
 			if strings.Contains(out, tc.mustNotMatch) {
 				t.Fatalf("trace unexpectedly contains %q (argument leaked past the guard): %q", tc.mustNotMatch, out)
 			}
+			calls, err := os.ReadFile(filepath.Join(shimDir, "go-calls.log"))
+			if err != nil {
+				t.Fatalf("read go-calls.log: %v (trace=%q)", err, out)
+			}
+			if len(bytes.TrimSpace(calls)) == 0 {
+				t.Fatalf("go-calls.log is empty: the go shim was never used (trace=%q)", out)
+			}
 		})
 	}
+}
+
+// runRetiredArchWrapperWithTrace runs the wrapper under `bash -x` with a pinned
+// trace prefix and locale, returning the combined output and the exit code. It
+// fails the test if the 20s safety timer expires or the process cannot be
+// waited on for any reason other than a non-zero exit.
+func runRetiredArchWrapperWithTrace(t *testing.T, bash, script string, args ...string) (string, int) {
+	t.Helper()
+
+	cmd := exec.Command(bash, append([]string{"-x", script}, args...)...)
+	cmd.Env = append(os.Environ(), "PS4=+ ", "LC_ALL=C")
+	var combined bytes.Buffer
+	cmd.Stdout = &combined
+	cmd.Stderr = &combined
+
+	if startErr := cmd.Start(); startErr != nil {
+		t.Fatalf("start wrapper: %v", startErr)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	var waitErr error
+	select {
+	case waitErr = <-done:
+	case <-time.After(20 * time.Second):
+		killErr := cmd.Process.Kill()
+		<-done
+		t.Fatalf("wrapper exceeded the 20s safety timer (kill error: %v, trace=%q)", killErr, combined.String())
+	}
+
+	exitCode := 0
+	var exitErr *exec.ExitError
+	switch {
+	case errors.As(waitErr, &exitErr):
+		exitCode = exitErr.ExitCode()
+	case waitErr != nil:
+		t.Fatalf("wait for wrapper: %v (trace=%q)", waitErr, combined.String())
+	}
+	return combined.String(), exitCode
 }
 
 // TestCheckRetiredArchitectureWrapper_AllowlistedModesPassValidation covers
