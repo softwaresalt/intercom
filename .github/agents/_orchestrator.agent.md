@@ -376,8 +376,16 @@ After Stage completes and before routing to Ship, verify that all staging artifa
 4. Verify the scoped staging artifacts and shipment manifest exist on the remote
    default branch at their reviewed versions:
    `git show origin/main:.backlogit/queue/{shipment_id}.md`
-   - If the file exists: staging artifacts are confirmed on the remote. Proceed to Step 2.
+   - If the file exists: verify every scoped path in the recorded reviewed
+     Stage commit's diff against its base. For each non-deleted path, compare Git blob IDs
+     from `git rev-parse {reviewed_head}:{path}` and
+     `git rev-parse origin/{default_branch}:{path}`; deleted paths must be absent
+     from the refreshed remote default tree. Require successful comparisons for
+     every path, not only the manifest. Missing or mismatched content halts with
+     `STAGING_GATE_FAIL`; command errors also halt.
    - If the file does not exist: halt with `STAGING_GATE_FAIL: shipment manifest {shipment_id} not found on origin/main`.
+   Manifest existence alone never authorizes Ship routing. Proceed to Step 2
+   only after all scoped paths match the reviewed commit's expected state.
 
 When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR] Staging artifacts verified on origin/main — Ship may proceed`.
 

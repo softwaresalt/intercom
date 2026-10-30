@@ -202,6 +202,21 @@ func TestDarkStagingPublicationContract(t *testing.T) {
 		} {
 			assertPresent(t, gate, needle, "merge-gates")
 		}
+		merge := sliceBetween(t, gate, "d. **Merge", "e. **After merge", "merge")
+		for _, needle := range []string{
+			"independent current-HEAD local review", "require PASS for the current HEAD",
+			"any change invalidates readiness",
+		} {
+			assertPresent(t, merge, needle, "current-head-gates")
+		}
+		remote := gate[indexOf(t, gate, "4. Verify the scoped staging artifacts", "remote-versions"):]
+		for _, needle := range []string{
+			"compare Git blob IDs", "{reviewed_head}:{path}", "origin/{default_branch}:{path}",
+			"deleted paths must be absent", "Missing or mismatched content halts",
+			"Manifest existence alone never authorizes Ship routing",
+		} {
+			assertPresent(t, remote, needle, "remote-versions")
+		}
 		for _, needle := range []string{
 			"explicit dark-mode activation or scope clarification",
 			"no redundant per-PR approval", "current-HEAD", "P-018",
