@@ -170,3 +170,11 @@ occurred before preflight, with no Go process; one Go execution followed.
   is not proven and the full suite is not green.
 * Original shipment 073-S was not run and the policy correction is not merged.
   Details and evidence links are in `validation-method-repair-memory.md`.
+* Ignored `logs/diagnostics/go.mod` now isolates retained probes from the root
+  `./...` walk. One metadata-only `go list -find ./...` exited 0 with no
+  package under `logs/`, but printed dependency-resolution messages (scoped
+  lock and info files only). It is not a suite pass and does not close the
+  breaker.
+* Scoped context assessment: the policy correction and original 073-S remain
+  blocked, all breaker and checkpoint history is preserved, and no unrelated
+  archive or compaction was needed (no-op).

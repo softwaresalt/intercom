@@ -6,7 +6,12 @@ status: contained-diagnostic-passed-suite-still-blocked
 tags: [memory, validation, diagnostics, circuit-breaker]
 ---
 
-## Superseding containment incident
+Current chronology: the 04:58Z P-005 incident below is historical. The
+contained retry at 05:24Z passed (section "Authorized contained retry"). The
+original full-suite breaker remains open at three attempts, and the original
+root cause is unproven.
+
+## Superseding containment incident (historical, 2026-10-30T04:58Z)
 
 Post-run evidence review at 2026-10-30T04:58:10Z found a P-005 violation of
 CLI workspace containment. Probe cases B and C created `t.TempDir()`
@@ -14,9 +19,11 @@ fixtures under the inherited OS temporary directory, outside the authorized
 workspace. The diagnostic's exit code 0 does not establish safety compliance
 or a validated suite runner.
 
-Further execution is halted. No outside-workspace cleanup is authorized or
-attempted. The original full-suite breaker remains open at three attempts;
-this incident does not reset or extend it.
+Execution was halted at that point; a later explicit operator-authorized
+contained retry (section "Authorized contained retry" below) passed. The
+original full-suite breaker remains open. No outside-workspace cleanup is
+authorized or attempted. The breaker stays at three attempts; this incident
+does not reset or extend it.
 
 The findings below are retained as evidence, not permission to repeat the
 probe. A future authorized probe must put both its artificial package directory
@@ -351,3 +358,21 @@ What this establishes and what it does not:
   was not run and the policy correction is not merged.
 * No tracked source, test, policy, timeout or containment change was made, and
   no cleanup was performed.
+
+Diagnostic artifact isolation (fact record):
+
+* Go's `./...` walk does not honor `.gitignore`, so retained ignored probes
+  under `logs/diagnostics` (including the earlier unsafe one) could be
+  discovered by a root full-suite run. No `go.mod` existed there, so an ignored
+  nested module boundary, `logs/diagnostics/go.mod` (module
+  `intercom.local/diagnostics`, `go 1.25.0`, no dependencies), was added. It is
+  ignored scratch isolation, not a tracked module or dependency change. Old
+  probes, evidence and the hashed files above were not modified or deleted.
+* ONE metadata-only `go list -find ./...` ran from the repository root with the
+  scoped launch environment (not a test, build or suite retry): exit 0, 30
+  packages, none under `logs/`.
+* Caveat: the command printed `go: downloading` messages for three modules. The
+  scoped module cache received empty lock files and one `.info` file for a
+  self-referencing pseudo-version. No package archive was downloaded and
+  nothing was written outside the scope. The result is a recorded observation,
+  not a full-suite pass, and no further metadata run was made.
