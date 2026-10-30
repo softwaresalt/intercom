@@ -600,3 +600,26 @@ func TestReapEmptyBroadcastSetWaitsForQueuedPendingConnectAndReapsOnAbandon(t *t
 		t.Fatal("request not resolved no_surface after the connect was abandoned")
 	}
 }
+
+func TestHubRateLimitsUnmappedEventWarnLogsPerType(t *testing.T) {
+	rec := &recordingHandler{}
+	h := startHub(t, Config{Logger: slog.New(rec)})
+	c := connect(t, h, ClientRemote, 16)
+	for _, raw := range []string{"dup.type", "dup.type", "other.type", "dup.type"} {
+		send(t, h, agent.Event{Kind: agent.KindUnknown, RawType: raw})
+	}
+	// Every unmapped event is still folded and published as an error envelope.
+	errs := 0
+	for errs < 4 {
+		if recv(t, c).Kind() == KindError {
+			errs++
+		}
+	}
+	logged := rec.String()
+	if n := strings.Count(logged, "hub: unmapped agent event code="); n != 2 {
+		t.Errorf("warn lines = %d, want 2 (one per distinct type)\n%s", n, logged)
+	}
+	if n := strings.Count(logged, "hub: unmapped agent event (repeat) code="); n != 2 {
+		t.Errorf("repeat debug lines = %d, want 2\n%s", n, logged)
+	}
+}

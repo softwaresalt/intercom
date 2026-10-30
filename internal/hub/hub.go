@@ -261,6 +261,9 @@ type Hub struct {
 	// is rejected (see intakeAsk).
 	activeTurnID   string
 	abortedTurnIDs map[string]struct{}
+	// unmappedWarned holds the bounded raw types already warned about, so a
+	// repeating unmapped event logs at Warn once and at Debug afterwards.
+	unmappedWarned map[string]struct{}
 	idleWaiters    []*ctlReq
 
 	stopCh   chan struct{}
@@ -417,6 +420,7 @@ func New(cfg Config) (*Hub, error) {
 		ring:           make([]Frame, cfg.ReplayRing),
 		clients:        make(map[uint64]*Client),
 		abortedTurnIDs: make(map[string]struct{}),
+		unmappedWarned: make(map[string]struct{}),
 		wake:           wake,
 	}, nil
 }
@@ -679,7 +683,7 @@ func (h *Hub) handleEvent(ev agent.Event) {
 		// Built once, fed to both the fold and the wire. Adapter-controlled
 		// text (kind, raw type) is neither logged nor sent: only a fixed code
 		// and the raw type's length are logged.
-		h.cfg.Logger.Warn("hub: unmapped agent event", "code", ErrCodeUnknownEvent, "raw_type_bytes", len(ev.RawType))
+		h.logUnmapped(ev)
 		ep := unknownEventError()
 		h.fold.ApplyError(ep.Code, ep.Message)
 		h.publish(KindError, ep)
@@ -700,7 +704,7 @@ func (h *Hub) handleEvent(ev agent.Event) {
 		h.agentIdle = h.promptsPending == 0
 	}
 	kind, payload := mapEvent(ev, h.fold.lim.MaxEntryTextBytes)
-	if ev.Kind == agent.KindDelta {
+	if ev.Kind == agent.KindDelta || ev.Kind == agent.KindReasoningDelta {
 		// Live deltas carry exactly what the fold accepted, so a client that
 		// accumulates them holds the same bounded text and truncated flag as a
 		// hydrated one (hydrated/live parity).
@@ -714,6 +718,23 @@ func (h *Hub) handleEvent(ev agent.Event) {
 	if ev.Kind == agent.KindIdle && ev.Aborted {
 		h.abortTurn(ev.TurnID)
 	}
+}
+
+// maxUnmappedWarnedTypes bounds the remembered unmapped event types.
+const maxUnmappedWarnedTypes = 256
+
+// logUnmapped logs an unmapped agent event: Warn the first time each bounded
+// raw type is seen, Debug for repeats (and for types past the memory cap), so
+// a chatty SDK cannot flood the log. Only a fixed code and the raw type's
+// length are logged; adapter-controlled text is never logged.
+func (h *Hub) logUnmapped(ev agent.Event) {
+	key := truncUTF8(ev.RawType, maxIdentBytes)
+	if _, seen := h.unmappedWarned[key]; !seen && len(h.unmappedWarned) < maxUnmappedWarnedTypes {
+		h.unmappedWarned[key] = struct{}{}
+		h.cfg.Logger.Warn("hub: unmapped agent event", "code", ErrCodeUnknownEvent, "raw_type_bytes", len(ev.RawType))
+		return
+	}
+	h.cfg.Logger.Debug("hub: unmapped agent event (repeat)", "code", ErrCodeUnknownEvent, "raw_type_bytes", len(ev.RawType))
 }
 
 // maxAbortedTurnIDs bounds the remembered aborted turns; past it the set is
