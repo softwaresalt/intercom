@@ -1,9 +1,95 @@
 {
   "feature_id": "082-F",
+  "invocation": {
+    "argv_redacted": [
+      "C:\\Tools\\backlogit.EXE",
+      "--no-update-check",
+      "--jsonrpc",
+      "--cwd",
+      "C:\\Source\\GitHub\\intercom",
+      "shipment",
+      "ship",
+      "075-S",
+      "--sha",
+      "a2898942a12c70fe23be050d698ae4622153d97f",
+      "--message",
+      "chore: archive 075-S backlog artifacts",
+      "--author",
+      "Ship Agent"
+    ],
+    "exit_code": 0,
+    "finished_at": "2026-10-31T02:56:29.673028Z",
+    "mutation_state": "completed",
+    "started_at": "2026-10-31T02:52:34.415686Z",
+    "stderr": {
+      "capture_truncated": false,
+      "excerpt": "time=2026-10-30T19:52:34.512-07:00 level=INFO msg=\"shipment command invoked\" operation=shipment-ship shipment_id=075-S\ntime=2026-10-30T19:52:34.516-07:00 level=INFO msg=\"INFO config loaded package=config workspace=C:\\\\Source\\\\GitHub\\\\intercom\\\\.backlogit\"\ntime=2026-10-30T19:52:34.653-07:00 level=INFO msg=\"workspace initialized\" storage_root=C:\\Source\\GitHub\\intercom\\.backlogit auto_recover=true duration_ms=140\ntime=2026-10-30T19:53:24.158-07:00 level=INFO msg=\"shipment status changed\" shipment_id=075-S new_status=shipped\ntime=2026-10-30T19:53:24.197-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=075-S artifact_type=shipment\ntime=2026-10-30T19:54:19.902-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=082.001-T artifact_type=task\ntime=2026-10-30T19:54:35.700-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=082.002-T artifact_type=task\ntime=2026-10-30T19:54:54.697-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=082.003-T artifact_type=task\ntime=2026-10-30T19:55:13.634-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=082.004-T artifact_type=task\ntime=2026-10-30T19:55:31.681-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=082.005-T artifact_type=task\ntime=2026-10-30T19:55:50.765-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=075-S artifact_type=shipment\ntime=2026-10-30T19:56:05.827-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=082-F artifact_type=feature\ntime=2026-10-30T19:56:05.887-07:00 level=INFO msg=\"index may be stale after mutation\" item_id=075-S artifact_type=shipment\n",
+      "redaction_applied": false,
+      "sha256": "9bb9858396e4568cbb24be4e6cacf4d26f1cb65d363fc4c0633c49e66dcaa564",
+      "total_bytes": 1633,
+      "total_lines": 13
+    },
+    "stdout": {
+      "capture_truncated": false,
+      "excerpt": "validating member 1/6: 082-F (skipped: not a task or subtask member)\nvalidating member 2/6: 082.001-T\nvalidating member 3/6: 082.002-T\nvalidating member 4/6: 082.003-T\nvalidating member 5/6: 082.004-T\nvalidating member 6/6: 082.005-T\nvalidating member 1/6: 082-F (skipped: not a task or subtask member)\nvalidating member 2/6: 082.001-T\nvalidating member 3/6: 082.002-T\nvalidating member 4/6: 082.003-T\nvalidating member 5/6: 082.004-T\nvalidating member 6/6: 082.005-T\n{\"jsonrpc\":\"2.0\",\"id\":\"backlogit shipment ship\",\"result\":{\"archived_ids\":[\"082.001-T\",\"082.002-T\",\"082.003-T\",\"082.004-T\",\"082.005-T\",\"075-S\",\"082-F\"],\"commit_sha\":\"a2898942a12c70fe23be050d698ae4622153d97f\",\"returned_ids\":[],\"shipment_id\":\"075-S\",\"shipment_status\":\"shipped\"}}\n",
+      "redaction_applied": false,
+      "sha256": "ccd6a8d32dc45ab4e72cc9396f18cc7f0b55cfed0b4be09d13460fd4bd6c1cf6",
+      "total_bytes": 745,
+      "total_lines": 13
+    },
+    "timed_out": false
+  },
   "merge_commit_sha": "a2898942a12c70fe23be050d698ae4622153d97f",
-  "phase": "pre_close",
+  "phase": "post_close",
+  "post_close": {
+    "allowed_ids": [
+      "075-S",
+      "082-F",
+      "082.001-T",
+      "082.002-T",
+      "082.003-T",
+      "082.004-T",
+      "082.005-T"
+    ],
+    "baseline_invariant": true,
+    "disposition_byte_identical": true,
+    "failures": [],
+    "linked_deliberation_drift": [],
+    "missing_required": [],
+    "parent_id_preserved": true,
+    "parse_error": null,
+    "parsed_result": {
+      "archived_ids": [
+        "075-S",
+        "082-F",
+        "082.001-T",
+        "082.002-T",
+        "082.003-T",
+        "082.004-T",
+        "082.005-T"
+      ],
+      "commit_sha": "a2898942a12c70fe23be050d698ae4622153d97f",
+      "returned_ids": [],
+      "shipment_id": "075-S",
+      "shipment_status": "shipped"
+    },
+    "postcondition_verdict": "pass",
+    "required_ids": [
+      "075-S",
+      "082-F",
+      "082.001-T",
+      "082.002-T",
+      "082.003-T",
+      "082.004-T",
+      "082.005-T"
+    ],
+    "shipment_archived_shipped": true,
+    "shipment_record_archived_status": "shipped",
+    "shipment_record_status": "archived",
+    "unexpected_archived": []
+  },
   "pre_close": {
-    "captured_at": "2026-10-31T02:04:33Z",
+    "captured_at": "2026-10-31T02:52:29Z",
     "classifier_reason": "every feature member is a root whose out-of-manifest descendants are engine-inert; cascade close is permitted",
     "classifier_verdict": "CASCADE",
     "close_path_selection": {
@@ -88,7 +174,7 @@
       "sha256": "eb74fbc098c4c75896e1fae73a71a88032a4a0fca7de8d97d041da44da9f4c81"
     }
   },
-  "run_id": "4eec9a2c35fd4ee89abd209a01bc2232",
+  "run_id": "ccbebfb434a14f90813535c6768b9010",
   "schema_version": 1,
   "shipment_id": "075-S",
   "tool": {
