@@ -79,6 +79,55 @@ func TestAuthorizeMatrixRows(t *testing.T) {
 
 // Invariants over the whole input space, so a kind or role nobody listed in a
 // row cannot slip through.
+func TestAuthorizeRefusesRemoteApproveOfClippedWrite(t *testing.T) {
+	tui := principal{surface: surfaceTUI, role: RoleApprover}
+	appr := principal{surface: surfaceRemote, role: RoleApprover}
+	obs := principal{surface: surfaceRemote, role: RoleObserver}
+	allow, deny := agent.DecisionAllowOnce, agent.DecisionDeny
+	for _, optIn := range []bool{false, true} {
+		rows := []struct {
+			name string
+			p    principal
+			dec  agent.DecisionKind
+			ok   bool
+			why  Reason
+		}{
+			{"remote approver allows", appr, allow, false, ReasonDestructiveRemoteRefused},
+			{"remote approver denies", appr, deny, true, ""},
+			{"local tui allows", tui, allow, true, ""},
+			{"remote observer allows", obs, allow, false, ReasonRoleNotPermitted},
+			{"remote observer denies", obs, deny, false, ReasonRoleNotPermitted},
+		}
+		for _, r := range rows {
+			in := authzInput{p: r.p, op: OpResolvePermission, kind: agent.PermissionKindWrite, decision: r.dec, remoteApproveDestructive: optIn, previewClipped: true}
+			if ok, why := authorize(in); ok != r.ok || why != r.why {
+				t.Errorf("%s (optIn=%v): authorize = (%v, %q), want (%v, %q)", r.name, optIn, ok, why, r.ok, r.why)
+			}
+		}
+	}
+}
+
+func TestRemoteClippedWriteApprovalRefusedEvenWhenOptedIn(t *testing.T) {
+	h := startHub(t, Config{RemoteApproveDestructive: true})
+	tui := connectRole(t, h, ClientTUI, 0)
+	appr := connectRole(t, h, ClientRemote, RoleApprover)
+	a := newTestAsk(agent.PermissionKindWrite, "f.go\n+x\n[write preview truncated]")
+	a.ask.Request.PreviewClipped = true
+	a.post(t, h)
+	id := requestID(t, recvKind(t, tui, KindPermissionRequested))
+	if res := do(t, appr, answer(id, allowOnce)); res.Accepted || res.Reason != ReasonDestructiveRemoteRefused {
+		t.Fatalf("remote approval of a clipped write = %+v, want destructive_remote_refused", res)
+	}
+	select {
+	case d := <-a.reply:
+		t.Fatalf("a refused approval reached the agent: %v", d.Kind)
+	default:
+	}
+	if res := do(t, tui, answer(id, allowOnce)); !res.Accepted {
+		t.Fatalf("local tui approval = %+v", res)
+	}
+}
+
 func TestAuthorizeInvariantsOverTheWholeInputSpace(t *testing.T) {
 	surfaces := []surface{0, surfaceRemote, surfaceTUI, 9}
 	roles := []Role{RoleNone, RoleObserver, RoleApprover, 9}

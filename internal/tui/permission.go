@@ -185,11 +185,25 @@ func (m Model) permissionBody(p permission) string {
 	for i, l := range lines {
 		lines[i] = "  " + l
 	}
-	header := m.wrapHeader("kind: ", p.Kind, inner) + "\n" + m.wrapHeader("tool call: ", p.ToolCallID, inner)
-	if p.PreviewClipped {
-		header += "\n" + m.wrapHeader("warning: ", clippedWriteWarning, inner)
-	}
+	header := strings.Join(m.renderModalHeaders(p, inner), "\n")
 	return header + "\n\n" + strings.Join(lines, "\n")
+}
+
+// renderModalHeaders returns the modal's column-0 header lines for p, wrapped
+// to inner columns with every continuation line indented two spaces.
+func (m Model) renderModalHeaders(p permission, inner int) []string {
+	headers := []struct{ prefix, value string }{
+		{"kind: ", p.Kind},
+		{"tool call: ", p.ToolCallID},
+	}
+	if p.PreviewClipped {
+		headers = append(headers, struct{ prefix, value string }{"warning: ", clippedWriteWarning})
+	}
+	out := make([]string, 0, len(headers))
+	for _, h := range headers {
+		out = append(out, m.wrapHeader(h.prefix, h.value, inner))
+	}
+	return out
 }
 
 // wrapHeader wraps prefix+val to max(inner-2, 1) columns and indents every
@@ -197,7 +211,7 @@ func (m Model) permissionBody(p permission) string {
 // soft-wrapped value therefore cannot start a line at column 0 and pass for a
 // "kind:" or "tool call:" header.
 func (m Model) wrapHeader(prefix, val string, inner int) string {
-	lines := strings.Split(m.wrap(prefix+val, max(inner-2, 1)), "\n")
+	lines := strings.Split(m.wrap(prefix+SanitizeLine(val), max(inner-2, 1)), "\n")
 	for i := 1; i < len(lines); i++ {
 		lines[i] = "  " + lines[i]
 	}

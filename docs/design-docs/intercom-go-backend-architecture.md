@@ -535,7 +535,14 @@ below).
   summary's `urls:` line is adapter-owned: each possible URL has whitespace,
   commas, control, format, and line/paragraph-separator runes replaced with
   `U+FFFD`, and any command line whose trimmed text starts with `urls:`
-  (case-insensitive) is indented two spaces.
+  (case-insensitive) is indented two spaces. The same indent applies to lines
+  that start with a fullwidth, homoglyph, or combining-mark lookalike of
+  `urls:` (after any leading blank filler). Summary sanitization also replaces
+  visually blank non-space filler runes (`U+2800`, `U+3164`, `U+115F`,
+  `U+1160`, `U+FFA0`, `U+034F`, `U+17B4`, `U+17B5`, private-use, and variation
+  selectors) with `U+FFFD`. A write request with `preview_clipped: true` is
+  local-TUI-only for approval: a remote approver is refused with
+  `destructive_remote_refused` even when `remote_approve_destructive` is true.
 * `permission.resolved`: `request_id`, `decision` (`allow_once` | `deny` |
   `unavailable`), `actor` (`local-tui` | `remote-approver` | `hub`), `reason`
   (empty when an operator answered; `timeout` | `shutdown` | `no_surface` when
@@ -773,7 +780,9 @@ surface approve an agent shell command**. The decided controls are:
   kind) are local-TUI-only: a remote approval is always refused with
   `destructive_remote_refused`, even when the opt-in is true, because the
   summary of such a request carries only its raw kind. Remote denial is always
-  allowed (074-S amendment).
+  allowed (074-S amendment). A write whose preview was clipped
+  (`preview_clipped`) is likewise local-TUI-only for approval, and operator
+  denial feedback is bounded to 1024 bytes (076-S amendment).
 * **Per-message authorization, not connection-time only.** A long-lived socket
   authorized once at upgrade grants approval rights for the socket's whole
   lifetime. Re-validate on privileged actions. *Decided (ADR MVP-3):* each

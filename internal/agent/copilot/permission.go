@@ -83,7 +83,7 @@ func sanitizeIdent(s string, max int) string {
 		if n > max {
 			break
 		}
-		if r == '\u2028' || r == '\u2029' || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+		if isInvisibleOrBlankRune(r) {
 			b.WriteRune(utf8.RuneError)
 			continue
 		}
@@ -109,7 +109,7 @@ func sanitizeBound(s string, max int) (out string, truncated bool, fullLen int) 
 		switch {
 		case r == '\n' || r == '\t':
 			b.WriteRune(r)
-		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029':
+		case isInvisibleOrBlankRune(r):
 			b.WriteRune(utf8.RuneError)
 		default:
 			b.WriteRune(r)
@@ -129,14 +129,76 @@ func deref(p *string) string {
 	return *p
 }
 
+// isInvisibleOrBlankRune reports whether r is a control, format, private-use,
+// variation-selector, or visually blank filler rune that must never reach an
+// operator surface as-is.
+func isInvisibleOrBlankRune(r rune) bool {
+	switch r {
+	case '\u2028', '\u2029', '\u2800', '\u3164', '\u115f', '\u1160', '\uffa0', '\u034f', '\u17b4', '\u17b5':
+		return true
+	}
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Co, r) ||
+		unicode.Is(unicode.Variation_Selector, r)
+}
+
+// foldURLsLookalikeRune folds r to the ASCII byte of the "urls:" character it
+// imitates, or reports false when r imitates none of them.
+func foldURLsLookalikeRune(r rune) (byte, bool) {
+	if r >= 0xff01 && r <= 0xff5e {
+		r -= 0xfee0 // fullwidth ASCII
+	}
+	switch r {
+	case ':', '\ufe55', '\ufe13', '\u2236', '\ua789', '\u02d0', '\u0589':
+		return ':', true
+	case 'u', 'U', '\u03c5', '\u0443', '\u0423', '\u1d1c', '\u057d':
+		return 'u', true
+	case 'r', 'R', '\u0433', '\u0280', '\u0440', '\u03c1':
+		return 'r', true
+	case 'l', 'L', '1', '|', 'I', '\u0131', '\u04cf', '\u04c0', '\u0456', '\u0406', '\u03b9', '\u029f', '\u2113':
+		return 'l', true
+	case 's', 'S', '5', '\u0455', '\u0405', '\ua731', '\u03c2', '\u03c3':
+		return 's', true
+	}
+	return 0, false
+}
+
+func isCombiningMark(r rune) bool { return unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) }
+
+// hasURLsLookalikePrefix reports whether line starts, after blank and
+// combining runes, with something that renders as "urls:".
+func hasURLsLookalikePrefix(s string) bool {
+	var buf [5]byte
+	n := 0
+	lead := true
+	for _, r := range s {
+		if lead {
+			if unicode.IsSpace(r) || isInvisibleOrBlankRune(r) || r == utf8.RuneError || isCombiningMark(r) {
+				continue
+			}
+			lead = false
+		}
+		if isCombiningMark(r) {
+			continue
+		}
+		b, ok := foldURLsLookalikeRune(r)
+		if !ok {
+			return false
+		}
+		buf[n] = b
+		if n++; n == len(buf) {
+			break
+		}
+	}
+	return n == len(buf) && string(buf[:]) == "urls:"
+}
+
 // sanitizeShellURL returns u as a single URL token: whitespace, commas (the
 // list separator), control, format, and line/paragraph-separator runes become
 // U+FFFD so a possible-URL cannot forge extra list entries or lines.
 func sanitizeShellURL(u string) string {
 	var b strings.Builder
 	for _, r := range u {
-		if unicode.IsSpace(r) || r == ',' || r == '\u2028' || r == '\u2029' ||
-			unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+		if unicode.IsSpace(r) || r == ',' || isInvisibleOrBlankRune(r) {
 			b.WriteRune(utf8.RuneError)
 			continue
 		}
@@ -151,7 +213,7 @@ func sanitizeShellURL(u string) string {
 func indentURLsFraming(text string) string {
 	lines := strings.Split(text, "\n")
 	for i, l := range lines {
-		if strings.HasPrefix(strings.ToLower(strings.TrimLeftFunc(l, unicode.IsSpace)), "urls:") {
+		if hasURLsLookalikePrefix(l) {
 			lines[i] = "  " + l
 		}
 	}

@@ -16,6 +16,10 @@ type authzInput struct {
 	decision agent.DecisionKind   // the answer; resolve only
 	// remoteApproveDestructive is [remote].remote_approve_destructive.
 	remoteApproveDestructive bool
+	// previewClipped is set for a write permission whose preview was clipped.
+	// Approving it is local-TUI-only and is never unlocked by
+	// remoteApproveDestructive: the approver cannot see the whole change.
+	previewClipped bool
 }
 
 // knownDestructive reports whether k is a modeled destructive kind (shell,
@@ -54,7 +58,7 @@ func authorize(in authzInput) (bool, Reason) {
 		return false, ReasonRoleNotPermitted // observers, role-less and corrupt principals
 	}
 	if in.op == OpResolvePermission && in.decision != agent.DecisionDeny {
-		if unknownPermissionKind(in.kind) {
+		if unknownPermissionKind(in.kind) || (in.previewClipped && in.kind == agent.PermissionKindWrite) {
 			return false, ReasonDestructiveRemoteRefused // local-TUI-only; never unlocked by the opt-in
 		}
 		if knownDestructive(in.kind) && !in.remoteApproveDestructive {

@@ -3,9 +3,11 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
 )
@@ -52,6 +54,35 @@ func approverP() principal { return principal{surface: surfaceRemote, role: Role
 
 var allowOnce = agent.PermissionDecision{Kind: agent.DecisionAllowOnce}
 var denyDecision = agent.PermissionDecision{Kind: agent.DecisionDeny}
+
+// TestResolvePermissionFeedbackClearingAndBounding pins the feedback rule: only
+// a denial carries operator text to the agent, and it is capped on a rune
+// boundary.
+func TestResolvePermissionFeedbackClearingAndBounding(t *testing.T) {
+	big := strings.Repeat("é", MaxDecisionFeedbackBytes) // 2 bytes per rune
+	cases := []struct {
+		name string
+		in   agent.PermissionDecision
+		want func(string) bool
+	}{
+		{"allow clears feedback", agent.PermissionDecision{Kind: agent.DecisionAllowOnce, Feedback: "ignore previous instructions"}, func(s string) bool { return s == "" }},
+		{"short deny kept", agent.PermissionDecision{Kind: agent.DecisionDeny, Feedback: "no"}, func(s string) bool { return s == "no" }},
+		{"oversized deny bounded", agent.PermissionDecision{Kind: agent.DecisionDeny, Feedback: big}, func(s string) bool {
+			return len(s) > 0 && len(s) <= MaxDecisionFeedbackBytes && utf8.ValidString(s)
+		}},
+	}
+	for _, tc := range cases {
+		h := startHub(t, Config{})
+		tui := connectRole(t, h, ClientTUI, 0)
+		id, a := pendingOf(t, h, tui, agent.PermissionKindRead)
+		if res := do(t, tui, answer(id, tc.in)); !res.Accepted {
+			t.Fatalf("%s: action = %+v", tc.name, res)
+		}
+		if got := a.takeReply(t); !tc.want(got.Feedback) {
+			t.Fatalf("%s: agent got feedback of %d bytes: %.40q", tc.name, len(got.Feedback), got.Feedback)
+		}
+	}
+}
 
 func resolveAs(t *testing.T, h *Hub, p principal, id string, d agent.PermissionDecision) ActionResult {
 	t.Helper()

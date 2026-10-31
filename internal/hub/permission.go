@@ -524,10 +524,18 @@ func (h *Hub) resolvePermission(r *actionReq) ActionResult {
 	if ok, why := authorize(authzInput{
 		p: r.from, op: r.act.Type, kind: e.kind, decision: r.act.Decision.Kind,
 		remoteApproveDestructive: h.cfg.RemoteApproveDestructive,
+		previewClipped:           e.previewClipped,
 	}); !ok {
 		return ActionResult{Reason: why}
 	}
-	switch out, e := h.perm.cas(r.act.RequestID, r.from.label(), r.act.Decision, ""); out {
+	// Only a denial carries operator text to the agent, and it is bounded.
+	dec := r.act.Decision
+	if dec.Kind != agent.DecisionDeny {
+		dec.Feedback = ""
+	} else {
+		dec.Feedback = truncUTF8(dec.Feedback, MaxDecisionFeedbackBytes)
+	}
+	switch out, e := h.perm.cas(r.act.RequestID, r.from.label(), dec, ""); out {
 	case casWon:
 		h.handoff(e)
 		return ActionResult{Accepted: true}

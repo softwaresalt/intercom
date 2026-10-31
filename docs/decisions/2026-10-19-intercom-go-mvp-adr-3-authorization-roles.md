@@ -70,6 +70,7 @@ The remote approval opt-in is `[remote].remote_approve_destructive` (default `fa
 | Approve or deny a `read` permission | Y | Y | N | `role_not_permitted` |
 | Deny any permission (any kind) | Y | Y | N | `role_not_permitted` |
 | Approve a modeled destructive permission (`shell`, `write`, `url`) | Y | only if `remote_approve_destructive` is true, otherwise N | N | `destructive_remote_refused` (approver); `role_not_permitted` (observer) |
+| Approve a clipped write permission (`preview_clipped: true`) | Y | N (never, even with `remote_approve_destructive`) | N | `destructive_remote_refused` (approver); `role_not_permitted` (observer) |
 | Approve an unknown or unmodeled permission (`other`, `unknown`, unrecognized) | Y | N (never, even with `remote_approve_destructive`) | N | `destructive_remote_refused` (approver); `role_not_permitted` (observer) |
 | Reveal credentials, re-issue credentials | Y | N | N | `local_only_action` |
 | Quit or shut down the process | Y | N | N | `local_only_action` |
@@ -183,13 +184,19 @@ a policy-violation close. When the hub-owned permission timeout fires, the outco
 * **`urls:` framing is adapter-owned.** Shell possible-URLs are sanitized and
   command lines imitating the `urls:` line are indented.
 * `[timeouts].approval_seconds` precedence is documented in `docs/config-reference.md`.
-* **Accepted exposure: remote approval of clipped writes.** With
-  `remote_approve_destructive = true` a remote approver may approve a write whose
-  preview was clipped. The hub carries `preview_clipped` to remote clients but does
-  not enforce that they display it; the local TUI warning and confirmation do not
-  apply to remote surfaces. Remote clients must surface the flag. Whether the hub
-  should refuse remote approval of clipped writes is a separate decision, captured
-  as a deferred scope expansion.
+* **Remote approval of clipped writes is refused (076-S amendment).** This replaces
+  the 074-S accepted exposure. A write whose preview was clipped
+  (`preview_clipped: true`) is local-TUI-only for approval: a remote approver is
+  refused with `destructive_remote_refused` even when `remote_approve_destructive`
+  is true, because that surface cannot be shown to have displayed the whole change.
+  Remote `deny` and local TUI approval are unchanged. Operator feedback text reaches
+  the agent only with a denial, capped at 1024 bytes on a UTF-8 rune boundary; any
+  other decision has its feedback cleared.
+* **Summary anti-spoofing is widened (076-S amendment).** Shell and write summaries
+  replace visually blank filler runes (`U+2800`, `U+3164`, `U+115F`, `U+1160`,
+  `U+FFA0`, `U+034F`, `U+17B4`, `U+17B5`, private-use and variation selectors) with
+  `U+FFFD`, and command lines that start with a fullwidth, homoglyph, or
+  combining-mark lookalike of `urls:` are indented like a literal `urls:` line.
 
 ## Accepted exposure
 
