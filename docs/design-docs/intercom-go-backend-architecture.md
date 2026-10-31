@@ -1026,7 +1026,7 @@ the governing decision's *Shipped P2 Audit*. Summary:
 `max_concurrent_sessions` non-zero; (2) `default_workspace_root` set and
 canonicalizes; (3) `workspace_id` non-empty; (4) `workspace_id` unique; (5)
 **`cli_path` well-formed** (empty | bare name | existing regular-file absolute;
-UNC/device-namespace and relative rejected — one rule, three branches, per §6.2); (6) `[[workspace]].path`
+UNC/device-namespace and relative rejected — one rule, classified per §6.2); (6) `[[workspace]].path`
 canonicalizes; (7) `database.path` has no `..` segment. Rules 4 and 8 are
 removed and rule 6's presence check is **eliminated** (not relaxed), so it
 drops out of the enumeration entirely: 10 − 2 − 1 = 7.
