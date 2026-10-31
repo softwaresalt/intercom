@@ -798,11 +798,25 @@ so the discriminator is stated explicitly:
 
 ```text
 cli_path == ""                              -> valid  (SDK resolves via PATH / COPILOT_CLI_PATH)
-filepath.IsAbs(cli_path)                    -> valid iff the file exists, else ERROR
+starts with \\, //, \/, /\ or \??\          -> ERROR  (UNC or Windows device-namespace path, rejected on every GOOS)
+filepath.IsAbs(cli_path)                    -> valid iff the path exists and is a regular file, else ERROR
 matches ^[A-Za-z]: and not absolute         -> ERROR  (Windows drive-relative, e.g. "C:copilot")
-contains '/' or '\' (and not absolute)      -> ERROR  (relative path)
-otherwise (no separator, no drive prefix)   -> bare name: PATH advisory only, never fatal
+contains '/' or '\' (and not absolute)      -> ERROR  (relative path; "." and ".." are relative too)
+otherwise (no separator, no drive prefix)   -> bare name: resolved once via exec.LookPath to an
+                                               absolute regular file; unresolvable at config time is a
+                                               non-fatal advisory, unresolvable at adapter construction
+                                               is a fail-closed error
 ```
+
+The predicate is the single shared `pathsafe.ClassifyCLIPath` in
+`internal/pathsafe`, used by both `internal/config` (`validateCLIPath`) and
+`internal/agent/copilot` (`resolveCLIPath`), so the two gates cannot drift.
+UNC and device prefixes are matched lexically ahead of `filepath.IsAbs` so the
+result does not depend on `GOOS`, and no filesystem or network access (which a
+UNC `os.Stat` would trigger) happens for a rejected path. A bare name that
+resolves is committed to `Copilot.CLIPath` as an absolute path only after every
+validation rule passes, so `copilot.New` sees an absolute path and does not
+search `PATH` a second time.
 
 Both separators are tested regardless of `GOOS`, following the existing
 `containsDotDotSegment` precedent in `internal/config`, because `config.toml`
@@ -816,7 +830,8 @@ But Go's `exec.LookPath` on Windows treats any string containing `:` as a
 spawn it drive-relative to the process working directory — exactly the
 unchecked, CWD-relative execution the relative-path rejection exists to
 prevent. It is therefore rejected explicitly, ahead of the separator test.
-UNC paths are already absolute and are handled by the `IsAbs` branch.
+UNC and device-namespace paths are rejected by the explicit prefix branch ahead
+of the `IsAbs` branch.
 
 Rationale per branch:
 
@@ -997,8 +1012,10 @@ the governing decision's *Shipped P2 Audit*. Summary:
     > `docs/decisions/2026-09-04-intercom-go-implementation-design-reconciliation-deliberation.md`.
 * **Renamed:** `slack_detail_level` → `operator_detail_level`.
 * **Migrated:** `host_cli` → `[copilot].cli_path`. Empty means resolve from
-  `PATH`; a bare name gets a non-fatal advisory; an absolute path must exist;
-  a **relative path is rejected** (§6.2).
+  `PATH`; a bare name is resolved once via `exec.LookPath` (a non-fatal
+  advisory if unresolvable at config time); an absolute path must exist and be
+  a regular file; UNC/device-namespace and **relative paths are rejected**
+  (§6.2).
 * **Retained:** workspace root, workspace mappings (minus `channel_id`),
   timeouts, stall, commands, `http_port`, tolerant-decode reporting.
 * **Deferred:** `database`, `retention_days` — pending the persistence
@@ -1008,8 +1025,8 @@ the governing decision's *Shipped P2 Audit*. Summary:
 **Post-change validation contract: exactly 7 rules** — (1)
 `max_concurrent_sessions` non-zero; (2) `default_workspace_root` set and
 canonicalizes; (3) `workspace_id` non-empty; (4) `workspace_id` unique; (5)
-**`cli_path` well-formed** (empty | bare name | existing absolute; relative
-rejected — one rule, three branches, per §6.2); (6) `[[workspace]].path`
+**`cli_path` well-formed** (empty | bare name | existing regular-file absolute;
+UNC/device-namespace and relative rejected — one rule, three branches, per §6.2); (6) `[[workspace]].path`
 canonicalizes; (7) `database.path` has no `..` segment. Rules 4 and 8 are
 removed and rule 6's presence check is **eliminated** (not relaxed), so it
 drops out of the enumeration entirely: 10 − 2 − 1 = 7.
@@ -1029,7 +1046,14 @@ from origins) and validation rejects any other spelling, so duplicate
 detection is exact. Config also rejects any credential-shaped key under
 `[remote]`, because credentials never come from `config.toml`; that screen
 needs the raw key set, so it runs in `Decode`/`Load` before `Validate` and
-fails closed.
+fails closed. `[remote]` is a closed section: after the credential screen,
+`Decode` rejects any other unknown key at or below `[remote]` (still reported
+in `Report.UnknownKeys`, never echoing values). `allowed_hosts` and
+`allowed_origins` reject hexadecimal IPv4 forms (`0x7f.0x1`, `0x7f000001`) as
+well as octal and abbreviated ones; only canonical dotted-quad IPv4 is
+accepted. `DefaultRemoteMaxConnections` (8) is exported and locked by test to
+`hub.DefaultMaxRemote`.
+
 **Security note carried forward:** the shipped example contains
 `host_cli_args = ["--dangerously-skip-permissions"]`. Under this architecture
 permission handling is a core product responsibility (§5.4). That example is

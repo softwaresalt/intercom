@@ -27,7 +27,7 @@ covering every key in this reference.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `copilot.cli_path` | string | `""` | Empty means resolve the Copilot CLI from `PATH` / `COPILOT_CLI_PATH`. A bare name is allowed with a non-fatal advisory if it is not currently resolvable on `PATH`. An absolute path must exist. A relative path is rejected. |
+| `copilot.cli_path` | string | `""` | Empty means resolve the Copilot CLI from `PATH` / `COPILOT_CLI_PATH`. A bare name is resolved once via `PATH` to an absolute regular file (committed to the loaded config); it is allowed with a non-fatal advisory if it is not currently resolvable on `PATH`. An absolute path must exist and be a regular file (a directory is rejected). UNC and Windows device-namespace paths (`\\server\share`, `//server/share`, `\\?\`, `\\.\`, `\??\`) are rejected on every OS. A relative or drive-relative path is rejected. |
 | `copilot.startup_timeout_seconds` | integer | `30` | Deadline for the agent adapter's `Client.Start` (also covers the version/protocol assertion and session creation). Must be between `1` and `3600`. |
 
 ## `[commands]`
@@ -73,7 +73,7 @@ off. This section is secret-free by design.
 |---|---|---|---|
 | `remote.token_lifetime_seconds` | integer | `14400` | Must be between `60` and `86400` inclusive. |
 | `remote.allowed_origins` | array of string | `[]` | Exact lowercase `http(s)://host[:port]` origins in canonical form; bracketed IPv6 literals (`http://[::1]:3000`) are allowed. An explicit default port (`https://x:443`, `http://x:80`) is rejected: the default port must be omitted. Wildcards, paths (including a trailing `/`), queries (including a bare `?`), fragments, userinfo, `%` escapes, leading-zero or out-of-range ports, uppercase, other schemes, trailing dots, empty and duplicate entries are rejected. |
-| `remote.allowed_hosts` | array of string | `[]` | A lowercase host with an optional `:port` (decimal 1-65535, no leading zeros), e.g. `app.example.com`, `localhost:3000`, `[::1]`, `[::1]:3000`. An entry without a port matches the default port only (the request carries no port); an entry with an explicit port matches only that port. **Default-port policy:** explicit `:80` and `:443` are accepted as ordinary explicit ports and are NOT treated as equivalent to the bare host by config validation; `example.com` and `example.com:443` are distinct entries (both may be listed), and the matcher (`internal/transport` `hostorigin.go`) does not equate them. Numeric-looking hosts must be canonical dotted-quad IPv4 (`127.0.0.1`); forms such as `127.1`, `2130706433`, `01.2.3.4` or `999.999.999.999` are rejected as a non-canonical IPv4 address (as are bracketed non-IPv6 origins such as `http://[127.0.0.1]`). Host names are at most 253 characters with no empty label, no trailing dot, labels of at most 63 characters that do not start or end with a hyphen. Wildcards, schemes, paths, userinfo, whitespace/control or non-ASCII characters, empty and duplicate entries are rejected. |
+| `remote.allowed_hosts` | array of string | `[]` | A lowercase host with an optional `:port` (decimal 1-65535, no leading zeros), e.g. `app.example.com`, `localhost:3000`, `[::1]`, `[::1]:3000`. An entry without a port matches the default port only (the request carries no port); an entry with an explicit port matches only that port. **Default-port policy:** explicit `:80` and `:443` are accepted as ordinary explicit ports and are NOT treated as equivalent to the bare host by config validation; `example.com` and `example.com:443` are distinct entries (both may be listed), and the matcher (`internal/transport` `hostorigin.go`) does not equate them. Numeric-looking hosts must be canonical dotted-quad IPv4 (`127.0.0.1`); forms such as `127.1`, `2130706433`, `01.2.3.4`, `0x7f.0x1`, `0x7f000001` or `999.999.999.999` are rejected as a non-canonical IPv4 address (as are bracketed non-IPv6 origins such as `http://[127.0.0.1]`). Host names are at most 253 characters with no empty label, no trailing dot, labels of at most 63 characters that do not start or end with a hyphen. Wildcards, schemes, paths, userinfo, whitespace/control or non-ASCII characters, empty and duplicate entries are rejected. |
 | `remote.max_connections` | integer | `8` | Must be between `1` and `1024` (`MaxRemoteConnections`) inclusive. |
 | `remote.remote_approve_destructive` | bool | `false` | When `true`, remote approvers may approve the modeled destructive kinds (`shell`, `write`, `url`); unknown/unmodeled kinds always require the local TUI. Remote denial is always allowed. |
 
@@ -86,6 +86,12 @@ punctuation), other than the five known keys above. The screen is
 intentionally broader than ADR MVP-2's list; a new `[remote]` key must be
 added to `remoteKnownKeys` in `internal/config/remote.go`.
 
+**Unknown keys are rejected.** `[remote]` is a closed section. After the
+credential screen, `Decode`/`Load` also fail closed on any other key at or
+below `[remote]` that is not one of the five known keys, with
+`remote.{key} is an unknown key under [remote]; only known [remote] schema keys are permitted`.
+The value is never echoed. Unknown keys outside `[remote]` stay tolerated and
+are reported in `Report.UnknownKeys`.
 An absent `[remote]` section = secure defaults; no migration is needed for
 existing config files. The error names the key path and never
 echoes the value. Credentials never come from `config.toml`.
@@ -138,7 +144,7 @@ yields the same error.
 | 2 | `default_workspace_root` must be set and must canonicalize | `default_workspace_root must be set` (absent or empty); `default_workspace_root invalid: {err}` (canonicalization failure) |
 | 3 | Per `[[workspace]]` entry, `workspace_id` must be non-empty | `workspace_id cannot be empty in [[workspace]] entry` |
 | 4 | `workspace_id` must be unique across entries | `duplicate workspace_id '{id}' in [[workspace]] entries` |
-| 5 | `[copilot]` must be well-formed | `copilot.cli_path '{path}' does not exist`; `copilot.cli_path '{path}' must not be drive-relative; use an absolute path, a bare name, or empty`; `copilot.cli_path '{path}' must not be relative; use an absolute path, a bare name, or empty`; `copilot.startup_timeout_seconds must be greater than zero`; `copilot.startup_timeout_seconds must not exceed 3600` |
+| 5 | `[copilot]` must be well-formed | `copilot.cli_path '{path}' does not exist`; `copilot.cli_path '{path}' must be a regular file`; `copilot.cli_path '{path}' must not be a UNC or device-namespace path; use an absolute path, a bare name, or empty`; `copilot.cli_path '{path}' must not be drive-relative; use an absolute path, a bare name, or empty`; `copilot.cli_path '{path}' must not be relative; use an absolute path, a bare name, or empty`; `copilot.startup_timeout_seconds must be greater than zero`; `copilot.startup_timeout_seconds must not exceed 3600` |
 | 6 | Per `[[workspace]]` entry, a non-empty `path` must canonicalize | `workspace path invalid for workspace_id '{id}': {err}` |
 | 7 | `database.path` must not contain a `..` segment | `database.path must not contain '..' segments` |
 
@@ -155,6 +161,7 @@ hosts, max connections. Messages never echo entry values.
 | each `allowed_hosts` entry is a canonical host[:port], unique | `remote.allowed_hosts[{i}] {reason}` |
 | `max_connections` at least 1 | `remote.max_connections must be at least 1`; `remote.max_connections must not exceed 1024` |
 | no credential-shaped key under `[remote]` (checked by `Decode`, before `Validate`, because it needs the raw key set) | `remote.{key} is a credential-shaped key; credentials must never be stored in config.toml (remove it from [remote])` |
+| no other unknown key at or below `[remote]` (checked by `Decode`, after the credential screen; the value is never echoed) | `remote.{key} is an unknown key under [remote]; only known [remote] schema keys are permitted` |
 
 ### `[timeouts]` rule
 
@@ -181,11 +188,18 @@ The rule-5 classifier is:
 
 ```text
 cli_path == ""                              -> valid, return early with no warning
-filepath.IsAbs(cli_path)                    -> valid iff the file exists
+starts with \\, //, \/, /\ or \??\          -> error (UNC or device-namespace path)
+filepath.IsAbs(cli_path)                    -> valid iff the file exists and is a regular file
 matches ^[A-Za-z]: and not absolute         -> error (Windows drive-relative)
 contains '/' or '\' and not absolute       -> error (relative path)
-otherwise                                   -> bare name, PATH advisory only
+otherwise                                   -> bare name, resolved once via LookPath to an
+                                               absolute regular file; PATH advisory only if
+                                               unresolvable
 ```
+
+The classifier is the shared `pathsafe.ClassifyCLIPath`. A resolved bare name
+replaces `copilot.cli_path` only after every rule has passed, so a failing
+later rule leaves the value unmodified.
 
 **Order-of-checks caveat.** The table above describes `Validate()`'s own
 internal order, which is fixed whenever `Validate()` is called directly.
