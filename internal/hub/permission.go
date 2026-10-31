@@ -31,11 +31,14 @@ type pendingPerm struct {
 	kind       agent.PermissionKind
 	toolCallID string
 	summary    string
-	deadline   time.Time
-	state      permState
-	winner     string
-	decision   agent.PermissionDecision
-	reason     string
+	// previewClipped records agent.PermissionRequest.PreviewClipped: the write
+	// preview was clipped to fit summary.
+	previewClipped bool
+	deadline       time.Time
+	state          permState
+	winner         string
+	decision       agent.PermissionDecision
+	reason         string
 }
 
 // casOutcome reports how a compare-and-swap attempt ended.
@@ -72,13 +75,14 @@ func (r *permRegistry) register(ask agent.PermissionAsk, deadline time.Time) (*p
 	r.next++
 	toolCallID, _ := capIdent(ask.Request.ToolCallID) // adapter-controlled, shown to every surface: bounded
 	e := &pendingPerm{
-		id:         "perm-" + strconv.FormatUint(r.next, 10),
-		ask:        ask,
-		kind:       ask.Request.Kind,
-		toolCallID: toolCallID,
-		summary:    ask.Request.Summary,
-		deadline:   deadline,
-		state:      permPending,
+		id:             "perm-" + strconv.FormatUint(r.next, 10),
+		ask:            ask,
+		kind:           ask.Request.Kind,
+		toolCallID:     toolCallID,
+		summary:        ask.Request.Summary,
+		previewClipped: ask.Request.PreviewClipped,
+		deadline:       deadline,
+		state:          permPending,
 	}
 	r.byID[e.id] = e
 	r.order = append(r.order, e)
@@ -447,6 +451,7 @@ func (h *Hub) handleAsk(ask agent.PermissionAsk) {
 		ToolCallID:     e.toolCallID,
 		PermissionKind: permKindName(e.kind),
 		Summary:        e.summary,
+		PreviewClipped: e.previewClipped,
 		RemainingMS:    h.remainingMS(e),
 	})
 	go h.watchAsk(e.id, ask.Resolved)
