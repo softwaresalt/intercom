@@ -331,21 +331,15 @@ func (s *session) violation(ctx context.Context) {
 	<-ctx.Done()
 }
 
-// dispatch submits one decoded action to the hub as this connection's client
-// and queues the verdict for this client only. It reports whether the read
-// loop should continue.
+// dispatchWire submits one decoded action to the hub as this connection's
+// client and queues the verdict for this client only. It reports whether the
+// read loop should continue.
 //
 // The revalidate step compares the grant's role with the role the hub client
 // was registered with. Both come from the same credential, so a mismatch
 // cannot happen today; the comparison is intentional defence in depth (a
 // future change to either side must fail closed, never silently widen
-// privilege).
-func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
-	return s.dispatchWire(ctx, decodedAction{act: act})
-}
-
-// dispatchWire is dispatch for a decoded wire action. The order is the ADR
-// MVP-3 one: credential revalidation, rate limit, shutdown revocation, then
+// privilege). The order is the ADR MVP-3 one: credential revalidation, rate limit, shutdown revocation, then
 // the local-only refusal, then the hub step. A hub-step credential failure
 // (the credential died after the checks above) closes the connection after
 // the refusal is flushed.
