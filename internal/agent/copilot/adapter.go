@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,6 +32,7 @@ import (
 	"github.com/github/copilot-sdk/go/rpc"
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
+	"github.com/softwaresalt/intercom-go/internal/pathsafe"
 )
 
 const (
@@ -173,7 +176,7 @@ type Adapter struct {
 
 // New validates cfg and builds an Adapter backed by the real SDK client.
 func New(cfg Config) (*Adapter, error) {
-	if err := validateConfig(cfg); err != nil {
+	if err := validateConfig(&cfg); err != nil {
 		return nil, err
 	}
 	opts := &copilotsdk.ClientOptions{WorkingDirectory: cfg.WorkingDirectory}
@@ -184,7 +187,7 @@ func New(cfg Config) (*Adapter, error) {
 }
 
 func newWithClient(cfg Config, c sdkClient) (*Adapter, error) {
-	if err := validateConfig(cfg); err != nil {
+	if err := validateConfig(&cfg); err != nil {
 		return nil, err
 	}
 	return newAdapter(cfg, c), nil
@@ -219,7 +222,7 @@ func newAdapter(cfg Config, c sdkClient) *Adapter {
 	return a
 }
 
-func validateConfig(cfg Config) error {
+func validateConfig(cfg *Config) error {
 	if cfg.Ingress == nil {
 		return errors.New("agent: Config.Ingress is required")
 	}
@@ -232,30 +235,60 @@ func validateConfig(cfg Config) error {
 	if cfg.StartupTimeout <= 0 {
 		return errors.New("agent: Config.StartupTimeout must be positive")
 	}
-	return validateCLIPath(cfg.CLIPath)
+	resolved, err := resolveCLIPath(cfg.CLIPath)
+	if err != nil {
+		return err
+	}
+	cfg.CLIPath = resolved
+	return nil
 }
 
-// validateCLIPath re-applies the §6.2 classification at the point of spawn
-// (defence in depth; config.Validate is the primary gate). Existence of an
-// absolute path is checked by config; here only the classification matters:
-// a relative or drive-relative path would resolve against the process working
-// directory and must never reach the SDK.
-func validateCLIPath(p string) error {
-	switch {
-	case p == "":
-		return nil
-	case filepath.IsAbs(p):
-		return nil
-	case len(p) >= 2 && p[1] == ':' && isASCIILetter(p[0]):
-		return fmt.Errorf("agent: cli_path %q must not be drive-relative", p)
-	case strings.ContainsAny(p, `/\`):
-		return fmt.Errorf("agent: cli_path %q must not be relative", p)
-	default:
-		return nil // bare name: resolved via PATH (accepted residual risk, §6.2)
+// resolveCLIPath re-applies the §6.2 classification at the point of spawn
+// (defence in depth; config.Validate is the primary gate) and returns the
+// path to hand to the SDK. UNC, device-namespace, drive-relative and relative
+// paths are rejected; an absolute path must be an existing regular file; a
+// bare name is resolved once via exec.LookPath to an absolute regular file.
+func resolveCLIPath(p string) (string, error) {
+	switch pathsafe.ClassifyCLIPath(p) {
+	case pathsafe.CLIPathEmpty:
+		return "", nil
+	case pathsafe.CLIPathUNCOrDevice:
+		return "", fmt.Errorf("agent: cli_path %q must not be a UNC or device-namespace path", p)
+	case pathsafe.CLIPathDriveRelative:
+		return "", fmt.Errorf("agent: cli_path %q must not be drive-relative", p)
+	case pathsafe.CLIPathRelative:
+		return "", fmt.Errorf("agent: cli_path %q must not be relative", p)
+	case pathsafe.CLIPathAbs:
+		info, err := os.Stat(p)
+		if err != nil {
+			return "", fmt.Errorf("agent: cli_path %q does not exist: %w", p, err)
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("agent: cli_path %q must be a regular file", p)
+		}
+		return p, nil
+	default: // pathsafe.CLIPathBare
+		resolved, err := exec.LookPath(p)
+		if err != nil {
+			return "", fmt.Errorf("agent: cli_path %q not found in PATH: %w", p, err)
+		}
+		abs, err := filepath.Abs(resolved)
+		if err != nil {
+			return "", fmt.Errorf("agent: resolve cli_path %q: %w", p, err)
+		}
+		if pathsafe.ClassifyCLIPath(abs) != pathsafe.CLIPathAbs {
+			return "", fmt.Errorf("agent: cli_path %q must not resolve to a UNC or device-namespace path", p)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return "", fmt.Errorf("agent: stat resolved cli_path %q: %w", p, err)
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("agent: cli_path %q must resolve to a regular file", p)
+		}
+		return abs, nil
 	}
 }
-
-func isASCIILetter(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') }
 
 // Start launches the runtime, asserts its version and protocol, and creates
 // the single session.
