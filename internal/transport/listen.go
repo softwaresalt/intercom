@@ -134,6 +134,10 @@ type ServerConfig struct {
 	// OnBind, when set, is called with the bound loopback address before
 	// Serve (used to tell the handler its port).
 	OnBind func(net.Addr)
+	// OnReject, when set, is called for every connection the limiter refuses
+	// over the cap (503, "connection_cap_exceeded"). When nil and Handler has
+	// a RecordReject(status int, reason string) method, that method is used.
+	OnReject func(status int, reason string)
 
 	resolver resolveFunc // test seam
 }
@@ -164,7 +168,17 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	ln := newLimitListener(raw, cfg.MaxConnections)
+	onReject := cfg.OnReject
+	if rh, ok := cfg.Handler.(interface {
+		RecordReject(status int, reason string)
+	}); ok && onReject == nil {
+		onReject = rh.RecordReject
+	}
+	var onOverCap func()
+	if onReject != nil {
+		onOverCap = func() { onReject(http.StatusServiceUnavailable, rejectOverCap) }
+	}
+	ln := newLimitListener(raw, cfg.MaxConnections, onOverCap)
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)

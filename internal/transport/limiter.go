@@ -12,10 +12,9 @@ import (
 const DefaultMaxConnections = 8
 
 // refuseWriteTimeout bounds the best-effort 503 written to an over-cap
-// socket before it is closed. The write happens on the accept loop, so this
-// is also the longest one refused socket can delay accepting the next one; it
-// is kept very short on purpose (the 503 is a few dozen bytes into a fresh
-// socket buffer and normally completes immediately).
+// socket before it is closed. The write happens on the refusal worker, never
+// on the accept loop; it is kept short so one stalled peer delays the next
+// queued refusal only briefly.
 const refuseWriteTimeout = 50 * time.Millisecond
 
 const refusal503 = "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
@@ -31,13 +30,85 @@ type limitListener struct {
 	net.Listener
 	max    int64
 	active atomic.Int64
+
+	// onReject, when non-nil, is called once per over-cap refusal.
+	onReject func()
+	// refuseQ holds over-cap sockets awaiting their 503; the refusal worker
+	// drains it. done is closed by Close and workerDone when the worker exits.
+	refuseQ    chan net.Conn
+	workerDone chan struct{}
+	done       chan struct{}
+	closeOnce  sync.Once
 }
 
-func newLimitListener(l net.Listener, limit int) *limitListener {
+// overCapRefuseQueueSize bounds the over-cap sockets waiting for their 503.
+const overCapRefuseQueueSize = 64
+
+// rejectOverCap is the OnReject reason for a connection refused at the cap.
+const rejectOverCap = "connection_cap_exceeded"
+
+func newLimitListener(l net.Listener, limit int, onReject func()) *limitListener {
 	if limit <= 0 {
 		limit = DefaultMaxConnections
 	}
-	return &limitListener{Listener: l, max: int64(limit)}
+	ll := &limitListener{
+		Listener: l, max: int64(limit), onReject: onReject,
+		refuseQ:    make(chan net.Conn, overCapRefuseQueueSize),
+		workerDone: make(chan struct{}),
+		done:       make(chan struct{}),
+	}
+	go ll.refuseWorker()
+	return ll
+}
+
+// refuseWorker writes the 503 to queued over-cap sockets in FIFO order and
+// closes them. When the listener closes it closes whatever is still queued
+// (without writing) and exits.
+func (l *limitListener) refuseWorker() {
+	defer close(l.workerDone)
+	for {
+		select {
+		case c := <-l.refuseQ:
+			_ = c.SetWriteDeadline(time.Now().Add(refuseWriteTimeout))
+			_, _ = c.Write([]byte(refusal503))
+			_ = c.Close()
+		case <-l.done:
+			for {
+				select {
+				case c := <-l.refuseQ:
+					_ = c.Close()
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+// Close stops accepting and stops the refusal worker. It is idempotent.
+func (l *limitListener) Close() error {
+	err := l.Listener.Close()
+	l.closeOnce.Do(func() { close(l.done) })
+	return err
+}
+
+// refuse counts an over-cap socket and queues it for its 503 without ever
+// blocking: a full queue (or a closed listener) closes the socket at once.
+func (l *limitListener) refuse(c net.Conn) {
+	if l.onReject != nil {
+		l.onReject()
+	}
+	select {
+	case <-l.done:
+		_ = c.Close()
+		return
+	default:
+	}
+	select {
+	case l.refuseQ <- c:
+	default:
+		_ = c.Close()
+	}
 }
 
 // Accept returns only admitted connections; over-cap sockets are refused with
@@ -50,9 +121,7 @@ func (l *limitListener) Accept() (net.Conn, error) {
 		}
 		if l.active.Add(1) > l.max {
 			l.active.Add(-1)
-			_ = c.SetWriteDeadline(time.Now().Add(refuseWriteTimeout))
-			_, _ = c.Write([]byte(refusal503))
-			_ = c.Close()
+			l.refuse(c)
 			continue
 		}
 		return &slotConn{Conn: c, l: l}, nil
