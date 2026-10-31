@@ -1373,6 +1373,7 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 	} else {
 		f, ok := h.hydrateFrame()
 		if !ok {
+			delete(h.validators, c.id) // never registered: drop its validator
 			trySend(req.reply, connectResp{err: apperr.New(apperr.KindIO, "hub: build hydrate snapshot")})
 			return
 		}

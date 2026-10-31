@@ -73,14 +73,8 @@ func (l *limitListener) refuseWorker() {
 			_, _ = c.Write([]byte(refusal503))
 			_ = c.Close()
 		case <-l.done:
-			for {
-				select {
-				case c := <-l.refuseQ:
-					_ = c.Close()
-				default:
-					return
-				}
-			}
+			l.drainRefuseQ()
+			return
 		}
 	}
 }
@@ -106,8 +100,27 @@ func (l *limitListener) refuse(c net.Conn) {
 	}
 	select {
 	case l.refuseQ <- c:
+		// Close may have run (and the worker drained) between the check above
+		// and this enqueue; nobody would then read the queue again.
+		select {
+		case <-l.done:
+			l.drainRefuseQ()
+		default:
+		}
 	default:
 		_ = c.Close()
+	}
+}
+
+// drainRefuseQ closes every socket still queued, without writing to it.
+func (l *limitListener) drainRefuseQ() {
+	for {
+		select {
+		case c := <-l.refuseQ:
+			_ = c.Close()
+		default:
+			return
+		}
 	}
 }
 

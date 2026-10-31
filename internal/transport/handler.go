@@ -587,7 +587,10 @@ func (h *Handler) upgrade(w http.ResponseWriter, r *http.Request, grant *Grant) 
 	rec := &acceptResponseRecorder{ResponseWriter: w, status: http.StatusBadRequest}
 	if !validWebSocketHandshake(r) {
 		if c, _ := websocket.Accept(rec, ar, &opts); c != nil {
+			// Stricter than the library (e.g. a duplicated header): it upgraded
+			// anyway, so drop the socket and account it as a refused handshake.
 			_ = c.CloseNow()
+			rec.status = http.StatusBadRequest
 		}
 		h.RecordReject(rec.status, rejectHandshake)
 		return

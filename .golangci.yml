@@ -70,9 +70,10 @@ linters:
             - "**/internal/transport/**/*.go"
 
         # wsclient is the standalone reference client for the wire contract: it
-        # must compile against nothing of the server, so wire-constant drift
-        # between the two is caught by conformance tests rather than hidden by
-        # a shared import.
+        # must not import the server (transport, TUI, app, config, path helpers,
+        # agent packages, SDK), so wire-constant drift between the two is caught
+        # by conformance tests rather than hidden by a shared import. It may
+        # import internal/hub for the envelope and cursor wire types only.
         wsclient-standalone-boundary:
           deny:
             - pkg: github.com/softwaresalt/intercom-go/internal/transport
