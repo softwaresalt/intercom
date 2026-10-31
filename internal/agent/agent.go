@@ -97,8 +97,16 @@ type PermissionRequest struct {
 	// Truncated reports that Summary does not show the whole request; FullLen
 	// is the original length in runes. A truncated request cannot be reviewed
 	// in full, so the adapter denies such requests itself rather than asking.
+	// The one exception is a write preview clipped to fit Summary while the
+	// target file name is complete: see PreviewClipped.
 	Truncated bool
 	FullLen   int
+	// PreviewClipped reports that a write request's diff or new-file content
+	// preview was clipped to fit Summary while the target file name is
+	// complete. Truncated stays false, so the request is still presented to the
+	// operator, who must see an explicit clipped-preview warning that file
+	// content cannot forge.
+	PreviewClipped bool
 	// TurnID identifies the agent turn that issued the request, so the hub can
 	// resolve asks of an aborted turn without relying on the relative order of
 	// the ask channel and the event channel. Empty when unknown.

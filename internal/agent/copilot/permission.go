@@ -129,14 +129,45 @@ func deref(p *string) string {
 	return *p
 }
 
+// sanitizeShellURL returns u as a single URL token: whitespace, commas (the
+// list separator), control, format, and line/paragraph-separator runes become
+// U+FFFD so a possible-URL cannot forge extra list entries or lines.
+func sanitizeShellURL(u string) string {
+	var b strings.Builder
+	for _, r := range u {
+		if unicode.IsSpace(r) || r == ',' || r == '\u2028' || r == '\u2029' ||
+			unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			b.WriteRune(utf8.RuneError)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// indentURLsFraming prefixes two spaces to every line of the command text whose
+// leading-whitespace-trimmed form starts with "urls:" (case-insensitive), so no
+// command line can begin at column 0 and imitate the adapter's own urls line.
+func indentURLsFraming(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(strings.ToLower(strings.TrimLeftFunc(l, unicode.IsSpace)), "urls:") {
+			lines[i] = "  " + l
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // shellSummary renders a shell request: the command text followed by any
-// URLs the command may access, so the operator sees network targets.
+// URLs the command may access, so the operator sees network targets. Each URL
+// is sanitized and command lines imitating the urls line are indented, so the
+// "\nurls: " framing is only ever produced by the adapter.
 func shellSummary(r *rpc.PermissionRequestShell) string {
-	text := r.FullCommandText
+	text := indentURLsFraming(r.FullCommandText)
 	urls := make([]string, 0, len(r.PossibleURLs))
 	for _, u := range r.PossibleURLs {
 		if u.URL != "" {
-			urls = append(urls, u.URL)
+			urls = append(urls, sanitizeShellURL(u.URL))
 		}
 	}
 	if len(urls) > 0 {
@@ -147,31 +178,34 @@ func shellSummary(r *rpc.PermissionRequestShell) string {
 
 // writeSummary renders a write request: the file name followed by the diff
 // (or the new file contents when there is no diff). A body too large for the
-// summary is clipped with an explicit notice and does not set truncated; only
-// a file name that leaves no room for the preview does.
-func writeSummary(r *rpc.PermissionRequestWrite) (summary string, truncated bool, fullLen int) {
+// summary is clipped with an explicit notice and sets previewClipped instead
+// of truncated; only a file name that leaves no room for the preview sets
+// truncated. fullLen is the unclipped rune length of the file name, separator,
+// and body.
+func writeSummary(r *rpc.PermissionRequestWrite) (summary string, truncated, previewClipped bool, fullLen int) {
 	fnSan, fnTrunc, fnLen := sanitizeBound(r.FileName, maxSummaryRunes)
 	if fnTrunc {
-		return fnSan, true, fnLen
+		return fnSan, true, false, fnLen
 	}
 	body := r.Diff
 	if body == "" {
 		body = deref(r.NewFileContents)
 	}
 	if body == "" {
-		return fnSan, false, fnLen
+		return fnSan, false, false, fnLen
 	}
 	suffixLen := utf8.RuneCountInString(writePreviewTruncatedSuffix)
 	avail := maxSummaryRunes - fnLen - 1
 	if avail < suffixLen+1 {
-		return fnSan, true, fnLen
+		return fnSan, true, false, fnLen
 	}
-	bodySan, bodyTrunc, _ := sanitizeBound(body, avail)
+	bodySan, bodyTrunc, bodyLen := sanitizeBound(body, avail)
+	totalLen := fnLen + 1 + bodyLen
 	if !bodyTrunc {
-		return fnSan + "\n" + bodySan, false, fnLen
+		return fnSan + "\n" + bodySan, false, false, totalLen
 	}
 	preview, _, _ := sanitizeBound(body, avail-suffixLen-1)
-	return fnSan + "\n" + preview + writePreviewTruncatedSuffix, false, fnLen
+	return fnSan + "\n" + preview + writePreviewTruncatedSuffix, false, true, totalLen
 }
 
 // toDomainRequest converts an SDK permission request to the intercom type.
@@ -189,7 +223,7 @@ func toDomainRequest(req copilot.PermissionRequest, inv copilot.PermissionInvoca
 		out.Kind, text, out.ToolCallID = agent.PermissionKindShell, shellSummary(r), deref(r.ToolCallID)
 	case *rpc.PermissionRequestWrite:
 		out.Kind, out.ToolCallID = agent.PermissionKindWrite, deref(r.ToolCallID)
-		out.Summary, out.Truncated, out.FullLen = writeSummary(r)
+		out.Summary, out.Truncated, out.PreviewClipped, out.FullLen = writeSummary(r)
 		done = true
 	case *rpc.PermissionRequestRead:
 		out.Kind, text, out.ToolCallID = agent.PermissionKindRead, r.Path, deref(r.ToolCallID)

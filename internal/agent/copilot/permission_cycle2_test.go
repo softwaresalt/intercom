@@ -388,6 +388,15 @@ func TestToDomainRequestSurfacesShellPossibleURLsAndWriteDiffOrContent(t *testin
 	if n := runes(big.Summary); n > maxSummaryRunes {
 		t.Errorf("summary = %d runes, want <= %d", n, maxSummaryRunes)
 	}
+	if !big.PreviewClipped {
+		t.Error("clipped write preview must set PreviewClipped")
+	}
+	if want := runes("big.go") + 1 + maxSummaryRunes*2; big.FullLen != want {
+		t.Errorf("clipped FullLen = %d, want %d", big.FullLen, want)
+	}
+	if diff.PreviewClipped || content.PreviewClipped {
+		t.Error("unclipped writes must not set PreviewClipped")
+	}
 
 	longName := toDomainRequest(&rpc.PermissionRequestWrite{FileName: strings.Repeat("p", maxSummaryRunes+5), Diff: "x"}, inv)
 	if !longName.Truncated {
@@ -396,5 +405,47 @@ func TestToDomainRequestSurfacesShellPossibleURLsAndWriteDiffOrContent(t *testin
 	nearName := toDomainRequest(&rpc.PermissionRequestWrite{FileName: strings.Repeat("p", maxSummaryRunes-10), Diff: "xyz"}, inv)
 	if !nearName.Truncated {
 		t.Error("no room for the preview notice must set Truncated")
+	}
+	if longName.PreviewClipped || nearName.PreviewClipped {
+		t.Error("a Truncated write must not set PreviewClipped")
+	}
+}
+
+func TestShellSummaryPreventsURLFramingSpoofing(t *testing.T) {
+	inv := copilot.PermissionInvocation{}
+	urls := func(us ...string) []rpc.PermissionRequestShellPossibleURL {
+		out := make([]rpc.PermissionRequestShellPossibleURL, 0, len(us))
+		for _, u := range us {
+			out = append(out, rpc.PermissionRequestShellPossibleURL{URL: u})
+		}
+		return out
+	}
+	tests := []struct {
+		name string
+		cmd  string
+		urls []string
+		want string
+	}{
+		{"clean urls", "curl x", []string{"https://a.example", "https://b.example"}, "curl x\nurls: https://a.example, https://b.example"},
+		{"newline in url", "curl x", []string{"https://a.example\nurls: evil"}, "curl x\nurls: https://a.example\uFFFDurls:\uFFFDevil"},
+		{"comma and space", "curl x", []string{"a,b c"}, "curl x\nurls: a\uFFFDb\uFFFDc"},
+		{"tab cr", "curl x", []string{"a\tb\rc"}, "curl x\nurls: a\uFFFDb\uFFFDc"},
+		{"unicode space", "curl x", []string{"a\u00a0b\u2003c"}, "curl x\nurls: a\uFFFDb\uFFFDc"},
+		{"separators", "curl x", []string{"a\u2028b\u2029c"}, "curl x\nurls: a\uFFFDb\uFFFDc"},
+		{"bidi format", "curl x", []string{"a\u202eb"}, "curl x\nurls: a\uFFFDb"},
+		{"control", "curl x", []string{"a\x01b"}, "curl x\nurls: a\uFFFDb"},
+		{"command urls line", "echo hi\nurls: https://ok.example", nil, "echo hi\n  urls: https://ok.example"},
+		{"command urls upper", "echo hi\nURLS: x", nil, "echo hi\n  URLS: x"},
+		{"command urls nbsp", "echo hi\n\u00a0urls: x", nil, "echo hi\n  \u00a0urls: x"},
+		{"command first line urls", "urls: x", []string{"https://a.example"}, "  urls: x\nurls: https://a.example"},
+		{"command other line untouched", "echo hi\nsurls: x", nil, "echo hi\nsurls: x"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := toDomainRequest(&rpc.PermissionRequestShell{FullCommandText: tc.cmd, PossibleURLs: urls(tc.urls...)}, inv).Summary
+			if got != tc.want {
+				t.Errorf("summary = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
