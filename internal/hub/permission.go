@@ -80,7 +80,7 @@ func (r *permRegistry) register(ask agent.PermissionAsk, deadline time.Time) (*p
 		kind:           ask.Request.Kind,
 		toolCallID:     toolCallID,
 		summary:        ask.Request.Summary,
-		previewClipped: ask.Request.PreviewClipped,
+		previewClipped: ask.Request.PreviewClipped && ask.Request.Kind == agent.PermissionKindWrite,
 		deadline:       deadline,
 		state:          permPending,
 	}

@@ -183,6 +183,13 @@ a policy-violation close. When the hub-owned permission timeout fires, the outco
 * **`urls:` framing is adapter-owned.** Shell possible-URLs are sanitized and
   command lines imitating the `urls:` line are indented.
 * `[timeouts].approval_seconds` precedence is documented in `docs/config-reference.md`.
+* **Accepted exposure: remote approval of clipped writes.** With
+  `remote_approve_destructive = true` a remote approver may approve a write whose
+  preview was clipped. The hub carries `preview_clipped` to remote clients but does
+  not enforce that they display it; the local TUI warning and confirmation do not
+  apply to remote surfaces. Remote clients must surface the flag. Whether the hub
+  should refuse remote approval of clipped writes is a separate decision, captured
+  as a deferred scope expansion.
 
 ## Accepted exposure
 

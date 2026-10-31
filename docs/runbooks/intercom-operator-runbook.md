@@ -77,7 +77,7 @@ approval of destructive requests is off. **Never put a credential in
 | `allowed_origins` | `[]` | Exact, canonical, lowercase `http(s)://host[:port]` origins a **browser** may connect from (default port omitted; no wildcard, path or userinfo). Empty means every browser origin gets 403 even with a valid credential. Native clients send no `Origin` and are unaffected. |
 | `allowed_hosts` | `[]` | Extra `Host` header values accepted besides the loopback names for the bound port: `host[:port]`, lowercase, no wildcard or scheme. A tunnel deployment must list the tunnel hostname here or every request is refused 403. An entry without a port matches the default port only. |
 | `max_connections` | `8` | Cap on concurrent remote connections, `1` to `1024`. Over the cap gets 503 before any credential work. |
-| `remote_approve_destructive` | `false` | When `false`, a remote approver can approve only `read` requests: approving shell, write, URL, other or unclassified kinds is refused (`destructive_remote_refused`). Denying is always allowed. The local TUI can approve everything. |
+| `remote_approve_destructive` | `false` | When `false`, a remote approver can approve only `read` requests: approving shell, write, URL, other or unclassified kinds is refused (`destructive_remote_refused`). When `true`, a remote approver may also approve `shell`, `write` and `url`; `other` and unclassified (unknown) kinds are always local-TUI-only and stay refused. Denying is always allowed. The local TUI can approve everything. |
 
 Related keys that matter to operators: `http_port` (default 3000),
 `copilot.cli_path` (see the PATH residual below), `copilot.startup_timeout_seconds`
@@ -331,7 +331,7 @@ problem, look for a stray `copilot` process.
 | Remote client gets 401 | Missing, wrong, expired or re-issued credential; ask for the current one. |
 | Remote client gets 403 | `Host` not allowed (add the tunnel host to `allowed_hosts`) or browser `Origin` not in `allowed_origins`. |
 | Remote client gets 503 | Over `max_connections`, or the process is shutting down. If the status line shows no rejections, check `[remote].max_connections`: over-cap 503s are not counted there (section 7). |
-| Approve is refused remotely | `destructive_remote_refused`: approve on the local TUI, or set `remote_approve_destructive = true` knowingly. |
+| Approve is refused remotely | `destructive_remote_refused`: approve on the local TUI, or (for `shell`, `write`, `url` only) set `remote_approve_destructive = true` knowingly. Unknown or unmodeled kinds can only be approved on the local TUI, whatever the setting. |
 | No logs appear | The TUI is enabled and stderr is a terminal, so logs are discarded; redirect stderr to keep them (section 7). |
 | Exits at start: "stdout is not a terminal" | `intercom` was run with stdout redirected or without a terminal; run it in an interactive terminal (section 2, headless and service use). |
 | Status line shows `rejected upgrades: N (last: STATUS REASON)` | Remote clients are being refused; map the last status with the 401, 403 and 503 rows above (400 is a request that is not a valid upgrade or carries a bad resume cursor) (section 7). |

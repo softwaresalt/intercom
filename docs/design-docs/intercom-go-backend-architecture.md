@@ -578,7 +578,8 @@ below).
   `pending_permissions` array beside the fold snapshot: one object per
   *unresolved* request (decided-but-unacknowledged and finished requests are
   absent), each shaped exactly like a `permission.requested` payload
-  (`request_id`, `tool_call_id`, `permission_kind`, `summary`, `remaining_ms`),
+  (`request_id`, `tool_call_id`, `permission_kind`, `summary`, optional
+  `preview_clipped`, `remaining_ms`),
   in registration order, always present (empty array when none). Its size is
   bounded by the hub's pending-permission cap and the summary cap. `remaining_ms` is
   computed by the hub when the envelope is built, so it is anchored to that

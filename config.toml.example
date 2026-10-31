@@ -53,7 +53,7 @@ token_lifetime_seconds = 14400   # 60..86400
 allowed_origins = []   # exact canonical origins, e.g. ["https://app.example.com"]; default port omitted; no wildcards, paths, or userinfo
 allowed_hosts = []   # host[:port], e.g. ["app.example.com", "[::1]:3000"]; no port = default port only; no wildcards or schemes
 max_connections = 8   # 1..1024 (MaxRemoteConnections)
-remote_approve_destructive = false   # true lets remote surfaces approve shell/write/unknown kinds
+remote_approve_destructive = false   # true lets remote surfaces approve shell/write/url; unknown kinds always need the local TUI
 
 [[workspace]]
 workspace_id = "example-workspace"

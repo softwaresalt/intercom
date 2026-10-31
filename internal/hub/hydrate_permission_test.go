@@ -191,13 +191,23 @@ func TestPermissionPreviewClippedPropagatesToBroadcastAndHydrate(t *testing.T) {
 		t.Fatalf("unclipped permission.requested must omit preview_clipped: %s", raw)
 	}
 
+	// PreviewClipped is only meaningful for a write: a stray flag on any other
+	// kind must not show a clipped-write warning.
+	odd := newTestAsk(agent.PermissionKindShell, "ls")
+	odd.ask.Request.PreviewClipped = true
+	odd.post(t, h)
+	f3 := recvKind(t, tui, KindPermissionRequested)
+	if raw := string(decode(t, f3).Payload); strings.Contains(raw, "preview_clipped") {
+		t.Fatalf("preview_clipped on a non-write kind must be dropped: %s", raw)
+	}
+
 	// session.hydrate for a fresh client and for a forced re-hydrate.
 	v := hydrateFor(t, h)
-	if len(v.PendingPermissions) != 2 {
-		t.Fatalf("pending = %+v, want 2", v.PendingPermissions)
+	if len(v.PendingPermissions) != 3 {
+		t.Fatalf("pending = %+v, want 3", v.PendingPermissions)
 	}
-	if !v.PendingPermissions[0].PreviewClipped || v.PendingPermissions[1].PreviewClipped {
-		t.Fatalf("hydrate PreviewClipped = %v/%v, want true/false", v.PendingPermissions[0].PreviewClipped, v.PendingPermissions[1].PreviewClipped)
+	if !v.PendingPermissions[0].PreviewClipped || v.PendingPermissions[1].PreviewClipped || v.PendingPermissions[2].PreviewClipped {
+		t.Fatalf("hydrate PreviewClipped = %v/%v/%v, want true/false/false", v.PendingPermissions[0].PreviewClipped, v.PendingPermissions[1].PreviewClipped, v.PendingPermissions[2].PreviewClipped)
 	}
 	c, err := h.Connect(t.Context(), ConnectOptions{Kind: ClientRemote, Buffer: 16})
 	if err != nil {
