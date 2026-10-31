@@ -94,6 +94,9 @@ type App struct {
 	// rejectCh is a capacity-1 mailbox for rejected-upgrade notices that keeps
 	// the highest Total; producers write it under mu, the pump is the one reader.
 	rejectCh chan tui.SecurityNoticeMsg
+	// rejectInterval overrides defaultRejectNoticeInterval when positive
+	// (tests).
+	rejectInterval time.Duration
 	// credsCleared is sticky: once set (shutdown, failed start) no credential
 	// is ever published into creds again. Guarded by mu.
 	credsCleared bool
@@ -350,15 +353,45 @@ func (a *App) watchUI(ui *localUI) {
 	a.Shutdown("tui quit")
 }
 
-// pumpRejects forwards the latest rejection notice to the local TUI from a
-// single goroutine until the program has exited. Send returns once the program
-// took the message or ended, so the loop is bounded by ui.done.
+// defaultRejectNoticeInterval is the most often a rejected-upgrade notice is
+// forwarded to the TUI. A flood of refused upgrades (a probe, a stuck client
+// retrying) would otherwise redraw the status line per request.
+const defaultRejectNoticeInterval = 250 * time.Millisecond
+
+// pumpRejects forwards rejection notices to the local TUI from a single
+// goroutine until the program has exited, at most one per
+// defaultRejectNoticeInterval. Send returns once the program took the message
+// or ended, so the loop is bounded by ui.done.
 func (a *App) pumpRejects(ui *localUI) {
+	interval := a.rejectInterval
+	if interval <= 0 {
+		interval = defaultRejectNoticeInterval
+	}
+	a.pumpRejectsTo(ui.done, interval, func(m tui.SecurityNoticeMsg) { ui.prog.Send(m) })
+}
+
+// pumpRejectsTo is the rate-limited pump body. The first notice after an idle
+// period is sent immediately; each send starts a cooldown of interval during
+// which the mailbox (a.rejectCh, which onReject keeps at the highest Total)
+// coalesces further notices, so the next send carries the latest count. The
+// cooldown timer is stopped when done closes.
+func (a *App) pumpRejectsTo(done <-chan struct{}, interval time.Duration, send func(tui.SecurityNoticeMsg)) {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	if !timer.Stop() {
+		<-timer.C
+	}
 	for {
 		select {
 		case msg := <-a.rejectCh:
-			ui.prog.Send(msg)
-		case <-ui.done:
+			send(msg)
+			timer.Reset(interval)
+			select {
+			case <-timer.C:
+			case <-done:
+				return
+			}
+		case <-done:
 			return
 		}
 	}

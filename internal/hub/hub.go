@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -27,6 +28,9 @@ var (
 	// ErrShuttingDown reports a Connect refused because shutdown has begun
 	// (design §3.1 step 0): no client is admitted after that step.
 	ErrShuttingDown = errors.New("hub: shutting down")
+	// ErrCredentialRevoked reports a Connect refused because the credential
+	// behind it failed revalidation inside the hub step.
+	ErrCredentialRevoked = errors.New("hub: credential revoked")
 )
 
 // Defaults for [Config].
@@ -291,6 +295,7 @@ type Hub struct {
 	// need to force a build failure.
 	buildFrame func(gen string, seq uint64, ts time.Time, kind Kind, sessionID string, payload any) (Frame, error)
 	clients    map[uint64]*Client
+	validators map[uint64]func(gen string) Reason // per-client credential revalidation
 	tui        *Client
 	nextID     uint64
 	st         Stats
@@ -422,6 +427,7 @@ func New(cfg Config) (*Hub, error) {
 		buildFrame:     newFrame,
 		ring:           make([]Frame, cfg.ReplayRing),
 		clients:        make(map[uint64]*Client),
+		validators:     make(map[uint64]func(gen string) Reason),
 		abortedTurnIDs: make(map[string]struct{}),
 		unmappedWarned: make(map[string]struct{}),
 		wake:           wake,
@@ -970,6 +976,7 @@ func (h *Hub) overflow(id uint64, c *Client) {
 // unregister is idempotent.
 func (h *Hub) unregister(id uint64, c *Client) {
 	delete(h.clients, id)
+	delete(h.validators, id)
 	if h.tui == c {
 		h.tui = nil
 	}
@@ -1019,6 +1026,17 @@ type ConnectOptions struct {
 	// local TUI is always an approver by construction: this field is ignored
 	// for ClientTUI.
 	Role Role
+	// Validate, when non-nil, re-checks the credential behind a remote client
+	// inside the hub step: before the client is admitted and before every
+	// action it submits. It returns "" while the credential is valid, or the
+	// refusal Reason (ReasonShuttingDown, ReasonCredentialRevoked,
+	// ReasonCredentialExpired, ReasonGenerationMismatch, ...).
+	//
+	// Contract: Validate runs synchronously on the sole-writer hub goroutine,
+	// so it MUST be an O(1) in-memory check with no I/O, no blocking, and no
+	// call back into Hub methods or channels. Lock order is hub goroutine ->
+	// credential store lock, never the reverse.
+	Validate func(gen string) Reason
 }
 
 type connectResp struct {
@@ -1150,6 +1168,16 @@ func (h *Hub) admission(req *connectReq) error {
 	}
 	if req.opts.Kind == ClientTUI && h.tui != nil {
 		return apperr.New(apperr.KindAlreadyConsumed, "hub: local TUI already attached")
+	}
+	if req.opts.Validate != nil {
+		// Credential revalidation inside the hub step closes the window between
+		// the transport's check and registration (ADR MVP-3).
+		if reason := req.opts.Validate(h.gen); reason != "" {
+			if reason == ReasonShuttingDown {
+				return apperr.Wrap(apperr.KindPolicy, ErrShuttingDown)
+			}
+			return apperr.Wrap(apperr.KindUnauthorized, fmt.Errorf("%w: %s", ErrCredentialRevoked, reason))
+		}
 	}
 	if req.opts.Kind == ClientRemote {
 		if remote, _ := h.membership(); remote >= h.cfg.MaxRemote {
@@ -1330,6 +1358,9 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 	c.notify = h.membershipWake
 	c.hub = h
 	c.role = req.opts.Role
+	if req.opts.Validate != nil {
+		h.validators[c.id] = req.opts.Validate
+	}
 	if c.kind == ClientTUI {
 		c.role = RoleApprover // fixed by construction, needs no credential (ADR MVP-3)
 	}
@@ -1342,6 +1373,7 @@ func (h *Hub) completeConnect(req *connectReq, replay bool) {
 	} else {
 		f, ok := h.hydrateFrame()
 		if !ok {
+			delete(h.validators, c.id) // never registered: drop its validator
 			trySend(req.reply, connectResp{err: apperr.New(apperr.KindIO, "hub: build hydrate snapshot")})
 			return
 		}

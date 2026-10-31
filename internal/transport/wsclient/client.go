@@ -286,9 +286,10 @@ var ErrInsecureTransport = errors.New("wsclient: refusing plain-text ws:// to a 
 
 // ErrInvalidURL is returned by [Dial] for a URL that could carry a credential
 // or other caller-chosen data to the server: one with userinfo
-// ("user:pass@host") or with any query at all. The only query the client ever
+// ("user:pass@host"), any query or fragment, an opaque form ("ws:host/ws") or
+// no host at all. The only query the client ever
 // sends is the resume cursor (gen, seq) it adds itself from [Options.Resume].
-var ErrInvalidURL = errors.New("wsclient: URL must have no userinfo and no query; the credential never travels in the URL")
+var ErrInvalidURL = errors.New("wsclient: URL must have a host and no userinfo, query or fragment; the credential never travels in the URL")
 
 // ReadLimit is the largest inbound message [Dial]ed clients accept. The
 // library default (32 KiB) would reject a hydrate snapshot. The limit covers
@@ -299,8 +300,16 @@ const ReadLimit = 1 << 20
 
 // checkURL rejects URLs that could smuggle data to the server. It never
 // echoes the URL, which may hold secrets.
-func checkURL(u *url.URL) error {
+func checkURL(rawURL string, u *url.URL) error {
 	if u.User != nil || u.RawQuery != "" || u.ForceQuery {
+		return ErrInvalidURL
+	}
+	// A fragment is never sent but can hide data from review; an opaque URL
+	// ("ws:host/ws") or a missing host has no authority to dial.
+	if u.Fragment != "" || u.RawFragment != "" || strings.Contains(rawURL, "#") {
+		return ErrInvalidURL
+	}
+	if u.Opaque != "" || u.Host == "" {
 		return ErrInvalidURL
 	}
 	return nil
@@ -331,7 +340,8 @@ func checkTransport(u *url.URL) error {
 }
 
 // Dial authenticates and upgrades. On refusal it returns a *HandshakeError.
-// A URL with userinfo or any query is refused with [ErrInvalidURL]. A ws://
+// A URL with userinfo, any query or fragment, an opaque form or no host is
+// refused with [ErrInvalidURL]. A ws://
 // URL is refused with [ErrInsecureTransport] unless its host is a loopback
 // literal or the name "localhost" (a name-based check; see checkTransport).
 // Inbound messages are limited to [ReadLimit].
@@ -340,7 +350,7 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("wsclient: bad URL: %w", err)
 	}
-	if err := checkURL(u); err != nil {
+	if err := checkURL(o.URL, u); err != nil {
 		return nil, err
 	}
 	if err := checkTransport(u); err != nil {

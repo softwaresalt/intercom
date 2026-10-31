@@ -312,12 +312,12 @@ func (s *session) readPump(ctx context.Context) {
 			s.violation(ctx)
 			return
 		}
-		act, err := decodeAction(data)
+		da, err := decodeWireAction(data)
 		if err != nil {
 			s.violation(ctx)
 			return
 		}
-		if !s.dispatch(ctx, act) {
+		if !s.dispatchWire(ctx, da) {
 			return
 		}
 	}
@@ -331,19 +331,23 @@ func (s *session) violation(ctx context.Context) {
 	<-ctx.Done()
 }
 
-// dispatch submits one decoded action to the hub as this connection's client
-// and queues the verdict for this client only. It reports whether the read
-// loop should continue.
+// dispatchWire submits one decoded action to the hub as this connection's
+// client and queues the verdict for this client only. It reports whether the
+// read loop should continue.
 //
 // The revalidate step compares the grant's role with the role the hub client
 // was registered with. Both come from the same credential, so a mismatch
 // cannot happen today; the comparison is intentional defence in depth (a
 // future change to either side must fail closed, never silently widen
-// privilege).
-func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
+// privilege). The order is the ADR MVP-3 one: credential revalidation, rate limit, shutdown revocation, then
+// the local-only refusal, then the hub step. A hub-step credential failure
+// (the credential died after the checks above) closes the connection after
+// the refusal is flushed.
+func (s *session) dispatchWire(ctx context.Context, da decodedAction) bool {
+	act := da.act
 	v := s.h.revalidate(s.grant, s.client.Role())
 	if v.closeConn {
-		s.queueReply(refusalFor(act, v.reason))
+		s.queueReply(refusalForWire(da, v.reason))
 		s.requestClose(websocket.StatusPolicyViolation, closeReasonEnded)
 		<-ctx.Done() // the pump flushes the refusal, closes, then cancels
 		return false
@@ -353,7 +357,7 @@ func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
 	// revoked state is rate limited and eventually closed.
 	if !s.bucket.allow() {
 		s.violations++
-		s.queueReply(refusalFor(act, ReasonRateLimited))
+		s.queueReply(refusalForWire(da, ReasonRateLimited))
 		if s.violations >= s.h.maxViolations {
 			s.requestClose(websocket.StatusPolicyViolation, closeReasonRate)
 			<-ctx.Done()
@@ -364,10 +368,15 @@ func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
 	if v.reason != "" {
 		// Non-closing refusal (shutdown-revoked): it passed the limiter but is
 		// not a successful action, so the violation count is not reset.
-		s.queueReply(refusalFor(act, v.reason))
+		s.queueReply(refusalForWire(da, v.reason))
 		return true
 	}
 	s.violations = 0
+	if da.localOnlyOp != "" {
+		// Well-formed but local-TUI-only: refused, connection kept open.
+		s.queueReply(refusalForWire(da, ReasonLocalOnlyAction))
+		return true
+	}
 	actx, cancel := context.WithTimeout(ctx, s.h.actionTimeout)
 	defer cancel()
 	res, err := s.client.Do(actx, act)
@@ -379,5 +388,26 @@ func (s *session) dispatch(ctx context.Context, act hub.OperatorAction) bool {
 		return false
 	}
 	s.queueReply(replyFor(act, res))
+	if !res.Accepted && hubStepCredentialFailure(res.Reason) {
+		// The hub step found the credential invalid after the checks above.
+		// Re-check: unless it is the non-closing shutdown revocation, the
+		// connection ends once the refusal is flushed.
+		if s.h.revalidate(s.grant, s.client.Role()).closeConn {
+			s.requestClose(websocket.StatusPolicyViolation, closeReasonEnded)
+			<-ctx.Done()
+			return false
+		}
+	}
 	return true
+}
+
+// hubStepCredentialFailure reports a refusal produced by the hub step's
+// credential revalidation (or role cross-check).
+func hubStepCredentialFailure(r hub.Reason) bool {
+	switch r {
+	case hub.ReasonCredentialRevoked, hub.ReasonCredentialExpired,
+		hub.ReasonGenerationMismatch, hub.ReasonRoleNotPermitted:
+		return true
+	}
+	return false
 }

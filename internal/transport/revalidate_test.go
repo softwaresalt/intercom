@@ -3,8 +3,13 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 	"github.com/softwaresalt/intercom-go/internal/agent"
@@ -268,5 +273,116 @@ func TestTokenBucket(t *testing.T) {
 	clk.Advance(-time.Hour)
 	if b.allow() {
 		t.Fatal("backwards clock minted a token")
+	}
+}
+
+func TestLocalOnlyActionsRefusedAndFeedbackBoundedAndClearedOnAllow(t *testing.T) {
+	// Decode level: feedback is dropped on allow_once and bounded on deny.
+	allow, err := decodeWireAction([]byte(`{"op":"resolve_permission","request_id":"r","decision":"allow_once","feedback":"sneaky"}`))
+	if err != nil || allow.act.Decision.Feedback != "" {
+		t.Fatalf("allow_once feedback = %q, %v; want cleared", allow.act.Decision.Feedback, err)
+	}
+	big := strings.Repeat("é", MaxFeedbackBytes) // 2 bytes per rune
+	deny, err := decodeWireAction([]byte(`{"op":"resolve_permission","request_id":"r","decision":"deny","feedback":"` + big + `"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fb := deny.act.Decision.Feedback; len(fb) == 0 || len(fb) > MaxFeedbackBytes || !utf8.ValidString(fb) {
+		t.Fatalf("deny feedback len=%d valid=%v; want 1..%d valid UTF-8", len(fb), utf8.ValidString(fb), MaxFeedbackBytes)
+	}
+	for _, op := range []string{"reveal_credentials", "reissue_credentials", "quit", "shutdown"} {
+		da, err := decodeWireAction([]byte(`{"op":"` + op + `","request_id":"q1"}`))
+		if err != nil || da.localOnlyOp != op || da.act.Type != hub.OpUnknown || da.act.Prompt != "" {
+			t.Fatalf("%s decoded to %+v, %v; want local-only with OpUnknown", op, da, err)
+		}
+	}
+
+	// Wire level: refused with local_only_action, connection stays open for
+	// both roles; shutdown revocation still takes precedence.
+	fa := &fakeAgent{}
+	e := newEnv(t, envOpts{hubCfg: hub.Config{Agent: fa}})
+	for _, tok := range []string{e.app.Token.Reveal(), e.obs.Token.Reveal()} {
+		c := dialWS(t, e, tok)
+		readEnvelope(t, c, 2*time.Second)
+		for _, op := range []string{"reveal_credentials", "reissue_credentials", "quit", "shutdown"} {
+			sendText(t, c, `{"op":"`+op+`","request_id":"q1"}`)
+			r := nextResult(t, c)
+			if r.Type != ReplyRefused || r.Reason != ReasonLocalOnlyAction || r.Op != op || r.RequestID != "q1" {
+				t.Fatalf("%s reply = %+v", op, r)
+			}
+		}
+		sendText(t, c, `{"op":"abort_turn"}`) // still open and serving
+		_ = nextResult(t, c)
+	}
+	c := dialWS(t, e, e.app.Token.Reveal())
+	readEnvelope(t, c, 2*time.Second)
+	e.creds.RevokeAll()
+	sendText(t, c, `{"op":"quit"}`)
+	if r := nextResult(t, c); r.Reason != string(hub.ReasonCredentialRevoked) {
+		t.Fatalf("local-only op during shutdown revocation = %+v; want credential_revoked", r)
+	}
+}
+
+// A hub-step revalidation failure (the credential died between the
+// transport's check and the hub's step) is refused AND closes the socket.
+func TestDispatchClosesSocketOnHubStepCredentialRevocation(t *testing.T) {
+	fa := &fakeAgent{}
+	e := newEnv(t, envOpts{hubCfg: hub.Config{Agent: fa}})
+	g, err := e.creds.Verify(e.app.Token.Reveal(), e.hub.Gen())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var armed atomic.Bool
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := e.hub.Connect(ctx, hub.ConnectOptions{
+		Kind: hub.ClientRemote, Role: g.Role(),
+		Validate: func(string) hub.Reason {
+			if armed.Load() {
+				e.creds.Revoke(g.CredentialID()) // dies inside the hub step
+				return hub.ReasonCredentialRevoked
+			}
+			return ""
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(done)
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			client.Close()
+			return
+		}
+		newSession(e.handler, conn, client, g).run()
+	}))
+	defer func() {
+		client.Close()
+		srv.Close()
+		<-done
+	}()
+	dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer dcancel()
+	c, _, err := websocket.Dial(dctx, "ws://"+srv.Listener.Addr().String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.CloseNow() }()
+
+	armed.Store(true)
+	sendText(t, c, `{"op":"prompt","prompt":"late"}`)
+	replies, code, reason := readToClose(t, c, 5*time.Second)
+	for _, r := range replies {
+		if r.Type != ReplyRefused || r.Reason != string(hub.ReasonCredentialRevoked) {
+			t.Fatalf("reply before close = %+v", r)
+		}
+	}
+	if code != websocket.StatusPolicyViolation || reason != closeReasonEnded {
+		t.Fatalf("close = %d %q; want 1008 %q", code, reason, closeReasonEnded)
+	}
+	if prompts, _ := fa.snapshot(); len(prompts) != 0 {
+		t.Fatalf("hub-step-revoked action reached the agent: %v", prompts)
 	}
 }

@@ -89,6 +89,15 @@ const (
 	// credential to revoke) was closed after it queued the action and before the
 	// hub's step. Remote clients get ReasonCredentialRevoked.
 	ReasonClientClosed Reason = "client_closed"
+	// ReasonCredentialExpired: the credential behind a remote client expired
+	// before the hub step that would have applied its action.
+	ReasonCredentialExpired Reason = "credential_expired"
+	// ReasonGenerationMismatch: the credential was minted for another hub
+	// generation than the one now running.
+	ReasonGenerationMismatch Reason = "generation_mismatch"
+	// ReasonLocalOnlyAction: the action may only be taken at the local TUI and
+	// is refused when it arrives over the wire.
+	ReasonLocalOnlyAction Reason = "local_only_action"
 )
 
 // OpType is the kind of operator action. The zero value is unknown and is

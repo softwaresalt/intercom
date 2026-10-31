@@ -3,8 +3,10 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -310,4 +312,69 @@ func TestShutdownPublishesServerShutdownEnvelope(t *testing.T) {
 		t.Fatalf("frame = %s seq %d, want server.shutdown seq 1", f.Kind(), f.Seq())
 	}
 	<-runDone
+}
+
+// A credential revoked between Connect's caller-side check and the hub step
+// must be caught inside the step: the connect is refused without registering
+// a client, and a queued action is refused without taking effect.
+func TestConnectAndSubmitAtomicHubStepCredentialValidation(t *testing.T) {
+	ag := newFakeAgent()
+	h := startHub(t, Config{Agent: ag})
+	tui := connectRole(t, h, ClientTUI, 0)
+
+	var verdict atomic.Value
+	verdict.Store(Reason(""))
+	validate := func(string) Reason { return verdict.Load().(Reason) }
+
+	connect := func() (*Client, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), testWait)
+		defer cancel()
+		return h.Connect(ctx, ConnectOptions{Kind: ClientRemote, Role: RoleApprover, Buffer: 64, Validate: validate})
+	}
+
+	// Connect-time: revoked / shutting down are refused with the right error.
+	verdict.Store(ReasonCredentialRevoked)
+	if c, err := connect(); !errors.Is(err, ErrCredentialRevoked) || c != nil {
+		t.Fatalf("revoked connect = %v, %v; want ErrCredentialRevoked", c, err)
+	}
+	verdict.Store(ReasonShuttingDown)
+	if c, err := connect(); !errors.Is(err, ErrShuttingDown) || c != nil {
+		t.Fatalf("shutting-down connect = %v, %v; want ErrShuttingDown", c, err)
+	}
+	if remote := stats(t, h).Remote; remote != 0 {
+		t.Fatalf("a refused connect registered %d remote clients", remote)
+	}
+
+	// Action-time: each failure reason is returned, shutdown maps to revoked.
+	verdict.Store(Reason(""))
+	appr, err := connect()
+	if err != nil {
+		t.Fatalf("valid connect: %v", err)
+	}
+	recvKind(t, appr, KindSessionHydrate)
+	id, a := pendingOf(t, h, tui, agent.PermissionKindRead)
+	for _, tc := range []struct{ verdict, want Reason }{
+		{ReasonCredentialExpired, ReasonCredentialExpired},
+		{ReasonGenerationMismatch, ReasonGenerationMismatch},
+		{ReasonCredentialRevoked, ReasonCredentialRevoked},
+		{ReasonShuttingDown, ReasonCredentialRevoked},
+	} {
+		verdict.Store(tc.verdict)
+		res := do(t, appr, answer(id, allowOnce))
+		if res.Accepted || res.Reason != tc.want {
+			t.Fatalf("verdict %q: got %+v, want refusal %q", tc.verdict, res, tc.want)
+		}
+	}
+	if n := stats(t, h).PendingPermissions; n != 1 {
+		t.Fatalf("pending = %d: a refused action must not consume the request", n)
+	}
+	select {
+	case d := <-a.reply:
+		t.Fatalf("handler got %v from a refused action", d.Kind)
+	default:
+	}
+	verdict.Store(Reason(""))
+	if res := do(t, appr, answer(id, allowOnce)); !res.Accepted {
+		t.Fatalf("valid credential action refused: %+v", res)
+	}
 }

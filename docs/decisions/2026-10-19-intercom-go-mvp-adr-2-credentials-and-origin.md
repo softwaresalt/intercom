@@ -114,10 +114,12 @@ non-URL option.
   rejected.
 * Canonical form: scheme and host are compared case-insensitively, a trailing dot on a host
   is stripped, an internationalized host is compared in its ASCII (punycode) form, and the
-  default port (`:443` for `https`, `:80` for `http`) is equivalent to an omitted port.
-  Entries must already be written in this canonical form, and validation rejects others.
-  `allowed_hosts` entries are a host with an optional port, in the same canonical form; an entry
-  without a port matches the default port only.
+  default port (`:443` for `https`, `:80` for `http`) is equivalent to an omitted port for an
+  `Origin`, which carries a scheme. A `Host` carries no scheme, so this equivalence does not
+  apply to it (see MVP-D11). Entries must already be written in this canonical form, and
+  validation rejects others. `allowed_hosts` entries are a host with an optional port, in the
+  same canonical form; an entry without a port matches only a `Host` header without a port
+  (an explicit `:80` or `:443` is a distinct key and needs its own entry).
 * Wildcards (`*`, scheme-only, or host-only patterns) are not allowed in
   `allowed_origins` or `allowed_hosts`. Config validation rejects them. The library's skip-verification and
   wildcard origin options must not be used.
@@ -221,3 +223,13 @@ Recorded after implementing the authenticated transport in `internal/transport`:
 * ADR MVP-1: `docs/decisions/2026-10-19-intercom-go-mvp-adr-1-scope-and-session.md`
 * ADR MVP-3: `docs/decisions/2026-10-19-intercom-go-mvp-adr-3-authorization-roles.md`
 * Deliberation: `docs/decisions/2026-10-19-intercom-go-mvp-primary-scenario-deliberation.md`
+## Ratification addendum (077-S, 2026-10-31)
+
+* **Host default-port non-equivalence is the decision, not an implementation detail.** The
+  MVP-D11 and canonical-form text above is amended in place to match `internal/transport`
+  (`hostKey`), `docs/config-reference.md` and the 060-S addendum: `a` and `a:443` are
+  distinct `Host` keys, while `https://a` and `https://a:443` remain one `Origin` key.
+* **Rejected-upgrade accounting** (`RejectedUpgrades`, `OnReject`) counts handler refusals,
+  wrong-path `404` (`wrong_path`), over-cap `503` (`connection_cap_exceeded`) and
+  library-generated handshake refusals (`invalid_handshake`). Benign shutdown `draining`
+  `503`s are excluded so normal shutdown raises no alert.
