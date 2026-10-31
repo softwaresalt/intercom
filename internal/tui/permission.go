@@ -15,12 +15,18 @@ import (
 
 // permission is one pending permission request as shown to the operator. Its
 // text has been sanitized but never shortened: the hub denies any request over
-// its summary bound, so what arrives here is the whole request.
+// its summary bound, so what arrives here is the whole request. The one
+// exception is PreviewClipped: a write whose diff or content preview was
+// clipped to fit the summary (the file name is complete). The modal then shows
+// an out-of-band column-0 warning and asks for an explicit clipped-write
+// confirmation.
 type permission struct {
 	RequestID  string
 	ToolCallID string
 	Kind       string
 	Summary    string
+	// PreviewClipped reports a clipped write preview (see above).
+	PreviewClipped bool
 	// Empty is set when the request text is blank: nothing was shown to
 	// approve, so the request is deny-only.
 	Empty bool
@@ -32,14 +38,18 @@ type permission struct {
 // emptyRequestText stands in for a blank summary.
 const emptyRequestText = "(empty request - deny only)"
 
+// clippedWriteWarning is the column-0 header shown for a clipped write preview.
+const clippedWriteWarning = "write preview clipped — full content not shown"
+
 func unmarshal(raw []byte, v any) error { return json.Unmarshal(raw, v) }
 
 func newPermission(p hub.PermissionRequestedPayload, ts time.Time) permission {
 	out := permission{
-		RequestID:  p.RequestID, // opaque hub id: echoed back verbatim, never displayed raw
-		ToolCallID: SanitizeLine(p.ToolCallID),
-		Kind:       SanitizeLine(p.PermissionKind),
-		Summary:    Sanitize(p.Summary),
+		RequestID:      p.RequestID, // opaque hub id: echoed back verbatim, never displayed raw
+		ToolCallID:     SanitizeLine(p.ToolCallID),
+		Kind:           SanitizeLine(p.PermissionKind),
+		Summary:        Sanitize(p.Summary),
+		PreviewClipped: p.PreviewClipped,
 	}
 	switch {
 	case strings.TrimSpace(p.Summary) == "":
@@ -175,7 +185,11 @@ func (m Model) permissionBody(p permission) string {
 	for i, l := range lines {
 		lines[i] = "  " + l
 	}
-	return m.wrapHeader("kind: ", p.Kind, inner) + "\n" + m.wrapHeader("tool call: ", p.ToolCallID, inner) + "\n\n" + strings.Join(lines, "\n")
+	header := m.wrapHeader("kind: ", p.Kind, inner) + "\n" + m.wrapHeader("tool call: ", p.ToolCallID, inner)
+	if p.PreviewClipped {
+		header += "\n" + m.wrapHeader("warning: ", clippedWriteWarning, inner)
+	}
+	return header + "\n\n" + strings.Join(lines, "\n")
 }
 
 // wrapHeader wraps prefix+val to max(inner-2, 1) columns and indents every
@@ -312,10 +326,16 @@ func (m Model) modalView(height int) string {
 		hint = "decision sent; waiting for the agent to acknowledge..."
 	case m.armed == id:
 		hint = "APPROVE? press Enter to confirm, any other key cancels"
+		if p.PreviewClipped {
+			hint = "APPROVE CLIPPED WRITE? press Enter to confirm, any other key cancels"
+		}
 	case p.Empty:
 		hint = "empty request: approve disabled   n deny"
 	case m.approvable():
 		hint = "y approve (then Enter to confirm)   n deny"
+		if p.PreviewClipped {
+			hint = "y approve clipped write (then Enter)   n deny"
+		}
 	case m.modalSeen >= m.modal.TotalLineCount() && !m.modalReady:
 		hint = "approval unlocks in a moment   n deny"
 	default:
