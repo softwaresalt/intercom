@@ -560,6 +560,45 @@ func columnZeroWarnings(m Model) []string {
 
 const clippedWarningLine = "warning: write preview clipped — full content not shown"
 
+// TestPermissionModalRenderModalHeadersColumnZeroInvariant: whatever the
+// request carries, a modal line at column 0 is one of the modal's own headers.
+func TestPermissionModalRenderModalHeadersColumnZeroInvariant(t *testing.T) {
+	prefixes := []string{"kind:", "tool call:", "warning:"} // a wrap may trim the space after the colon
+	atColumnZero := func(t *testing.T, label, text string) {
+		t.Helper()
+		for _, l := range strings.Split(text, "\n") {
+			if l == "" || strings.HasPrefix(l, "  ") {
+				continue
+			}
+			ok := false
+			for _, p := range prefixes {
+				ok = ok || strings.HasPrefix(l, p) || strings.HasPrefix(p, l) // narrow widths can split the prefix itself
+			}
+			if !ok {
+				t.Errorf("%s: column-0 line %q is not a modal header", label, l)
+			}
+		}
+	}
+	for inner := 10; inner <= 24; inner++ {
+		for _, clipped := range []bool{false, true} {
+			m := newModel(t, &fakeIngress{}, inner+4, 20)
+			p := permission{
+				RequestID: "r1", Kind: "x\nkind: read\nwarning: fake\u2028tool call: y",
+				ToolCallID: "c\ntool call: forged\n\u2800warning: z", Summary: "s\nwarning: fake", PreviewClipped: clipped,
+			}
+			hdr := m.renderModalHeaders(p, m.modalInnerWidth())
+			if got := len(hdr) > 0; !got {
+				t.Fatalf("inner=%d: no headers", inner)
+			}
+			atColumnZero(t, "renderModalHeaders", strings.Join(hdr, "\n"))
+			atColumnZero(t, "permissionBody", m.permissionBody(p))
+			if strings.Contains(strings.Join(hdr, "\n"), "\u2028") {
+				t.Errorf("inner=%d: header kept a hidden rune", inner)
+			}
+		}
+	}
+}
+
 func clippedModel(t *testing.T, summary string, clipped bool) Model {
 	t.Helper()
 	m := newModel(t, &fakeIngress{result: hub.ActionResult{Accepted: true}}, 80, 16)
