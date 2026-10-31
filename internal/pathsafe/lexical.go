@@ -1,6 +1,9 @@
 package pathsafe
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // ContainsDotDotSegment reports whether path contains a literal ".."
 // path-separator-delimited segment, checked against the original
@@ -34,4 +37,65 @@ func ContainsDotDotSegment(path string) bool {
 		}
 	}
 	return false
+}
+
+// CLIPathKind classifies the lexical shape of a configured CLI executable
+// path (copilot.cli_path). It is portable: the classification of UNC and
+// device-namespace spellings does not depend on GOOS.
+type CLIPathKind uint8
+
+// CLIPathKind values.
+const (
+	// CLIPathEmpty is the empty string.
+	CLIPathEmpty CLIPathKind = iota
+	// CLIPathBare is a bare executable name resolved through PATH.
+	CLIPathBare
+	// CLIPathAbs is a rooted path on the current GOOS (excluding UNC/device).
+	CLIPathAbs
+	// CLIPathUNCOrDevice is a UNC or Windows device-namespace path.
+	CLIPathUNCOrDevice
+	// CLIPathDriveRelative is a Windows drive-relative path such as "C:x".
+	CLIPathDriveRelative
+	// CLIPathRelative is any other path containing a separator, or "." / "..".
+	CLIPathRelative
+)
+
+// ClassifyCLIPath returns the CLIPathKind of path. UNC and device-namespace
+// prefixes are detected before filepath.IsAbs on every GOOS.
+func ClassifyCLIPath(path string) CLIPathKind {
+	switch {
+	case path == "":
+		return CLIPathEmpty
+	case hasUNCOrDevicePrefix(path):
+		return CLIPathUNCOrDevice
+	case filepath.IsAbs(path):
+		return CLIPathAbs
+	case hasWindowsDrivePrefix(path):
+		return CLIPathDriveRelative
+	case path == "." || path == ".." || strings.ContainsAny(path, `/\`):
+		return CLIPathRelative
+	default:
+		return CLIPathBare
+	}
+}
+
+func isSlash(b byte) bool { return b == '/' || b == '\\' }
+
+// hasUNCOrDevicePrefix reports whether path begins with two slashes of either
+// flavor (UNC, "\\.\" and "\\?\" device forms) or the NT "\??\" prefix.
+func hasUNCOrDevicePrefix(path string) bool {
+	if len(path) >= 2 && isSlash(path[0]) && isSlash(path[1]) {
+		return true
+	}
+	return len(path) >= 4 && isSlash(path[0]) && path[1] == '?' && path[2] == '?' && isSlash(path[3])
+}
+
+// hasWindowsDrivePrefix reports whether path begins with an ASCII drive
+// letter followed by a colon.
+func hasWindowsDrivePrefix(path string) bool {
+	if len(path) < 2 || path[1] != ':' {
+		return false
+	}
+	c := path[0]
+	return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }
