@@ -40,7 +40,7 @@ covering every key in this reference.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `timeouts.approval_seconds` | integer | `3600` | How long a permission request waits for an operator answer before the hub resolves it `UserNotAvailable`. Consumed by the process wiring (`internal/app`); `0` selects the hub's built-in default (2 minutes). Must be between `0` and `86400` (24 hours, `MaxApprovalTimeoutSeconds`) inclusive; a larger value fails config load with `timeouts.approval_seconds must not exceed 86400`. |
+| `timeouts.approval_seconds` | integer | `3600` | How long a permission request waits for an operator answer before the hub resolves it `UserNotAvailable`. Consumed by the process wiring (`internal/app`). Three-tier precedence: omitting the key uses the config default `3600` (1 hour); a value in `1..86400` uses exactly that many seconds; an explicit `0` is passed to the hub, which selects its built-in default (`hub.DefaultPermissionTimeout`, 2 minutes). Must be between `0` and `86400` (24 hours, `MaxApprovalTimeoutSeconds`) inclusive; a larger value fails config load with `timeouts.approval_seconds must not exceed 86400`. |
 | `timeouts.prompt_seconds` | integer | `1800` | Accepted, not yet consumed by the MVP process. |
 | `timeouts.wait_seconds` | integer | `0` | `0` means "no timeout". Accepted, not yet consumed by the MVP process. |
 
@@ -75,7 +75,7 @@ off. This section is secret-free by design.
 | `remote.allowed_origins` | array of string | `[]` | Exact lowercase `http(s)://host[:port]` origins in canonical form; bracketed IPv6 literals (`http://[::1]:3000`) are allowed. An explicit default port (`https://x:443`, `http://x:80`) is rejected: the default port must be omitted. Wildcards, paths (including a trailing `/`), queries (including a bare `?`), fragments, userinfo, `%` escapes, leading-zero or out-of-range ports, uppercase, other schemes, trailing dots, empty and duplicate entries are rejected. |
 | `remote.allowed_hosts` | array of string | `[]` | A lowercase host with an optional `:port` (decimal 1-65535, no leading zeros), e.g. `app.example.com`, `localhost:3000`, `[::1]`, `[::1]:3000`. An entry without a port matches the default port only (the request carries no port); an entry with an explicit port matches only that port. **Default-port policy:** explicit `:80` and `:443` are accepted as ordinary explicit ports and are NOT treated as equivalent to the bare host by config validation; `example.com` and `example.com:443` are distinct entries (both may be listed), and the matcher (`internal/transport` `hostorigin.go`) does not equate them. Numeric-looking hosts must be canonical dotted-quad IPv4 (`127.0.0.1`); forms such as `127.1`, `2130706433`, `01.2.3.4` or `999.999.999.999` are rejected as a non-canonical IPv4 address (as are bracketed non-IPv6 origins such as `http://[127.0.0.1]`). Host names are at most 253 characters with no empty label, no trailing dot, labels of at most 63 characters that do not start or end with a hyphen. Wildcards, schemes, paths, userinfo, whitespace/control or non-ASCII characters, empty and duplicate entries are rejected. |
 | `remote.max_connections` | integer | `8` | Must be between `1` and `1024` (`MaxRemoteConnections`) inclusive. |
-| `remote.remote_approve_destructive` | bool | `false` | When `true`, remote surfaces may approve `shell`, `write`, and unknown kinds. |
+| `remote.remote_approve_destructive` | bool | `false` | When `true`, remote approvers may approve the modeled destructive kinds (`shell`, `write`, `url`); unknown/unmodeled kinds always require the local TUI. Remote denial is always allowed. |
 
 **Credential-shaped keys are rejected.** `Decode`/`Load` fail closed on any
 key at or below `[remote]` whose name looks like a credential (it contains
@@ -167,6 +167,11 @@ orders are unchanged), so a failure never mutates the receiver.
 
 A config that sets `approval_seconds` above 86400 and loaded before this rule
 existed now fails validation at load time; lower the value to 86400 or less.
+
+`approval_seconds` resolves in three tiers: omitted uses the config default
+`3600` seconds; `1..86400` uses that exact duration; an explicit `0` passes `0`
+to `hub.Config.PermissionTimeout`, which selects `hub.DefaultPermissionTimeout`
+(2 minutes).
 
 Rule 5 has one additional non-fatal advisory: a bare name that is not
 currently resolvable on `PATH` produces `copilot.cli_path '{name}' was not

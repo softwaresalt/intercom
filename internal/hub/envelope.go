@@ -86,6 +86,10 @@ type (
 		ToolCallID     string `json:"tool_call_id"`
 		PermissionKind string `json:"permission_kind"`
 		Summary        string `json:"summary"`
+		// PreviewClipped is set when a write permission's diff or new-file
+		// content preview was clipped to fit Summary. The file name is
+		// complete; the operator must be warned that the content is partial.
+		PreviewClipped bool `json:"preview_clipped,omitempty"`
 		// RemainingMS is the time left before the hub-owned timeout resolves
 		// the request to UserNotAvailable.
 		RemainingMS int64 `json:"remaining_ms,omitempty"`

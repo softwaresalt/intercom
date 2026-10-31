@@ -44,15 +44,20 @@ func TestAuthorizeMatrixRows(t *testing.T) {
 		{"approver approves unknown, default", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: allow}, false, ReasonDestructiveRemoteRefused},
 		{"approver approves other, default", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindOther, decision: allow}, false, ReasonDestructiveRemoteRefused},
 		{"approver approves shell, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindShell, decision: allow, remoteApproveDestructive: true}, true, ""},
-		// ADR MVP-3: unknown kinds are destructive, so they are default-deny for
-		// remote surfaces and the same opt-in that covers shell and write
-		// covers them; nothing else ever lets a remote approver approve them.
-		{"approver approves unknown, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: allow, remoteApproveDestructive: true}, true, ""},
-		{"approver approves other, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindOther, decision: allow, remoteApproveDestructive: true}, true, ""},
+		// ADR MVP-3 (074-S amendment): unknown/unmodeled kinds are local-TUI-only
+		// for approvals; the remote_approve_destructive opt-in never unlocks
+		// them. Remote deny stays allowed.
+		{"approver approves unknown, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: allow, remoteApproveDestructive: true}, false, ReasonDestructiveRemoteRefused},
+		{"approver approves other, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindOther, decision: allow, remoteApproveDestructive: true}, false, ReasonDestructiveRemoteRefused},
 		{"approver approves url, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindURL, decision: allow, remoteApproveDestructive: true}, true, ""},
-		{"approver approves undefined kind, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKind(200), decision: allow, remoteApproveDestructive: true}, true, ""},
+		{"approver approves write, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindWrite, decision: allow, remoteApproveDestructive: true}, true, ""},
+		{"approver approves undefined kind, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKind(200), decision: allow, remoteApproveDestructive: true}, false, ReasonDestructiveRemoteRefused},
 		{"approver approves undefined kind, default", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKind(200), decision: allow}, false, ReasonDestructiveRemoteRefused},
 		{"approver denies unknown, default", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: deny}, true, ""},
+		{"approver denies other, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKindOther, decision: deny, remoteApproveDestructive: true}, true, ""},
+		{"approver denies undefined kind, opt-in", authzInput{p: appr, op: OpResolvePermission, kind: agent.PermissionKind(200), decision: deny, remoteApproveDestructive: true}, true, ""},
+		{"tui approves unknown, opt-in off", authzInput{p: tui, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: allow}, true, ""},
+		{"tui approves undefined kind, opt-in off", authzInput{p: tui, op: OpResolvePermission, kind: agent.PermissionKind(200), decision: allow}, true, ""},
 		{"observer approves unknown, opt-in", authzInput{p: obs, op: OpResolvePermission, kind: agent.PermissionKindUnknown, decision: allow, remoteApproveDestructive: true}, false, ReasonRoleNotPermitted},
 		{"observer prompt", authzInput{p: obs, op: OpPrompt}, false, ReasonRoleNotPermitted},
 		{"observer abort", authzInput{p: obs, op: OpAbortTurn}, false, ReasonRoleNotPermitted},
@@ -104,9 +109,10 @@ func TestAuthorizeInvariantsOverTheWholeInputSpace(t *testing.T) {
 								if ok {
 									t.Fatalf("%+v: a non-approver was allowed", in)
 								}
-							case op == OpResolvePermission && dec != agent.DecisionDeny && kind != agent.PermissionKindRead && !flag:
+							case op == OpResolvePermission && dec != agent.DecisionDeny && kind != agent.PermissionKindRead &&
+								(!flag || (kind != agent.PermissionKindShell && kind != agent.PermissionKindWrite && kind != agent.PermissionKindURL)):
 								if ok {
-									t.Fatalf("%+v: remote destructive approval allowed without opt-in", in)
+									t.Fatalf("%+v: remote destructive approval allowed without opt-in or for an unknown kind", in)
 								}
 								if why != ReasonDestructiveRemoteRefused {
 									t.Fatalf("%+v: reason %q", in, why)
@@ -236,14 +242,31 @@ func TestRemoteApproverMayApproveReadByDefault(t *testing.T) {
 }
 
 func TestUnknownPermissionKindsAreDeniedToRemoteApprovers(t *testing.T) {
-	for _, kind := range []agent.PermissionKind{agent.PermissionKindUnknown, agent.PermissionKindOther, agent.PermissionKindURL, agent.PermissionKind(200)} {
-		h := startHub(t, Config{})
-		tui := connectRole(t, h, ClientTUI, 0)
-		appr := connectRole(t, h, ClientRemote, RoleApprover)
-		id, _ := pendingOf(t, h, tui, kind)
-		if res := do(t, appr, answer(id, allowOnce)); res.Accepted || res.Reason != ReasonDestructiveRemoteRefused {
-			t.Fatalf("kind %d: remote approval = %+v, want refused as destructive", kind, res)
+	for _, optIn := range []bool{false, true} {
+		for _, kind := range []agent.PermissionKind{agent.PermissionKindUnknown, agent.PermissionKindOther, agent.PermissionKind(200)} {
+			h := startHub(t, Config{RemoteApproveDestructive: optIn})
+			tui := connectRole(t, h, ClientTUI, 0)
+			appr := connectRole(t, h, ClientRemote, RoleApprover)
+			id, _ := pendingOf(t, h, tui, kind)
+			if res := do(t, appr, answer(id, allowOnce)); res.Accepted || res.Reason != ReasonDestructiveRemoteRefused {
+				t.Fatalf("kind %d optIn=%v: remote approval = %+v, want refused as destructive", kind, optIn, res)
+			}
 		}
+	}
+	// A modeled destructive kind is refused by default and approvable with the opt-in.
+	h := startHub(t, Config{})
+	tui := connectRole(t, h, ClientTUI, 0)
+	appr := connectRole(t, h, ClientRemote, RoleApprover)
+	id, _ := pendingOf(t, h, tui, agent.PermissionKindURL)
+	if res := do(t, appr, answer(id, allowOnce)); res.Accepted || res.Reason != ReasonDestructiveRemoteRefused {
+		t.Fatalf("url default: remote approval = %+v, want refused as destructive", res)
+	}
+	h = startHub(t, Config{RemoteApproveDestructive: true})
+	tui = connectRole(t, h, ClientTUI, 0)
+	appr = connectRole(t, h, ClientRemote, RoleApprover)
+	id, _ = pendingOf(t, h, tui, agent.PermissionKindURL)
+	if res := do(t, appr, answer(id, allowOnce)); !res.Accepted {
+		t.Fatalf("url opt-in: remote approval = %+v, want accepted", res)
 	}
 }
 

@@ -122,8 +122,10 @@ type Config struct {
 	// permission.aborted. Default [DefaultPermissionAckTimeout].
 	PermissionAckTimeout time.Duration
 	// RemoteApproveDestructive is [remote].remote_approve_destructive: when
-	// false (the default) a remote approver may not approve shell, write or
-	// unknown-kind permissions (ADR MVP-3). The local TUI is unaffected.
+	// false (the default) a remote approver may not approve the modeled
+	// destructive permissions (shell, write, url). Unknown or unmodeled kinds
+	// are always local-TUI-only for approval, even when true; remote deny is
+	// always allowed (ADR MVP-3). The local TUI is unaffected.
 	RemoteApproveDestructive bool
 	// Agent receives operator prompt-send and turn-abort actions after they
 	// pass the role matrix. It is called off the hub goroutine only (design
@@ -1266,6 +1268,7 @@ func (h *Hub) hydratePayload() []byte {
 			ToolCallID:     e.toolCallID,
 			PermissionKind: permKindName(e.kind),
 			Summary:        e.summary,
+			PreviewClipped: e.previewClipped,
 			RemainingMS:    h.remainingMS(e),
 		})
 	}

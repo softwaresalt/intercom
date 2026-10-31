@@ -18,12 +18,26 @@ type authzInput struct {
 	remoteApproveDestructive bool
 }
 
-// destructive reports whether approving a request of kind k needs the remote
-// opt-in. Only read is non-destructive; shell, write, URL, every other kind and
-// any kind the hub does not recognise are destructive (ADR MVP-3: unknown
-// kinds are default-deny for remote surfaces). Moving a kind out of this set
-// needs an ADR amendment, never a silent code change.
-func destructive(k agent.PermissionKind) bool { return k != agent.PermissionKindRead }
+// knownDestructive reports whether k is a modeled destructive kind (shell,
+// write, URL). A remote approver may approve these only with the
+// [remote].remote_approve_destructive opt-in. Moving a kind in or out of this
+// set needs an ADR amendment, never a silent code change.
+func knownDestructive(k agent.PermissionKind) bool {
+	switch k {
+	case agent.PermissionKindShell, agent.PermissionKindWrite, agent.PermissionKindURL:
+		return true
+	}
+	return false
+}
+
+// unknownPermissionKind reports whether k is neither read nor a modeled
+// destructive kind: PermissionKindUnknown, PermissionKindOther, and any
+// undefined value. Such requests carry only a raw discriminator, so approving
+// them is local-TUI-only and is never unlocked by the remote opt-in (ADR MVP-3,
+// 074-S amendment).
+func unknownPermissionKind(k agent.PermissionKind) bool {
+	return k != agent.PermissionKindRead && !knownDestructive(k)
+}
 
 // authorize is the ADR MVP-3 action-by-role matrix as a pure function. It is
 // fail-closed: anything it does not recognise is refused.
@@ -39,9 +53,13 @@ func authorize(in authzInput) (bool, Reason) {
 	if in.p.surface != surfaceRemote || in.p.role != RoleApprover {
 		return false, ReasonRoleNotPermitted // observers, role-less and corrupt principals
 	}
-	if in.op == OpResolvePermission && in.decision != agent.DecisionDeny &&
-		destructive(in.kind) && !in.remoteApproveDestructive {
-		return false, ReasonDestructiveRemoteRefused
+	if in.op == OpResolvePermission && in.decision != agent.DecisionDeny {
+		if unknownPermissionKind(in.kind) {
+			return false, ReasonDestructiveRemoteRefused // local-TUI-only; never unlocked by the opt-in
+		}
+		if knownDestructive(in.kind) && !in.remoteApproveDestructive {
+			return false, ReasonDestructiveRemoteRefused
+		}
 	}
 	return true, ""
 }

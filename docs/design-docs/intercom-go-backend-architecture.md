@@ -522,8 +522,21 @@ below).
   exception to the deny-when-`Truncated` rule: a clipped write preview does
   **not** set `Truncated`, so the request is still put to the operator, who is
   shown the notice but not the clipped tail. (A file name that alone fills the
-  summary still sets `Truncated` and is denied.) The notice is plain text and
-  can be imitated by file content, so it is informational, not a guarantee.* `permission.resolved`: `request_id`, `decision` (`allow_once` | `deny` |
+  summary still sets `Truncated` and is denied.) The in-text notice is plain text
+  and can be imitated by file content, so it is informational only. The
+  structured, out-of-band signal is the optional boolean `preview_clipped`
+  (omitted when `false`): the adapter sets it exactly when the write preview was
+  clipped, the hub carries it on `permission.requested` and on every
+  `session.hydrate` `pending_permissions` entry, and the local TUI renders a
+  column-0 `warning: write preview clipped — full content not shown` header
+  (summary lines are indented, so content cannot forge it) and replaces the
+  approve hints with `APPROVE CLIPPED WRITE?` wording. Approval stays two-key
+  (`y` then Enter) after the whole request has been scrolled into view. A shell
+  summary's `urls:` line is adapter-owned: each possible URL has whitespace,
+  commas, control, format, and line/paragraph-separator runes replaced with
+  `U+FFFD`, and any command line whose trimmed text starts with `urls:`
+  (case-insensitive) is indented two spaces.
+* `permission.resolved`: `request_id`, `decision` (`allow_once` | `deny` |
   `unavailable`), `actor` (`local-tui` | `remote-approver` | `hub`), `reason`
   (empty when an operator answered; `timeout` | `shutdown` | `no_surface` when
   the hub decided). **`unavailable` means the SDK's `UserNotAvailable`: nobody
@@ -565,7 +578,8 @@ below).
   `pending_permissions` array beside the fold snapshot: one object per
   *unresolved* request (decided-but-unacknowledged and finished requests are
   absent), each shaped exactly like a `permission.requested` payload
-  (`request_id`, `tool_call_id`, `permission_kind`, `summary`, `remaining_ms`),
+  (`request_id`, `tool_call_id`, `permission_kind`, `summary`, optional
+  `preview_clipped`, `remaining_ms`),
   in registration order, always present (empty array when none). Its size is
   bounded by the hub's pending-permission cap and the summary cap. `remaining_ms` is
   computed by the hub when the envelope is built, so it is anchored to that
@@ -753,8 +767,13 @@ surface approve an agent shell command**. The decided controls are:
   observer from an approver, and decide whether a remote surface may approve
   destructive shell commands at all, or only the local TUI may. **Blocks C5.**
   *Decided (ADR MVP-3):* `observer` and `approver` roles; the local TUI is
-  always an approver; remote approval of `shell`, `write`, and unknown kinds is
-  refused unless `[remote].remote_approve_destructive` is true.
+  always an approver; remote approval of the modeled destructive kinds
+  (`shell`, `write`, `url`) is refused unless `[remote].remote_approve_destructive`
+  is true. Unknown or unmodeled kinds (`other`, `unknown`, any unrecognized
+  kind) are local-TUI-only: a remote approval is always refused with
+  `destructive_remote_refused`, even when the opt-in is true, because the
+  summary of such a request carries only its raw kind. Remote denial is always
+  allowed (074-S amendment).
 * **Per-message authorization, not connection-time only.** A long-lived socket
   authorized once at upgrade grants approval rights for the socket's whole
   lifetime. Re-validate on privileged actions. *Decided (ADR MVP-3):* each

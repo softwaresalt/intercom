@@ -165,6 +165,62 @@ func TestTruncatedPermissionRequestIsDeniedByTheHubNotRegistered(t *testing.T) {
 	noFrame(t, h, tui, "a truncated request must never be broadcast as approvable")
 }
 
+func TestPermissionPreviewClippedPropagatesToBroadcastAndHydrate(t *testing.T) {
+	h := startHub(t, Config{})
+	tui := connect(t, h, ClientTUI, 16)
+
+	clipped := newTestAsk(agent.PermissionKindWrite, "f.go\n+x\n[write preview truncated]")
+	clipped.ask.Request.PreviewClipped = true
+	clipped.post(t, h)
+	f := recvKind(t, tui, KindPermissionRequested)
+	if raw := string(decode(t, f).Payload); !strings.Contains(raw, `"preview_clipped":true`) {
+		t.Fatalf("clipped permission.requested lacks preview_clipped: %s", raw)
+	}
+	var p PermissionRequestedPayload
+	if err := json.Unmarshal(decode(t, f).Payload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if !p.PreviewClipped {
+		t.Fatalf("broadcast PreviewClipped = false: %+v", p)
+	}
+
+	plain := newTestAsk(agent.PermissionKindWrite, "g.go\n+y")
+	plain.post(t, h)
+	f2 := recvKind(t, tui, KindPermissionRequested)
+	if raw := string(decode(t, f2).Payload); strings.Contains(raw, "preview_clipped") {
+		t.Fatalf("unclipped permission.requested must omit preview_clipped: %s", raw)
+	}
+
+	// PreviewClipped is only meaningful for a write: a stray flag on any other
+	// kind must not show a clipped-write warning.
+	odd := newTestAsk(agent.PermissionKindShell, "ls")
+	odd.ask.Request.PreviewClipped = true
+	odd.post(t, h)
+	f3 := recvKind(t, tui, KindPermissionRequested)
+	if raw := string(decode(t, f3).Payload); strings.Contains(raw, "preview_clipped") {
+		t.Fatalf("preview_clipped on a non-write kind must be dropped: %s", raw)
+	}
+
+	// session.hydrate for a fresh client and for a forced re-hydrate.
+	v := hydrateFor(t, h)
+	if len(v.PendingPermissions) != 3 {
+		t.Fatalf("pending = %+v, want 3", v.PendingPermissions)
+	}
+	if !v.PendingPermissions[0].PreviewClipped || v.PendingPermissions[1].PreviewClipped || v.PendingPermissions[2].PreviewClipped {
+		t.Fatalf("hydrate PreviewClipped = %v/%v/%v, want true/false/false", v.PendingPermissions[0].PreviewClipped, v.PendingPermissions[1].PreviewClipped, v.PendingPermissions[2].PreviewClipped)
+	}
+	c, err := h.Connect(t.Context(), ConnectOptions{Kind: ClientRemote, Buffer: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	hf := recv(t, c)
+	raw := string(decode(t, hf).Payload)
+	if n := strings.Count(raw, `"preview_clipped":true`); n != 1 {
+		t.Fatalf("hydrate carries %d preview_clipped:true, want exactly 1: %s", n, raw)
+	}
+}
+
 func TestPermissionToolCallIDIsBoundedInTheBroadcastAndHydrate(t *testing.T) {
 	h := startHub(t, Config{})
 	tui := connect(t, h, ClientTUI, 16)

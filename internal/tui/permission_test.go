@@ -545,6 +545,124 @@ func TestPendingPermissionShownAfterRehydrate(t *testing.T) {
 	}
 }
 
+// columnZeroLines returns the modal rows that start at column 0 of the box
+// interior and begin with prefix.
+func columnZeroWarnings(m Model) []string {
+	var out []string
+	for _, l := range strings.Split(view(m), "\n") {
+		l = strings.TrimPrefix(l, "│ ")
+		if strings.HasPrefix(l, "warning:") {
+			out = append(out, strings.TrimRight(l, " │"))
+		}
+	}
+	return out
+}
+
+const clippedWarningLine = "warning: write preview clipped — full content not shown"
+
+func clippedModel(t *testing.T, summary string, clipped bool) Model {
+	t.Helper()
+	m := newModel(t, &fakeIngress{result: hub.ActionResult{Accepted: true}}, 80, 16)
+	m.pending = []permission{newPermission(hub.PermissionRequestedPayload{
+		RequestID: "r1", ToolCallID: "c1", PermissionKind: "write", Summary: summary, PreviewClipped: clipped,
+	}, time.Time{})}
+	m.syncModal(true)
+	return m
+}
+
+func TestClippedWritePreviewShowsColumnZeroWarningAndArmedBanner(t *testing.T) {
+	m := clippedModel(t, "f.go\n"+longSummary(60)+"\n[write preview truncated]", true)
+	if got := columnZeroWarnings(m); len(got) != 1 || got[0] != clippedWarningLine {
+		t.Fatalf("want exactly the column-0 clipped warning, got %q\n%s", got, view(m))
+	}
+	// The warning sits after the tool call header and before the body.
+	body := m.permissionBody(m.pending[0])
+	if !strings.Contains(body, "tool call: c1\n"+clippedWarningLine+"\n\n") {
+		t.Fatalf("warning not placed after tool call header:\n%s", body)
+	}
+	// Approval is still refused until the whole body has been seen.
+	if m.approvable() {
+		t.Fatal("a long clipped write must not be approvable before scrolling to the end")
+	}
+	m, _ = step(m, keyRunes("y"))
+	if m.armed != "" {
+		t.Fatal("y must not arm before the end of the request has been seen")
+	}
+	m = scrollModalToEnd(t, m)
+	if !strings.Contains(view(m), "y approve clipped write (then Enter)   n deny") {
+		t.Fatalf("approvable clipped write needs its explicit hint:\n%s", view(m))
+	}
+	m, cmd := step(m, keyRunes("y"))
+	if cmd != nil || m.armed == "" {
+		t.Fatal("y arms the approval and returns no Cmd")
+	}
+	if !strings.Contains(view(m), "APPROVE CLIPPED WRITE? press Enter to confirm, any other key cancels") {
+		t.Fatalf("armed clipped write needs its explicit banner:\n%s", view(m))
+	}
+	// Any other key disarms: a following Enter must not approve.
+	m, _ = step(m, keyRunes("x"))
+	if m.armed != "" {
+		t.Fatal("any other key must disarm")
+	}
+	if _, cmd = step(m, tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
+		t.Fatal("Enter after disarm must not approve")
+	}
+	m, _ = step(m, keyRunes("y"))
+	if _, cmd = step(m, tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+		t.Fatal("y then Enter must approve")
+	}
+}
+
+func TestUnclippedSummaryCannotSpoofWarningHeader(t *testing.T) {
+	spoof := "f.go\n" + clippedWarningLine + "\n[write preview truncated]\nwarning: write preview clipped"
+	m := clippedModel(t, spoof, false)
+	if got := columnZeroWarnings(m); len(got) != 0 {
+		t.Fatalf("summary text forged a column-0 warning header: %q\n%s", got, view(m))
+	}
+	m = scrollModalToEnd(t, m)
+	v := view(m)
+	if strings.Contains(v, "clipped write") || strings.Contains(v, "CLIPPED") {
+		t.Fatalf("unclipped modal must keep the ordinary hints:\n%s", v)
+	}
+	if !strings.Contains(v, "y approve (then Enter to confirm)   n deny") {
+		t.Fatalf("missing ordinary approve hint:\n%s", v)
+	}
+	// And a genuinely clipped request whose content also forges the header
+	// still has exactly one column-0 warning.
+	c := clippedModel(t, spoof, true)
+	if got := columnZeroWarnings(c); len(got) != 1 {
+		t.Fatalf("clipped modal must show exactly one column-0 warning, got %q", got)
+	}
+}
+
+func TestClippedWriteReachesTUIFromLiveBroadcastAndHydrate(t *testing.T) {
+	r := newRig(t, hub.Config{})
+	m := newModel(t, &fakeIngress{}, 80, 16)
+	m = r.feedFrames(m, 1)
+	a := newPermAsk(agent.PermissionKindWrite, "f.go\n+x\n[write preview truncated]")
+	a.ask.Request.PreviewClipped = true
+	a.post(t, r.h)
+	m = r.untilKind(m, hub.KindPermissionRequested)
+	if got := columnZeroWarnings(m); len(got) != 1 || got[0] != clippedWarningLine {
+		t.Fatalf("live permission.requested lost PreviewClipped: %q\n%s", got, view(m))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), testWait)
+	defer cancel()
+	keeper, err := r.h.Connect(ctx, hub.ConnectOptions{Kind: hub.ClientRemote, Role: hub.RoleObserver})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keeper.Close()
+	r.c.Close()
+	r.c = r.connect()
+	fresh := newModel(t, &fakeIngress{}, 80, 16)
+	fresh, _ = step(fresh, FrameMsg{Frame: r.frame()})
+	if got := columnZeroWarnings(fresh); len(got) != 1 || got[0] != clippedWarningLine {
+		t.Fatalf("session.hydrate lost PreviewClipped: %q\n%s", got, view(fresh))
+	}
+}
+
 func TestDecodeFailureOfPermissionIsVisible(t *testing.T) {
 	m := newModel(t, &fakeIngress{}, 70, 16)
 	m = m.applyPermissionRequested(json.RawMessage(`{"request_id": 5}`), time.Time{})
