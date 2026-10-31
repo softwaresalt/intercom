@@ -157,3 +157,40 @@ func TestContainsDotDotSegment(t *testing.T) {
 		})
 	}
 }
+
+// TestClassifyCLIPath verifies the portable cli_path lexical classifier.
+func TestClassifyCLIPath(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "copilot")
+	cases := []struct {
+		path string
+		want CLIPathKind
+	}{
+		{"", CLIPathEmpty},
+		{"copilot", CLIPathBare},
+		{"copilot.exe", CLIPathBare},
+		{`\\server\share\copilot.exe`, CLIPathUNCOrDevice},
+		{"//server/share/copilot", CLIPathUNCOrDevice},
+		{`\/server\share\copilot.exe`, CLIPathUNCOrDevice},
+		{`/\server\share\copilot.exe`, CLIPathUNCOrDevice},
+		{`\\?\C:\Tools\copilot.exe`, CLIPathUNCOrDevice},
+		{`\\?\UNC\server\share\copilot.exe`, CLIPathUNCOrDevice},
+		{`\\.\pipe\copilot`, CLIPathUNCOrDevice},
+		{`\/.\pipe\copilot`, CLIPathUNCOrDevice},
+		{`\??\C:\Tools\copilot.exe`, CLIPathUNCOrDevice},
+		{"/??/C:/Tools/copilot.exe", CLIPathUNCOrDevice},
+		{"C:copilot", CLIPathDriveRelative},
+		{"d:bin/copilot", CLIPathDriveRelative},
+		{".", CLIPathRelative},
+		{"..", CLIPathRelative},
+		{"./bin/copilot", CLIPathRelative},
+		{`.\bin\copilot`, CLIPathRelative},
+		{`..\x\copilot`, CLIPathRelative},
+		{"bin/copilot", CLIPathRelative},
+		{abs, CLIPathAbs},
+	}
+	for _, c := range cases {
+		if got := ClassifyCLIPath(c.path); got != c.want {
+			t.Errorf("ClassifyCLIPath(%q) = %d, want %d", c.path, got, c.want)
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
+	"github.com/softwaresalt/intercom-go/internal/hub"
 )
 
 func validRemoteCfg(t *testing.T) *Config {
@@ -27,8 +28,14 @@ func TestDefaultRemoteIsSecure(t *testing.T) {
 	if r.TokenLifetimeSeconds != 14400 {
 		t.Errorf("TokenLifetimeSeconds = %d, want 14400", r.TokenLifetimeSeconds)
 	}
-	if r.MaxConnections != 8 {
-		t.Errorf("MaxConnections = %d, want 8", r.MaxConnections)
+	if r.MaxConnections != DefaultRemoteMaxConnections {
+		t.Errorf("MaxConnections = %d, want %d", r.MaxConnections, DefaultRemoteMaxConnections)
+	}
+	if DefaultRemoteMaxConnections != hub.DefaultMaxRemote {
+		t.Errorf("DefaultRemoteMaxConnections = %d, want hub.DefaultMaxRemote %d", DefaultRemoteMaxConnections, hub.DefaultMaxRemote)
+	}
+	if MaxRemoteConnections != hub.MaxRemoteHardLimit {
+		t.Errorf("MaxRemoteConnections = %d, want hub.MaxRemoteHardLimit %d", MaxRemoteConnections, hub.MaxRemoteHardLimit)
 	}
 	if len(r.AllowedOrigins) != 0 || len(r.AllowedHosts) != 0 {
 		t.Errorf("origins/hosts = %v/%v, want empty", r.AllowedOrigins, r.AllowedHosts)
@@ -331,11 +338,59 @@ func TestDecodeRemoteAbsentUsesSecureDefaults(t *testing.T) {
 
 func TestDecodeRemoteUnknownKeyStillReported(t *testing.T) {
 	_, report, err := Decode(tomlRoot(t) + "[remote]\nmax_connections = 3\nfuture_option = 1\n")
-	if err != nil {
-		t.Fatalf("Decode: %v", err)
+	if err == nil {
+		t.Fatal("Decode accepted an unknown key under [remote]")
+	}
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Kind() != apperr.KindConfig {
+		t.Fatalf("want KindConfig, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "remote.future_option is an unknown key under [remote]; only known [remote] schema keys are permitted") {
+		t.Errorf("err = %v", err)
 	}
 	if !slices.Equal(report.UnknownKeys, []string{"remote.future_option"}) {
 		t.Errorf("UnknownKeys = %v, want [remote.future_option]", report.UnknownKeys)
+	}
+
+	_, _, err = Decode(tomlRoot(t) + "[remote.sub]\nsetting = \"v-9f8e\"\n")
+	if err == nil || !strings.Contains(err.Error(), "is an unknown key under [remote]") {
+		t.Errorf("nested unknown table: err = %v", err)
+	}
+	if err != nil && strings.Contains(err.Error(), "v-9f8e") {
+		t.Errorf("error echoes value: %v", err)
+	}
+
+	// The credential-shaped error takes precedence over the unknown-key one.
+	_, _, err = Decode(tomlRoot(t) + "[remote]\nfuture_option = 1\ntoken = \"secret\"\n")
+	if err == nil || !strings.Contains(err.Error(), "credential-shaped") {
+		t.Errorf("precedence: err = %v, want credential-shaped error", err)
+	}
+}
+
+func TestValidateRemoteRejectsHexIPv4HostsAndOrigins(t *testing.T) {
+	hosts := []string{"0x7f.0x1", "0x7f.0.0.0x1", "127.0.0.0x1", "0x7f000001", "0x0"}
+	for _, h := range hosts {
+		for _, entry := range []string{h, h + ":3000"} {
+			cfg := validRemoteCfg(t)
+			cfg.Remote.AllowedHosts = []string{entry}
+			_, err := cfg.Validate()
+			if err == nil || !strings.Contains(err.Error(), "non-canonical IPv4 address") {
+				t.Errorf("allowed_hosts %q: err = %v, want non-canonical IPv4 rejection", entry, err)
+			}
+		}
+		cfg := validRemoteCfg(t)
+		cfg.Remote.AllowedOrigins = []string{"http://" + h}
+		_, err := cfg.Validate()
+		if err == nil {
+			t.Errorf("allowed_origins http://%s accepted, want rejection", h)
+		}
+	}
+	for _, h := range []string{"1password.example", "example.123abc", "a1.example.com"} {
+		cfg := validRemoteCfg(t)
+		cfg.Remote.AllowedHosts = []string{h}
+		if _, err := cfg.Validate(); err != nil {
+			t.Errorf("allowed_hosts %q rejected: %v", h, err)
+		}
 	}
 }
 

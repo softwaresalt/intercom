@@ -30,7 +30,7 @@ func Default() *Config {
 			TokenLifetimeSeconds:     14400,
 			AllowedOrigins:           []string{},
 			AllowedHosts:             []string{},
-			MaxConnections:           8,
+			MaxConnections:           DefaultRemoteMaxConnections,
 			RemoteApproveDestructive: false,
 		},
 	}

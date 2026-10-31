@@ -11,6 +11,11 @@ import (
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 )
 
+// DefaultRemoteMaxConnections is the default [remote].max_connections. It is
+// locked by test to hub.DefaultMaxRemote so the config default and the hub
+// default cannot drift apart.
+const DefaultRemoteMaxConnections = 8
+
 // remoteKnownKeys are the schema keys under [remote]. They are exempt from
 // credential-shape screening (token_lifetime_seconds legitimately contains
 // "token" but is a plain duration, max_connections contains "connection").
@@ -83,6 +88,19 @@ func rejectRemoteCredentialKeys(keys []toml.Key) error {
 					sanitizeKeyPath(k.String()))
 			}
 		}
+	}
+	// Second pass: [remote] is a closed section, so any remaining unknown
+	// key is rejected (credential-shaped keys above take precedence).
+	for _, k := range keys {
+		if len(k) < 2 || !strings.EqualFold(k[0], "remote") {
+			continue
+		}
+		if len(k) == 2 && isKnownRemoteKey(k[1]) {
+			continue
+		}
+		return apperr.Newf(apperr.KindConfig,
+			"%s is an unknown key under [remote]; only known [remote] schema keys are permitted",
+			sanitizeKeyPath(k.String()))
 	}
 	return nil
 }
@@ -198,7 +216,7 @@ func hostNameProblem(h string) string {
 // only the exact canonical form is accepted.
 func numericHostProblem(h string) string {
 	last := h[strings.LastIndexByte(h, '.')+1:]
-	numeric := last != "" && strings.Trim(last, "0123456789") == ""
+	numeric := isIPv4NumberLabel(last)
 	if !numeric && strings.Trim(h, "0123456789.") != "" {
 		return ""
 	}
@@ -206,6 +224,19 @@ func numericHostProblem(h string) string {
 		return ""
 	}
 	return "host is a non-canonical IPv4 address (use dotted-quad without leading zeros)"
+}
+
+// isIPv4NumberLabel reports whether label is a decimal/octal digit run or a
+// 0x-prefixed hexadecimal run: the number forms inet_aton and WHATWG URL
+// parsing accept as an IPv4 component.
+func isIPv4NumberLabel(label string) bool {
+	if label == "" {
+		return false
+	}
+	if strings.Trim(label, "0123456789") == "" {
+		return true
+	}
+	return strings.HasPrefix(label, "0x") && strings.Trim(label[2:], "0123456789abcdef") == ""
 }
 
 const hostForm = "must be a host[:port] (no scheme, path, userinfo, or whitespace)"

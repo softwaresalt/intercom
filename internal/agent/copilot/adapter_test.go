@@ -21,7 +21,16 @@ import (
 
 var _ agent.Agent = (*Adapter)(nil)
 
-func absTestPath() string { return filepath.Join(os.TempDir(), "copilot") }
+// absTestPath returns an existing regular executable file inside a test
+// temp directory so cli_path regular-file validation succeeds.
+func absTestPath(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "copilot")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return p
+}
 
 // ---- fake SDK seam ----
 
@@ -315,6 +324,13 @@ func TestVersionAtLeast(t *testing.T) {
 }
 
 func TestNewValidatesConfig(t *testing.T) {
+	binDir := t.TempDir()
+	for _, name := range []string{"copilot", "copilot.exe"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	t.Setenv("PATH", binDir)
 	base := func() Config {
 		return Config{
 			StartupTimeout: time.Second,
@@ -330,11 +346,21 @@ func TestNewValidatesConfig(t *testing.T) {
 	}{
 		{"valid empty cli path", func(*Config) {}, true},
 		{"bare name", func(c *Config) { c.CLIPath = "copilot" }, true},
-		{"absolute", func(c *Config) { c.CLIPath = absTestPath() }, true},
+		{"unresolvable bare name", func(c *Config) { c.CLIPath = "no-such-copilot-binary-xyz123" }, false},
+		{"absolute", func(c *Config) { c.CLIPath = absTestPath(t) }, true},
+		{"absolute missing", func(c *Config) { c.CLIPath = filepath.Join(t.TempDir(), "missing") }, false},
+		{"absolute directory", func(c *Config) { c.CLIPath = t.TempDir() }, false},
 		{"relative dot", func(c *Config) { c.CLIPath = "./bin/copilot" }, false},
 		{"relative dotdot", func(c *Config) { c.CLIPath = `..\x\copilot` }, false},
 		{"relative subdir", func(c *Config) { c.CLIPath = "bin/copilot" }, false},
+		{"relative single dot", func(c *Config) { c.CLIPath = "." }, false},
 		{"drive relative", func(c *Config) { c.CLIPath = "C:copilot" }, false},
+		{"unc backslash", func(c *Config) { c.CLIPath = `\\server\share\copilot.exe` }, false},
+		{"unc slash", func(c *Config) { c.CLIPath = "//server/share/copilot" }, false},
+		{"unc mixed", func(c *Config) { c.CLIPath = `\/server\share\copilot.exe` }, false},
+		{"device question", func(c *Config) { c.CLIPath = `\\?\C:\copilot.exe` }, false},
+		{"device dot", func(c *Config) { c.CLIPath = `\\.\pipe\copilot` }, false},
+		{"device nt", func(c *Config) { c.CLIPath = `\??\C:\copilot.exe` }, false},
 		{"nil ingress", func(c *Config) { c.Ingress = nil }, false},
 		{"nil asks", func(c *Config) { c.Asks = nil }, false},
 		{"nil hubdone", func(c *Config) { c.HubDone = nil }, false},
@@ -344,9 +370,12 @@ func TestNewValidatesConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := base()
 			tc.mutate(&cfg)
-			_, err := New(cfg)
+			ad, err := New(cfg)
 			if (err == nil) != tc.ok {
 				t.Fatalf("New error = %v, want ok=%v", err, tc.ok)
+			}
+			if tc.ok && tc.name == "bare name" && !filepath.IsAbs(ad.cfg.CLIPath) {
+				t.Fatalf("bare cli_path resolved to %q, want an absolute path", ad.cfg.CLIPath)
 			}
 		})
 	}
