@@ -128,3 +128,96 @@ func TestRejectedUpgradeIsShownOnLocalTUI(t *testing.T) {
 		t.Fatal("notice output carries a query string")
 	}
 }
+
+// A flood of rejected upgrades must reach the TUI as at most one update per
+// interval: the first notice after idle is immediate, the rest coalesce in the
+// mailbox (highest Total wins) and are delivered when the cooldown ends.
+func TestPumpRejectsRateLimitsAndCoalescesBurstNotices(t *testing.T) {
+	const interval = 150 * time.Millisecond
+	a := newRejectApp()
+	type sent struct {
+		at  time.Time
+		msg tui.SecurityNoticeMsg
+	}
+	var mu sync.Mutex
+	var got []sent
+	snapshot := func() []sent {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]sent(nil), got...)
+	}
+	done := make(chan struct{})
+	pumped := make(chan struct{})
+	go func() {
+		defer close(pumped)
+		a.pumpRejectsTo(done, interval, func(m tui.SecurityNoticeMsg) {
+			mu.Lock()
+			got = append(got, sent{time.Now(), m})
+			mu.Unlock()
+		})
+	}()
+
+	start := time.Now()
+	a.onReject(401, "credential_rejected", 1)
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(testSlack)
+		for !cond() {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	waitFor("the first notice", func() bool { return len(snapshot()) >= 1 })
+	if d := snapshot()[0].at.Sub(start); d > interval/2 {
+		t.Fatalf("first notice after idle took %v; want immediate", d)
+	}
+	for i := uint64(2); i <= 200; i++ { // a burst during the cooldown
+		a.onReject(401, "credential_rejected", i)
+	}
+	waitFor("the coalesced notice", func() bool { return len(snapshot()) >= 2 })
+	time.Sleep(interval / 3) // nothing more may follow within the next cooldown
+	s := snapshot()
+	if len(s) != 2 {
+		t.Fatalf("burst produced %d sends; want 2 (first, then one coalesced)", len(s))
+	}
+	if s[1].msg.Total != 200 {
+		t.Fatalf("coalesced notice Total = %d; want the highest (200)", s[1].msg.Total)
+	}
+	if gap := s[1].at.Sub(s[0].at); gap < interval-interval/10 {
+		t.Fatalf("sends %v apart; want at least one interval (%v)", gap, interval)
+	}
+
+	close(done)
+	select {
+	case <-pumped:
+	case <-time.After(testSlack):
+		t.Fatal("pumpRejectsTo did not return after done closed")
+	}
+}
+
+// Closing done mid-cooldown stops the timer wait at once.
+func TestPumpRejectsStopsMidCooldownWhenDoneCloses(t *testing.T) {
+	a := newRejectApp()
+	sent := make(chan struct{}, 1)
+	done := make(chan struct{})
+	pumped := make(chan struct{})
+	go func() {
+		defer close(pumped)
+		a.pumpRejectsTo(done, time.Hour, func(tui.SecurityNoticeMsg) { sent <- struct{}{} })
+	}()
+	a.onReject(401, "credential_rejected", 1)
+	select {
+	case <-sent:
+	case <-time.After(testSlack):
+		t.Fatal("first notice not delivered")
+	}
+	a.onReject(401, "credential_rejected", 2) // waits out an hour-long cooldown
+	close(done)
+	select {
+	case <-pumped:
+	case <-time.After(testSlack):
+		t.Fatal("pumpRejectsTo waited for the cooldown timer after done closed")
+	}
+}
