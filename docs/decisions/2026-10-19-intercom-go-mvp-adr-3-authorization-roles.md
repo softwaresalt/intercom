@@ -48,10 +48,13 @@ is registered. They are read only from that record and never from an inbound cli
 message, so a client cannot relabel a `shell` request as `read`.
 
 * **Non-destructive:** `read`.
-* **Destructive:** `shell`, `write`, and every other kind, including any kind the adapter
-  does not recognize. **Unknown kinds are treated as destructive** (default-deny for
-  remote surfaces). Moving a kind from destructive to non-destructive requires an amendment
-  to this ADR, never a silent code change.
+* **Modeled destructive:** `shell`, `write`, and `url`. A remote approver may approve these
+  only when `[remote].remote_approve_destructive` is true.
+* **Unknown or unmodeled:** `other`, `unknown`, and any kind the adapter or hub does not
+  recognize. These are **local-TUI-only for approval** (074-S amendment): a remote approval is
+  refused with `destructive_remote_refused` even when `remote_approve_destructive` is true,
+  because the request carries only its raw kind. Remote `deny` stays allowed. Moving a kind
+  between classes requires an amendment to this ADR, never a silent code change.
 
 The remote approval opt-in is `[remote].remote_approve_destructive` (default `false`).
 
@@ -66,7 +69,8 @@ The remote approval opt-in is `[remote].remote_approve_destructive` (default `fa
 | Abort the current turn | Y | Y | N | `role_not_permitted` |
 | Approve or deny a `read` permission | Y | Y | N | `role_not_permitted` |
 | Deny any permission (any kind) | Y | Y | N | `role_not_permitted` |
-| Approve a destructive permission (`shell`, `write`, unknown) | Y | only if `remote_approve_destructive` is true, otherwise N | N | `destructive_remote_refused` (approver); `role_not_permitted` (observer) |
+| Approve a modeled destructive permission (`shell`, `write`, `url`) | Y | only if `remote_approve_destructive` is true, otherwise N | N | `destructive_remote_refused` (approver); `role_not_permitted` (observer) |
+| Approve an unknown or unmodeled permission (`other`, `unknown`, unrecognized) | Y | N (never, even with `remote_approve_destructive`) | N | `destructive_remote_refused` (approver); `role_not_permitted` (observer) |
 | Reveal credentials, re-issue credentials | Y | N | N | `local_only_action` |
 | Quit or shut down the process | Y | N | N | `local_only_action` |
 | Any other or malformed action type | refused | refused | refused | `action_unknown` (default deny) |
@@ -161,8 +165,24 @@ a policy-violation close. When the hub-owned permission timeout fires, the outco
   request is published `permission.aborted`; a decision the handler already
   delivered is published `permission.resolved` per the handler-reported
   outcome, or `permission.aborted` if the handler had downgraded it.
-* Unknown kinds remain destructive: default-deny for remote approvers, and
-  covered by `remote_approve_destructive` exactly like `shell` and `write`.
+* Unknown kinds remain destructive for remote approvers (default-deny), but as of the
+  074-S amendment below they are no longer covered by `remote_approve_destructive`.
+
+## Amendment (074-S, 2026-10-30)
+
+* **Unknown kinds are local-TUI-only for approval.** `other`, `unknown`, and any
+  undefined kind are refused to remote approvers with `destructive_remote_refused`
+  regardless of `remote_approve_destructive`; the opt-in covers only `shell`,
+  `write`, and `url`. Remote `deny` and local TUI approval are unchanged.
+  This supersedes the earlier statement that the opt-in covers unknown kinds.
+* **Clipped write previews are flagged out of band.** A write whose diff or content
+  preview was clipped carries the boolean `preview_clipped` on `permission.requested`
+  and `session.hydrate`. The local TUI shows a column-0 warning header and asks for an
+  explicit clipped-write confirmation; the in-text `[write preview truncated]`
+  notice is informational only and can be imitated by file content.
+* **`urls:` framing is adapter-owned.** Shell possible-URLs are sanitized and
+  command lines imitating the `urls:` line are indented.
+* `[timeouts].approval_seconds` precedence is documented in `docs/config-reference.md`.
 
 ## Accepted exposure
 
