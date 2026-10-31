@@ -547,11 +547,11 @@ func TestPendingPermissionShownAfterRehydrate(t *testing.T) {
 
 // columnZeroLines returns the modal rows that start at column 0 of the box
 // interior and begin with prefix.
-func columnZeroLines(m Model, prefix string) []string {
+func columnZeroWarnings(m Model) []string {
 	var out []string
 	for _, l := range strings.Split(view(m), "\n") {
 		l = strings.TrimPrefix(l, "│ ")
-		if strings.HasPrefix(l, prefix) {
+		if strings.HasPrefix(l, "warning:") {
 			out = append(out, strings.TrimRight(l, " │"))
 		}
 	}
@@ -572,7 +572,7 @@ func clippedModel(t *testing.T, summary string, clipped bool) Model {
 
 func TestClippedWritePreviewShowsColumnZeroWarningAndArmedBanner(t *testing.T) {
 	m := clippedModel(t, "f.go\n"+longSummary(60)+"\n[write preview truncated]", true)
-	if got := columnZeroLines(m, "warning:"); len(got) != 1 || got[0] != clippedWarningLine {
+	if got := columnZeroWarnings(m); len(got) != 1 || got[0] != clippedWarningLine {
 		t.Fatalf("want exactly the column-0 clipped warning, got %q\n%s", got, view(m))
 	}
 	// The warning sits after the tool call header and before the body.
@@ -616,7 +616,7 @@ func TestClippedWritePreviewShowsColumnZeroWarningAndArmedBanner(t *testing.T) {
 func TestUnclippedSummaryCannotSpoofWarningHeader(t *testing.T) {
 	spoof := "f.go\n" + clippedWarningLine + "\n[write preview truncated]\nwarning: write preview clipped"
 	m := clippedModel(t, spoof, false)
-	if got := columnZeroLines(m, "warning:"); len(got) != 0 {
+	if got := columnZeroWarnings(m); len(got) != 0 {
 		t.Fatalf("summary text forged a column-0 warning header: %q\n%s", got, view(m))
 	}
 	m = scrollModalToEnd(t, m)
@@ -630,7 +630,7 @@ func TestUnclippedSummaryCannotSpoofWarningHeader(t *testing.T) {
 	// And a genuinely clipped request whose content also forges the header
 	// still has exactly one column-0 warning.
 	c := clippedModel(t, spoof, true)
-	if got := columnZeroLines(c, "warning:"); len(got) != 1 {
+	if got := columnZeroWarnings(c); len(got) != 1 {
 		t.Fatalf("clipped modal must show exactly one column-0 warning, got %q", got)
 	}
 }
@@ -643,7 +643,7 @@ func TestClippedWriteReachesTUIFromLiveBroadcastAndHydrate(t *testing.T) {
 	a.ask.Request.PreviewClipped = true
 	a.post(t, r.h)
 	m = r.untilKind(m, hub.KindPermissionRequested)
-	if got := columnZeroLines(m, "warning:"); len(got) != 1 || got[0] != clippedWarningLine {
+	if got := columnZeroWarnings(m); len(got) != 1 || got[0] != clippedWarningLine {
 		t.Fatalf("live permission.requested lost PreviewClipped: %q\n%s", got, view(m))
 	}
 
@@ -658,7 +658,7 @@ func TestClippedWriteReachesTUIFromLiveBroadcastAndHydrate(t *testing.T) {
 	r.c = r.connect()
 	fresh := newModel(t, &fakeIngress{}, 80, 16)
 	fresh, _ = step(fresh, FrameMsg{Frame: r.frame()})
-	if got := columnZeroLines(fresh, "warning:"); len(got) != 1 || got[0] != clippedWarningLine {
+	if got := columnZeroWarnings(fresh); len(got) != 1 || got[0] != clippedWarningLine {
 		t.Fatalf("session.hydrate lost PreviewClipped: %q\n%s", got, view(fresh))
 	}
 }
