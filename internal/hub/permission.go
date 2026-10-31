@@ -490,6 +490,18 @@ func (h *Hub) processAction(r *actionReq) ActionResult {
 		}
 		return ActionResult{Reason: ReasonCredentialRevoked}
 	}
+	if r.client != nil {
+		// ADR MVP-3: re-validate the credential inside this hub step, so a
+		// revocation or expiry after Do's check cannot be acted on.
+		if v := h.validators[r.client.id]; v != nil {
+			if reason := v(h.gen); reason != "" {
+				if reason == ReasonShuttingDown {
+					return ActionResult{Reason: ReasonCredentialRevoked}
+				}
+				return ActionResult{Reason: reason}
+			}
+		}
+	}
 	// The hub's clock is authoritative: a request already at or past its
 	// deadline is expired now, so a ready action cannot win a race against the
 	// timer that has not been serviced yet (it then finds the entry resolved).
