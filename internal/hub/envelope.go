@@ -15,6 +15,11 @@ import (
 // EnvelopeVersion is the envelope schema version carried in the "v" field.
 const EnvelopeVersion = 1
 
+// MaxDecisionFeedbackBytes is the most operator feedback text the hub passes
+// to an agent with a denial, cut on a UTF-8 rune boundary. Feedback on any
+// other decision is dropped.
+const MaxDecisionFeedbackBytes = 1024
+
 // Kind is the envelope kind vocabulary. It is intercom-owned and deliberately
 // not the SDK's (design §5.2).
 type Kind string
