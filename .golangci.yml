@@ -51,6 +51,59 @@ linters:
             - "$all"
             - "!**/internal/agent/copilot/*.go"
 
+        # 084.005-T (7EF4DA98): the transport is a leaf adapter. It consumes
+        # hub, config and the agent contract, but must never reach up into the
+        # application assembly or the TUI, nor down into the Copilot adapter
+        # or SDK (the SDK is already confined by copilot-sdk-boundary; the
+        # explicit deny here keeps the layering rule self-contained).
+        transport-layering-boundary:
+          deny:
+            - pkg: github.com/softwaresalt/intercom-go/internal/app
+              desc: internal/transport must not import internal/app (layering).
+            - pkg: github.com/softwaresalt/intercom-go/internal/tui
+              desc: internal/transport must not import internal/tui (layering).
+            - pkg: github.com/softwaresalt/intercom-go/internal/agent/copilot
+              desc: internal/transport must not import the Copilot adapter.
+            - pkg: github.com/github/copilot-sdk/go
+              desc: internal/transport must not import the Copilot SDK.
+          files:
+            - "**/internal/transport/**/*.go"
+
+        # wsclient is the standalone reference client for the wire contract: it
+        # must compile against nothing of the server, so wire-constant drift
+        # between the two is caught by conformance tests rather than hidden by
+        # a shared import.
+        wsclient-standalone-boundary:
+          deny:
+            - pkg: github.com/softwaresalt/intercom-go/internal/transport
+              desc: wsclient must not import the server transport package.
+            - pkg: github.com/softwaresalt/intercom-go/internal/tui
+              desc: wsclient must stay standalone (no TUI).
+            - pkg: github.com/softwaresalt/intercom-go/internal/app
+              desc: wsclient must stay standalone (no app assembly).
+            - pkg: github.com/softwaresalt/intercom-go/internal/config
+              desc: wsclient must stay standalone (no server config).
+            - pkg: github.com/softwaresalt/intercom-go/internal/pathsafe
+              desc: wsclient must stay standalone (no server path helpers).
+            - pkg: github.com/softwaresalt/intercom-go/internal/agent
+              desc: wsclient must stay standalone (no agent packages).
+            - pkg: github.com/github/copilot-sdk/go
+              desc: wsclient must stay standalone (no Copilot SDK).
+          files:
+            - "**/internal/transport/wsclient/*.go"
+
+        # Lower layers never depend on the transport that serves them.
+        lower-layers-no-transport:
+          deny:
+            - pkg: github.com/softwaresalt/intercom-go/internal/transport
+              desc: lower layers must not import internal/transport.
+          files:
+            - "**/internal/hub/**/*.go"
+            - "**/internal/agent/**/*.go"
+            - "**/internal/tui/**/*.go"
+            - "**/internal/config/**/*.go"
+            - "**/internal/pathsafe/**/*.go"
+
 output:
   formats:
     text:
