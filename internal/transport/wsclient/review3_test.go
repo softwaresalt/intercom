@@ -28,6 +28,11 @@ func TestDialRefusesUserinfoAndQuery(t *testing.T) {
 		"ws://" + host + "/ws?x=1",
 		"ws://" + host + "/ws?gen=g&seq=1", // the client adds the cursor itself
 		"ws://" + host + "/ws?",
+		"ws://" + host + "/ws#frag", // fragments are never sent, but could hide data
+		"ws://" + host + "/ws#",
+		"ws:opaque/ws", // opaque URL: no host, no path
+		"wss:example.com/ws",
+		"ws:///ws", // missing host
 		"wss://user:SECRETVALUE@example.com/ws",
 	} {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
