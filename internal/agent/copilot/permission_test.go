@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,59 @@ import (
 
 	"github.com/softwaresalt/intercom-go/internal/agent"
 )
+
+func TestSanitizeBoundReplacesInvisibleFillerRunes(t *testing.T) {
+	fillers := []rune{'\u2800', '\u3164', '\u115f', '\u1160', '\uffa0', '\u034f', '\u17b4', '\u17b5', '\ufe0f', '\ue000'}
+	for _, r := range fillers {
+		if !isInvisibleOrBlankRune(r) {
+			t.Errorf("isInvisibleOrBlankRune(%U) = false", r)
+		}
+		in, want := "a"+string(r)+"b", "a\ufffdb"
+		if got, _, _ := sanitizeBound(in, 64); got != want {
+			t.Errorf("sanitizeBound(%U) = %q, want %q", r, got, want)
+		}
+		if got := sanitizeIdent(in, 64); got != want {
+			t.Errorf("sanitizeIdent(%U) = %q, want %q", r, got, want)
+		}
+		if got := sanitizeShellURL(in); got != want {
+			t.Errorf("sanitizeShellURL(%U) = %q, want %q", r, got, want)
+		}
+		if got, _, _, _ := writeSummary(&rpc.PermissionRequestWrite{FileName: in}); got != want {
+			t.Errorf("writeSummary(%U) = %q, want %q", r, got, want)
+		}
+	}
+	if isInvisibleOrBlankRune('a') || isInvisibleOrBlankRune(' ') {
+		t.Error("ordinary runes must not be treated as invisible")
+	}
+	if got, _, _ := sanitizeBound("a\nb\tc", 64); got != "a\nb\tc" {
+		t.Errorf("sanitizeBound must keep newline and tab, got %q", got)
+	}
+}
+
+func TestShellSummaryIndentsHomoglyphAndInvisiblePrefixedURLsLines(t *testing.T) {
+	spoofs := []string{
+		"\u2800urls: x", "\u3164 urls: x", "ＵＲＬＳ：x", "ｕｒｌｓ：x",
+		"υгӏѕ: x", "уrls∶ x", "ᴜʀʟꜱ：x", "u\u0301rls: x", "URLS: x",
+	}
+	for _, spoof := range spoofs {
+		if !hasURLsLookalikePrefix(spoof) {
+			t.Errorf("hasURLsLookalikePrefix(%q) = false", spoof)
+		}
+		got := shellSummary(&rpc.PermissionRequestShell{
+			FullCommandText: "echo hi\n" + spoof,
+			PossibleURLs:    []rpc.PermissionRequestShellPossibleURL{{URL: "https://a.example"}},
+		})
+		lines := strings.Split(got, "\n")
+		if len(lines) != 3 || lines[1] != "  "+spoof || lines[2] != "urls: https://a.example" {
+			t.Errorf("shellSummary with %q = %q", spoof, got)
+		}
+	}
+	for _, plain := range []string{"echo urls: x", "url: x", "curl https://a.example", "urlsx"} {
+		if hasURLsLookalikePrefix(plain) {
+			t.Errorf("hasURLsLookalikePrefix(%q) = true, want false", plain)
+		}
+	}
+}
 
 func TestDecisionRoundTrip(t *testing.T) {
 	cases := []struct {
