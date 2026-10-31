@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/softwaresalt/intercom-go/internal/apperr"
 	"github.com/softwaresalt/intercom-go/internal/pathsafe"
@@ -53,7 +52,8 @@ func (c *Config) Validate() (Report, error) {
 	// Rule 5: the [copilot] section must be well-formed: cli_path (§6.2) and
 	// startup_timeout_seconds share this one rule slot so the validation
 	// contract stays at exactly 7 rules.
-	if err := validateCLIPath(c.Copilot.CLIPath, &report); err != nil {
+	resolvedCLIPath, err := validateCLIPath(c.Copilot.CLIPath, &report)
+	if err != nil {
 		return report, err
 	}
 	if c.Copilot.StartupTimeoutSeconds == 0 {
@@ -142,6 +142,7 @@ func (c *Config) Validate() (Report, error) {
 
 	// Deferred commit: every rule has passed.
 	c.DefaultWorkspaceRoot = root.Path()
+	c.Copilot.CLIPath = resolvedCLIPath
 	for i, p := range canonicalWorkspacePaths {
 		if p != "" {
 			c.Workspaces[i].Path = p
@@ -166,44 +167,52 @@ func pathErrorMessage(err error) string {
 	return err.Error()
 }
 
-// validateCLIPath implements validation rule 5. Empty is valid and returns
-// early with no advisory. An absolute path must exist. A Windows drive-
-// relative path and any other non-absolute path containing a separator are
-// rejected. A bare name is permitted, but if exec.LookPath cannot resolve
-// it a single non-fatal advisory is appended to report.Warnings.
-func validateCLIPath(cliPath string, report *Report) error {
-	if cliPath == "" {
-		return nil
-	}
-
-	if filepath.IsAbs(cliPath) {
-		if _, err := os.Stat(cliPath); err != nil {
-			return apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' does not exist", cliPath)
+// validateCLIPath implements validation rule 5 using the shared
+// pathsafe.ClassifyCLIPath classifier and returns the value to commit to
+// Copilot.CLIPath once every rule has passed. Empty is valid. UNC and
+// device-namespace, drive-relative, and other relative paths are rejected.
+// An absolute path must exist and be a regular file. A bare name is resolved
+// once via exec.LookPath to an absolute regular file; if it cannot be
+// resolved a single non-fatal advisory is appended to report.Warnings and
+// the name is returned unchanged.
+func validateCLIPath(cliPath string, report *Report) (string, error) {
+	switch pathsafe.ClassifyCLIPath(cliPath) {
+	case pathsafe.CLIPathEmpty:
+		return "", nil
+	case pathsafe.CLIPathUNCOrDevice:
+		return "", apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must not be a UNC or device-namespace path; use an absolute path, a bare name, or empty", cliPath)
+	case pathsafe.CLIPathDriveRelative:
+		return "", apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must not be drive-relative; use an absolute path, a bare name, or empty", cliPath)
+	case pathsafe.CLIPathRelative:
+		return "", apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must not be relative; use an absolute path, a bare name, or empty", cliPath)
+	case pathsafe.CLIPathAbs:
+		info, err := os.Stat(cliPath)
+		if err != nil {
+			return "", apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' does not exist", cliPath)
 		}
-		return nil
+		if !info.Mode().IsRegular() {
+			return "", apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must be a regular file", cliPath)
+		}
+		return cliPath, nil
+	default: // pathsafe.CLIPathBare
+		resolved, err := exec.LookPath(cliPath)
+		if err != nil {
+			report.Warnings = append(report.Warnings, fmt.Sprintf("copilot.cli_path '%s' was not resolvable via PATH", cliPath))
+			return cliPath, nil
+		}
+		abs, err := filepath.Abs(resolved)
+		if err != nil {
+			return "", apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' could not be resolved to an absolute path", cliPath)
+		}
+		if pathsafe.ClassifyCLIPath(abs) != pathsafe.CLIPathAbs {
+			return "", apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must not resolve to a UNC or device-namespace path", cliPath)
+		}
+		info, err := os.Stat(abs)
+		if err != nil || !info.Mode().IsRegular() {
+			return "", apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must be a regular file", cliPath)
+		}
+		return abs, nil
 	}
-
-	if hasWindowsDrivePrefix(cliPath) {
-		return apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must not be drive-relative; use an absolute path, a bare name, or empty", cliPath)
-	}
-
-	if strings.ContainsAny(cliPath, `/\`) {
-		return apperr.Newf(apperr.KindConfig, "copilot.cli_path '%s' must not be relative; use an absolute path, a bare name, or empty", cliPath)
-	}
-
-	if _, err := exec.LookPath(cliPath); err != nil {
-		report.Warnings = append(report.Warnings, fmt.Sprintf("copilot.cli_path '%s' was not resolvable via PATH", cliPath))
-	}
-
-	return nil
-}
-
-func hasWindowsDrivePrefix(path string) bool {
-	if len(path) < 2 || path[1] != ':' {
-		return false
-	}
-	b := path[0]
-	return ('A' <= b && b <= 'Z') || ('a' <= b && b <= 'z')
 }
 
 // validateMappingFields implements validation rules 3-4: each

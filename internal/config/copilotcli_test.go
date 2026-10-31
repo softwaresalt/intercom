@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -120,5 +121,92 @@ func TestValidateRule5FailureLeavesDefaultWorkspaceRootUnmodified(t *testing.T) 
 	}
 	if cfg.DefaultWorkspaceRoot != dir {
 		t.Errorf("DefaultWorkspaceRoot = %q after a rule-5 failure, want unchanged %q (deferred commit)", cfg.DefaultWorkspaceRoot, dir)
+	}
+}
+
+func TestValidateRule5RejectsUNCAndDeviceCLIPaths(t *testing.T) {
+	paths := []string{
+		`\\server\share\copilot.exe`,
+		"//server/share/copilot",
+		`\\?\C:\copilot.exe`,
+		`\\.\pipe\copilot`,
+		`\??\C:\copilot.exe`,
+	}
+	for _, p := range paths {
+		t.Run(p, func(t *testing.T) {
+			cfg := newValidBaseConfig(t)
+			cfg.Copilot.CLIPath = p
+
+			_, err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("Validate returned nil error for cli_path %q", p)
+			}
+			want := "config: copilot.cli_path '" + p + "' must not be a UNC or device-namespace path; use an absolute path, a bare name, or empty"
+			if got := err.Error(); got != want {
+				t.Errorf("Validate error = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestValidateRule5RejectsDirectoryCLIPathAndAcceptsRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := newValidBaseConfig(t)
+	cfg.Copilot.CLIPath = dir
+
+	_, err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate returned nil error for a directory cli_path")
+	}
+	want := "config: copilot.cli_path '" + dir + "' must be a regular file"
+	if got := err.Error(); got != want {
+		t.Errorf("Validate error = %q, want %q", got, want)
+	}
+
+	file := filepath.Join(t.TempDir(), "copilot")
+	if err := os.WriteFile(file, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg = newValidBaseConfig(t)
+	cfg.Copilot.CLIPath = file
+	if _, err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate returned unexpected error for a regular-file cli_path: %v", err)
+	}
+	if cfg.Copilot.CLIPath != file {
+		t.Errorf("CLIPath = %q, want %q", cfg.Copilot.CLIPath, file)
+	}
+}
+
+func TestValidateRule5BareCLIPathResolvesToAbsWithDeferredCommit(t *testing.T) {
+	binDir := t.TempDir()
+	for _, name := range []string{"copilot", "copilot.exe"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	t.Setenv("PATH", binDir)
+
+	cfg := newValidBaseConfig(t)
+	cfg.Copilot.CLIPath = "copilot"
+	report, err := cfg.Validate()
+	if err != nil {
+		t.Fatalf("Validate returned unexpected error: %v", err)
+	}
+	if len(report.Warnings) != 0 {
+		t.Errorf("len(report.Warnings) = %d, want 0", len(report.Warnings))
+	}
+	if !filepath.IsAbs(cfg.Copilot.CLIPath) {
+		t.Errorf("CLIPath = %q, want an absolute resolved path", cfg.Copilot.CLIPath)
+	}
+
+	// A failing later rule must leave CLIPath unmutated (deferred commit).
+	cfg = newValidBaseConfig(t)
+	cfg.Copilot.CLIPath = "copilot"
+	cfg.Database.Path = "../escape.db"
+	if _, err := cfg.Validate(); err == nil {
+		t.Fatal("Validate returned nil error for a database.path with '..'")
+	}
+	if cfg.Copilot.CLIPath != "copilot" {
+		t.Errorf("CLIPath = %q after failed Validate, want it unmutated (%q)", cfg.Copilot.CLIPath, "copilot")
 	}
 }
